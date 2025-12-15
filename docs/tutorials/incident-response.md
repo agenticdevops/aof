@@ -107,7 +107,7 @@ spec:
         name: kubectl-mcp
         command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
         env:
-          KUBECONFIG: "${KUBECONFIG}"
+          KUBECONFIG: "$KUBECONFIG"
 
     - type: HTTP
       config:

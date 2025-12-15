@@ -39,9 +39,9 @@ Contains:
   - slack-bot.md
 - **examples/** - Copy-paste ready configurations
 - **reference/** - Complete API reference
-  - aofctl-complete.md
-  - api-resources.md
+  - aofctl.md
   - agent-spec.md
+  - agentflow-spec.md
 - **guides/** - Specialized guides
   - migration-guide.md
   - kubernetes-compatibility.md
@@ -157,10 +157,9 @@ readlink docs/user-docs  # Shows: ../docusaurus-site/docs
 
 ## 📖 More Information
 
-- **For user doc guidelines:** See `docusaurus-site/DOCUMENTATION_GUIDE.md`
-- **For architecture decisions:** See `docs/architecture/ADR-001-kubectl-cli.md`
-- **For CLI reference:** See `docs/user-docs/reference/aofctl-complete.md`
+- **For architecture decisions:** See `docs/architecture/ADR-001-kubectl-cli-structure.md`
+- **For CLI reference:** See `docs/reference/aofctl.md`
 
 ---
 
-**Remember:** Edit in `/docusaurus-site/docs/` - it's the single source of truth! 🎯
+**Remember:** Edit in `/docs/` - it's the single source of truth for docusaurus!

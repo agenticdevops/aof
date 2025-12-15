@@ -466,7 +466,7 @@ aofctl get workflows
 For migration questions or issues:
 
 1. Check this guide's Troubleshooting section
-2. Review the [Command Reference](../reference/aofctl-complete.md)
+2. Review the [Command Reference](../reference/aofctl.md)
 3. Run `aofctl --help` for latest command documentation
 4. Open an issue on GitHub
 
@@ -481,5 +481,5 @@ After migration, explore new features:
 - **Custom output:** Format output with custom columns
 - **Watching:** Monitor resources in real-time
 
-See the [Complete Reference](../reference/aofctl-complete.md) for all available features.
+See the [CLI Reference](../reference/aofctl.md) for all available features.
 

@@ -649,7 +649,7 @@ aofctl agent get my-agent -o yaml
 
 ## See Also
 
-- [AgentFleet Spec](agentfleet-spec.md) - Multi-agent teams
+- AgentFleet Spec (coming soon) - Multi-agent teams
 - [AgentFlow Spec](agentflow-spec.md) - Workflow automation
 - [aofctl CLI](aofctl.md) - Command reference
 - [Examples](../examples/) - Copy-paste configurations
