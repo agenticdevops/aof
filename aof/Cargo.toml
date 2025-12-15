@@ -9,6 +9,7 @@ members = [
     "crates/aof-triggers",
     "crates/aofctl",
     "crates/smoke-test-mcp",
+    "crates/test-trigger-server",
 ]
 
 [workspace.package]

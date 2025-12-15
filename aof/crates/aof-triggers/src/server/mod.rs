@@ -10,7 +10,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -18,7 +17,6 @@ use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info};
 
 use crate::handler::TriggerHandler;
-use crate::platforms::TriggerMessage;
 
 /// Server configuration
 #[derive(Debug, Clone)]

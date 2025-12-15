@@ -2,84 +2,78 @@
 
 Complete command reference for the AOF CLI tool.
 
-## Global Flags
+## Command Structure
 
-Available for all commands:
+aofctl follows a verb-first pattern (like kubectl):
 
 ```bash
---config string       Config file (default: $HOME/.aof/config.yaml)
---context string      Kubernetes-style context to use
---namespace string    Namespace to operate in (default: "default")
---output string       Output format: json|yaml|table (default: "table")
---verbose            Enable verbose logging
---help               Show help for command
+aofctl <verb> <resource_type> [name] [flags]
 ```
+
+## Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `run` | Run an agent or workflow |
+| `get` | Get/list resources |
+| `apply` | Apply configuration from file |
+| `delete` | Delete resources |
+| `describe` | Describe resources in detail |
+| `logs` | Get logs from a resource |
+| `exec` | Execute a command in a resource |
+| `api-resources` | List available API resources |
+| `version` | Show version information |
 
 ---
 
-## Agent Commands
+## apply
 
-Manage AI agents.
-
-### `aofctl agent apply`
-
-Create or update an agent from a YAML file.
+Apply configuration from a YAML file.
 
 ```bash
-aofctl agent apply -f agent.yaml [flags]
+aofctl apply -f <file> [flags]
 ```
 
 **Flags:**
-- `-f, --file string` - Path to agent YAML file
-- `--dry-run` - Validate without applying
-- `--force` - Force update even if agent is running
+- `-f, --file string` - Path to YAML file (required)
+- `-n, --namespace string` - Namespace for resources
 
 **Examples:**
 ```bash
 # Apply agent configuration
-aofctl agent apply -f my-agent.yaml
+aofctl apply -f my-agent.yaml
 
-# Dry run to validate
-aofctl agent apply -f my-agent.yaml --dry-run
-
-# Apply multiple files
-aofctl agent apply -f agent1.yaml -f agent2.yaml
-
-# Apply from directory
-aofctl agent apply -f ./agents/
+# Apply with namespace
+aofctl apply -f my-agent.yaml -n production
 ```
 
 ---
 
-### `aofctl agent get`
+## get
 
-List or retrieve agents.
+List or retrieve resources.
 
 ```bash
-aofctl agent get [name] [flags]
+aofctl get <resource_type> [name] [flags]
 ```
 
 **Flags:**
-- `-o, --output string` - Output format: json|yaml|table
-- `-l, --selector string` - Label selector (e.g., "env=prod")
-- `--all-namespaces` - Show agents across all namespaces
+- `-o, --output string` - Output format: json|yaml|wide|name (default: wide)
+- `--all-namespaces` - Show resources across all namespaces
 
 **Examples:**
 ```bash
 # List all agents
-aofctl agent get
+aofctl get agent
 
 # Get specific agent
-aofctl agent get my-agent
+aofctl get agent my-agent
 
 # Get as YAML
-aofctl agent get my-agent -o yaml
-
-# Filter by label
-aofctl agent get -l env=production
+aofctl get agent my-agent -o yaml
 
 # All namespaces
-aofctl agent get --all-namespaces
+aofctl get agent --all-namespaces
 ```
 
 **Output:**
@@ -92,17 +86,20 @@ incident-responder openai:gpt-4   Running   1d
 
 ---
 
-### `aofctl agent describe`
+## describe
 
-Show detailed information about an agent.
+Show detailed information about a resource.
 
 ```bash
-aofctl agent describe <name> [flags]
+aofctl describe <resource_type> <name> [flags]
 ```
+
+**Flags:**
+- `-n, --namespace string` - Namespace
 
 **Examples:**
 ```bash
-aofctl agent describe my-agent
+aofctl describe agent my-agent
 ```
 
 **Output:**
@@ -145,33 +142,28 @@ Recent Conversations:
 
 ---
 
-### `aofctl agent run`
+## run
 
-Run an agent interactively.
+Run an agent or workflow.
 
 ```bash
-aofctl agent run <file-or-name> [flags]
+aofctl run <resource_type> <name_or_file> [flags]
 ```
 
 **Flags:**
-- `-f, --file string` - Agent YAML file
-- `--input string` - Single query (non-interactive)
-- `--context string` - Additional context
-- `--timeout int` - Response timeout in seconds
+- `-i, --input string` - Input/query for the agent
+- `-o, --output string` - Output format: json|yaml|text (default: text)
 
 **Examples:**
 ```bash
 # Interactive mode
-aofctl agent run my-agent.yaml
+aofctl run agent my-agent.yaml
 
-# From applied agent
-aofctl agent run my-agent
+# With query
+aofctl run agent my-agent.yaml -i "Show me all pods"
 
-# Single query
-aofctl agent run my-agent --input "Show me all pods"
-
-# With context
-aofctl agent run my-agent --context "namespace=production"
+# Run workflow
+aofctl run workflow incident-response.yaml
 ```
 
 **Interactive Session:**
@@ -200,131 +192,63 @@ Session ended. Summary:
 
 ---
 
-### `aofctl agent chat`
+## exec
 
-Chat with an applied agent.
+Execute a command in a resource.
 
 ```bash
-aofctl agent chat <name> [message] [flags]
+aofctl exec <resource_type> <name> [command...] [flags]
 ```
 
 **Examples:**
 ```bash
-# Interactive chat
-aofctl agent chat my-agent
-
-# Single message
-aofctl agent chat my-agent "What's the cluster status?"
+# Execute command
+aofctl exec agent k8s-helper -- kubectl get pods
 ```
 
 ---
 
-### `aofctl agent exec`
+## delete
 
-Execute a single command with an agent.
+Delete a resource.
 
 ```bash
-aofctl agent exec <name> <message> [flags]
+aofctl delete <resource_type> <name> [flags]
 ```
 
 **Flags:**
-- `--timeout int` - Timeout in seconds (default: 120)
-- `--context string` - Additional context
+- `-n, --namespace string` - Namespace
 
 **Examples:**
 ```bash
-# Single execution
-aofctl agent exec k8s-helper "Show failing pods"
-
-# With timeout
-aofctl agent exec my-agent "Long running task" --timeout 300
+# Delete agent
+aofctl delete agent my-agent
 ```
 
 ---
 
-### `aofctl agent delete`
+## logs
 
-Delete an agent.
-
-```bash
-aofctl agent delete <name> [flags]
-```
-
-**Flags:**
-- `--force` - Skip confirmation
-- `--cascade` - Delete associated resources
-
-**Examples:**
-```bash
-# Delete with confirmation
-aofctl agent delete my-agent
-
-# Force delete
-aofctl agent delete my-agent --force
-```
-
----
-
-### `aofctl agent logs`
-
-View agent execution logs.
+View resource logs.
 
 ```bash
-aofctl agent logs <name> [flags]
+aofctl logs <resource_type> <name> [flags]
 ```
 
 **Flags:**
 - `-f, --follow` - Stream logs in real-time
-- `--tail int` - Number of recent lines (default: 100)
-- `--since string` - Show logs since timestamp (e.g., "1h", "2024-01-20")
-- `--filter string` - Filter logs by pattern
+- `--tail int` - Number of recent lines
 
 **Examples:**
 ```bash
 # View recent logs
-aofctl agent logs my-agent
+aofctl logs agent my-agent
 
 # Follow logs
-aofctl agent logs my-agent -f
+aofctl logs agent my-agent -f
 
 # Last 50 lines
-aofctl agent logs my-agent --tail 50
-
-# Since 1 hour ago
-aofctl agent logs my-agent --since 1h
-
-# Filter for errors
-aofctl agent logs my-agent --filter error
-```
-
----
-
-### `aofctl agent validate`
-
-Validate agent YAML without applying.
-
-```bash
-aofctl agent validate -f <file> [flags]
-```
-
-**Examples:**
-```bash
-aofctl agent validate -f my-agent.yaml
-```
-
-**Output:**
-```
-✓ YAML syntax valid
-✓ API version supported
-✓ Required fields present
-✓ Model format correct (openai:gpt-4)
-✓ Tools configuration valid
-✓ Memory configuration valid
-
-Warnings:
-  - Temperature 1.5 is high, consider 0.3-0.7 for operations
-
-Agent is valid and ready to apply.
+aofctl logs agent my-agent --tail 50
 ```
 
 ---
@@ -745,25 +669,20 @@ spec:
   model: openai:gpt-4
   instructions: "You are a K8s expert"
   tools:
-    - type: Shell
-      config:
-        allowed_commands: [kubectl]
+    - shell
 EOF
 
-# 2. Validate
-aofctl agent validate -f my-agent.yaml
+# 2. Apply
+aofctl apply -f my-agent.yaml
 
-# 3. Apply
-aofctl agent apply -f my-agent.yaml
+# 3. Test
+aofctl run agent my-agent.yaml -i "Show me all pods"
 
-# 4. Test
-aofctl agent chat k8s-helper "Show me all pods"
+# 4. View logs
+aofctl logs agent k8s-helper --tail 20
 
-# 5. View logs
-aofctl agent logs k8s-helper --tail 20
-
-# 6. Get status
-aofctl agent describe k8s-helper
+# 5. Get status
+aofctl describe agent k8s-helper
 ```
 
 ---

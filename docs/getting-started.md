@@ -83,14 +83,14 @@ kind: Agent
 metadata:
   name: hello-assistant
 spec:
-  model: google:gemini-2.0-flash
+  model: google:gemini-2.5-flash
   instructions: |
     You are a friendly assistant that helps DevOps engineers.
     Keep responses concise and practical.
 ```
 
 > **Note**: You can use any supported model:
-> - `google:gemini-2.0-flash` - Google Gemini (requires `GOOGLE_API_KEY`)
+> - `google:gemini-2.5-flash` - Google Gemini (requires `GOOGLE_API_KEY`)
 > - `openai:gpt-4` - OpenAI GPT-4 (requires `OPENAI_API_KEY`)
 > - `anthropic:claude-3-5-sonnet-20241022` - Anthropic Claude (requires `ANTHROPIC_API_KEY`)
 > - `ollama:llama3` - Local Ollama (no API key needed)
@@ -98,8 +98,8 @@ spec:
 ### Step 4: Run Your Agent
 
 ```bash
-# Interactive chat mode
-aofctl agent run hello-agent.yaml
+# Interactive mode
+aofctl run agent hello-agent.yaml
 
 # You'll see:
 > Agent 'hello-assistant' is ready. Type your message (or 'exit' to quit):
@@ -130,18 +130,13 @@ spec:
     and troubleshoot their clusters. Always explain what commands do before running them.
 
   tools:
-    - type: Shell
-      config:
-        allowed_commands:
-          - kubectl
-          - helm
-        working_directory: /tmp
+    - shell
 ```
 
 Save this as `k8s-agent.yaml` and run:
 
 ```bash
-aofctl agent run k8s-agent.yaml
+aofctl run agent k8s-agent.yaml
 ```
 
 Now try:
@@ -188,11 +183,11 @@ The agent can't use tools you don't have installed. Either:
 
 ### "Model not supported"
 Check your provider:model format:
-- ✅ `google:gemini-2.0-flash`
+- ✅ `google:gemini-2.5-flash`
 - ✅ `openai:gpt-4`
 - ✅ `anthropic:claude-3-5-sonnet-20241022`
 - ✅ `ollama:llama3`
-- ❌ `gpt-4` (missing provider)
+- ⚠️ `gpt-4` (defaults to Anthropic - better to specify provider)
 
 ## Getting Help
 

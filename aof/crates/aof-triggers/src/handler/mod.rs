@@ -239,6 +239,7 @@ impl TriggerHandler {
                                 name: task.agent_name.clone(),
                                 system_prompt: Some("You are a helpful AI assistant.".to_string()),
                                 model: "claude-3-5-sonnet-20241022".to_string(),
+                                provider: None,
                                 tools: vec![],
                                 memory: None,
                                 max_iterations: 10,

@@ -241,25 +241,6 @@ async fn test_bedrock_temperature_override() {
     }
 }
 
-#[cfg(not(feature = "bedrock"))]
-#[tokio::test]
-async fn test_bedrock_feature_disabled() {
-    use aof_core::{ModelConfig, ModelProvider};
-    use aof_llm::provider::bedrock::BedrockProvider;
-    use std::collections::HashMap;
-
-    let config = ModelConfig {
-        model: "anthropic.claude-3-sonnet-20240229-v1:0".to_string(),
-        provider: ModelProvider::Bedrock,
-        api_key: None,
-        endpoint: None,
-        temperature: 0.7,
-        max_tokens: Some(4096),
-        timeout_secs: 60,
-        headers: HashMap::new(),
-        extra: HashMap::new(),
-    };
-
-    let result = BedrockProvider::create(config).await;
-    assert!(result.is_err(), "Should fail when bedrock feature is disabled");
-}
+// Note: The bedrock feature is optional. When not enabled, the bedrock module
+// is not compiled and BedrockProvider is not available. This is the expected
+// behavior - users who need Bedrock support should enable the feature.

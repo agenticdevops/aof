@@ -11,7 +11,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 use super::{PlatformError, TriggerMessage, TriggerPlatform, TriggerUser};
 use crate::response::TriggerResponse;
@@ -451,7 +451,7 @@ impl TriggerPlatform for WhatsAppPlatform {
                     return Err(PlatformError::UnsupportedMessageType);
                 }
 
-                for message in value.messages {
+                if let Some(message) = value.messages.into_iter().next() {
                     // Check if number is allowed
                     if !self.is_number_allowed(&message.from) {
                         warn!("Phone number {} not allowed", message.from);

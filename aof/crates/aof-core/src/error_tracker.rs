@@ -137,14 +137,14 @@ impl ErrorKnowledgeBase {
         // Index by error type
         self.error_index
             .entry(error_type)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(error_id.clone());
 
         // Index by tags
         for tag in &error.tags {
             self.tag_index
                 .entry(tag.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(error_id.clone());
         }
 

@@ -292,20 +292,16 @@ impl Runtime {
 
     // Helper: Create model config from agent config
     fn create_model_config(&self, config: &AgentConfig) -> AofResult<ModelConfig> {
-        // Parse model string (format: "provider:model" or just "model")
+        // Parse provider from model string (format: "provider:model") or separate provider field
         let (provider, model) = if config.model.contains(':') {
+            // Format: "google:gemini-2.0-flash" or "openai:gpt-4"
             let parts: Vec<&str> = config.model.splitn(2, ':').collect();
-            let provider = match parts[0].to_lowercase().as_str() {
-                "anthropic" => ModelProvider::Anthropic,
-                "openai" => ModelProvider::OpenAI,
-                "google" => ModelProvider::Google,
-                "bedrock" => ModelProvider::Bedrock,
-                "azure" => ModelProvider::Azure,
-                "ollama" => ModelProvider::Ollama,
-                "groq" => ModelProvider::Groq,
-                _ => ModelProvider::Custom,
-            };
+            let provider = Self::parse_provider(parts[0]);
             (provider, parts[1].to_string())
+        } else if let Some(ref provider_str) = config.provider {
+            // Separate provider field: provider: google, model: gemini-2.0-flash
+            let provider = Self::parse_provider(provider_str);
+            (provider, config.model.clone())
         } else {
             // Default to Anthropic if no provider specified
             (ModelProvider::Anthropic, config.model.clone())
@@ -322,6 +318,20 @@ impl Runtime {
             headers: HashMap::new(),
             extra: HashMap::new(),
         })
+    }
+
+    // Helper: Parse provider string to ModelProvider enum
+    fn parse_provider(provider_str: &str) -> ModelProvider {
+        match provider_str.to_lowercase().as_str() {
+            "anthropic" | "claude" => ModelProvider::Anthropic,
+            "openai" | "gpt" => ModelProvider::OpenAI,
+            "google" | "gemini" => ModelProvider::Google,
+            "bedrock" | "aws" => ModelProvider::Bedrock,
+            "azure" => ModelProvider::Azure,
+            "ollama" => ModelProvider::Ollama,
+            "groq" => ModelProvider::Groq,
+            _ => ModelProvider::Custom,
+        }
     }
 
     // Helper: Create tool executor from tool list
@@ -664,6 +674,7 @@ mod tests {
             name: "test-agent".to_string(),
             system_prompt: None,
             model: "anthropic:claude-3-5-sonnet-20241022".to_string(),
+            provider: None,
             tools: vec![],
             memory: None,
             max_iterations: 10,
@@ -686,6 +697,7 @@ mod tests {
             name: "test-agent".to_string(),
             system_prompt: None,
             model: "gpt-4".to_string(),
+            provider: None,
             tools: vec![],
             memory: None,
             max_iterations: 10,

@@ -164,8 +164,13 @@ pub struct AgentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_prompt: Option<String>,
 
-    /// Model to use
+    /// Model to use (can be "provider:model" format or just "model")
     pub model: String,
+
+    /// LLM provider (anthropic, openai, google, ollama, groq, bedrock, azure)
+    /// Optional if provider is specified in model string (e.g., "google:gemini-2.0-flash")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 
     /// Tools available to agent
     #[serde(default)]
@@ -225,6 +230,7 @@ struct KubernetesMetadata {
 #[derive(Debug, Clone, Deserialize)]
 struct AgentSpec {
     model: String,
+    provider: Option<String>,
     #[serde(alias = "system_prompt")]
     instructions: Option<String>,
     #[serde(default)]
@@ -245,6 +251,7 @@ struct FlatAgentConfig {
     #[serde(alias = "instructions")]
     system_prompt: Option<String>,
     model: String,
+    provider: Option<String>,
     #[serde(default)]
     tools: Vec<String>,
     memory: Option<String>,
@@ -264,6 +271,7 @@ impl From<AgentConfigInput> for AgentConfig {
                 name: flat.name,
                 system_prompt: flat.system_prompt,
                 model: flat.model,
+                provider: flat.provider,
                 tools: flat.tools,
                 memory: flat.memory,
                 max_iterations: flat.max_iterations,
@@ -276,6 +284,7 @@ impl From<AgentConfigInput> for AgentConfig {
                     name: k8s.metadata.name,
                     system_prompt: k8s.spec.instructions,
                     model: k8s.spec.model,
+                    provider: k8s.spec.provider,
                     tools: k8s.spec.tools,
                     memory: k8s.spec.memory,
                     max_iterations: k8s.spec.max_iterations,

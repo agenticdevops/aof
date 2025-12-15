@@ -46,7 +46,6 @@ const sidebars: SidebarsConfig = {
         'reference/agent-spec',
         'reference/agentflow-spec',
         'reference/aofctl',
-        'reference/aofctl-examples',
       ],
     },
   ],

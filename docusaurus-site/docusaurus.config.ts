@@ -40,7 +40,18 @@ const config: Config = {
       'classic',
       {
         docs: {
+          // Use main docs/ folder as single source of truth
+          path: '../docs',
           sidebarPath: './sidebars.ts',
+          // Exclude internal/technical docs not meant for public site
+          exclude: [
+            'LLM_*.md',
+            'RUVECTOR_*.md',
+            'DOCUMENTATION_INDEX.md',
+            'architecture/**',
+            'schemas/**',
+            'agentflow/**',
+          ],
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:

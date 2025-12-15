@@ -12,7 +12,7 @@ use ratatui::{
     backend::CrosstermBackend,
     Terminal,
     prelude::*,
-    widgets::{Block, Borders, Paragraph, Wrap, Gauge, Scrollbar, ScrollbarOrientation, ScrollbarState, BarChart, BarGroup, Bar},
+    widgets::{Block, Borders, Paragraph, Wrap, Gauge, Scrollbar, ScrollbarOrientation, ScrollbarState},
     text::{Line, Span},
     style::{Modifier, Color, Style},
     layout::{Layout, Direction, Alignment, Constraint},
@@ -563,7 +563,7 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
     // Apply manual scroll offset (user scrolling up/down)
     if app.chat_scroll_offset > 0 {
         scroll_offset = scroll_offset.saturating_add(app.chat_scroll_offset as usize);
-    } else if app.chat_scroll_offset == 0 && app.agent_busy == false {
+    } else if app.chat_scroll_offset == 0 && !app.agent_busy {
         // Auto-scroll to bottom when not scrolled and agent is idle
         scroll_offset = if total_lines > visible_height {
             total_lines.saturating_sub(visible_height)

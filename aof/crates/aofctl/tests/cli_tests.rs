@@ -157,5 +157,5 @@ fn test_delete_agent() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Not yet implemented"));
+        .stdout(predicate::str::contains("deleted successfully"));
 }

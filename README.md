@@ -19,7 +19,7 @@ AOF is a Rust-based framework that lets DevOps, SRE, and Platform engineers buil
 
 - **🎯 YAML-First**: Define agents like K8s resources - no code required
 - **🛠️ MCP Tooling**: Native Model Context Protocol support for extensible tools
-- **🔀 Multi-Provider**: OpenAI, Anthropic, Ollama, Groq - switch with one line
+- **🔀 Multi-Provider**: OpenAI, Anthropic, Google Gemini, Ollama, Groq - switch with one line
 - **📊 AgentFlow**: n8n-style visual DAG workflows for complex automation
 - **🚀 Production Ready**: Built in Rust for performance and reliability
 - **🔧 Ops-Native**: kubectl-style CLI that feels familiar
@@ -69,16 +69,14 @@ spec:
     You are a helpful Kubernetes expert. Help users with kubectl commands,
     troubleshoot pod issues, and explain K8s concepts clearly.
   tools:
-    - type: Shell
-      config:
-        allowed_commands: ["kubectl"]
+    - shell
 EOF
 
 # Run it interactively
-aofctl agent run my-agent.yaml
+aofctl run agent my-agent.yaml
 
-# Chat with your agent
-> How do I check if my pods are running?
+# Or with a query
+aofctl run agent my-agent.yaml -i "How do I check if my pods are running?"
 ```
 
 ## What Can You Build?
@@ -110,7 +108,8 @@ aofctl agent run my-agent.yaml
         │                     │                     │
 ┌───────▼────────┐  ┌────────▼────────┐  ┌────────▼────────┐
 │  LLM Providers │  │   MCP Servers   │  │  Integrations   │
-│ (OpenAI/Claude)│  │  (kubectl/git)  │  │ (Slack/PagerDuty)│
+│(OpenAI/Claude/ │  │  (kubectl/git)  │  │(Slack/PagerDuty/ │
+│ Gemini/Ollama) │  │                 │  │Discord/Telegram) │
 └────────────────┘  └─────────────────┘  └─────────────────┘
 ```
 
@@ -172,9 +171,9 @@ spec:
 ## Community & Support
 
 - **Documentation**: [https://aof.dev/docs](https://aof.dev/docs)
-- **GitHub**: [https://github.com/yourusername/aof](https://github.com/yourusername/aof)
-- **Issues**: [Report bugs or request features](https://github.com/yourusername/aof/issues)
-- **Discussions**: [Join the community](https://github.com/yourusername/aof/discussions)
+- **GitHub**: [https://github.com/agenticdevops/aof](https://github.com/agenticdevops/aof)
+- **Issues**: [Report bugs or request features](https://github.com/agenticdevops/aof/issues)
+- **Discussions**: [Join the community](https://github.com/agenticdevops/aof/discussions)
 
 ## Contributing
 

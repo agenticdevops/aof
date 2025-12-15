@@ -62,7 +62,9 @@ async fn test_telegram_parse_text_message() {
     }"#;
 
     let platform = TelegramPlatform::new(test_config()).unwrap();
-    let headers = HashMap::new();
+    let mut headers = HashMap::new();
+    // Add the secret token header that Telegram sends with webhooks
+    headers.insert("x-telegram-bot-api-secret-token".to_string(), "test_secret".to_string());
     let message = platform.parse_message(payload.as_bytes(), &headers).await.unwrap();
 
     assert_eq!(message.platform, "telegram");
@@ -114,7 +116,9 @@ async fn test_telegram_parse_group_message() {
     }"#;
 
     let platform = TelegramPlatform::new(test_config()).unwrap();
-    let headers = HashMap::new();
+    let mut headers = HashMap::new();
+    // Add the secret token header that Telegram sends with webhooks
+    headers.insert("x-telegram-bot-api-secret-token".to_string(), "test_secret".to_string());
     let message = platform.parse_message(payload.as_bytes(), &headers).await.unwrap();
 
     assert_eq!(message.channel_id, "-1001234567890");

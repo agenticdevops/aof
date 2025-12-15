@@ -188,7 +188,7 @@ impl TelegramPlatform {
 
         let response: TelegramApiResponse<bool> = self
             .client
-            .post(&self.api_url("setWebhook"))
+            .post(self.api_url("setWebhook"))
             .json(&params)
             .send()
             .await
@@ -211,7 +211,7 @@ impl TelegramPlatform {
     pub async fn delete_webhook(&self) -> Result<bool, PlatformError> {
         let response: TelegramApiResponse<bool> = self
             .client
-            .post(&self.api_url("deleteWebhook"))
+            .post(self.api_url("deleteWebhook"))
             .send()
             .await
             .map_err(|e| PlatformError::ApiError(format!("HTTP request failed: {}", e)))?
@@ -254,7 +254,7 @@ impl TelegramPlatform {
 
         let response: TelegramApiResponse<TelegramMessage> = self
             .client
-            .post(&self.api_url("sendMessage"))
+            .post(self.api_url("sendMessage"))
             .json(&params)
             .send()
             .await
@@ -293,7 +293,7 @@ impl TelegramPlatform {
 
         let response: TelegramApiResponse<bool> = self
             .client
-            .post(&self.api_url("answerCallbackQuery"))
+            .post(self.api_url("answerCallbackQuery"))
             .json(&params)
             .send()
             .await

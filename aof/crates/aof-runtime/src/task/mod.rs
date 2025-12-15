@@ -2,7 +2,7 @@
 //!
 //! Provides task scheduling and execution coordination for agents.
 
-use aof_core::{AgentContext, AofResult};
+use aof_core::AofResult;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
