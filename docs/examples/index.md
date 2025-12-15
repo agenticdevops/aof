@@ -302,8 +302,8 @@ aofctl agent run kubernetes-agent.yaml --input "test query"
 
 ## Getting Help
 
-- **Tutorials**: See [docs/tutorials/](../tutorials/)
-- **Reference**: See [docs/reference/](../reference/)
+- **Tutorials**: See [First Agent Tutorial](../tutorials/first-agent)
+- **Reference**: See [aofctl CLI Reference](../reference/aofctl)
 - **Issues**: [GitHub Issues](https://github.com/yourusername/aof/issues)
 
 ---
