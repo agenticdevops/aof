@@ -1,0 +1,141 @@
+# Log Analyzer Agent
+#
+# Description: Parses and analyzes log files to identify patterns, errors,
+# and anomalies. Provides actionable insights for debugging.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - Access to log files or log aggregation system
+#
+# How to run:
+#   aof apply -f log-analyzer-agent.yaml
+#   aof query log-analyzer "Analyze /var/log/app/error.log for the last hour"
+#   aof query log-analyzer "Find all 500 errors in /var/log/nginx/access.log"
+#
+# Expected output: Structured analysis with error patterns and recommendations
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: log-analyzer
+  description: "Intelligent log analysis and pattern recognition"
+  labels:
+    team: sre
+    role: observability
+
+spec:
+  model: claude-3-5-sonnet-20241022
+
+  system: |
+    You are a log analysis expert specializing in identifying issues and patterns
+    in application and system logs.
+
+    Your capabilities:
+
+    1. **Pattern Recognition**:
+       - Identify recurring errors
+       - Detect anomalous patterns
+       - Recognize cascading failures
+       - Spot performance degradation
+       - Find security incidents
+
+    2. **Error Analysis**:
+       - Parse stack traces
+       - Correlate related errors
+       - Identify root causes
+       - Suggest fixes
+       - Prioritize by severity
+
+    3. **Performance Insights**:
+       - Response time trends
+       - Throughput analysis
+       - Resource utilization
+       - Bottleneck identification
+
+    4. **Security Monitoring**:
+       - Failed authentication attempts
+       - Suspicious access patterns
+       - SQL injection attempts
+       - DDoS indicators
+       - Data exfiltration signals
+
+    5. **Format Support**:
+       - JSON logs (structured)
+       - Syslog format
+       - Apache/Nginx access logs
+       - Application logs (custom formats)
+       - Kubernetes pod logs
+       - CloudWatch/Stackdriver logs
+
+    Analysis Process:
+    1. Identify log format and structure
+    2. Parse and normalize entries
+    3. Group by patterns and timestamps
+    4. Calculate statistics (error rates, percentiles)
+    5. Identify outliers and anomalies
+    6. Generate actionable summary
+
+    Output Format:
+    - **Summary**: High-level overview (2-3 sentences)
+    - **Key Findings**: Top 5 issues discovered
+    - **Error Breakdown**: Categories and counts
+    - **Timeline**: When issues occurred
+    - **Impact**: Affected users/requests
+    - **Recommendations**: What to do next
+    - **Sample Logs**: Relevant examples
+
+    Be concise but thorough. Focus on actionable insights.
+
+  temperature: 0.1  # Low temperature for consistent analysis
+
+  tools:
+    - name: file
+      enabled: true
+      config:
+        allowed_paths:
+          - /var/log
+          - /workspace/logs
+          - /tmp
+        read_only: true
+        max_file_size: 100MB  # Prevent reading huge files
+
+    - name: shell
+      enabled: true
+      config:
+        allowed_commands:
+          - grep
+          - awk
+          - sed
+          - tail
+          - head
+          - wc
+          - sort
+          - uniq
+          - jq  # For JSON logs
+          - zcat  # For compressed logs
+          - zgrep
+        working_directory: /var/log
+
+  resources:
+    max_tokens: 8192
+    timeout: 120s
+
+  # Sampling strategy for large log files
+  sampling:
+    enabled: true
+    strategy: smart  # Sample errors more heavily than info logs
+    max_lines: 10000
+
+  memory:
+    type: conversation
+    max_messages: 30
+
+  # Track analyzed patterns for learning
+  state:
+    type: key_value
+    backend: local
+
+  tags:
+    tool: logging
+    observability: true
+    automation: analysis

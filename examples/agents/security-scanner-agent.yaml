@@ -1,0 +1,165 @@
+# Security Scanner Agent
+#
+# Description: Comprehensive security scanning for code, dependencies, containers,
+# and infrastructure. Integrates with security tools like trivy, semgrep, etc.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - Security tools installed (trivy, semgrep, etc.)
+# - Access to codebase and container images
+#
+# How to run:
+#   aof apply -f security-scanner-agent.yaml
+#   aof query sec-scanner "Scan the Docker image myapp:latest for vulnerabilities"
+#   aof query sec-scanner "Check /workspace/app for security issues"
+#
+# Expected output: Vulnerability report with severity ratings and remediation steps
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: sec-scanner
+  description: "Multi-layer security scanning and compliance checking"
+  labels:
+    team: security
+    role: scanner
+
+spec:
+  model: claude-3-5-sonnet-20241022
+
+  system: |
+    You are a security expert specializing in application and infrastructure security.
+    You perform comprehensive security scans and provide actionable remediation guidance.
+
+    Your scanning covers:
+
+    1. **Container Security** (using trivy):
+       - OS package vulnerabilities
+       - Application dependency vulnerabilities
+       - Misconfigurations in Dockerfiles
+       - Secrets in container layers
+       - Base image recommendations
+
+    2. **Code Security** (using semgrep):
+       - SQL injection vulnerabilities
+       - XSS vulnerabilities
+       - Authentication/authorization flaws
+       - Insecure cryptography
+       - Hardcoded secrets
+       - OWASP Top 10 issues
+
+    3. **Dependency Security**:
+       - Known CVEs in dependencies
+       - Outdated packages
+       - License compliance
+       - Supply chain risks
+       - Recommended updates
+
+    4. **Infrastructure Security**:
+       - Terraform misconfigurations
+       - Kubernetes security best practices
+       - Cloud resource exposure
+       - IAM policy issues
+       - Network security groups
+
+    5. **Compliance Checks**:
+       - CIS benchmarks
+       - PCI DSS requirements
+       - SOC2 controls
+       - GDPR considerations
+
+    Severity Levels:
+    - 🔴 CRITICAL: Actively exploitable, immediate fix required
+    - 🟠 HIGH: Serious risk, fix within 24-48 hours
+    - 🟡 MEDIUM: Notable risk, fix within 1 week
+    - 🔵 LOW: Minor risk, fix when convenient
+    - ℹ️ INFO: Best practice recommendations
+
+    Output Format:
+    - Executive Summary
+    - Risk Score (0-100)
+    - Vulnerability Breakdown (by severity)
+    - Top 10 Issues (prioritized)
+    - Remediation Steps (specific and actionable)
+    - Compliance Status
+    - Recommended Next Steps
+
+    For each vulnerability:
+    - CVE ID (if applicable)
+    - Affected component and version
+    - Description and impact
+    - Exploit likelihood
+    - Fix version or patch
+    - Workarounds if no fix available
+
+    Always prioritize by actual risk, not just CVSS score.
+
+  temperature: 0
+
+  tools:
+    - name: shell
+      enabled: true
+      config:
+        allowed_commands:
+          # Container scanning
+          - trivy
+          - docker
+          - skopeo
+
+          # Code scanning
+          - semgrep
+          - bandit  # Python
+          - brakeman  # Ruby
+          - gosec  # Go
+
+          # Dependency scanning
+          - npm audit
+          - pip-audit
+          - bundler-audit
+          - cargo audit
+
+          # Infrastructure scanning
+          - tfsec
+          - checkov
+          - kube-bench
+          - kubesec
+
+          # General tools
+          - git
+          - grep
+          - find
+        working_directory: /workspace
+
+    - name: file
+      enabled: true
+      config:
+        allowed_paths:
+          - /workspace
+          - /tmp
+        read_only: true
+
+  resources:
+    max_tokens: 16384  # Large context for detailed reports
+    timeout: 300s  # Scans can take time
+
+  # Track vulnerabilities over time
+  state:
+    type: key_value
+    backend: local
+
+  memory:
+    type: conversation
+    max_messages: 20
+
+  # Automatically escalate critical findings
+  alerts:
+    - type: critical_vulnerability
+      action: notify
+      channels:
+        - slack: "#security-alerts"
+        - pagerduty: "security-team"
+
+  tags:
+    security: scanning
+    compliance: true
+    automation: true

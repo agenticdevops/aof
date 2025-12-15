@@ -1,0 +1,30 @@
+[package]
+name = "aof-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Agent execution runtime with task orchestration"
+
+[dependencies]
+aof-core = { workspace = true }
+aof-mcp = { workspace = true }
+aof-llm = { workspace = true }
+aof-memory = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+dashmap = { workspace = true }
+arc-swap = { workspace = true }
+parking_lot = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "full", "macros"] }
+futures = { workspace = true }

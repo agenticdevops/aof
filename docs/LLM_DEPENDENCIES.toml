@@ -1,0 +1,28 @@
+# Add these dependencies to your Cargo.toml
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Async trait support
+async-trait = "0.1"
+
+# HTTP client with streaming support
+reqwest = { version = "0.11", features = ["json", "stream"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async streams
+futures = "0.3"
+
+# Error handling
+thiserror = "1.0"
+
+# Optional: For better token counting (OpenAI)
+# tiktoken-rs = "0.5"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockito = "1.0"

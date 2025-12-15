@@ -1,0 +1,504 @@
+# Incident Response Agent
+# Diagnostic agent for incident investigation and triage
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: incident-diagnostic
+  labels:
+    purpose: diagnostics
+    team: sre
+    criticality: high
+
+spec:
+  # Claude Sonnet for strong analytical reasoning
+  model: anthropic:claude-3-5-sonnet-20241022
+
+  model_config:
+    temperature: 0.2      # Very low for deterministic analysis
+    max_tokens: 3000
+
+  instructions: |
+    You are an expert SRE performing incident diagnostics and triage.
+
+    Your role:
+    - Quickly assess incident severity and impact
+    - Identify root cause through systematic investigation
+    - Recommend immediate remediation steps
+    - Classify incidents for routing and escalation
+    - Document findings for post-mortems
+
+    Diagnostic process:
+    1. **Understand the alert**
+       - What service/component is affected?
+       - What error or symptom is reported?
+       - What metrics are abnormal?
+
+    2. **Check current state**
+       - Resource status (pods, deployments, services)
+       - Recent configuration changes
+       - Resource utilization (CPU, memory, disk)
+
+    3. **Review logs and events**
+       - Application logs for errors
+       - Kubernetes events
+       - Recent deployment activity
+
+    4. **Analyze patterns**
+       - Is this a known issue?
+       - Are other services affected?
+       - Is there correlation with recent changes?
+
+    5. **Determine impact**
+       - How many users affected?
+       - What functionality is broken?
+       - Is data at risk?
+
+    6. **Classify severity**
+       - CRITICAL: Complete outage, data loss risk
+       - HIGH: Major functionality broken, many users affected
+       - MEDIUM: Partial functionality broken, some users affected
+       - LOW: Minor issue, few users affected
+
+    7. **Recommend action**
+       - Immediate remediation steps
+       - Escalation requirements
+       - Rollback if needed
+
+    Output format (JSON):
+    ```json
+    {
+      "severity": "critical|high|medium|low",
+      "confidence": 0.0-1.0,
+      "root_cause": "Brief description of root cause",
+      "affected_components": ["component1", "component2"],
+      "user_impact": "Description of user-facing impact",
+      "business_impact": "Revenue/SLA/customer impact",
+      "timeline": {
+        "incident_start": "ISO timestamp",
+        "detection_time": "ISO timestamp",
+        "time_to_detect": "duration"
+      },
+      "symptoms": [
+        "Symptom 1",
+        "Symptom 2"
+      ],
+      "evidence": {
+        "logs": ["log excerpt 1", "log excerpt 2"],
+        "metrics": ["metric reading 1"],
+        "events": ["k8s event 1"]
+      },
+      "recommended_action": "Specific remediation step",
+      "requires_approval": true|false,
+      "rollback_required": true|false,
+      "escalation_needed": true|false,
+      "estimated_resolution_time": "15m|1h|4h|unknown"
+    }
+    ```
+
+  tools:
+    - type: Shell
+      config:
+        allowed_commands:
+          - kubectl
+          - helm
+        timeout_seconds: 120
+
+    - type: MCP
+      config:
+        name: kubectl-mcp
+        command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+
+    - type: HTTP
+      config:
+        timeout_seconds: 10
+
+  memory:
+    type: SQLite
+    config:
+      path: ./incident-diagnostics.db
+      # Separate memory per incident
+      context_key: "incident_${INCIDENT_ID}"
+
+---
+# Remediation Agent
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: incident-remediation
+  labels:
+    purpose: remediation
+    team: sre
+
+spec:
+  model: openai:gpt-4
+
+  model_config:
+    temperature: 0.1      # Very deterministic for safety
+    max_tokens: 2000
+
+  instructions: |
+    You are an expert SRE performing incident remediation.
+
+    Your role:
+    - Execute recommended remediation actions safely
+    - Verify fixes work as expected
+    - Monitor for regressions
+    - Rollback if remediation fails
+    - Document all actions taken
+
+    Safety protocols:
+    1. **Before executing**
+       - Verify current state matches expectations
+       - Use --dry-run for destructive operations
+       - Take snapshots of current configuration
+       - Estimate blast radius
+
+    2. **During execution**
+       - Execute one action at a time
+       - Monitor metrics continuously
+       - Watch for unexpected side effects
+       - Document each step
+
+    3. **After execution**
+       - Verify the fix resolved the issue
+       - Monitor for 60 seconds minimum
+       - Check for new errors
+       - Confirm metrics returned to normal
+
+    4. **Rollback if needed**
+       - Restore previous configuration
+       - Verify rollback succeeded
+       - Document why rollback was needed
+
+    Available remediation actions:
+    - Restart pods: `kubectl rollout restart deployment/<name>`
+    - Scale resources: `kubectl scale deployment/<name> --replicas=N`
+    - Rollback deployment: `kubectl rollout undo deployment/<name>`
+    - Delete stuck pod: `kubectl delete pod <name> --force --grace-period=0`
+    - Update resource: `kubectl patch <resource> <name> --patch=<patch>`
+    - Drain node: `kubectl drain <node> --ignore-daemonsets`
+
+    Output format (JSON):
+    ```json
+    {
+      "action_taken": "Specific command executed",
+      "action_type": "restart|scale|rollback|patch|delete",
+      "result": "success|failed|partial",
+      "verification": {
+        "health_check": "passed|failed",
+        "metrics_normal": true|false,
+        "errors_cleared": true|false
+      },
+      "rollback_needed": true|false,
+      "rollback_action": "Command to rollback",
+      "monitoring_notes": "What to watch for",
+      "logs": [
+        "Command output line 1",
+        "Command output line 2"
+      ]
+    }
+    ```
+
+  tools:
+    - type: Shell
+      config:
+        allowed_commands:
+          - kubectl
+          - helm
+        timeout_seconds: 300  # Longer for remediation
+
+    - type: MCP
+      config:
+        name: kubectl-mcp
+        command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+
+  memory:
+    type: SQLite
+    config:
+      path: ./incident-remediation.db
+
+---
+# Complete Incident Response Flow
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: incident-auto-response
+  labels:
+    team: sre
+    criticality: high
+
+spec:
+  # Triggered by PagerDuty alert
+  trigger:
+    type: Webhook
+    config:
+      path: /pagerduty/incident
+      methods: [POST]
+      auth:
+        type: Bearer
+        token: ${PAGERDUTY_WEBHOOK_TOKEN}
+
+  variables:
+    SLACK_CHANNEL: "#incidents"
+    APPROVAL_TIMEOUT: 600  # 10 minutes
+    MAX_AUTO_RETRIES: 3
+
+  nodes:
+    # 1. Parse alert
+    - id: parse-alert
+      type: Transform
+      config:
+        script: |
+          export INCIDENT_ID="${event.incident.id}"
+          export INCIDENT_TITLE="${event.incident.title}"
+          export INCIDENT_SERVICE="${event.incident.service.name}"
+          export INCIDENT_URGENCY="${event.incident.urgency}"
+          export INCIDENT_URL="${event.incident.html_url}"
+          export K8S_NAMESPACE="${event.incident.custom_details.namespace:-default}"
+          export K8S_RESOURCE="${event.incident.custom_details.resource}"
+
+    # 2. Immediate Slack notification
+    - id: notify-team
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        message: |
+          🚨 **INCIDENT ALERT**
+
+          **Title**: ${INCIDENT_TITLE}
+          **Service**: ${INCIDENT_SERVICE}
+          **Urgency**: ${INCIDENT_URGENCY}
+          **Status**: Investigating...
+
+          [View in PagerDuty](${INCIDENT_URL})
+
+    # 3. Run diagnostics
+    - id: diagnose
+      type: Agent
+      config:
+        agent: incident-diagnostic
+        input: |
+          INCIDENT: ${INCIDENT_TITLE}
+          SERVICE: ${INCIDENT_SERVICE}
+          NAMESPACE: ${K8S_NAMESPACE}
+          RESOURCE: ${K8S_RESOURCE}
+
+          Diagnose this incident:
+          1. Check resource status
+          2. Review recent logs
+          3. Check for related events
+          4. Identify root cause
+          5. Assess severity and impact
+          6. Recommend remediation
+        timeout_seconds: 180
+        context:
+          incident_id: ${INCIDENT_ID}
+
+    # 4. Update with diagnostic findings
+    - id: update-diagnosis
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        message: |
+          🔍 **Diagnostic Complete**
+
+          **Severity**: ${diagnose.output.severity}
+          **Root Cause**: ${diagnose.output.root_cause}
+          **Impact**: ${diagnose.output.user_impact}
+
+          **Recommended Action**: ${diagnose.output.recommended_action}
+          **Requires Approval**: ${diagnose.output.requires_approval}
+
+    # 5. Check if approval needed
+    - id: needs-approval
+      type: Conditional
+      config:
+        conditions:
+          - name: critical
+            expression: ${diagnose.output.severity} == "critical"
+          - name: requires_approval
+            expression: ${diagnose.output.requires_approval} == true
+          - name: auto_proceed
+            expression: true
+
+    # 6a. Request approval for critical
+    - id: request-approval
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        message: |
+          ⚠️ **APPROVAL REQUIRED**
+
+          **Action**: ${diagnose.output.recommended_action}
+          **Risk**: High
+          **Confidence**: ${diagnose.output.confidence}
+
+          React ✅ to approve, ⏸️ to pause, ❌ to skip
+
+          cc: @oncall @sre-lead
+        wait_for_reaction: true
+        timeout_seconds: ${APPROVAL_TIMEOUT}
+      conditions:
+        - from: needs-approval
+          value: critical
+        - from: needs-approval
+          value: requires_approval
+
+    # 6b. Auto-proceed for non-critical
+    - id: auto-approved
+      type: Transform
+      config:
+        script: export APPROVED=true
+      conditions:
+        - from: needs-approval
+          value: auto_proceed
+
+    # 7. Execute remediation
+    - id: remediate
+      type: Agent
+      config:
+        agent: incident-remediation
+        input: |
+          Execute remediation for incident ${INCIDENT_ID}:
+
+          Action: ${diagnose.output.recommended_action}
+          Namespace: ${K8S_NAMESPACE}
+          Resource: ${K8S_RESOURCE}
+
+          Safety protocol:
+          1. Verify current state
+          2. Take configuration snapshot
+          3. Execute action
+          4. Monitor for 60 seconds
+          5. Verify fix worked
+          6. Rollback if failed
+        timeout_seconds: 300
+      conditions:
+        - from: request-approval
+          when: reaction == "white_check_mark"
+        - from: auto-approved
+
+    # 8. Verify fix
+    - id: verify
+      type: Agent
+      config:
+        agent: incident-diagnostic
+        input: |
+          Verify incident ${INCIDENT_ID} is resolved:
+
+          Original issue: ${INCIDENT_TITLE}
+          Remediation: ${remediate.output.action_taken}
+
+          Check:
+          1. Error symptoms cleared
+          2. Metrics returned to normal
+          3. No new errors introduced
+        timeout_seconds: 120
+
+    # 9. Handle success
+    - id: notify-resolved
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        message: |
+          ✅ **INCIDENT RESOLVED**
+
+          **Incident**: ${INCIDENT_TITLE}
+          **Root Cause**: ${diagnose.output.root_cause}
+          **Resolution**: ${remediate.output.action_taken}
+          **Verification**: ${verify.output}
+
+          **Resolution Time**: ${flow.duration_seconds}s
+          **Status**: Auto-resolved
+      conditions:
+        - from: remediate
+          when: ${result} == "success"
+
+    # 10. Handle failure
+    - id: notify-failed
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        message: |
+          ❌ **AUTO-REMEDIATION FAILED**
+
+          **Incident**: ${INCIDENT_TITLE}
+          **Attempted**: ${remediate.output.action_taken}
+          **Result**: ${remediate.output.result}
+
+          🚨 **MANUAL INTERVENTION REQUIRED**
+
+          @oncall please investigate immediately
+
+          [PagerDuty](${INCIDENT_URL})
+      conditions:
+        - from: remediate
+          when: ${result} != "success"
+
+    # 11. Close PagerDuty incident (success only)
+    - id: close-incident
+      type: HTTP
+      config:
+        method: PUT
+        url: https://api.pagerduty.com/incidents/${INCIDENT_ID}
+        headers:
+          Authorization: "Token token=${PAGERDUTY_API_KEY}"
+          Content-Type: "application/json"
+        body: |
+          {
+            "incident": {
+              "type": "incident_reference",
+              "status": "resolved",
+              "resolution": "Auto-resolved by AOF: ${remediate.output.action_taken}"
+            }
+          }
+      conditions:
+        - from: remediate
+          when: ${result} == "success"
+
+  connections:
+    - from: parse-alert
+      to: notify-team
+    - from: notify-team
+      to: diagnose
+    - from: diagnose
+      to: update-diagnosis
+    - from: update-diagnosis
+      to: needs-approval
+    - from: needs-approval
+      to: request-approval
+      to: auto-approved
+    - from: request-approval
+      to: remediate
+    - from: auto-approved
+      to: remediate
+    - from: remediate
+      to: verify
+    - from: verify
+      to: notify-resolved
+      to: notify-failed
+    - from: notify-resolved
+      to: close-incident
+
+---
+# Setup:
+#
+# 1. Set environment variables:
+#    export PAGERDUTY_WEBHOOK_TOKEN=...
+#    export PAGERDUTY_API_KEY=...
+#    export SLACK_BOT_TOKEN=...
+#    export SLACK_SIGNING_SECRET=...
+#
+# 2. Apply agents:
+#    aofctl agent apply -f incident-responder.yaml
+#
+# 3. Apply flow:
+#    aofctl flow apply -f incident-responder.yaml
+#
+# 4. Start flow:
+#    aofctl flow run incident-auto-response --daemon
+#
+# 5. Configure PagerDuty webhook:
+#    URL: https://your-domain.com/pagerduty/incident
+#    Events: incident.triggered

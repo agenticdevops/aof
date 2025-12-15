@@ -1,0 +1,653 @@
+# Complete K8s Runbook RAG Agent Example
+
+# Step 1: Create Memory Backend
+---
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Memory
+metadata:
+  name: k8s-runbook-memory
+  namespace: sre-platform
+  labels:
+    app: k8s-expert
+    tier: knowledge-base
+spec:
+  # Conversational Memory - Redis for fast access
+  backend:
+    type: Redis
+    redis:
+      url: redis://redis-master.redis:6379
+      secretRef:
+        name: redis-credentials
+        key: password
+      db: 0
+      poolSize: 20
+      ttl: 7d
+      tls:
+        enabled: true
+        insecureSkipVerify: false
+
+  # Conversational memory for agent interactions
+  conversational:
+    enabled: true
+    ttl: 7d
+    maxMessages: 100
+    maxTokens: 50000
+    summarization:
+      enabled: true
+      model: gpt-4o-mini
+      triggerThreshold: 50
+      strategy: rolling
+    compression:
+      enabled: true
+      algorithm: zstd
+
+  # Semantic memory with Qdrant vector store
+  semantic:
+    enabled: true
+
+    # OpenAI embeddings
+    embedding:
+      provider: OpenAI
+      model: text-embedding-3-small
+      dimensions: 1536
+      apiKeySecretRef:
+        name: openai-credentials
+        key: api-key
+      batchSize: 100
+      timeout: 30s
+
+    # Qdrant vector store
+    vectorStore:
+      type: Qdrant
+      qdrant:
+        url: http://qdrant.vector-db:6333
+        apiKeySecretRef:
+          name: qdrant-credentials
+          key: api-key
+        collection: k8s-runbooks
+        vectorSize: 1536
+        distance: Cosine
+        onDisk: true
+
+    # Indexing configuration
+    indexing:
+      strategy: immediate
+      batchSize: 50
+
+    # Retrieval configuration
+    retrieval:
+      defaultTopK: 5
+      hybridSearch:
+        enabled: true
+        keywordWeight: 0.2
+        semanticWeight: 0.8
+      reranking:
+        enabled: true
+        model: cohere-rerank-v3
+        topK: 3
+      filtering:
+        enabled: true
+        fields:
+          - metadata.category
+          - metadata.severity
+          - metadata.k8s_version
+
+  # Knowledge base integration
+  knowledge:
+    enabled: true
+    sources:
+      - name: official-docs
+        type: GitHub
+        knowledgeBaseRef: k8s-official-docs
+        syncSchedule: "0 2 * * *"  # Daily at 2 AM
+        enabled: true
+
+      - name: runbooks
+        type: GitHub
+        knowledgeBaseRef: k8s-runbooks-repo
+        syncSchedule: "*/15 * * * *"  # Every 15 minutes
+        enabled: true
+
+      - name: incident-reports
+        type: Confluence
+        knowledgeBaseRef: sre-confluence
+        syncSchedule: "0 * * * *"  # Hourly
+        enabled: true
+
+  # Lifecycle management
+  lifecycle:
+    retention:
+      enabled: true
+      policy: time
+      maxAge: 90d
+    archival:
+      enabled: true
+      backend: S3
+      threshold: 60d
+    backup:
+      enabled: true
+      schedule: "0 1 * * *"  # Daily at 1 AM
+      retention: 7
+
+  # Access control
+  access:
+    isolation: namespace
+    encryption:
+      atRest: true
+      inTransit: true
+      keySecretRef:
+        name: encryption-key
+        key: key
+    rbac:
+      enabled: true
+      rules:
+        - subjects: ["system:serviceaccount:sre-platform:k8s-expert"]
+          permissions: [read, write]
+        - subjects: ["group:sre-team"]
+          permissions: [read]
+
+  # Observability
+  observability:
+    metrics:
+      enabled: true
+      interval: 30s
+    tracing:
+      enabled: true
+      sampler: ratio
+      samplingRatio: 0.1
+    logging:
+      level: info
+      operations: [read, write, search]
+
+---
+# Step 2: Create Knowledge Base for Kubernetes Official Docs
+apiVersion: aof.agenticops.org/v1alpha1
+kind: KnowledgeBase
+metadata:
+  name: k8s-official-docs
+  namespace: sre-platform
+spec:
+  description: "Kubernetes official documentation from GitHub"
+
+  sources:
+    - name: k8s-docs
+      type: GitHub
+      enabled: true
+      github:
+        owner: kubernetes
+        repo: website
+        branch: main
+        paths:
+          - "content/en/docs/**/*.md"
+          - "content/en/blog/**/*.md"
+        tokenSecretRef:
+          name: github-token
+          key: token
+        includeIssues: false
+        includePRs: false
+
+  # Markdown-aware chunking for documentation
+  chunking:
+    strategy: markdown
+    markdown:
+      respectHeaders: true
+      respectCodeBlocks: true
+      maxChunkSize: 1500
+
+  processing:
+    extraction:
+      stripHtml: true
+      stripMarkdown: false
+      preserveCodeBlocks: true
+      preserveLinks: true
+
+    metadata:
+      extract: [title, date, tags]
+      custom:
+        source: "kubernetes-docs"
+        type: "documentation"
+
+    deduplication:
+      enabled: true
+      method: hash
+
+  indexing:
+    memoryRef: k8s-runbook-memory
+    schedule:
+      type: cron
+      cron: "0 2 * * *"
+    batchSize: 100
+    parallelism: 4
+
+  sync:
+    mode: incremental
+    onStartup: true
+    webhook:
+      enabled: true
+      providers: [github]
+
+---
+# Step 3: Create Knowledge Base for Internal Runbooks
+apiVersion: aof.agenticops.org/v1alpha1
+kind: KnowledgeBase
+metadata:
+  name: k8s-runbooks-repo
+  namespace: sre-platform
+spec:
+  description: "Internal Kubernetes runbooks and troubleshooting guides"
+
+  sources:
+    - name: sre-runbooks
+      type: GitHub
+      enabled: true
+      github:
+        owner: mycompany
+        repo: sre-runbooks
+        branch: main
+        paths:
+          - "kubernetes/**/*.md"
+          - "troubleshooting/**/*.md"
+        tokenSecretRef:
+          name: github-token
+          key: token
+        includeIssues: true  # Include past issues as knowledge
+        includePRs: true     # Include PR discussions
+
+  # Semantic chunking for better context preservation
+  chunking:
+    strategy: semantic
+    semantic:
+      model: text-embedding-3-small
+      threshold: 0.6
+      minChunkSize: 200
+      maxChunkSize: 2000
+
+  processing:
+    extraction:
+      stripHtml: true
+      stripMarkdown: false
+      preserveCodeBlocks: true
+      preserveLinks: true
+
+    metadata:
+      extract: [title, author, date, tags]
+      custom:
+        source: "internal-runbooks"
+        type: "runbook"
+        verified: true
+
+    deduplication:
+      enabled: true
+      method: similarity
+      threshold: 0.95
+
+  indexing:
+    memoryRef: k8s-runbook-memory
+    schedule:
+      type: cron
+      cron: "*/15 * * * *"  # Sync every 15 minutes
+    batchSize: 50
+    parallelism: 2
+
+  sync:
+    mode: incremental
+    onStartup: true
+    webhook:
+      enabled: true
+      providers: [github]
+
+---
+# Step 4: Create Knowledge Base for Confluence Pages
+apiVersion: aof.agenticops.org/v1alpha1
+kind: KnowledgeBase
+metadata:
+  name: sre-confluence
+  namespace: sre-platform
+spec:
+  description: "SRE team Confluence pages (incident reports, postmortems)"
+
+  sources:
+    - name: confluence-sre
+      type: Confluence
+      enabled: true
+      confluence:
+        baseUrl: https://mycompany.atlassian.net/wiki
+        spaceKey: SRE
+        username: confluence-bot@mycompany.com
+        apiTokenSecretRef:
+          name: confluence-credentials
+          key: api-token
+        cql: 'type=page AND space="SRE" AND (label="kubernetes" OR label="incident" OR label="postmortem")'
+        includeAttachments: false
+
+  chunking:
+    strategy: recursive
+    recursive:
+      separators: ["\n\n", "\n", ". ", " "]
+      chunkSize: 1200
+      overlap: 200
+
+  processing:
+    extraction:
+      stripHtml: true
+      stripMarkdown: false
+      preserveCodeBlocks: true
+      preserveLinks: true
+
+    metadata:
+      extract: [title, author, date, tags]
+      custom:
+        source: "confluence"
+        type: "incident-report"
+
+    deduplication:
+      enabled: true
+      method: hash
+
+  indexing:
+    memoryRef: k8s-runbook-memory
+    schedule:
+      type: cron
+      cron: "0 * * * *"  # Hourly
+    batchSize: 20
+    parallelism: 2
+
+  sync:
+    mode: incremental
+    onStartup: true
+
+---
+# Step 5: Create the K8s Expert Agent
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: k8s-expert
+  namespace: sre-platform
+  labels:
+    app: k8s-expert
+    team: sre
+spec:
+  provider: anthropic
+  model: claude-3-5-sonnet-20241022
+  temperature: 0.2  # Lower temperature for more factual responses
+
+  # Memory configuration
+  memory:
+    ref: k8s-runbook-memory
+
+    conversational:
+      enabled: true
+      maxMessages: 30
+      includeSystemPrompts: false
+
+    rag:
+      enabled: true
+      topK: 7
+      threshold: 0.65
+      rerank: true
+      includeMetadata: true
+      contextWindow: 12000
+
+  # Context configuration
+  context:
+    # Static context - Always included
+    static:
+      - name: kubernetes-versions
+        source:
+          configMapRef:
+            name: k8s-versions
+            key: supported-versions
+
+      - name: cluster-info
+        source:
+          inline: |
+            Clusters:
+            - Production: prod-us-east-1 (v1.28.3)
+            - Production: prod-eu-west-1 (v1.28.3)
+            - Staging: staging-us-east-1 (v1.29.0)
+
+      - name: escalation-policy
+        source:
+          configMapRef:
+            name: escalation-policy
+            key: sre-escalation.md
+
+    # Dynamic context - Fetched at runtime
+    dynamic:
+      - name: current-incidents
+        source:
+          type: HTTP
+          url: https://api.pagerduty.com/incidents?statuses[]=triggered
+          method: GET
+          headers:
+            Authorization: "Token token={{.secrets.pagerduty_token}}"
+            Accept: "application/vnd.pagerduty+json;version=2"
+          jsonPath: "$.incidents[*].{id:id,title:title,status:status,created:created_at}"
+        refresh: 2m
+
+      - name: recent-deployments
+        source:
+          type: K8sAPI
+          resource: deployments.apps
+          namespace: production
+          labelSelector: "team=platform"
+        refresh: 5m
+
+      - name: pod-health
+        source:
+          type: K8sAPI
+          resource: pods
+          namespace: production
+          labelSelector: "app=critical"
+        refresh: 1m
+
+      - name: prometheus-alerts
+        source:
+          type: HTTP
+          url: https://prometheus.monitoring/api/v1/alerts
+          method: GET
+          jsonPath: "$.data.alerts[?(@.state=='firing')]"
+        refresh: 30s
+
+    # RAG context - Semantic retrieval
+    rag:
+      - name: runbooks
+        memoryRef: k8s-runbook-memory
+        query: "{{.userMessage}}"
+        topK: 5
+        filter:
+          metadata.type: [runbook, troubleshooting]
+          metadata.verified: true
+
+      - name: documentation
+        memoryRef: k8s-runbook-memory
+        query: "{{.userMessage}}"
+        topK: 3
+        filter:
+          metadata.type: documentation
+          metadata.source: kubernetes-docs
+
+      - name: past-incidents
+        memoryRef: k8s-runbook-memory
+        query: "similar incidents: {{.userMessage}}"
+        topK: 2
+        filter:
+          metadata.type: incident-report
+          metadata.resolved: true
+
+  systemPrompt: |
+    You are a Kubernetes expert and SRE assistant. Your role is to help engineers troubleshoot
+    and resolve Kubernetes issues using best practices and proven runbooks.
+
+    ## Your Capabilities:
+    1. Answer questions about Kubernetes architecture and components
+    2. Provide step-by-step troubleshooting guides
+    3. Reference relevant runbooks and documentation
+    4. Analyze current cluster state and incidents
+    5. Suggest preventive measures and improvements
+
+    ## Guidelines:
+    - Always cite sources from runbooks or documentation
+    - Prioritize safety - never suggest destructive operations without warnings
+    - Consider the current cluster state and active incidents
+    - Provide kubectl commands when applicable
+    - Escalate to on-call if the issue is critical
+    - Learn from past incidents to provide context
+
+    ## Response Format:
+    1. **Problem Summary**: Brief description of the issue
+    2. **Immediate Actions**: Quick steps to mitigate
+    3. **Root Cause Analysis**: What might be causing this
+    4. **Resolution Steps**: Detailed troubleshooting guide
+    5. **Prevention**: How to prevent this in the future
+    6. **References**: Links to relevant runbooks/docs
+
+  tools:
+    - name: kubectl
+      type: exec
+      config:
+        command: kubectl
+        allowedArgs: [get, describe, logs, explain, top]
+        deniedArgs: [delete, apply, create]
+        timeout: 30s
+
+    - name: prometheus-query
+      type: http
+      config:
+        baseUrl: https://prometheus.monitoring
+        auth:
+          type: bearer
+          secretRef:
+            name: prometheus-token
+            key: token
+
+  rateLimits:
+    requestsPerMinute: 60
+    tokensPerMinute: 50000
+
+  retry:
+    maxAttempts: 3
+    backoff: exponential
+    initialDelay: 1s
+
+  observability:
+    tracing:
+      enabled: true
+    metrics:
+      enabled: true
+    logging:
+      level: info
+
+---
+# Step 6: ServiceAccount and RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-expert
+  namespace: sre-platform
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: k8s-expert-reader
+  namespace: sre-platform
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, configmaps, secrets]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: k8s-expert-reader-binding
+  namespace: sre-platform
+subjects:
+  - kind: ServiceAccount
+    name: k8s-expert
+    namespace: sre-platform
+roleRef:
+  kind: Role
+  name: k8s-expert-reader
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Step 7: Secrets (to be created separately)
+# kubectl create secret generic openai-credentials --from-literal=api-key=sk-...
+# kubectl create secret generic github-token --from-literal=token=ghp_...
+# kubectl create secret generic qdrant-credentials --from-literal=api-key=...
+# kubectl create secret generic redis-credentials --from-literal=password=...
+# kubectl create secret generic confluence-credentials --from-literal=api-token=...
+# kubectl create secret generic pagerduty-token --from-literal=pagerduty_token=...
+# kubectl create secret generic encryption-key --from-literal=key=...
+
+---
+# Step 8: ConfigMaps
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-versions
+  namespace: sre-platform
+data:
+  supported-versions: |
+    Supported Kubernetes Versions:
+    - 1.28.x (Stable)
+    - 1.29.x (Latest)
+    - 1.27.x (Maintenance)
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: company-policies
+  namespace: sre-platform
+data:
+  release-policy.md: |
+    # Release Policy
+
+    ## Change Windows
+    - Production: Tuesday/Thursday 10AM-2PM EST
+    - Staging: Anytime with approval
+
+    ## Approval Requirements
+    - Minor changes: Team lead approval
+    - Major changes: VP Engineering approval
+    - Emergency patches: On-call approval + post-mortem
+
+    ## Rollback Procedures
+    - Automated rollback if health checks fail
+    - Manual rollback within 5 minutes for critical issues
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: escalation-policy
+  namespace: sre-platform
+data:
+  sre-escalation.md: |
+    # SRE Escalation Policy
+
+    ## L1 - On-Call Engineer
+    - Respond within 5 minutes
+    - Initial triage and mitigation
+
+    ## L2 - Senior SRE
+    - Complex issues requiring deep expertise
+    - Escalate after 15 minutes if unresolved
+
+    ## L3 - Engineering Manager
+    - Critical incidents affecting customers
+    - Multi-service outages
+
+    ## Pager Numbers
+    - L1: +1-555-0101
+    - L2: +1-555-0102
+    - L3: +1-555-0103

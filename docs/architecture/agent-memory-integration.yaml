@@ -1,0 +1,392 @@
+# Agent Memory Integration Examples
+
+# Example 1: Agent with Simple Conversational Memory
+---
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: incident-responder
+  namespace: sre-ops
+spec:
+  provider: openai
+  model: gpt-4
+
+  # Memory Configuration
+  memory:
+    # Reference existing Memory CRD
+    ref: ops-memory
+
+    # Memory behavior
+    conversational:
+      enabled: true
+      maxMessages: 50
+      includeSystemPrompts: false
+
+    # No RAG for this agent
+    rag:
+      enabled: false
+
+  systemPrompt: |
+    You are an incident response agent. Use conversation history to track ongoing incidents.
+
+---
+# Example 2: Agent with RAG-enabled Memory
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: k8s-expert
+  namespace: sre-ops
+spec:
+  provider: anthropic
+  model: claude-3-5-sonnet-20241022
+
+  # Memory with RAG
+  memory:
+    ref: k8s-knowledge-memory
+
+    conversational:
+      enabled: true
+      maxMessages: 20
+
+    rag:
+      enabled: true
+      topK: 5
+      threshold: 0.7
+      rerank: true
+      includeMetadata: true
+      contextWindow: 8000  # Max tokens for RAG context
+
+  systemPrompt: |
+    You are a Kubernetes expert. Use the knowledge base to provide accurate answers.
+
+---
+# Example 3: Inline Memory Configuration
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: quick-helper
+  namespace: dev-team
+spec:
+  provider: openai
+  model: gpt-4o-mini
+
+  # Inline memory (no separate Memory CRD)
+  memory:
+    inline:
+      backend:
+        type: Redis
+        redis:
+          url: redis://localhost:6379
+          db: 0
+
+      conversational:
+        enabled: true
+        ttl: 1h  # Short-lived for quick tasks
+        maxMessages: 10
+
+---
+# Example 4: Agent with Context Injection
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: release-manager
+  namespace: devops
+spec:
+  provider: anthropic
+  model: claude-3-5-sonnet-20241022
+
+  memory:
+    ref: release-memory
+
+    conversational:
+      enabled: true
+
+    rag:
+      enabled: true
+      topK: 3
+
+  # Context Management
+  context:
+    # Static context (always included)
+    static:
+      - name: company-policies
+        source:
+          configMapRef:
+            name: company-policies
+            key: release-policy.md
+
+      - name: team-info
+        source:
+          inline: |
+            Team: Platform Engineering
+            On-call: @alice, @bob
+
+    # Dynamic context (fetched at runtime)
+    dynamic:
+      - name: current-incidents
+        source:
+          type: HTTP
+          url: https://api.pagerduty.com/incidents?statuses[]=triggered&statuses[]=acknowledged
+          method: GET
+          headers:
+            Authorization: "Token token={{.secrets.pagerduty_token}}"
+          jsonPath: "$.incidents[*].{id:id,title:title,status:status}"
+        refresh: 5m
+
+      - name: recent-deployments
+        source:
+          type: K8sAPI
+          resource: deployments.apps
+          namespace: production
+          labelSelector: "managed-by=flux"
+        refresh: 2m
+
+    # RAG context (semantic retrieval)
+    rag:
+      - name: runbooks
+        memoryRef: release-memory
+        query: "{{.userMessage}}"  # Use user's question as query
+        topK: 3
+        filter:
+          metadata.type: runbook
+
+      - name: past-incidents
+        memoryRef: incident-memory
+        query: "similar issues to: {{.userMessage}}"
+        topK: 2
+        filter:
+          metadata.severity: [critical, high]
+
+---
+# Example 5: AgentFleet with Shared Memory
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFleet
+metadata:
+  name: sre-team
+  namespace: ops
+spec:
+  replicas: 3
+
+  # Shared memory across all fleet members
+  sharedMemory:
+    ref: sre-team-memory
+
+    # Fleet-wide conversational memory
+    conversational:
+      enabled: true
+      shared: true  # All agents see same conversation
+      maxMessages: 100
+
+    # Fleet-wide knowledge base
+    rag:
+      enabled: true
+      topK: 5
+
+  template:
+    spec:
+      provider: openai
+      model: gpt-4
+
+      # Individual agent memory (per-instance)
+      memory:
+        conversational:
+          enabled: true
+          maxMessages: 20  # Per-agent conversation
+
+        # Agents share the fleet's RAG knowledge
+        rag:
+          inheritFromFleet: true
+
+---
+# Example 6: AgentFlow with Context Passing
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFlow
+metadata:
+  name: incident-response-flow
+  namespace: sre-ops
+spec:
+  # Flow-level memory (shared across all steps)
+  memory:
+    ref: incident-flow-memory
+
+    # Conversations scoped to this flow execution
+    conversational:
+      enabled: true
+      scope: flow  # Separate conversation per flow run
+
+    rag:
+      enabled: true
+      topK: 3
+
+  steps:
+    - name: detect
+      agentRef: incident-detector
+
+      # Step-specific context
+      context:
+        static:
+          - name: detection-rules
+            source:
+              configMapRef:
+                name: alert-rules
+
+        rag:
+          - name: similar-incidents
+            memoryRef: incident-flow-memory
+            query: "{{.input.alert}}"
+            topK: 5
+
+      # Output to flow context
+      output:
+        to: flowContext.detection
+
+    - name: triage
+      agentRef: incident-triager
+      dependsOn: [detect]
+
+      # Inherit context from previous step
+      context:
+        inherit: true
+
+        # Add step-specific context
+        static:
+          - name: severity-matrix
+            source:
+              inline: |
+                SEV1: Critical impact
+                SEV2: Major impact
+                SEV3: Minor impact
+
+        # Use previous step output as context
+        dynamic:
+          - name: detection-results
+            source:
+              type: FlowContext
+              path: detection
+
+      output:
+        to: flowContext.triage
+
+    - name: remediate
+      agentRef: incident-remediator
+      dependsOn: [triage]
+
+      context:
+        inherit: true
+
+        # RAG with filtering based on triage output
+        rag:
+          - name: remediation-runbooks
+            memoryRef: incident-flow-memory
+            query: "{{.flowContext.triage.issue_type}}"
+            topK: 3
+            filter:
+              metadata.category: remediation
+              metadata.severity: "{{.flowContext.triage.severity}}"
+
+---
+# Example 7: Advanced RAG Configuration
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: advanced-rag-agent
+  namespace: ai-team
+spec:
+  provider: anthropic
+  model: claude-3-5-sonnet-20241022
+
+  memory:
+    ref: advanced-knowledge-base
+
+    rag:
+      enabled: true
+
+      # Retrieval strategy
+      retrieval:
+        strategy: hybrid  # hybrid | semantic | keyword
+
+        # Hybrid search weights
+        hybridWeights:
+          semantic: 0.7
+          keyword: 0.3
+
+        # Initial retrieval
+        topK: 20
+        threshold: 0.6
+
+        # Reranking
+        rerank:
+          enabled: true
+          model: cohere-rerank-v3
+          topK: 5
+
+        # Filtering
+        filter:
+          metadata.type: [documentation, runbook]
+          metadata.verified: true
+
+        # Context optimization
+        contextOptimization:
+          enabled: true
+          maxTokens: 6000
+          strategy: truncate  # truncate | summarize | prioritize
+
+      # Query enhancement
+      queryEnhancement:
+        enabled: true
+        methods:
+          - hypotheticalDocument  # HyDE
+          - queryDecomposition
+          - queryExpansion
+
+      # Multi-query retrieval
+      multiQuery:
+        enabled: true
+        queries: 3
+        aggregation: reciprocalRankFusion
+
+      # Fusion strategies
+      fusion:
+        strategy: reciprocalRankFusion  # rrf | linear | maximal
+        k: 60  # RRF k parameter
+
+---
+# Example 8: Memory with Lifecycle Management
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: long-running-agent
+  namespace: ops
+spec:
+  provider: openai
+  model: gpt-4
+
+  memory:
+    ref: long-running-memory
+
+    conversational:
+      enabled: true
+      maxMessages: 1000
+
+      # Automatic summarization
+      summarization:
+        enabled: true
+        triggerThreshold: 100  # Summarize every 100 messages
+        model: gpt-4o-mini
+        strategy: rolling  # Keep rolling summary
+        preserveRecent: 20  # Keep last 20 messages unsummarized
+
+      # Memory compression
+      compression:
+        enabled: true
+        algorithm: zstd
+
+    rag:
+      enabled: true
+
+      # Adaptive retrieval
+      adaptive:
+        enabled: true
+        minTopK: 3
+        maxTopK: 10
+        strategy: confidenceBased  # Adjust based on retrieval confidence

@@ -1,0 +1,334 @@
+# Cost Optimization Flow
+#
+# Description: Daily analysis of cloud costs (AWS/GCP/Azure) that detects
+# anomalies, identifies savings opportunities, and alerts on unusual spending.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (or similar for GCP/Azure)
+# - SLACK_BOT_TOKEN for notifications
+# - Cost Explorer API access
+#
+# How to run:
+#   export AWS_ACCESS_KEY_ID=xxxxx
+#   export AWS_SECRET_ACCESS_KEY=xxxxx
+#   export SLACK_BOT_TOKEN=xoxb-xxxxx
+#   aof apply -f cost-optimization-flow.yaml
+#   # Runs automatically every morning
+#
+# Expected output: Cost analysis with anomaly alerts and optimization recommendations
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFlow
+metadata:
+  name: cost-optimizer
+  description: "Automated cloud cost analysis and optimization"
+  labels:
+    team: finops
+    role: cost-optimization
+
+spec:
+  # Run daily at 8am to catch anomalies early
+  trigger:
+    type: cron
+    config:
+      schedule: "0 8 * * *"  # 8am daily
+      timezone: America/Los_Angeles
+
+  # Cost analysis agent
+  agent:
+    name: cost-analyzer
+    spec:
+      model: claude-3-5-sonnet-20241022
+
+      system: |
+        You are a FinOps expert analyzing cloud infrastructure costs.
+
+        Your analysis should cover:
+
+        1. **Cost Breakdown**:
+           - Total spend (yesterday, MTD, last 30 days)
+           - Breakdown by service (EC2, S3, RDS, etc.)
+           - Breakdown by environment (prod, staging, dev)
+           - Breakdown by team/project
+           - Trends (increasing/decreasing)
+
+        2. **Anomaly Detection**:
+           - Unusual spending spikes (>20% increase)
+           - New services or resources
+           - Orphaned resources (running but unused)
+           - Off-hours usage (dev resources running at night)
+
+        3. **Optimization Opportunities**:
+           - Oversized instances
+           - Unused volumes/snapshots
+           - Unattached elastic IPs
+           - Reserved instance recommendations
+           - Spot instance candidates
+           - S3 storage class optimization
+           - Database right-sizing
+
+        4. **Cost Projections**:
+           - Monthly forecast based on current trend
+           - Budget vs actual
+           - Projected overage
+
+        5. **Action Items**:
+           - Immediate wins (quick savings)
+           - Long-term optimizations
+           - Items requiring manual review
+
+        Be specific with resource IDs and exact cost figures.
+        Prioritize recommendations by potential savings.
+
+      temperature: 0.1
+
+      tools:
+        # AWS Cost Explorer
+        - name: shell
+          enabled: true
+          config:
+            allowed_commands:
+              - aws
+              - gcloud  # For GCP
+              - az  # For Azure
+            env:
+              AWS_ACCESS_KEY_ID: "{env.AWS_ACCESS_KEY_ID}"
+              AWS_SECRET_ACCESS_KEY: "{env.AWS_SECRET_ACCESS_KEY}"
+              AWS_DEFAULT_REGION: "us-west-2"
+
+        # Read cost reports
+        - name: file
+          enabled: true
+          config:
+            allowed_paths:
+              - /tmp/cost-reports
+              - /workspace/finops
+
+      resources:
+        max_tokens: 8192  # Detailed cost analysis
+        timeout: 180s
+
+      # Track historical costs for trend analysis
+      memory:
+        type: key_value
+        max_entries: 90  # 90 days of history
+
+  # Analyze the data and determine actions
+  conditions:
+    # High-severity: Significant cost spike
+    - name: critical_anomaly
+      condition: |
+        agent.cost_increase_pct > 50 ||
+        agent.daily_cost > budget.daily_limit * 1.5
+
+    # Medium-severity: Notable increase
+    - name: notable_anomaly
+      condition: |
+        agent.cost_increase_pct > 20 ||
+        agent.daily_cost > budget.daily_limit * 1.2
+
+    # Low-severity: Optimization opportunities
+    - name: optimization_available
+      condition: |
+        agent.potential_savings > 1000  # $1000+/month
+
+  # Actions based on severity
+  actions:
+    # Always: Daily summary to Slack
+    - type: slack_message
+      config:
+        channel: "#finops"
+        message: |
+          💰 *Daily Cost Report - {date.today}*
+
+          *Yesterday's Spend*: ${agent.yesterday_cost}
+          *MTD Spend*: ${agent.mtd_cost} ({agent.mtd_vs_budget})
+          *30-Day Trend*: {agent.trend_emoji} {agent.trend_pct}%
+
+          *Top Services*:
+          {agent.top_services}
+
+          *Projected Monthly*: ${agent.projected_monthly}
+          *Budget*: ${budget.monthly} ({agent.budget_status})
+
+          {agent.quick_summary}
+
+    # Critical anomaly: Alert immediately
+    - condition: critical_anomaly
+      type: slack_message
+      config:
+        channel: "#finops-alerts"
+        mentions:
+          - "@finops-lead"
+          - "@infrastructure-lead"
+        priority: high
+        message: |
+          🚨 *CRITICAL: Unusual Cloud Spending Detected*
+
+          *Cost Spike*: {agent.cost_increase_pct}% increase
+          *Amount*: ${agent.anomaly_cost} (${agent.baseline_cost} baseline)
+
+          *Likely Causes*:
+          {agent.anomaly_causes}
+
+          *Immediate Actions Needed*:
+          {agent.immediate_actions}
+
+          *Cost Breakdown*:
+          {agent.anomaly_breakdown}
+
+          Review urgently: <https://console.aws.amazon.com/cost-explorer|Cost Explorer>
+
+    # Notable anomaly: Detailed alert
+    - condition: notable_anomaly
+      type: slack_message
+      config:
+        channel: "#finops-alerts"
+        message: |
+          ⚠️ *Cost Increase Detected*
+
+          *Increase*: {agent.cost_increase_pct}% ({agent.cost_increase_amount})
+          *Current*: ${agent.daily_cost}
+          *Baseline*: ${agent.baseline_cost}
+
+          *Contributing Factors*:
+          {agent.contributing_factors}
+
+          *Recommended Actions*:
+          {agent.recommended_actions}
+
+    # Optimization opportunities: Weekly digest
+    - condition: optimization_available
+      # Only send on Mondays to avoid spam
+      condition: "date.day_of_week == 1"
+      type: slack_message
+      config:
+        channel: "#finops"
+        message: |
+          💡 *Weekly Cost Optimization Opportunities*
+
+          *Potential Monthly Savings*: ${agent.potential_savings}
+
+          *Quick Wins* (easy to implement):
+          {agent.quick_wins}
+
+          *Longer-term Optimizations*:
+          {agent.long_term_optimizations}
+
+          *Reserved Instance Recommendations*:
+          {agent.ri_recommendations}
+
+          *Action Plan*:
+          {agent.action_plan}
+
+    # Auto-remediate safe optimizations
+    - condition: "agent.has_safe_optimizations == true"
+      type: execute_optimization
+      config:
+        # Only auto-fix low-risk items
+        allow_auto_fix:
+          - delete_unattached_volumes
+          - delete_old_snapshots
+          - stop_unused_dev_instances
+          - release_unattached_ips
+
+        # Require approval for these
+        require_approval:
+          - change_instance_type
+          - purchase_reserved_instances
+          - delete_resources
+
+        dry_run: false
+
+    # Generate detailed report
+    - type: file_write
+      config:
+        path: "/var/log/cost-reports/{date.today}.json"
+        content: |
+          {
+            "date": "{date.today}",
+            "summary": {agent.summary_json},
+            "anomalies": {agent.anomalies_json},
+            "optimizations": {agent.optimizations_json},
+            "forecast": {agent.forecast_json}
+          }
+
+    # Track metrics
+    - type: datadog_metric
+      config:
+        metrics:
+          - name: aws.cost.daily
+            value: "{agent.daily_cost}"
+          - name: aws.cost.mtd
+            value: "{agent.mtd_cost}"
+          - name: aws.cost.anomaly_score
+            value: "{agent.anomaly_score}"
+          - name: aws.savings.potential
+            value: "{agent.potential_savings}"
+
+    # Email report to finance team
+    - type: email
+      # Only send on Mondays
+      condition: "date.day_of_week == 1"
+      config:
+        to:
+          - finance@company.com
+          - infrastructure@company.com
+        subject: "Weekly Cloud Cost Report - {date.week_of}"
+        body: |
+          <h2>Weekly Cloud Cost Summary</h2>
+
+          {agent.weekly_html_report}
+
+          <h3>Action Items</h3>
+          {agent.action_items_html}
+
+        attach:
+          - "{file.cost_report_csv}"
+
+  # Error handling
+  error_handling:
+    - type: slack_message
+      config:
+        channel: "#finops"
+        message: |
+          ⚠️ Daily cost analysis failed
+
+          Error: {error.message}
+
+          Please check manually: <https://console.aws.amazon.com/cost-explorer|Cost Explorer>
+
+  # Budget thresholds
+  budget:
+    daily_limit: 5000  # $5000/day
+    monthly_limit: 150000  # $150k/month
+    alert_threshold: 0.8  # Alert at 80% of budget
+
+  # Resource limits
+  resources:
+    timeout: 180s
+    max_tokens: 8192
+
+  # State for historical tracking
+  state:
+    type: key_value
+    backend: local
+    persist:
+      - daily_costs
+      - monthly_trends
+      - optimization_tracking
+
+  # Metrics
+  metrics:
+    enabled: true
+    track:
+      - daily_cost
+      - anomaly_detections
+      - optimizations_applied
+      - savings_realized
+
+  tags:
+    automation: cost-optimization
+    finops: true
+    schedule: daily

@@ -1,0 +1,126 @@
+# Kubernetes Operations Agent
+#
+# Description: A comprehensive K8s operations agent that can diagnose issues,
+# manage deployments, and monitor cluster health.
+#
+# Prerequisites:
+# - kubectl configured with cluster access
+# - kubectl-ai MCP server installed (optional but recommended)
+# - ANTHROPIC_API_KEY environment variable
+#
+# How to run:
+#   aof apply -f kubernetes-ops-agent.yaml
+#   aof query k8s-ops "What pods are failing in the default namespace?"
+#   aof query k8s-ops "Scale the nginx deployment to 5 replicas"
+#
+# Expected output: Detailed responses about cluster state and confirmation of actions
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: k8s-ops
+  description: "Kubernetes operations and diagnostics expert"
+  labels:
+    team: platform
+    role: sre
+
+spec:
+  # Use Claude Sonnet for fast, cost-effective ops
+  model: claude-3-5-sonnet-20241022
+
+  # System prompt defining agent's role and capabilities
+  system: |
+    You are a Kubernetes operations expert. You can:
+
+    1. **Diagnostics**:
+       - List and describe pods, deployments, services, nodes
+       - Identify failing pods and diagnose root causes
+       - Check resource usage (CPU, memory, disk)
+       - Analyze events and logs
+
+    2. **Operations**:
+       - Scale deployments up/down
+       - Restart deployments
+       - Delete stuck resources
+       - Apply manifests
+
+    3. **Best Practices**:
+       - Always check current state before making changes
+       - Explain what you're doing and why
+       - Warn about potentially dangerous operations
+       - Suggest alternatives when appropriate
+
+    When diagnosing issues:
+    - Start with high-level overview (kubectl get pods)
+    - Drill down into specifics (kubectl describe, logs)
+    - Check related resources (events, nodes)
+    - Provide actionable recommendations
+
+    When making changes:
+    - Confirm current state first
+    - Execute the change
+    - Verify the change succeeded
+    - Report back with clear status
+
+  # Temperature 0 for consistent, deterministic operations
+  temperature: 0
+
+  # Tools available to the agent
+  tools:
+    # Shell access for kubectl commands
+    - name: shell
+      enabled: true
+      config:
+        allowed_commands:
+          - kubectl
+          - k9s
+        working_directory: /tmp
+
+    # File access for reading manifests and logs
+    - name: file
+      enabled: true
+      config:
+        allowed_paths:
+          - /tmp
+          - /var/log/pods
+        read_only: false
+
+    # Optional: kubectl-ai MCP for enhanced K8s operations
+    - name: mcp
+      enabled: true
+      config:
+        server: kubectl-ai
+
+  # Resource limits for the agent
+  resources:
+    max_tokens: 4096
+    timeout: 300s  # 5 minutes for complex operations
+
+  # Safety guardrails
+  guardrails:
+    # Prevent accidental deletion of production resources
+    - type: command_filter
+      config:
+        blocked_patterns:
+          - "kubectl delete.*production"
+          - "kubectl delete ns"
+          - "kubectl delete pv"
+        warning_patterns:
+          - "kubectl delete"
+          - "kubectl scale.*=0"
+
+    # Rate limiting to prevent abuse
+    - type: rate_limit
+      config:
+        max_requests_per_minute: 20
+
+  # Memory for context across queries
+  memory:
+    type: conversation
+    max_messages: 50
+
+  # Metadata for monitoring
+  tags:
+    environment: production
+    cost_center: platform
+    slo: "99.9"

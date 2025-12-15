@@ -1,0 +1,43 @@
+{
+  "id": "1234567890123456789",
+  "application_id": "9876543210987654321",
+  "type": 2,
+  "token": "unique_token",
+  "version": 1,
+  "data": {
+    "id": "1111111111111111111",
+    "name": "agent",
+    "type": 1,
+    "options": [
+      {
+        "name": "run",
+        "type": 3,
+        "value": "test-bot"
+      },
+      {
+        "name": "args",
+        "type": 3,
+        "value": "hello"
+      }
+    ]
+  },
+  "guild_id": "2222222222222222222",
+  "channel_id": "3333333333333333333",
+  "member": {
+    "user": {
+      "id": "4444444444444444444",
+      "username": "testuser",
+      "discriminator": "1234",
+      "avatar": "avatar_hash"
+    },
+    "roles": [],
+    "premium_since": null,
+    "permissions": "2147483647",
+    "pending": false,
+    "nick": null,
+    "mute": false,
+    "joined_at": "2021-01-01T00:00:00.000000+00:00",
+    "is_pending": false,
+    "deaf": false
+  }
+}

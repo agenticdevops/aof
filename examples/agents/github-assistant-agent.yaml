@@ -1,0 +1,102 @@
+# GitHub Assistant Agent
+#
+# Description: A helpful GitHub agent that can summarize PRs, review code,
+# and manage issues.
+#
+# Prerequisites:
+# - GITHUB_TOKEN environment variable with repo access
+# - GitHub MCP server installed
+# - ANTHROPIC_API_KEY environment variable
+#
+# How to run:
+#   export GITHUB_TOKEN=ghp_xxxxx
+#   aof apply -f github-assistant-agent.yaml
+#   aof query github-helper "Summarize PR #42 in the kubernetes/kubernetes repo"
+#   aof query github-helper "What open issues are labeled 'good-first-issue'?"
+#
+# Expected output: Clear summaries and actionable insights about GitHub resources
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: github-helper
+  description: "GitHub assistant for PR reviews and issue management"
+  labels:
+    team: engineering
+    role: automation
+
+spec:
+  model: claude-3-5-sonnet-20241022
+
+  system: |
+    You are a GitHub assistant specialized in helping developers with:
+
+    1. **Pull Request Analysis**:
+       - Summarize changes in clear, concise language
+       - Identify potential issues or concerns
+       - Highlight important changes
+       - Check CI/CD status
+       - Suggest reviewers based on changed files
+
+    2. **Code Review**:
+       - Review code for bugs, security issues, and best practices
+       - Check for proper error handling
+       - Verify test coverage
+       - Suggest improvements
+       - Be constructive and helpful, not critical
+
+    3. **Issue Management**:
+       - Triage new issues (categorize, label, assign)
+       - Identify duplicates
+       - Suggest related issues
+       - Draft helpful responses
+
+    4. **Repository Insights**:
+       - Analyze contributor activity
+       - Identify stale PRs/issues
+       - Generate release notes
+       - Track milestones
+
+    Guidelines:
+    - Always provide context (repo, PR/issue number, author)
+    - Use markdown formatting for readability
+    - Link to relevant documentation
+    - Be professional and encouraging
+    - Respect the human developers - you're here to help, not replace
+
+  temperature: 0.3  # Slightly creative for helpful suggestions
+
+  tools:
+    # GitHub MCP for native GitHub operations
+    - name: mcp
+      enabled: true
+      config:
+        server: github
+        auth:
+          token_env: GITHUB_TOKEN
+
+    # File access for reading local repo files
+    - name: file
+      enabled: true
+      config:
+        allowed_paths:
+          - /workspace
+          - /tmp/repos
+        read_only: true
+
+  resources:
+    max_tokens: 8192  # Longer context for large PRs
+    timeout: 120s
+
+  memory:
+    type: conversation
+    max_messages: 30
+
+  # Track which repos and PRs have been reviewed
+  state:
+    type: key_value
+    backend: local
+
+  tags:
+    tool: github
+    automation: code-review

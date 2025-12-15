@@ -1,0 +1,596 @@
+# Memory CRD - Persistent Memory Backend Configuration
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: memories.aof.agenticops.org
+spec:
+  group: aof.agenticops.org
+  names:
+    kind: Memory
+    listKind: MemoryList
+    plural: memories
+    singular: memory
+    shortNames:
+      - mem
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                backend:
+                  type: object
+                  description: "Storage backend configuration"
+                  properties:
+                    type:
+                      type: string
+                      enum: [Redis, PostgreSQL, SQLite, S3, Vector]
+                      description: "Backend type"
+
+                    # Redis configuration
+                    redis:
+                      type: object
+                      properties:
+                        url:
+                          type: string
+                          description: "Redis connection URL"
+                        secretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        db:
+                          type: integer
+                          default: 0
+                        poolSize:
+                          type: integer
+                          default: 10
+                        ttl:
+                          type: string
+                          description: "Default TTL (e.g., 24h, 7d)"
+                        tls:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            insecureSkipVerify:
+                              type: boolean
+
+                    # PostgreSQL configuration
+                    postgresql:
+                      type: object
+                      properties:
+                        host:
+                          type: string
+                        port:
+                          type: integer
+                          default: 5432
+                        database:
+                          type: string
+                        user:
+                          type: string
+                        passwordSecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        sslMode:
+                          type: string
+                          enum: [disable, require, verify-ca, verify-full]
+                          default: require
+                        maxConnections:
+                          type: integer
+                          default: 25
+                        schema:
+                          type: string
+                          default: public
+
+                    # SQLite configuration
+                    sqlite:
+                      type: object
+                      properties:
+                        path:
+                          type: string
+                          description: "File path for SQLite database"
+                        inmemory:
+                          type: boolean
+                          default: false
+                        journalMode:
+                          type: string
+                          enum: [DELETE, TRUNCATE, PERSIST, MEMORY, WAL, OFF]
+                          default: WAL
+
+                    # S3 configuration
+                    s3:
+                      type: object
+                      properties:
+                        bucket:
+                          type: string
+                        region:
+                          type: string
+                        endpoint:
+                          type: string
+                          description: "Custom S3 endpoint (for MinIO, etc.)"
+                        accessKeySecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        secretKeySecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        prefix:
+                          type: string
+                          description: "Key prefix for organization"
+                        encryption:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            kmsKeyId:
+                              type: string
+
+                    # Vector Store configuration
+                    vector:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                          enum: [Qdrant, Chroma, Pinecone, Milvus, Weaviate]
+                        config:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+
+                # Conversational Memory
+                conversational:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    ttl:
+                      type: string
+                      description: "Time to live (e.g., 7d, 24h, 30m)"
+                      default: "7d"
+                    maxMessages:
+                      type: integer
+                      description: "Maximum messages to retain"
+                      default: 1000
+                    maxTokens:
+                      type: integer
+                      description: "Maximum tokens to retain"
+                    summarization:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: false
+                        model:
+                          type: string
+                          description: "Model for summarization"
+                        triggerThreshold:
+                          type: integer
+                          description: "Message count to trigger summarization"
+                          default: 100
+                        strategy:
+                          type: string
+                          enum: [rolling, periodic, adaptive]
+                          default: rolling
+                    compression:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        algorithm:
+                          type: string
+                          enum: [gzip, zstd, lz4]
+                          default: zstd
+
+                # Semantic Memory (Vector-based)
+                semantic:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    embedding:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                          enum: [OpenAI, Cohere, HuggingFace, Local, Ollama]
+                        model:
+                          type: string
+                          description: "Embedding model name"
+                          examples:
+                            - "openai:text-embedding-3-small"
+                            - "cohere:embed-english-v3.0"
+                            - "local:all-MiniLM-L6-v2"
+                        dimensions:
+                          type: integer
+                          description: "Embedding vector dimensions"
+                        apiKeySecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        batchSize:
+                          type: integer
+                          default: 32
+                        timeout:
+                          type: string
+                          default: "30s"
+
+                    vectorStore:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [Qdrant, Chroma, Pinecone, Milvus, Weaviate]
+
+                        # Qdrant
+                        qdrant:
+                          type: object
+                          properties:
+                            url:
+                              type: string
+                            apiKeySecretRef:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                key:
+                                  type: string
+                            collection:
+                              type: string
+                            vectorSize:
+                              type: integer
+                            distance:
+                              type: string
+                              enum: [Cosine, Euclid, Dot]
+                              default: Cosine
+                            onDisk:
+                              type: boolean
+                              default: false
+
+                        # Chroma
+                        chroma:
+                          type: object
+                          properties:
+                            host:
+                              type: string
+                            port:
+                              type: integer
+                              default: 8000
+                            collection:
+                              type: string
+                            persistDirectory:
+                              type: string
+
+                        # Pinecone
+                        pinecone:
+                          type: object
+                          properties:
+                            environment:
+                              type: string
+                            apiKeySecretRef:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                key:
+                                  type: string
+                            index:
+                              type: string
+                            namespace:
+                              type: string
+                            metric:
+                              type: string
+                              enum: [cosine, dotproduct, euclidean]
+                              default: cosine
+
+                        # Milvus
+                        milvus:
+                          type: object
+                          properties:
+                            host:
+                              type: string
+                            port:
+                              type: integer
+                              default: 19530
+                            collection:
+                              type: string
+                            indexType:
+                              type: string
+                              enum: [FLAT, IVF_FLAT, IVF_SQ8, IVF_PQ, HNSW, ANNOY]
+                              default: HNSW
+                            metricType:
+                              type: string
+                              enum: [L2, IP, COSINE]
+                              default: COSINE
+
+                        # Weaviate
+                        weaviate:
+                          type: object
+                          properties:
+                            url:
+                              type: string
+                            apiKeySecretRef:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                key:
+                                  type: string
+                            className:
+                              type: string
+                            vectorizer:
+                              type: string
+
+                    indexing:
+                      type: object
+                      properties:
+                        strategy:
+                          type: string
+                          enum: [immediate, batch, scheduled]
+                          default: immediate
+                        batchSize:
+                          type: integer
+                          default: 100
+                        schedule:
+                          type: string
+                          description: "Cron schedule for indexing"
+
+                    retrieval:
+                      type: object
+                      properties:
+                        defaultTopK:
+                          type: integer
+                          default: 5
+                        hybridSearch:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            keywordWeight:
+                              type: number
+                              format: float
+                              default: 0.3
+                            semanticWeight:
+                              type: number
+                              format: float
+                              default: 0.7
+                        reranking:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            model:
+                              type: string
+                            topK:
+                              type: integer
+                              default: 3
+                        filtering:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            fields:
+                              type: array
+                              items:
+                                type: string
+
+                # Knowledge Base Integration
+                knowledge:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    sources:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          type:
+                            type: string
+                            enum: [GitHub, Confluence, Notion, LocalFiles, URL, S3, Git]
+                          knowledgeBaseRef:
+                            type: string
+                            description: "Reference to KnowledgeBase CRD"
+                          syncSchedule:
+                            type: string
+                            description: "Cron schedule for syncing"
+                          enabled:
+                            type: boolean
+                            default: true
+
+                # Lifecycle Management
+                lifecycle:
+                  type: object
+                  properties:
+                    retention:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        policy:
+                          type: string
+                          enum: [time, size, importance]
+                        maxAge:
+                          type: string
+                          description: "Maximum age (e.g., 30d)"
+                        maxSize:
+                          type: string
+                          description: "Maximum size (e.g., 10GB)"
+                    archival:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        backend:
+                          type: string
+                          enum: [S3, GCS, Azure]
+                        threshold:
+                          type: string
+                          description: "Age threshold for archival (e.g., 90d)"
+                    backup:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        schedule:
+                          type: string
+                          description: "Cron schedule"
+                        retention:
+                          type: integer
+                          description: "Number of backups to retain"
+
+                # Access Control
+                access:
+                  type: object
+                  properties:
+                    isolation:
+                      type: string
+                      enum: [namespace, agent, fleet, global]
+                      default: namespace
+                    encryption:
+                      type: object
+                      properties:
+                        atRest:
+                          type: boolean
+                          default: true
+                        inTransit:
+                          type: boolean
+                          default: true
+                        keySecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                    rbac:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        rules:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              subjects:
+                                type: array
+                                items:
+                                  type: string
+                              permissions:
+                                type: array
+                                items:
+                                  type: string
+                                  enum: [read, write, delete, admin]
+
+                # Monitoring and Observability
+                observability:
+                  type: object
+                  properties:
+                    metrics:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        interval:
+                          type: string
+                          default: "30s"
+                    tracing:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        sampler:
+                          type: string
+                          enum: [always, never, ratio]
+                          default: ratio
+                        samplingRatio:
+                          type: number
+                          format: float
+                          default: 0.1
+                    logging:
+                      type: object
+                      properties:
+                        level:
+                          type: string
+                          enum: [debug, info, warn, error]
+                          default: info
+                        operations:
+                          type: array
+                          items:
+                            type: string
+                            enum: [read, write, search, delete]
+
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                stats:
+                  type: object
+                  properties:
+                    totalEntries:
+                      type: integer
+                    totalSize:
+                      type: string
+                    lastSyncTime:
+                      type: string
+                      format: date-time
+                    vectorIndexSize:
+                      type: integer
+      additionalPrinterColumns:
+        - name: Backend
+          type: string
+          jsonPath: .spec.backend.type
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+        - name: Entries
+          type: integer
+          jsonPath: .status.stats.totalEntries
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

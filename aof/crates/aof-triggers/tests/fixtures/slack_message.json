@@ -1,0 +1,17 @@
+{
+  "token": "verification_token",
+  "team_id": "T12345678",
+  "api_app_id": "A1234567890",
+  "event": {
+    "type": "message",
+    "channel": "C1234567890",
+    "user": "U1234567890",
+    "text": "/agent run test-bot hello",
+    "ts": "1638360000.000100",
+    "event_ts": "1638360000.000100",
+    "channel_type": "channel"
+  },
+  "type": "event_callback",
+  "event_id": "Ev1234567890",
+  "event_time": 1638360000
+}

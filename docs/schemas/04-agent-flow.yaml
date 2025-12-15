@@ -1,0 +1,559 @@
+# ============================================================================
+# AgentFlow CRD Schema
+# ============================================================================
+# AgentFlow defines complex agentic flows with advanced control structures:
+# - Dynamic branching based on agent decisions
+# - Conditional loops and iterations
+# - Sub-flows and nested workflows
+# - Event-driven triggers
+# - State machines and decision trees
+#
+# Use Cases:
+# - Adaptive CI/CD (intelligent test selection, progressive deployment)
+# - Customer support automation (multi-turn conversations, escalation)
+# - Infrastructure orchestration (cloud resource management, cost optimization)
+# - Security response (threat hunting, automated remediation, forensics)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFlow
+metadata:
+  name: adaptive-deployment-flow
+  namespace: platform
+  labels:
+    flow-type: cicd
+    criticality: high
+  annotations:
+    aof.agenticops.org/description: "Intelligent deployment flow with progressive rollout and auto-rollback"
+
+spec:
+  # -------------------------------------------------------------------------
+  # Flow Configuration
+  # -------------------------------------------------------------------------
+
+  # Flow control mechanism
+  flowControl:
+    type: StateMachine  # StateMachine, DecisionTree, EventDriven, Reactive
+
+    # Initial state
+    initialState: code-analysis
+
+    # State timeout (per state)
+    stateTimeout: "PT30M"
+
+    # Maximum flow iterations (prevent infinite loops)
+    maxIterations: 10
+
+  # Flow-level variables (mutable during execution)
+  variables:
+    - name: deployment-confidence
+      type: float
+      initial: 0.0
+      description: "Confidence score for deployment safety"
+
+    - name: rollout-percentage
+      type: integer
+      initial: 5
+      description: "Current rollout percentage"
+
+    - name: error-rate
+      type: float
+      initial: 0.0
+      description: "Current error rate"
+
+    - name: rollback-required
+      type: boolean
+      initial: false
+      description: "Whether rollback is needed"
+
+  # Flow parameters (immutable)
+  parameters:
+    - name: target-environment
+      value: "production"
+
+    - name: max-error-rate
+      value: "0.05"  # 5%
+
+    - name: rollout-stages
+      value: "[5, 10, 25, 50, 100]"
+
+  # -------------------------------------------------------------------------
+  # State Definitions (State Machine Nodes)
+  # -------------------------------------------------------------------------
+
+  states:
+    # State 1: Analyze code changes
+    - name: code-analysis
+      type: Agent
+
+      agent:
+        spec:
+          model: "anthropic:claude-3-5-sonnet-20241022"
+          description: "Analyzes code changes for risk assessment"
+          instructions: |
+            You are a DevOps engineer analyzing code changes.
+
+            Analyze the git diff and determine:
+            1. Risk level: low, medium, high, critical
+            2. Affected components
+            3. Required test coverage
+            4. Deployment strategy recommendation
+
+            Output JSON:
+            {
+              "risk_level": "low|medium|high|critical",
+              "components": ["component1", "component2"],
+              "min_test_coverage": 0.80,
+              "suggested_strategy": "progressive|blue-green|canary",
+              "concerns": ["concern1", "concern2"]
+            }
+
+          tools:
+            - type: GitHub
+            - type: File
+
+      inputs:
+        parameters:
+          - name: pr-number
+            valueFrom:
+              event: "{{trigger.pullRequest.number}}"
+          - name: base-branch
+            value: "{{flow.parameters.target-environment}}"
+
+      outputs:
+        variables:
+          - name: deployment-confidence
+            valueFrom:
+              expression: |
+                {{state.outputs.risk_level == "low" ? 0.9 :
+                  state.outputs.risk_level == "medium" ? 0.7 :
+                  state.outputs.risk_level == "high" ? 0.4 : 0.1}}
+
+      # State transitions based on agent output
+      transitions:
+        - to: run-tests
+          when: "{{state.outputs.risk_level != 'critical'}}"
+
+        - to: manual-review
+          when: "{{state.outputs.risk_level == 'critical'}}"
+
+        - to: end-failure
+          when: "{{state.failed}}"
+
+    # State 2: Execute test suite
+    - name: run-tests
+      type: Parallel
+
+      # Parallel execution of multiple test types
+      parallel:
+        - name: unit-tests
+          agent:
+            agentRef:
+              name: test-runner
+              namespace: ci-agents
+          inputs:
+            parameters:
+              - name: test-type
+                value: "unit"
+              - name: coverage-threshold
+                value: "{{states.code-analysis.outputs.min_test_coverage}}"
+
+        - name: integration-tests
+          agent:
+            agentRef:
+              name: test-runner
+              namespace: ci-agents
+          inputs:
+            parameters:
+              - name: test-type
+                value: "integration"
+
+        - name: security-scan
+          agent:
+            spec:
+              model: "openai:gpt-4-turbo-preview"
+              instructions: "Run security scanning tools and analyze results"
+              tools:
+                - type: Shell
+                  config:
+                    allowedCommands: [trivy, semgrep, snyk]
+
+        - name: performance-baseline
+          agent:
+            agentRef:
+              name: perf-tester
+              namespace: ci-agents
+          when: "{{states.code-analysis.outputs.risk_level in ['medium', 'high']}}"
+
+      # Aggregate parallel results
+      aggregation:
+        strategy: AllMustSucceed
+        failFast: false  # Continue even if one fails
+
+      transitions:
+        - to: deploy-canary
+          when: "{{state.allSucceeded && state.securityScan.critical == 0}}"
+
+        - to: fix-issues
+          when: "{{state.anyFailed || state.securityScan.critical > 0}}"
+
+    # State 3: Progressive canary deployment
+    - name: deploy-canary
+      type: Loop
+
+      # Loop configuration
+      loop:
+        # Iterate through rollout stages
+        iterateOver: "{{flow.parameters.rollout-stages}}"
+        itemName: "stage-percentage"
+
+        # Loop body (executed for each iteration)
+        body:
+          # Deploy to subset of traffic
+          - name: deploy-stage
+            agent:
+              spec:
+                model: "google:gemini-2.0-flash"
+                description: "Executes deployment to canary environment"
+                instructions: |
+                  Deploy the new version to {{loop.stage-percentage}}% of traffic.
+
+                  Steps:
+                  1. Update load balancer weights
+                  2. Deploy new pods
+                  3. Wait for health checks
+                  4. Verify deployment status
+
+                tools:
+                  - type: Shell
+                    config:
+                      allowedCommands: [kubectl, helm]
+                  - type: MCPCLI
+                    config:
+                      command: "kubectl-ai --mcp-server"
+
+            inputs:
+              parameters:
+                - name: percentage
+                  value: "{{loop.stage-percentage}}"
+                - name: version
+                  value: "{{trigger.commit.sha}}"
+
+          # Monitor metrics for this stage
+          - name: monitor-stage
+            agent:
+              spec:
+                model: "anthropic:claude-3-5-sonnet-20241022"
+                description: "Monitors deployment health metrics"
+                instructions: |
+                  Monitor the deployment for 10 minutes and analyze:
+                  1. Error rate (must be < {{flow.parameters.max-error-rate}})
+                  2. Latency percentiles (p50, p95, p99)
+                  3. CPU and memory usage
+                  4. Custom business metrics
+
+                  Output:
+                  {
+                    "healthy": true/false,
+                    "error_rate": 0.02,
+                    "latency_p99": 150,
+                    "recommendation": "continue|pause|rollback"
+                  }
+
+                tools:
+                  - type: MCPCLI
+                    config:
+                      command: "prometheus-cli --mcp-server"
+                  - type: HTTP
+                    config:
+                      baseURL: "https://grafana.example.com"
+
+            outputs:
+              variables:
+                - name: error-rate
+                  valueFrom:
+                    jsonPath: "$.error_rate"
+                - name: rollback-required
+                  valueFrom:
+                    expression: "{{state.outputs.recommendation == 'rollback'}}"
+
+        # Loop exit conditions
+        exitConditions:
+          - when: "{{flow.variables.rollback-required == true}}"
+            action: break
+            nextState: rollback
+
+          - when: "{{loop.index == loop.length - 1}}"
+            action: break
+            nextState: verify-deployment
+
+      # Delay between loop iterations
+      iterationDelay: "PT10M"
+
+      transitions:
+        - to: rollback
+          when: "{{flow.variables.rollback-required == true}}"
+
+        - to: verify-deployment
+          when: "{{loop.completed}}"
+
+    # State 4: Rollback on failure
+    - name: rollback
+      type: Agent
+
+      agent:
+        spec:
+          model: "anthropic:claude-3-5-sonnet-20241022"
+          description: "Executes automated rollback"
+          instructions: |
+            Perform emergency rollback:
+            1. Revert load balancer to 100% old version
+            2. Scale down new deployment
+            3. Verify old version health
+            4. Document rollback reason
+
+          tools:
+            - type: Shell
+              config:
+                allowedCommands: [kubectl, helm]
+
+      inputs:
+        parameters:
+          - name: reason
+            value: "Error rate exceeded threshold: {{flow.variables.error-rate}}"
+
+      transitions:
+        - to: post-rollback-analysis
+          when: "{{state.succeeded}}"
+
+        - to: manual-intervention
+          when: "{{state.failed}}"
+
+    # State 5: Verify final deployment
+    - name: verify-deployment
+      type: Agent
+
+      agent:
+        agentRef:
+          name: deployment-verifier
+          namespace: ci-agents
+
+      inputs:
+        parameters:
+          - name: version
+            value: "{{trigger.commit.sha}}"
+
+      transitions:
+        - to: generate-report
+          when: "{{state.succeeded}}"
+
+        - to: rollback
+          when: "{{state.failed}}"
+
+    # State 6: Generate deployment report
+    - name: generate-report
+      type: Agent
+
+      agent:
+        spec:
+          model: "anthropic:claude-3-5-sonnet-20241022"
+          description: "Generates comprehensive deployment report"
+          instructions: |
+            Create deployment report with:
+            - Deployment timeline
+            - Risk assessment results
+            - Test results summary
+            - Rollout metrics per stage
+            - Final health status
+            - Action items
+
+          tools:
+            - type: File
+            - type: GitHub
+
+      outputs:
+        artifacts:
+          - name: deployment-report
+            path: "/outputs/deployment-report.md"
+
+      transitions:
+        - to: end-success
+
+    # State 7: Manual review (for high-risk changes)
+    - name: manual-review
+      type: Human
+
+      humanTask:
+        # Notification configuration
+        notification:
+          channels:
+            - type: Slack
+              webhook: "{{flow.parameters.slack-webhook}}"
+              message: |
+                🚨 Manual review required for deployment
+                Risk Level: Critical
+                PR: {{flow.parameters.pr-number}}
+                Concerns: {{states.code-analysis.outputs.concerns}}
+
+            - type: Email
+              to: ["sre-team@example.com"]
+              subject: "Manual Review Required: PR #{{flow.parameters.pr-number}}"
+
+        # Approval configuration
+        approval:
+          approvers:
+            - "sre-lead@example.com"
+            - "security-lead@example.com"
+          requiredApprovals: 2
+          timeoutAction: reject
+          timeout: "PT4H"
+
+      transitions:
+        - to: run-tests
+          when: "{{state.approved}}"
+
+        - to: end-failure
+          when: "{{state.rejected || state.timedOut}}"
+
+    # Terminal states
+    - name: end-success
+      type: Terminal
+      status: Succeeded
+
+    - name: end-failure
+      type: Terminal
+      status: Failed
+
+    - name: manual-intervention
+      type: Terminal
+      status: RequiresIntervention
+
+  # -------------------------------------------------------------------------
+  # Event Triggers
+  # -------------------------------------------------------------------------
+
+  triggers:
+    # Triggered by GitHub webhook
+    - name: pull-request-merged
+      type: GitHub
+      config:
+        events:
+          - pull_request.merged
+        filter:
+          branches:
+            - main
+            - release/*
+
+    # Scheduled trigger for daily deployments
+    - name: daily-deployment-window
+      type: Cron
+      config:
+        schedule: "0 10 * * 1-5"  # Weekdays at 10 AM
+        timezone: "America/New_York"
+
+    # Manual trigger via API
+    - name: manual-deploy
+      type: API
+      config:
+        requireApproval: true
+
+  # -------------------------------------------------------------------------
+  # Error Handling
+  # -------------------------------------------------------------------------
+
+  errorHandling:
+    # Global error handler
+    onError:
+      - when: "{{error.type == 'AgentTimeout'}}"
+        action: retry
+        retryPolicy:
+          maxRetries: 2
+          backoff: "PT1M"
+
+      - when: "{{error.type == 'AgentFailure'}}"
+        action: transition
+        nextState: manual-intervention
+
+      - when: "{{error.severity == 'critical'}}"
+        action: notify
+        notification:
+          slack:
+            webhook: "{{flow.parameters.alert-webhook}}"
+            message: "Critical error in deployment flow: {{error.message}}"
+
+    # Timeout handling
+    timeout:
+      action: transition
+      nextState: manual-intervention
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+
+  observability:
+    metrics:
+      enabled: true
+      customMetrics:
+        - name: deployment_duration
+          type: histogram
+          labels:
+            - environment
+            - risk_level
+
+        - name: rollback_count
+          type: counter
+
+        - name: deployment_confidence_score
+          type: gauge
+
+    tracing:
+      enabled: true
+      samplingRate: 1.0  # 100% for deployments
+
+    logging:
+      level: debug
+      structuredLogging: true
+      auditLog: true
+
+# ============================================================================
+# Status
+# ============================================================================
+status:
+  phase: Running
+
+  startedAt: "2025-01-09T10:00:00Z"
+
+  # Current state machine state
+  currentState: deploy-canary
+
+  # State history (breadcrumb trail)
+  stateHistory:
+    - state: code-analysis
+      enteredAt: "2025-01-09T10:00:00Z"
+      exitedAt: "2025-01-09T10:02:30Z"
+      result: Succeeded
+
+    - state: run-tests
+      enteredAt: "2025-01-09T10:02:30Z"
+      exitedAt: "2025-01-09T10:15:00Z"
+      result: Succeeded
+
+    - state: deploy-canary
+      enteredAt: "2025-01-09T10:15:00Z"
+      currentIteration: 2
+      totalIterations: 5
+
+  # Current variable values
+  variables:
+    deployment-confidence: 0.85
+    rollout-percentage: 10
+    error-rate: 0.023
+    rollback-required: false
+
+  # Flow metrics
+  metrics:
+    statesExecuted: 3
+    totalDuration: "PT15M"
+    currentIterationDuration: "PT5M"
+
+  observedGeneration: 1

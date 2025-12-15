@@ -1,0 +1,695 @@
+# Example 4: Scheduled Multi-Agent Report Flow
+# Use case: Daily cron → Multiple agents analyze systems → Aggregated Slack report
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFlow
+metadata:
+  name: daily-infrastructure-report
+  namespace: aof-workflows
+  labels:
+    app: reporting
+    team: sre
+  annotations:
+    description: "Daily infrastructure health report with multi-agent analysis"
+    owner: "sre-team@company.com"
+
+spec:
+  config:
+    timeout: "30m"
+    retryPolicy:
+      maxAttempts: 2
+      backoff: exponential
+      initialDelay: "5s"
+    variables:
+      reportPeriod: "24h"
+      slackChannel: "C0123INFRASTRUCTURE"
+      timezone: "America/Los_Angeles"
+    secretsRef:
+      - name: prometheus-token
+      - name: datadog-api-key
+      - name: aws-readonly-credentials
+      - name: github-readonly-token
+      - name: slack-bot-token
+      - name: anthropic-api-key
+    concurrency:
+      limit: 1                     # Only one report at a time
+      strategy: reject
+
+  triggers:
+    - id: daily-cron
+      type: Cron
+      config:
+        schedule: "0 9 * * 1-5"    # Weekdays at 9 AM
+        timezone: "America/Los_Angeles"
+        concurrencyPolicy: "Forbid"
+        startingDeadlineSeconds: 300
+
+  nodes:
+    # Node 1: Initialize report context
+    - id: init-report
+      type: Transform
+      name: "Initialize Report"
+      timeout: "10s"
+      config:
+        transformType: cel
+        cel:
+          expression: |
+            {
+              "report_date": now().format("2006-01-02"),
+              "report_period": context.flow.variables.reportPeriod,
+              "timezone": context.flow.variables.timezone,
+              "start_time": now().add(-24h),
+              "end_time": now()
+            }
+
+    # Node 2: Post "generating report" message
+    - id: notify-start
+      type: Action
+      name: "Notify Report Start"
+      timeout: "10s"
+      input:
+        reportDate:
+          $ref: "$.context.nodes.init-report.output.report_date"
+      config:
+        actionType: Slack
+        slack:
+          action: post-message
+          channel:
+            $ref: "$.context.flow.variables.slackChannel"
+          message:
+            text: |
+              📊 *Daily Infrastructure Report - {{.reportDate}}*
+
+              🤖 Multiple agents analyzing systems...
+              - 📈 Performance metrics
+              - 💰 Cost analysis
+              - 🔒 Security posture
+              - 📦 Deployment activity
+              - ⚠️ Incident summary
+
+              Report will be ready shortly...
+          botToken:
+            secretRef: slack-bot-token
+
+    # Node 3: Split for parallel agent analysis
+    - id: split-analysis
+      type: Split
+      name: "Parallel Agent Analysis"
+      config:
+        strategy: all
+        timeout: "25m"
+        continueOnError: true      # Generate report even if some agents fail
+
+    # Node 4a: Performance Analysis Agent
+    - id: performance-agent
+      type: Agent
+      name: "Performance Analysis Agent"
+      timeout: "8m"
+      input:
+        startTime:
+          $ref: "$.context.nodes.init-report.output.start_time"
+        endTime:
+          $ref: "$.context.nodes.init-report.output.end_time"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are a performance analysis expert for infrastructure systems.
+            Analyze metrics from Prometheus and identify trends, anomalies, and recommendations.
+
+            Output JSON format:
+            {
+              "summary": "high-level summary",
+              "metrics": {
+                "avg_cpu_usage": 45.2,
+                "avg_memory_usage": 67.8,
+                "p95_response_time": 230,
+                "error_rate": 0.12,
+                "request_volume": 12500000
+              },
+              "trends": [
+                {"metric": "cpu_usage", "direction": "up|down|stable", "change_percent": 5.2}
+              ],
+              "anomalies": [
+                {"time": "2024-01-15T14:30:00Z", "metric": "error_rate", "description": "spike in errors"}
+              ],
+              "recommendations": ["recommendation 1", "recommendation 2"]
+            }
+          tools:
+            - name: prometheus_query
+              description: "Query Prometheus metrics"
+            - name: datadog_query
+              description: "Query Datadog metrics"
+          maxTokens: 4096
+          temperature: 0.3
+        prompt:
+          template: |
+            Analyze infrastructure performance for the last {{.period}}:
+
+            Time Range: {{.startTime}} to {{.endTime}}
+
+            Query and analyze:
+            1. CPU and memory usage across all services
+            2. API response times (p50, p95, p99)
+            3. Error rates and types
+            4. Request volume and throughput
+            5. Database query performance
+            6. Cache hit rates
+
+            Identify trends, anomalies, and provide actionable recommendations.
+            Output as JSON.
+          variables:
+            period:
+              $ref: "$.input.reportPeriod"
+            startTime:
+              $ref: "$.input.startTime"
+            endTime:
+              $ref: "$.input.endTime"
+        allowedTools:
+          - prometheus_query
+          - datadog_query
+        maxIterations: 10
+        outputFormat: json
+
+    # Node 4b: Cost Analysis Agent
+    - id: cost-agent
+      type: Agent
+      name: "Cost Analysis Agent"
+      timeout: "8m"
+      input:
+        startTime:
+          $ref: "$.context.nodes.init-report.output.start_time"
+        endTime:
+          $ref: "$.context.nodes.init-report.output.end_time"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are a cloud cost optimization expert.
+            Analyze AWS spending and identify cost optimization opportunities.
+
+            Output JSON format:
+            {
+              "summary": "cost summary",
+              "total_spend": 45230.50,
+              "spend_by_service": {
+                "EC2": 15000,
+                "RDS": 8000,
+                "S3": 2000
+              },
+              "trends": {
+                "vs_yesterday": 2.3,
+                "vs_last_week": -5.1,
+                "vs_last_month": 12.8
+              },
+              "top_consumers": [
+                {"resource": "i-abc123", "cost": 500, "recommendation": "rightsizing"}
+              ],
+              "savings_opportunities": [
+                {"opportunity": "Reserved instances", "potential_savings": 2000}
+              ],
+              "anomalies": []
+            }
+          tools:
+            - name: aws_cost_explorer
+              description: "Query AWS Cost Explorer"
+          maxTokens: 4096
+        prompt:
+          template: |
+            Analyze cloud infrastructure costs for {{.period}}:
+
+            Time Range: {{.startTime}} to {{.endTime}}
+
+            Analyze:
+            1. Total spend and breakdown by service
+            2. Cost trends (day-over-day, week-over-week)
+            3. Top cost contributors
+            4. Unused or underutilized resources
+            5. Reserved instance coverage
+            6. Savings opportunities
+
+            Output as JSON.
+          variables:
+            period:
+              $ref: "$.context.flow.variables.reportPeriod"
+            startTime:
+              $ref: "$.input.startTime"
+            endTime:
+              $ref: "$.input.endTime"
+        allowedTools:
+          - aws_cost_explorer
+        outputFormat: json
+
+    # Node 4c: Security Posture Agent
+    - id: security-agent
+      type: Agent
+      name: "Security Posture Agent"
+      timeout: "8m"
+      input:
+        startTime:
+          $ref: "$.context.nodes.init-report.output.start_time"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are a security posture analyst.
+            Review security events, vulnerabilities, and compliance status.
+
+            Output JSON:
+            {
+              "summary": "security summary",
+              "security_score": 92,
+              "critical_issues": 0,
+              "high_issues": 2,
+              "medium_issues": 8,
+              "vulnerabilities": [
+                {"severity": "high", "cve": "CVE-2024-1234", "affected": "service-x"}
+              ],
+              "failed_compliance_checks": [],
+              "recent_security_events": [
+                {"time": "2024-01-15T10:30:00Z", "type": "failed_login", "source": "1.2.3.4"}
+              ],
+              "recommendations": []
+            }
+          tools:
+            - name: query_security_logs
+            - name: scan_vulnerabilities
+            - name: check_compliance
+          maxTokens: 4096
+        prompt:
+          template: |
+            Analyze security posture for the last {{.period}}:
+
+            Review:
+            1. Security events and alerts
+            2. Vulnerability scan results
+            3. Compliance check status
+            4. Failed authentication attempts
+            5. IAM policy changes
+            6. Network security group changes
+
+            Output as JSON.
+          variables:
+            period:
+              $ref: "$.context.flow.variables.reportPeriod"
+        allowedTools:
+          - query_security_logs
+          - scan_vulnerabilities
+          - check_compliance
+        outputFormat: json
+
+    # Node 4d: Deployment Activity Agent
+    - id: deployment-agent
+      type: Agent
+      name: "Deployment Activity Agent"
+      timeout: "8m"
+      input:
+        startTime:
+          $ref: "$.context.nodes.init-report.output.start_time"
+        endTime:
+          $ref: "$.context.nodes.init-report.output.end_time"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are a deployment tracking expert.
+            Analyze deployment activity from GitHub and K8s.
+
+            Output JSON:
+            {
+              "summary": "deployment summary",
+              "total_deployments": 24,
+              "successful_deployments": 22,
+              "failed_deployments": 2,
+              "rollbacks": 1,
+              "deployments": [
+                {
+                  "service": "api-service",
+                  "version": "v1.2.3",
+                  "time": "2024-01-15T09:00:00Z",
+                  "status": "success",
+                  "pr_number": 123
+                }
+              ],
+              "top_deployers": ["user1", "user2"],
+              "deployment_frequency": 3.5,
+              "average_deploy_time": "12m"
+            }
+          tools:
+            - name: github_api
+            - name: kubectl_get
+          maxTokens: 4096
+        prompt:
+          template: |
+            Analyze deployment activity for {{.period}}:
+
+            Time Range: {{.startTime}} to {{.endTime}}
+
+            Track:
+            1. All deployments to production
+            2. Deployment success/failure rates
+            3. Rollback events
+            4. Deployment frequency
+            5. Most active services
+            6. Related GitHub PRs
+
+            Output as JSON.
+          variables:
+            period:
+              $ref: "$.context.flow.variables.reportPeriod"
+            startTime:
+              $ref: "$.input.startTime"
+            endTime:
+              $ref: "$.input.endTime"
+        allowedTools:
+          - github_api
+          - kubectl_get
+        outputFormat: json
+
+    # Node 4e: Incident Summary Agent
+    - id: incident-agent
+      type: Agent
+      name: "Incident Summary Agent"
+      timeout: "8m"
+      input:
+        startTime:
+          $ref: "$.context.nodes.init-report.output.start_time"
+        endTime:
+          $ref: "$.context.nodes.init-report.output.end_time"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are an incident tracking expert.
+            Summarize incidents from PagerDuty and their resolution.
+
+            Output JSON:
+            {
+              "summary": "incident summary",
+              "total_incidents": 5,
+              "high_urgency": 1,
+              "low_urgency": 4,
+              "avg_resolution_time": "45m",
+              "incidents": [
+                {
+                  "number": 1234,
+                  "title": "API latency spike",
+                  "urgency": "high",
+                  "created_at": "2024-01-15T08:00:00Z",
+                  "resolved_at": "2024-01-15T09:15:00Z",
+                  "resolution": "Scaled up API pods"
+                }
+              ],
+              "most_common_issue": "database connection timeout",
+              "mttr_trend": "improving"
+            }
+          tools:
+            - name: pagerduty_api
+          maxTokens: 4096
+        prompt:
+          template: |
+            Summarize incidents for {{.period}}:
+
+            Time Range: {{.startTime}} to {{.endTime}}
+
+            Summarize:
+            1. All triggered incidents
+            2. Incident resolution times
+            3. Most common incident types
+            4. High urgency incidents
+            5. MTTR trends
+
+            Output as JSON.
+          variables:
+            period:
+              $ref: "$.context.flow.variables.reportPeriod"
+            startTime:
+              $ref: "$.input.startTime"
+            endTime:
+              $ref: "$.input.endTime"
+        allowedTools:
+          - pagerduty_api
+        outputFormat: json
+
+    # Node 5: Merge all agent analyses
+    - id: merge-analyses
+      type: Merge
+      name: "Combine All Analyses"
+      config:
+        strategy: wait-all
+        timeout: "1m"
+        aggregation: custom
+        customAggregation: |
+          {
+            "report_metadata": context.nodes.init-report.output,
+            "performance": context.nodes.performance-agent.output ?? {"error": "analysis failed"},
+            "cost": context.nodes.cost-agent.output ?? {"error": "analysis failed"},
+            "security": context.nodes.security-agent.output ?? {"error": "analysis failed"},
+            "deployments": context.nodes.deployment-agent.output ?? {"error": "analysis failed"},
+            "incidents": context.nodes.incident-agent.output ?? {"error": "analysis failed"},
+            "generated_at": now()
+          }
+
+    # Node 6: Generate executive summary
+    - id: executive-summary
+      type: Agent
+      name: "Executive Summary Agent"
+      timeout: "5m"
+      input:
+        analyses:
+          $ref: "$.context.nodes.merge-analyses.output"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are an executive summary writer for infrastructure reports.
+            Create a concise, actionable summary for leadership.
+          maxTokens: 2048
+          temperature: 0.5
+        prompt:
+          template: |
+            Create an executive summary from these infrastructure analyses:
+
+            Performance: {{.analyses.performance}}
+            Cost: {{.analyses.cost}}
+            Security: {{.analyses.security}}
+            Deployments: {{.analyses.deployments}}
+            Incidents: {{.analyses.incidents}}
+
+            Write a 3-5 sentence executive summary highlighting:
+            - Overall health (Red/Yellow/Green)
+            - Key achievements
+            - Critical issues requiring attention
+            - Top recommendation
+          variables:
+            analyses:
+              $ref: "$.input.analyses"
+        outputFormat: text
+
+    # Node 7: Format comprehensive Slack report
+    - id: format-report
+      type: Transform
+      name: "Format Slack Report"
+      timeout: "30s"
+      input:
+        analyses:
+          $ref: "$.context.nodes.merge-analyses.output"
+        summary:
+          $ref: "$.context.nodes.executive-summary.output.response"
+      config:
+        transformType: template
+        template:
+          engine: go-template
+          template: |
+            📊 *Daily Infrastructure Report - {{.metadata.report_date}}*
+
+            {{.summary}}
+
+            ---
+
+            *📈 Performance Analysis*
+            • Avg CPU: {{.performance.metrics.avg_cpu_usage}}%
+            • Avg Memory: {{.performance.metrics.avg_memory_usage}}%
+            • P95 Response Time: {{.performance.metrics.p95_response_time}}ms
+            • Error Rate: {{.performance.metrics.error_rate}}%
+            • Request Volume: {{.performance.metrics.request_volume | humanize}}
+            {{if .performance.anomalies}}⚠️ *Anomalies:* {{len .performance.anomalies}} detected{{end}}
+
+            *💰 Cost Analysis*
+            • Total Spend: ${{.cost.total_spend | printf "%.2f"}}
+            • Change vs Yesterday: {{.cost.trends.vs_yesterday}}%
+            • Change vs Last Week: {{.cost.trends.vs_last_week}}%
+            {{if .cost.savings_opportunities}}💡 *Savings Opportunity:* ${{index .cost.savings_opportunities 0 "potential_savings"}}{{end}}
+
+            *🔒 Security Posture*
+            • Security Score: {{.security.security_score}}/100
+            • Critical Issues: {{.security.critical_issues}}
+            • High Issues: {{.security.high_issues}}
+            • Medium Issues: {{.security.medium_issues}}
+            {{if gt .security.critical_issues 0}}🚨 *Action Required*{{end}}
+
+            *📦 Deployment Activity*
+            • Total Deployments: {{.deployments.total_deployments}}
+            • Success Rate: {{div (mul .deployments.successful_deployments 100) .deployments.total_deployments}}%
+            • Rollbacks: {{.deployments.rollbacks}}
+            • Avg Deploy Time: {{.deployments.average_deploy_time}}
+
+            *⚠️ Incidents*
+            • Total Incidents: {{.incidents.total_incidents}}
+            • High Urgency: {{.incidents.high_urgency}}
+            • Avg Resolution: {{.incidents.avg_resolution_time}}
+            • MTTR Trend: {{.incidents.mttr_trend}}
+
+            ---
+
+            *🎯 Top Recommendations:*
+            {{range .performance.recommendations}}• {{.}}
+            {{end}}
+            {{range .cost.savings_opportunities}}• {{.opportunity}}: Save ${{.potential_savings}}
+            {{end}}
+
+            _Report generated at {{.metadata.generated_at | date "15:04 MST"}}_
+          variables:
+            metadata:
+              $ref: "$.input.analyses.report_metadata"
+            performance:
+              $ref: "$.input.analyses.performance"
+            cost:
+              $ref: "$.input.analyses.cost"
+            security:
+              $ref: "$.input.analyses.security"
+            deployments:
+              $ref: "$.input.analyses.deployments"
+            incidents:
+              $ref: "$.input.analyses.incidents"
+            summary:
+              $ref: "$.input.summary"
+
+    # Node 8: Post comprehensive report to Slack
+    - id: post-report
+      type: Action
+      name: "Post Report"
+      timeout: "10s"
+      input:
+        reportText:
+          $ref: "$.context.nodes.format-report.output.result"
+      config:
+        actionType: Slack
+        slack:
+          action: post-message
+          channel:
+            $ref: "$.context.flow.variables.slackChannel"
+          message:
+            text:
+              $ref: "$.input.reportText"
+          botToken:
+            secretRef: slack-bot-token
+
+    # Node 9: Store report in storage
+    - id: archive-report
+      type: Action
+      name: "Archive Report"
+      timeout: "30s"
+      input:
+        reportData:
+          $ref: "$.context.nodes.merge-analyses.output"
+        reportDate:
+          $ref: "$.context.nodes.init-report.output.report_date"
+      config:
+        actionType: HTTP
+        http:
+          url: "https://api.company.com/reports/infrastructure"
+          method: POST
+          headers:
+            Content-Type: "application/json"
+          body:
+            report_date:
+              $ref: "$.input.reportDate"
+            data:
+              $ref: "$.input.reportData"
+          authentication:
+            type: bearer
+            secretRef: internal-api-token
+
+  connections:
+    # Main flow
+    - from: init-report
+      to: notify-start
+
+    - from: notify-start
+      to: split-analysis
+
+    # Parallel agent execution
+    - from: split-analysis
+      to: performance-agent
+
+    - from: split-analysis
+      to: cost-agent
+
+    - from: split-analysis
+      to: security-agent
+
+    - from: split-analysis
+      to: deployment-agent
+
+    - from: split-analysis
+      to: incident-agent
+
+    # All agents merge
+    - from: performance-agent
+      to: merge-analyses
+
+    - from: cost-agent
+      to: merge-analyses
+
+    - from: security-agent
+      to: merge-analyses
+
+    - from: deployment-agent
+      to: merge-analyses
+
+    - from: incident-agent
+      to: merge-analyses
+
+    # Generate summary and format
+    - from: merge-analyses
+      to: executive-summary
+
+    - from: executive-summary
+      to: format-report
+
+    # Publish report
+    - from: format-report
+      to: post-report
+
+    - from: post-report
+      to: archive-report
+
+  # Error handling
+  errorHandling:
+    strategy: continue
+    onFailure:
+      - nodeId: notify-start
+        condition: "true"
+
+  # Observability
+  observability:
+    logging:
+      level: info
+      includeInputs: false         # Don't log large metric datasets
+      includeOutputs: true
+      redactSecrets: true
+    metrics:
+      enabled: true
+      customMetrics:
+        - name: report_generation_time_seconds
+          type: histogram
+          labels: ["report_type"]
+        - name: agent_analysis_duration_seconds
+          type: histogram
+          labels: ["agent_type"]
+        - name: report_success_total
+          type: counter
+    tracing:
+      enabled: true
+      samplingRate: 1.0

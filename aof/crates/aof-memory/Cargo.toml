@@ -1,0 +1,37 @@
+[package]
+name = "aof-memory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Pluggable memory backends for agent state management"
+
+[dependencies]
+aof-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+# Optional backends
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"], optional = true }
+sled = { version = "0.34", optional = true }
+memmap2 = { workspace = true, optional = true }
+
+[features]
+default = ["memory"]
+memory = []
+redis-backend = ["redis"]
+sled-backend = ["sled"]
+file-backend = ["memmap2"]
+all-backends = ["memory", "redis-backend", "sled-backend", "file-backend"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "full", "macros"] }
+chrono = { workspace = true }

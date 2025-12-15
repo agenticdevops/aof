@@ -1,0 +1,557 @@
+# Example 2: GitHub PR Review Flow
+# Use case: Automated multi-agent PR review with security and code quality checks
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFlow
+metadata:
+  name: github-pr-review-flow
+  namespace: aof-workflows
+  labels:
+    app: github-integration
+    team: security
+  annotations:
+    description: "Multi-agent PR review: security scan + code quality analysis"
+    owner: "security-team@company.com"
+
+spec:
+  config:
+    timeout: "15m"
+    retryPolicy:
+      maxAttempts: 1               # Don't retry PR reviews
+      backoff: fixed
+    variables:
+      minCoverage: 80
+      securityScanEnabled: true
+    secretsRef:
+      - name: github-app-token
+      - name: anthropic-api-key
+
+  triggers:
+    - id: pr-opened
+      type: GitHub
+      config:
+        repository: "company/backend-api"
+        events:
+          - pull_request
+        actions:
+          - opened
+          - synchronize            # When new commits pushed
+          - reopened
+        branches:
+          - main
+          - develop
+        webhookSecret:
+          secretRef: github-webhook-secret
+        filters:
+          # Don't review draft PRs or dependabot
+          labels: []
+          authors:
+            - "!dependabot[bot]"
+
+  nodes:
+    # Node 1: Extract PR information
+    - id: extract-pr-info
+      type: Transform
+      name: "Extract PR Info"
+      timeout: "10s"
+      config:
+        transformType: cel
+        cel:
+          expression: |
+            {
+              "pr_number": context.trigger.payload.pull_request.number,
+              "title": context.trigger.payload.pull_request.title,
+              "author": context.trigger.payload.pull_request.user.login,
+              "base_branch": context.trigger.payload.pull_request.base.ref,
+              "head_branch": context.trigger.payload.pull_request.head.ref,
+              "diff_url": context.trigger.payload.pull_request.diff_url,
+              "files_changed": context.trigger.payload.pull_request.changed_files,
+              "additions": context.trigger.payload.pull_request.additions,
+              "deletions": context.trigger.payload.pull_request.deletions,
+              "repository": context.trigger.payload.repository.full_name
+            }
+
+    # Node 2: Post initial review comment
+    - id: post-review-start
+      type: Action
+      name: "Post Review Started"
+      timeout: "10s"
+      input:
+        prNumber:
+          $ref: "$.context.nodes.extract-pr-info.output.pr_number"
+        repository:
+          $ref: "$.context.nodes.extract-pr-info.output.repository"
+      config:
+        actionType: GitHub
+        github:
+          action: create-comment
+          repository:
+            $ref: "$.input.repository"
+          target:
+            pullRequestNumber:
+              $ref: "$.input.prNumber"
+          content:
+            comment: |
+              🤖 **Automated Review Starting**
+
+              Running comprehensive analysis:
+              - 🔒 Security vulnerability scan
+              - ✨ Code quality analysis
+              - 📏 Best practices check
+
+              Results will be posted shortly...
+          token:
+            secretRef: github-app-token
+
+    # Node 3: Fetch PR diff
+    - id: fetch-diff
+      type: Action
+      name: "Fetch PR Diff"
+      timeout: "30s"
+      input:
+        diffUrl:
+          $ref: "$.context.nodes.extract-pr-info.output.diff_url"
+      config:
+        actionType: HTTP
+        http:
+          url:
+            $ref: "$.input.diffUrl"
+          method: GET
+          headers:
+            Accept: "application/vnd.github.v3.diff"
+            Authorization: "token {{.token}}"
+          authentication:
+            type: bearer
+            secretRef: github-app-token
+          timeout: "30s"
+
+    # Node 4: Split for parallel agent analysis
+    - id: split-analysis
+      type: Split
+      name: "Parallel Analysis"
+      config:
+        strategy: all
+        timeout: "10m"
+        continueOnError: true      # Continue even if one agent fails
+
+    # Node 5a: Security Agent
+    - id: security-agent
+      type: Agent
+      name: "Security Analysis Agent"
+      timeout: "5m"
+      input:
+        diff:
+          $ref: "$.context.nodes.fetch-diff.output.body"
+        prInfo:
+          $ref: "$.context.nodes.extract-pr-info.output"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are a security expert reviewing code changes for vulnerabilities.
+
+            Focus on:
+            - SQL injection vulnerabilities
+            - XSS vulnerabilities
+            - Authentication/authorization issues
+            - Secrets exposure (API keys, passwords, tokens)
+            - Insecure dependencies
+            - OWASP Top 10 vulnerabilities
+
+            Output JSON format:
+            {
+              "severity": "critical|high|medium|low|none",
+              "issues": [
+                {
+                  "type": "sql-injection",
+                  "severity": "high",
+                  "file": "path/to/file.js",
+                  "line": 42,
+                  "description": "Detailed issue description",
+                  "recommendation": "How to fix"
+                }
+              ],
+              "summary": "Overall security assessment"
+            }
+          maxTokens: 4096
+          temperature: 0.2
+        prompt:
+          template: |
+            Analyze this PR for security vulnerabilities:
+
+            PR Title: {{.title}}
+            Author: {{.author}}
+            Files Changed: {{.filesChanged}}
+
+            Diff:
+            ```
+            {{.diff}}
+            ```
+
+            Provide detailed security analysis in JSON format.
+          variables:
+            title:
+              $ref: "$.input.prInfo.title"
+            author:
+              $ref: "$.input.prInfo.author"
+            filesChanged:
+              $ref: "$.input.prInfo.files_changed"
+            diff:
+              $ref: "$.input.diff"
+        outputFormat: json
+        maxIterations: 3
+
+    # Node 5b: Code Quality Agent
+    - id: code-quality-agent
+      type: Agent
+      name: "Code Quality Agent"
+      timeout: "5m"
+      input:
+        diff:
+          $ref: "$.context.nodes.fetch-diff.output.body"
+        prInfo:
+          $ref: "$.context.nodes.extract-pr-info.output"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are a code quality expert reviewing code changes.
+
+            Focus on:
+            - Code complexity and maintainability
+            - Best practices adherence
+            - Error handling
+            - Test coverage
+            - Documentation quality
+            - Performance considerations
+            - Code duplication
+
+            Output JSON format:
+            {
+              "quality_score": 0-100,
+              "issues": [
+                {
+                  "type": "complexity|documentation|performance|duplication|testing",
+                  "severity": "high|medium|low",
+                  "file": "path/to/file.js",
+                  "line": 42,
+                  "description": "Issue description",
+                  "recommendation": "Suggested improvement"
+                }
+              ],
+              "strengths": ["positive aspects"],
+              "summary": "Overall quality assessment"
+            }
+          maxTokens: 4096
+          temperature: 0.3
+        prompt:
+          template: |
+            Analyze this PR for code quality:
+
+            PR Title: {{.title}}
+            Lines Added: {{.additions}}
+            Lines Deleted: {{.deletions}}
+
+            Diff:
+            ```
+            {{.diff}}
+            ```
+
+            Provide detailed code quality analysis in JSON format.
+          variables:
+            title:
+              $ref: "$.input.prInfo.title"
+            additions:
+              $ref: "$.input.prInfo.additions"
+            deletions:
+              $ref: "$.input.prInfo.deletions"
+            diff:
+              $ref: "$.input.diff"
+        outputFormat: json
+        maxIterations: 3
+
+    # Node 6: Merge analysis results
+    - id: merge-analysis
+      type: Merge
+      name: "Combine Analysis"
+      config:
+        strategy: wait-all
+        timeout: "30s"
+        aggregation: custom
+        customAggregation: |
+          {
+            "security": context.nodes.security-agent.output,
+            "quality": context.nodes.code-quality-agent.output,
+            "timestamp": now()
+          }
+
+    # Node 7: Determine review decision
+    - id: review-decision
+      type: Transform
+      name: "Determine Review Decision"
+      timeout: "10s"
+      input:
+        analysis:
+          $ref: "$.context.nodes.merge-analysis.output"
+      config:
+        transformType: cel
+        cel:
+          expression: |
+            {
+              "approved":
+                context.nodes.merge-analysis.output.security.severity in ['none', 'low'] &&
+                context.nodes.merge-analysis.output.quality.quality_score >= 70,
+              "blocking_issues":
+                context.nodes.merge-analysis.output.security.issues.filter(i, i.severity in ['critical', 'high']).size() > 0,
+              "requires_changes":
+                context.nodes.merge-analysis.output.security.severity in ['high', 'critical'] ||
+                context.nodes.merge-analysis.output.quality.quality_score < 70
+            }
+
+    # Node 8: Format review comment
+    - id: format-review
+      type: Transform
+      name: "Format Review Comment"
+      timeout: "10s"
+      input:
+        analysis:
+          $ref: "$.context.nodes.merge-analysis.output"
+        decision:
+          $ref: "$.context.nodes.review-decision.output"
+      config:
+        transformType: template
+        template:
+          engine: go-template
+          template: |
+            ## 🤖 Automated Review Results
+
+            ### 🔒 Security Analysis
+            **Severity:** {{.security.severity | upper}}
+            {{if gt (len .security.issues) 0}}
+            **Issues Found:** {{len .security.issues}}
+
+            {{range .security.issues}}
+            - **[{{.severity | upper}}]** {{.type}} in `{{.file}}:{{.line}}`
+              - {{.description}}
+              - 💡 Recommendation: {{.recommendation}}
+            {{end}}
+            {{else}}
+            ✅ No security issues detected
+            {{end}}
+
+            {{.security.summary}}
+
+            ---
+
+            ### ✨ Code Quality Analysis
+            **Quality Score:** {{.quality.quality_score}}/100
+
+            {{if .quality.strengths}}
+            **Strengths:**
+            {{range .quality.strengths}}
+            - ✅ {{.}}
+            {{end}}
+            {{end}}
+
+            {{if gt (len .quality.issues) 0}}
+            **Areas for Improvement:**
+            {{range .quality.issues}}
+            - **[{{.severity | upper}}]** {{.type}} in `{{.file}}:{{.line}}`
+              - {{.description}}
+              - 💡 {{.recommendation}}
+            {{end}}
+            {{end}}
+
+            {{.quality.summary}}
+
+            ---
+
+            ### 🎯 Review Decision
+            {{if .decision.approved}}
+            ✅ **APPROVED** - This PR meets our quality and security standards.
+            {{else if .decision.blocking_issues}}
+            ❌ **CHANGES REQUIRED** - Critical security issues must be addressed.
+            {{else}}
+            ⚠️ **CHANGES REQUESTED** - Please address the issues above.
+            {{end}}
+          variables:
+            security:
+              $ref: "$.input.analysis.security"
+            quality:
+              $ref: "$.input.analysis.quality"
+            decision:
+              $ref: "$.input.decision"
+
+    # Node 9: Post review comment
+    - id: post-review
+      type: Action
+      name: "Post Review"
+      timeout: "10s"
+      input:
+        prNumber:
+          $ref: "$.context.nodes.extract-pr-info.output.pr_number"
+        repository:
+          $ref: "$.context.nodes.extract-pr-info.output.repository"
+        reviewBody:
+          $ref: "$.context.nodes.format-review.output.result"
+        decision:
+          $ref: "$.context.nodes.review-decision.output"
+      config:
+        actionType: GitHub
+        github:
+          action: create-comment
+          repository:
+            $ref: "$.input.repository"
+          target:
+            pullRequestNumber:
+              $ref: "$.input.prNumber"
+          content:
+            comment:
+              $ref: "$.input.reviewBody"
+          token:
+            secretRef: github-app-token
+
+    # Node 10: Add labels based on decision
+    - id: add-labels
+      type: Action
+      name: "Add Labels"
+      timeout: "10s"
+      input:
+        prNumber:
+          $ref: "$.context.nodes.extract-pr-info.output.pr_number"
+        repository:
+          $ref: "$.context.nodes.extract-pr-info.output.repository"
+        decision:
+          $ref: "$.context.nodes.review-decision.output"
+        securitySeverity:
+          $ref: "$.context.nodes.merge-analysis.output.security.severity"
+      config:
+        actionType: GitHub
+        github:
+          action: add-label
+          repository:
+            $ref: "$.input.repository"
+          target:
+            pullRequestNumber:
+              $ref: "$.input.prNumber"
+          content:
+            labels:
+              $cel: |
+                [
+                  input.decision.approved ? "automated-review:passed" : "automated-review:failed",
+                  input.securitySeverity in ["critical", "high"] ? "security:needs-review" : "",
+                  input.decision.blocking_issues ? "do-not-merge" : ""
+                ].filter(l, l != "")
+          token:
+            secretRef: github-app-token
+
+    # Node 11: Create Jira ticket for critical issues
+    - id: create-jira-ticket
+      type: Action
+      name: "Create Security Ticket"
+      timeout: "30s"
+      input:
+        prNumber:
+          $ref: "$.context.nodes.extract-pr-info.output.pr_number"
+        repository:
+          $ref: "$.context.nodes.extract-pr-info.output.repository"
+        securityIssues:
+          $ref: "$.context.nodes.merge-analysis.output.security.issues"
+      config:
+        actionType: Jira
+        jira:
+          action: create-issue
+          baseUrl: "https://company.atlassian.net"
+          project: "SEC"
+          issueType: "Security Bug"
+          fields:
+            summary: "Security issues in PR #{{.prNumber}}"
+            description: |
+              Automated security scan found critical issues in PR #{{.prNumber}}
+
+              Repository: {{.repository}}
+              PR: https://github.com/{{.repository}}/pull/{{.prNumber}}
+
+              Issues:
+              {{range .issues}}
+              - [{{.severity | upper}}] {{.description}}
+                File: {{.file}}:{{.line}}
+                Recommendation: {{.recommendation}}
+              {{end}}
+            priority: "High"
+            labels:
+              - automated-security-scan
+              - github-pr
+          credentials:
+            secretRef: jira-api-credentials
+
+  connections:
+    # Main flow
+    - from: extract-pr-info
+      to: post-review-start
+
+    - from: post-review-start
+      to: fetch-diff
+
+    - from: fetch-diff
+      to: split-analysis
+
+    # Parallel branches
+    - from: split-analysis
+      to: security-agent
+
+    - from: split-analysis
+      to: code-quality-agent
+
+    # Merge and decision
+    - from: security-agent
+      to: merge-analysis
+
+    - from: code-quality-agent
+      to: merge-analysis
+
+    - from: merge-analysis
+      to: review-decision
+
+    - from: review-decision
+      to: format-review
+
+    - from: format-review
+      to: post-review
+
+    - from: post-review
+      to: add-labels
+
+    # Conditional: Create Jira ticket only for critical issues
+    - from: add-labels
+      to: create-jira-ticket
+      condition: |
+        context.nodes.merge-analysis.output.security.severity in ['critical', 'high']
+
+  errorHandling:
+    strategy: continue
+    onFailure:
+      - nodeId: post-review-start
+        condition: "context.nodes.fetch-diff.status == 'failed'"
+
+  observability:
+    logging:
+      level: info
+      includeInputs: false         # Don't log full diffs
+      includeOutputs: true
+      redactSecrets: true
+    metrics:
+      enabled: true
+      customMetrics:
+        - name: pr_reviews_total
+          type: counter
+          labels: ["repository", "decision"]
+        - name: security_issues_found
+          type: counter
+          labels: ["severity", "type"]
+        - name: code_quality_score
+          type: histogram
+          labels: ["repository"]
+    tracing:
+      enabled: true
+      samplingRate: 0.5

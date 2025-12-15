@@ -1,0 +1,52 @@
+# Hello World Agent
+#
+# Description: The simplest possible AOF agent - demonstrates basic structure.
+# Perfect for learning the YAML schema and testing your setup.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+#
+# How to run:
+#   export ANTHROPIC_API_KEY=sk-ant-xxxxx
+#   aof apply -f hello-world-agent.yaml
+#   aof query hello "What's your name?"
+#   aof query hello "Tell me a joke about DevOps"
+#
+# Expected output: Friendly responses from the agent
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  # Unique name for this agent
+  name: hello
+  description: "A friendly hello world agent"
+
+spec:
+  # Which AI model to use
+  model: claude-3-5-sonnet-20241022
+
+  # The agent's personality and instructions
+  system: |
+    You are a friendly AI assistant helping users learn about AOF
+    (Agentic Ops Framework).
+
+    When someone talks to you:
+    - Greet them warmly
+    - Answer their questions about DevOps and automation
+    - Be encouraging and helpful
+    - Keep responses concise (2-3 sentences)
+
+  # How creative the responses should be (0 = deterministic, 1 = very creative)
+  temperature: 0.7
+
+  # Resource limits
+  resources:
+    max_tokens: 1024  # Keep responses short
+    timeout: 30s
+
+  # No tools needed for this simple agent
+  tools: []
+
+  tags:
+    example: quickstart
+    difficulty: beginner

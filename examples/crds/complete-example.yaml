@@ -1,0 +1,515 @@
+# ============================================================================
+# Complete AOF Example: Production Deployment Pipeline
+# ============================================================================
+# This example demonstrates a complete production setup using all AOF CRDs:
+# - ModelConfig: Multi-provider LLM configuration
+# - Memory: Redis-based conversation persistence
+# - ToolServer: Kubernetes and GitHub tool servers
+# - Agent: Individual specialized agents
+# - AgentFleet: Code review team
+# - AgentWorkflow: Build-test-deploy pipeline
+# - AgentFlow: Intelligent progressive deployment
+# ============================================================================
+
+---
+# ============================================================================
+# 1. ModelConfig - Multi-Provider LLM Configuration
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: ModelConfig
+metadata:
+  name: prod-model-config
+  namespace: platform
+spec:
+  providers:
+    - name: anthropic
+      type: Anthropic
+      config:
+        apiKeySecretRef:
+          name: anthropic-creds
+          key: api-key
+      models:
+        - id: "claude-3-5-sonnet-20241022"
+          pricing:
+            inputTokens: 0.003
+            outputTokens: 0.015
+
+    - name: google
+      type: Google
+      config:
+        apiKeySecretRef:
+          name: google-creds
+          key: api-key
+      models:
+        - id: "gemini-2.0-flash"
+          pricing:
+            inputTokens: 0.0001
+            outputTokens: 0.0004
+
+  routing:
+    strategy: CostOptimized
+    fallback:
+      enabled: true
+      chains:
+        - name: production
+          models:
+            - "anthropic:claude-3-5-sonnet-20241022"
+            - "google:gemini-2.0-flash"
+
+  costManagement:
+    budgets:
+      - name: daily-budget
+        amount: 200.00
+        period: daily
+        alertThreshold: 0.8
+
+---
+# ============================================================================
+# 2. Memory - Redis Backend for Agent State
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Memory
+metadata:
+  name: platform-memory
+  namespace: platform
+spec:
+  backend: redis
+
+  redis:
+    mode: cluster
+    cluster:
+      endpoints:
+        - redis-0.redis.platform.svc.cluster.local:6379
+        - redis-1.redis.platform.svc.cluster.local:6379
+    auth:
+      passwordSecretRef:
+        name: redis-creds
+        key: password
+
+  memory:
+    conversationTTL: "PT24H"
+    maxConversationHistory: 100
+    summarization:
+      enabled: true
+      threshold: 50
+
+---
+# ============================================================================
+# 3. ToolServer - Kubernetes Operations
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: ToolServer
+metadata:
+  name: kubectl-server
+  namespace: platform
+spec:
+  transport: stdio
+
+  stdio:
+    command: kubectl-ai
+    args: ["--mcp-server"]
+    env:
+      - name: KUBECONFIG
+        value: /etc/kubernetes/kubeconfig
+
+  tools:
+    - name: kubectl_get
+      description: "Get Kubernetes resources"
+    - name: kubectl_apply
+      description: "Apply manifests"
+    - name: kubectl_logs
+      description: "Get pod logs"
+
+  security:
+    rbac:
+      serviceAccountName: kubectl-mcp-sa
+
+---
+# ============================================================================
+# 4. ToolServer - GitHub Operations
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: ToolServer
+metadata:
+  name: github-server
+  namespace: platform
+spec:
+  transport: http
+
+  http:
+    baseURL: "https://api.github.com"
+    auth:
+      type: Bearer
+      tokenSecretRef:
+        name: github-token
+        key: token
+
+  tools:
+    - name: github_get_repo
+      description: "Get repository info"
+    - name: github_list_prs
+      description: "List pull requests"
+    - name: github_create_issue
+      description: "Create issue"
+
+---
+# ============================================================================
+# 5. Agent - Build Agent
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: builder-agent
+  namespace: platform
+spec:
+  model: "google:gemini-2.0-flash"
+  modelConfigRef:
+    name: prod-model-config
+
+  description: "Builds and packages applications"
+
+  instructions: |
+    You are a build engineer responsible for:
+    1. Running build commands (npm/cargo/go build)
+    2. Executing tests
+    3. Creating container images
+    4. Publishing artifacts
+
+  tools:
+    - type: Shell
+      config:
+        allowedCommands:
+          - npm
+          - cargo
+          - docker
+    - type: File
+      config:
+        baseDir: "/workspace"
+
+  memory:
+    memoryConfigRef:
+      name: platform-memory
+
+---
+# ============================================================================
+# 6. Agent - Deployment Agent
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  name: deployer-agent
+  namespace: platform
+spec:
+  model: "anthropic:claude-3-5-sonnet-20241022"
+  modelConfigRef:
+    name: prod-model-config
+
+  description: "Deploys applications to Kubernetes"
+
+  instructions: |
+    You are a deployment specialist:
+    1. Update Kubernetes manifests
+    2. Apply deployments progressively
+    3. Monitor deployment health
+    4. Rollback on failures
+
+  tools:
+    - type: ToolServerRef
+      config:
+        name: kubectl-server
+    - type: File
+
+  memory:
+    memoryConfigRef:
+      name: platform-memory
+
+---
+# ============================================================================
+# 7. AgentFleet - Code Review Team
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFleet
+metadata:
+  name: code-review-team
+  namespace: platform
+spec:
+  strategy:
+    type: Collaborative
+    communication:
+      mode: Broadcast
+      sharedMemory:
+        enabled: true
+        memoryConfigRef:
+          name: platform-memory
+
+  agents:
+    # Security Reviewer
+    - name: security-reviewer
+      spec:
+        model: "anthropic:claude-3-5-sonnet-20241022"
+        description: "Security and vulnerability analysis"
+        instructions: |
+          Check for security vulnerabilities:
+          - OWASP Top 10
+          - Credential leaks
+          - Dependency vulnerabilities
+        tools:
+          - type: File
+          - type: Shell
+            config:
+              allowedCommands: [trivy, semgrep]
+
+    # Performance Reviewer
+    - name: perf-reviewer
+      spec:
+        model: "google:gemini-2.0-flash"
+        description: "Performance optimization"
+        instructions: |
+          Analyze performance:
+          - Algorithm complexity
+          - Database query efficiency
+          - Resource usage
+        tools:
+          - type: File
+
+  consensus:
+    mechanism: MajorityVote
+    quorum: 2
+
+---
+# ============================================================================
+# 8. AgentWorkflow - CI/CD Pipeline
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: ci-pipeline
+  namespace: platform
+spec:
+  entrypoint: code-review
+
+  steps:
+    # Step 1: Code Review
+    - name: code-review
+      agent:
+        agentRef:
+          name: code-review-team
+          kind: AgentFleet
+      inputs:
+        parameters:
+          - name: pr-number
+            valueFrom:
+              event: "{{trigger.pr.number}}"
+      next:
+        - build
+
+    # Step 2: Build
+    - name: build
+      dependsOn:
+        - code-review
+      agent:
+        agentRef:
+          name: builder-agent
+      inputs:
+        parameters:
+          - name: branch
+            value: "{{trigger.pr.branch}}"
+      outputs:
+        parameters:
+          - name: image-tag
+            valueFrom:
+              path: "/outputs/image-tag.txt"
+      next:
+        - test
+
+    # Step 3: Test (Parallel)
+    - name: test
+      dependsOn:
+        - build
+      agent:
+        agentRef:
+          name: builder-agent
+      inputs:
+        parameters:
+          - name: test-type
+            value: "all"
+      next:
+        - deploy-staging
+
+    # Step 4: Deploy to Staging
+    - name: deploy-staging
+      dependsOn:
+        - test
+      agent:
+        agentRef:
+          name: deployer-agent
+      inputs:
+        parameters:
+          - name: environment
+            value: "staging"
+          - name: image-tag
+            value: "{{steps.build.outputs.parameters.image-tag}}"
+      next:
+        - progressive-prod-deploy
+
+  triggers:
+    - name: pr-merged
+      type: GitHub
+      config:
+        events:
+          - pull_request.merged
+
+---
+# ============================================================================
+# 9. AgentFlow - Progressive Production Deployment
+# ============================================================================
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFlow
+metadata:
+  name: progressive-deploy
+  namespace: platform
+spec:
+  flowControl:
+    type: StateMachine
+    initialState: deploy-canary
+
+  variables:
+    - name: rollout-percentage
+      type: integer
+      initial: 5
+    - name: error-rate
+      type: float
+      initial: 0.0
+
+  states:
+    # Progressive Canary Deployment
+    - name: deploy-canary
+      type: Loop
+      loop:
+        iterateOver: "[5, 10, 25, 50, 100]"
+        itemName: "stage"
+        body:
+          - name: deploy-stage
+            agent:
+              agentRef:
+                name: deployer-agent
+            inputs:
+              parameters:
+                - name: percentage
+                  value: "{{loop.stage}}"
+
+          - name: monitor-stage
+            agent:
+              spec:
+                model: "anthropic:claude-3-5-sonnet-20241022"
+                instructions: |
+                  Monitor deployment health for 10 minutes.
+                  Check error rate, latency, and resource usage.
+                tools:
+                  - type: ToolServerRef
+                    config:
+                      name: kubectl-server
+            outputs:
+              variables:
+                - name: error-rate
+                  valueFrom:
+                    jsonPath: "$.error_rate"
+
+        exitConditions:
+          - when: "{{flow.variables.error-rate > 0.05}}"
+            action: break
+            nextState: rollback
+
+      iterationDelay: "PT10M"
+      transitions:
+        - to: verify-deployment
+          when: "{{loop.completed}}"
+        - to: rollback
+          when: "{{flow.variables.error-rate > 0.05}}"
+
+    # Rollback on Failure
+    - name: rollback
+      type: Agent
+      agent:
+        agentRef:
+          name: deployer-agent
+      inputs:
+        parameters:
+          - name: action
+            value: "rollback"
+      transitions:
+        - to: end-failure
+
+    # Verify Deployment
+    - name: verify-deployment
+      type: Agent
+      agent:
+        agentRef:
+          name: deployer-agent
+      transitions:
+        - to: end-success
+
+    # Terminal States
+    - name: end-success
+      type: Terminal
+      status: Succeeded
+
+    - name: end-failure
+      type: Terminal
+      status: Failed
+
+  triggers:
+    - name: staging-verified
+      type: API
+
+---
+# ============================================================================
+# Supporting Kubernetes Resources
+# ============================================================================
+
+# Redis Cluster for Memory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: platform
+spec:
+  clusterIP: None
+  ports:
+    - port: 6379
+  selector:
+    app: redis
+
+---
+# Secret for Anthropic API Key
+apiVersion: v1
+kind: Secret
+metadata:
+  name: anthropic-creds
+  namespace: platform
+type: Opaque
+stringData:
+  api-key: "sk-ant-xxx"
+
+---
+# Secret for Google API Key
+apiVersion: v1
+kind: Secret
+metadata:
+  name: google-creds
+  namespace: platform
+type: Opaque
+stringData:
+  api-key: "AIza-xxx"
+
+---
+# Secret for GitHub Token
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-token
+  namespace: platform
+type: Opaque
+stringData:
+  token: "ghp_xxx"

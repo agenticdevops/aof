@@ -1,0 +1,178 @@
+# Code Review Fleet
+#
+# Description: A team of specialized reviewers that analyze code changes from
+# multiple perspectives: security, performance, and quality/style.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - GitHub MCP or access to code changes
+#
+# How to run:
+#   aof apply -f code-review-fleet.yaml
+#   aof query code-review-team "Review PR #123 in myorg/myrepo"
+#   aof query code-review-team "Analyze the changes in /workspace/app/src"
+#
+# Expected output: Comprehensive review with combined insights from all reviewers
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: code-review-team
+  description: "Multi-perspective code review team"
+  labels:
+    team: engineering
+    role: quality
+
+spec:
+  # Run all reviewers in parallel for fast results
+  strategy: parallel
+
+  # Combine results into a unified review
+  aggregation: merge
+
+  # The team of reviewers
+  agents:
+    # Security-focused reviewer
+    - name: security-reviewer
+      spec:
+        model: claude-3-5-sonnet-20241022
+
+        system: |
+          You are a security engineer reviewing code for vulnerabilities.
+
+          Focus on:
+          - SQL injection, XSS, CSRF vulnerabilities
+          - Authentication and authorization flaws
+          - Insecure cryptography usage
+          - Secrets or credentials in code
+          - Input validation issues
+          - Race conditions
+          - Security misconfigurations
+
+          For each issue:
+          - Severity: CRITICAL, HIGH, MEDIUM, LOW
+          - Location: File and line number
+          - Description: What's wrong
+          - Impact: What could happen
+          - Fix: How to resolve it
+          - Reference: CWE or OWASP link
+
+          Be thorough but practical. Explain the actual risk.
+
+        temperature: 0
+
+        tools:
+          - name: file
+            enabled: true
+          - name: shell
+            enabled: true
+            config:
+              allowed_commands: [semgrep, bandit, grep]
+
+    # Performance-focused reviewer
+    - name: performance-reviewer
+      spec:
+        model: claude-3-5-sonnet-20241022
+
+        system: |
+          You are a performance engineer reviewing code for efficiency issues.
+
+          Focus on:
+          - Algorithmic complexity (O(n²) → O(n log n))
+          - Database query optimization (N+1 queries, missing indexes)
+          - Memory leaks and resource management
+          - Caching opportunities
+          - Lazy loading vs eager loading
+          - Unnecessary computations
+          - Inefficient data structures
+          - Network round trips
+
+          For each issue:
+          - Impact: Response time or resource usage increase
+          - Location: File and line number
+          - Current: What's happening now
+          - Improvement: Suggested optimization
+          - Trade-offs: Any downsides to the fix
+
+          Focus on issues that matter in production, not micro-optimizations.
+
+        temperature: 0.2
+
+        tools:
+          - name: file
+            enabled: true
+          - name: shell
+            enabled: true
+            config:
+              allowed_commands: [grep, find, cat]
+
+    # Code quality and style reviewer
+    - name: quality-reviewer
+      spec:
+        model: claude-3-5-sonnet-20241022
+
+        system: |
+          You are a senior engineer reviewing code for quality and maintainability.
+
+          Focus on:
+          - Code clarity and readability
+          - Naming conventions
+          - Function/method length and complexity
+          - DRY principle violations
+          - SOLID principle adherence
+          - Error handling completeness
+          - Test coverage
+          - Documentation quality
+          - API design
+          - Type safety
+
+          For each issue:
+          - Category: Readability, Maintainability, Design, Testing
+          - Location: File and line number
+          - Issue: What could be better
+          - Suggestion: Specific improvement
+          - Example: Show improved code if helpful
+
+          Be constructive and educational. Praise good patterns too.
+          Focus on issues that affect maintainability, not just style preferences.
+
+        temperature: 0.3
+
+        tools:
+          - name: file
+            enabled: true
+          - name: shell
+            enabled: true
+            config:
+              allowed_commands: [eslint, pylint, rubocop, golangci-lint]
+
+  # Fleet-level configuration
+  resources:
+    max_tokens_per_agent: 4096
+    timeout: 120s
+
+  # All agents share conversation context
+  memory:
+    type: shared
+    max_messages: 30
+
+  # Output formatting
+  output:
+    format: |
+      # Code Review Summary
+
+      ## 🛡️ Security Review
+      {security-reviewer.output}
+
+      ## ⚡ Performance Review
+      {performance-reviewer.output}
+
+      ## ✨ Quality Review
+      {quality-reviewer.output}
+
+      ## Overall Recommendation
+      {merged.recommendation}
+
+  tags:
+    automation: code-review
+    quality: assurance

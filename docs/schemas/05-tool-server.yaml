@@ -1,0 +1,497 @@
+# ============================================================================
+# ToolServer CRD Schema
+# ============================================================================
+# ToolServer defines MCP (Model Context Protocol) tool servers that provide
+# capabilities to agents. Supports three transport modes:
+# - stdio: Local process communication (for CLI tools)
+# - sse: Server-Sent Events (for HTTP streaming)
+# - http: Standard HTTP REST API
+#
+# Use Cases:
+# - Kubernetes API access (kubectl, helm)
+# - Cloud provider CLIs (aws, gcloud, azure)
+# - Database tools (psql, mysql, redis-cli)
+# - Custom internal tools
+# - Third-party API integrations
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: ToolServer
+metadata:
+  name: kubectl-mcp-server
+  namespace: aof-system
+  labels:
+    tool-category: kubernetes
+    transport: stdio
+  annotations:
+    aof.agenticops.org/description: "MCP server for Kubernetes operations via kubectl"
+
+spec:
+  # -------------------------------------------------------------------------
+  # Transport Configuration
+  # -------------------------------------------------------------------------
+
+  # Transport type: stdio, sse, http
+  transport: stdio
+
+  # stdio transport configuration
+  stdio:
+    # Command to execute
+    command: kubectl-ai
+
+    # Command arguments
+    args:
+      - "--mcp-server"
+      - "--context=production"
+
+    # Environment variables
+    env:
+      - name: KUBECONFIG
+        value: /etc/kubernetes/kubeconfig
+
+      - name: KUBECTL_AI_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: kubectl-ai-credentials
+            key: api-key
+
+      - name: KUBECTL_AI_MODEL
+        value: "anthropic:claude-3-5-sonnet-20241022"
+
+    # Working directory
+    workingDir: /workspace
+
+    # Process timeout (idle timeout)
+    timeout: "PT30M"
+
+    # Restart policy
+    restartPolicy:
+      enabled: true
+      maxRestarts: 3
+      backoff: "PT10S"
+
+  # -------------------------------------------------------------------------
+  # Tool Capabilities
+  # -------------------------------------------------------------------------
+
+  tools:
+    # List of tools provided by this server
+    - name: kubectl_get
+      description: "Get Kubernetes resources"
+      inputSchema:
+        type: object
+        properties:
+          resource:
+            type: string
+            description: "Resource type (pod, service, deployment, etc.)"
+          name:
+            type: string
+            description: "Resource name (optional)"
+          namespace:
+            type: string
+            description: "Namespace (optional, defaults to default)"
+          output:
+            type: string
+            enum: ["json", "yaml", "wide"]
+            default: "json"
+        required: ["resource"]
+
+    - name: kubectl_describe
+      description: "Describe Kubernetes resources in detail"
+      inputSchema:
+        type: object
+        properties:
+          resource:
+            type: string
+          name:
+            type: string
+          namespace:
+            type: string
+        required: ["resource", "name"]
+
+    - name: kubectl_logs
+      description: "Get container logs from pods"
+      inputSchema:
+        type: object
+        properties:
+          pod:
+            type: string
+          container:
+            type: string
+          namespace:
+            type: string
+          follow:
+            type: boolean
+            default: false
+          tail:
+            type: integer
+            default: 100
+        required: ["pod"]
+
+    - name: kubectl_apply
+      description: "Apply Kubernetes manifests"
+      inputSchema:
+        type: object
+        properties:
+          manifest:
+            type: string
+            description: "YAML manifest content"
+          namespace:
+            type: string
+          dryRun:
+            type: boolean
+            default: false
+        required: ["manifest"]
+
+    - name: kubectl_delete
+      description: "Delete Kubernetes resources"
+      inputSchema:
+        type: object
+        properties:
+          resource:
+            type: string
+          name:
+            type: string
+          namespace:
+            type: string
+          force:
+            type: boolean
+            default: false
+        required: ["resource", "name"]
+
+  # -------------------------------------------------------------------------
+  # Security & Permissions
+  # -------------------------------------------------------------------------
+
+  security:
+    # RBAC role binding (Kubernetes-specific)
+    rbac:
+      # Service account to use
+      serviceAccountName: kubectl-mcp-sa
+
+      # Cluster role binding
+      clusterRoleRef:
+        name: kubectl-mcp-role
+        apiGroup: rbac.authorization.k8s.io
+
+    # Allowed namespaces (empty = all namespaces)
+    allowedNamespaces:
+      - production
+      - staging
+      - development
+
+    # Denied operations (safety measures)
+    deniedOperations:
+      - delete-namespace
+      - delete-persistentvolume
+
+    # Require approval for sensitive operations
+    requireApproval:
+      enabled: true
+      operations:
+        - kubectl_delete
+        - kubectl_apply
+      approvers:
+        - "sre-team@example.com"
+      timeout: "PT10M"
+
+  # -------------------------------------------------------------------------
+  # Resource Limits
+  # -------------------------------------------------------------------------
+
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  # -------------------------------------------------------------------------
+  # Health & Lifecycle
+  # -------------------------------------------------------------------------
+
+  health:
+    # Health check configuration
+    enabled: true
+
+    # Liveness probe (is process alive?)
+    livenessProbe:
+      type: exec
+      exec:
+        command:
+          - kubectl
+          - version
+          - --client
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+
+    # Readiness probe (is process ready to serve?)
+    readinessProbe:
+      type: exec
+      exec:
+        command:
+          - kubectl
+          - cluster-info
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+
+  observability:
+    metrics:
+      enabled: true
+      port: 9090
+      path: /metrics
+
+    logging:
+      level: info
+      format: json
+
+    tracing:
+      enabled: true
+      endpoint: "http://otel-collector:4317"
+
+---
+# ============================================================================
+# Example: HTTP ToolServer (REST API)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: ToolServer
+metadata:
+  name: github-api-server
+  namespace: aof-system
+  labels:
+    tool-category: source-control
+    transport: http
+
+spec:
+  transport: http
+
+  http:
+    # Base URL for API
+    baseURL: "https://api.github.com"
+
+    # Authentication
+    auth:
+      type: Bearer
+      tokenSecretRef:
+        name: github-token
+        key: token
+
+    # Default headers
+    headers:
+      Accept: "application/vnd.github.v3+json"
+      User-Agent: "AOF-ToolServer/1.0"
+
+    # Timeout
+    timeout: "PT30S"
+
+    # Rate limiting
+    rateLimit:
+      requestsPerSecond: 10
+      burst: 20
+
+    # TLS configuration
+    tls:
+      insecureSkipVerify: false
+      caCertSecretRef:
+        name: github-ca-cert
+        key: ca.crt
+
+  tools:
+    - name: github_get_repo
+      description: "Get repository information"
+      endpoint:
+        method: GET
+        path: "/repos/{owner}/{repo}"
+        pathParams:
+          - owner
+          - repo
+      inputSchema:
+        type: object
+        properties:
+          owner:
+            type: string
+          repo:
+            type: string
+        required: ["owner", "repo"]
+
+    - name: github_list_prs
+      description: "List pull requests"
+      endpoint:
+        method: GET
+        path: "/repos/{owner}/{repo}/pulls"
+        queryParams:
+          - state
+          - sort
+          - direction
+      inputSchema:
+        type: object
+        properties:
+          owner:
+            type: string
+          repo:
+            type: string
+          state:
+            type: string
+            enum: ["open", "closed", "all"]
+            default: "open"
+        required: ["owner", "repo"]
+
+    - name: github_create_issue
+      description: "Create a new issue"
+      endpoint:
+        method: POST
+        path: "/repos/{owner}/{repo}/issues"
+        bodyTemplate: |
+          {
+            "title": "{{title}}",
+            "body": "{{body}}",
+            "labels": {{labels}},
+            "assignees": {{assignees}}
+          }
+      inputSchema:
+        type: object
+        properties:
+          owner:
+            type: string
+          repo:
+            type: string
+          title:
+            type: string
+          body:
+            type: string
+          labels:
+            type: array
+            items:
+              type: string
+          assignees:
+            type: array
+            items:
+              type: string
+        required: ["owner", "repo", "title"]
+
+---
+# ============================================================================
+# Example: SSE ToolServer (Server-Sent Events)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: ToolServer
+metadata:
+  name: log-streaming-server
+  namespace: aof-system
+  labels:
+    tool-category: observability
+    transport: sse
+
+spec:
+  transport: sse
+
+  sse:
+    # SSE endpoint URL
+    url: "https://logs.example.com/stream"
+
+    # Authentication
+    auth:
+      type: APIKey
+      apiKeySecretRef:
+        name: log-stream-credentials
+        key: api-key
+      apiKeyHeader: "X-API-Key"
+
+    # Headers
+    headers:
+      Accept: "text/event-stream"
+
+    # Reconnection policy
+    reconnection:
+      enabled: true
+      maxRetries: 5
+      initialDelay: "PT1S"
+      maxDelay: "PT30S"
+      backoffMultiplier: 2.0
+
+    # Heartbeat configuration
+    heartbeat:
+      enabled: true
+      interval: "PT30S"
+      timeout: "PT60S"
+
+  tools:
+    - name: stream_logs
+      description: "Stream logs in real-time"
+      inputSchema:
+        type: object
+        properties:
+          query:
+            type: string
+            description: "Log query filter"
+          startTime:
+            type: string
+            format: date-time
+          level:
+            type: string
+            enum: ["debug", "info", "warn", "error"]
+        required: ["query"]
+
+    - name: tail_logs
+      description: "Tail logs for specific service"
+      inputSchema:
+        type: object
+        properties:
+          service:
+            type: string
+          lines:
+            type: integer
+            default: 100
+        required: ["service"]
+
+# ============================================================================
+# Status
+# ============================================================================
+status:
+  phase: Running  # Pending, Running, Ready, Failed, Terminating
+
+  conditions:
+    - type: Ready
+      status: "True"
+      lastTransitionTime: "2025-01-09T10:00:00Z"
+      reason: ToolServerHealthy
+      message: "Tool server is operational"
+
+    - type: ToolsDiscovered
+      status: "True"
+      lastTransitionTime: "2025-01-09T10:00:05Z"
+      reason: ToolsLoaded
+      message: "Successfully discovered 5 tools"
+
+  # Discovered tools
+  discoveredTools:
+    - kubectl_get
+    - kubectl_describe
+    - kubectl_logs
+    - kubectl_apply
+    - kubectl_delete
+
+  # Statistics
+  stats:
+    totalRequests: 2847
+    successfulRequests: 2801
+    failedRequests: 46
+    averageResponseTime: "PT1.2S"
+
+  # Resource usage
+  resourceUsage:
+    memory: "256Mi"
+    cpu: "120m"
+
+  observedGeneration: 2
+  lastHealthCheckTime: "2025-01-09T12:30:00Z"

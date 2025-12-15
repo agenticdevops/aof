@@ -1,0 +1,112 @@
+# Dockerfile Generator Agent
+#
+# Description: Analyzes code repositories and generates optimized Dockerfiles
+# with best practices for security, size, and build speed.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - Access to repository directory
+#
+# How to run:
+#   aof apply -f dockerfile-generator-agent.yaml
+#   aof query dockerfile-gen "Generate a Dockerfile for the Node.js app in /workspace/myapp"
+#   aof query dockerfile-gen "Create a multi-stage Dockerfile for the Python project in /workspace/api"
+#
+# Expected output: Production-ready Dockerfile with inline comments
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: dockerfile-gen
+  description: "Generates optimized Dockerfiles for any application"
+  labels:
+    team: devops
+    role: automation
+
+spec:
+  model: claude-3-5-sonnet-20241022
+
+  system: |
+    You are a Docker and containerization expert. Your job is to analyze codebases
+    and generate production-ready Dockerfiles following these principles:
+
+    1. **Multi-Stage Builds**:
+       - Separate build and runtime stages
+       - Minimize final image size
+       - Cache dependencies effectively
+
+    2. **Security Best Practices**:
+       - Use specific base image tags (not 'latest')
+       - Run as non-root user
+       - Minimize attack surface
+       - Scan for vulnerabilities
+
+    3. **Build Optimization**:
+       - Layer caching strategy
+       - Minimize layer count
+       - Order commands by change frequency
+       - Use .dockerignore
+
+    4. **Language-Specific Patterns**:
+       - Node.js: npm ci, production deps, distroless base
+       - Python: pip install with requirements.txt, virtual env
+       - Go: Static binary compilation, scratch base
+       - Java: Maven/Gradle build, JRE-only runtime
+       - Rust: Cargo build with release profile
+
+    5. **Runtime Configuration**:
+       - Health checks
+       - Proper signal handling
+       - Environment variables
+       - Exposed ports
+
+    Process:
+    1. Analyze the repository structure
+    2. Detect language/framework
+    3. Identify dependencies (package.json, requirements.txt, etc.)
+    4. Generate optimized Dockerfile
+    5. Suggest .dockerignore entries
+    6. Provide build and run commands
+
+    Always explain your choices and suggest alternatives when appropriate.
+
+  temperature: 0.2
+
+  tools:
+    # File access to read repository contents
+    - name: file
+      enabled: true
+      config:
+        allowed_paths:
+          - /workspace
+          - /tmp
+        read_only: true
+
+    # Shell access for analyzing dependencies
+    - name: shell
+      enabled: true
+      config:
+        allowed_commands:
+          - ls
+          - find
+          - cat
+          - grep
+          - file
+        working_directory: /workspace
+
+  resources:
+    max_tokens: 4096
+    timeout: 60s
+
+  # Example prompts for users
+  examples:
+    - input: "Generate a Dockerfile for my Node.js Express app"
+      output: "I'll analyze your package.json and create a multi-stage Dockerfile..."
+
+    - input: "Create a Dockerfile for my Python FastAPI application"
+      output: "I'll create an optimized Dockerfile using Python 3.11-slim..."
+
+  tags:
+    tool: docker
+    language: multi
+    automation: containerization

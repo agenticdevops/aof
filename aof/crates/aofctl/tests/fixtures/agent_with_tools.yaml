@@ -1,0 +1,11 @@
+name: agent-with-tools
+model: claude-3-5-sonnet-20241022
+provider: anthropic
+max_iterations: 10
+temperature: 0.5
+max_tokens: 4096
+system_prompt: "You are an agent with tool access"
+tools:
+  - calculator
+  - file_reader
+memory: redis://localhost:6379

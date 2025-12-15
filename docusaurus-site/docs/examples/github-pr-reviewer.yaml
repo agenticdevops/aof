@@ -1,0 +1,205 @@
+# GitHub PR Review Agent
+# Automatically reviews pull requests for code quality, security, and best practices
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: github-pr-reviewer
+  labels:
+    purpose: code-review
+    team: engineering
+  annotations:
+    description: "AI-powered code review for pull requests"
+    version: "1.0.0"
+
+spec:
+  # GPT-4 for deep code analysis
+  model: openai:gpt-4
+
+  model_config:
+    temperature: 0.4      # Balanced for code review
+    max_tokens: 3000      # Detailed feedback
+
+  instructions: |
+    You are an expert code reviewer performing thorough pull request reviews.
+
+    Review focus areas:
+    1. **Code Quality**
+       - Readability and maintainability
+       - Proper error handling
+       - Code organization and structure
+       - DRY principle adherence
+
+    2. **Security**
+       - SQL injection vulnerabilities
+       - XSS risks
+       - Insecure dependencies
+       - Secrets in code
+       - Authentication/authorization issues
+
+    3. **Performance**
+       - Inefficient algorithms
+       - Memory leaks
+       - N+1 query problems
+       - Resource usage
+
+    4. **Best Practices**
+       - Design patterns
+       - Language idioms
+       - Testing coverage
+       - Documentation
+
+    5. **Style**
+       - Consistent formatting
+       - Naming conventions
+       - Comment quality
+
+    Review output format:
+    ```markdown
+    ## Code Review Summary
+
+    **Overall Assessment**: [Approve / Request Changes / Comment]
+
+    ### ✅ Strengths
+    - [Positive findings]
+
+    ### ⚠️ Issues Found
+    - **[Severity]** [File:Line] - [Issue description]
+    - **[Severity]** [File:Line] - [Issue description]
+
+    ### 💡 Suggestions
+    - [Improvement suggestions]
+
+    ### 🔒 Security Concerns
+    - [Security issues if any]
+
+    ### 📝 Comments
+    [Detailed inline comments]
+    ```
+
+    Severity levels: CRITICAL, HIGH, MEDIUM, LOW, INFO
+
+  tools:
+    # GitHub API access
+    - type: GitHub
+      config:
+        token: ${GITHUB_TOKEN}
+
+    # MCP server for advanced GitHub operations
+    - type: MCP
+      config:
+        name: github-mcp
+        command: ["npx", "-y", "@modelcontextprotocol/server-github"]
+        env:
+          GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+    # HTTP for additional APIs
+    - type: HTTP
+      config:
+        base_url: https://api.github.com
+        headers:
+          Authorization: "token ${GITHUB_TOKEN}"
+          Accept: "application/vnd.github.v3+json"
+
+  memory:
+    type: SQLite
+    config:
+      path: ./pr-review-memory.db
+      # Separate memory per repository
+      context_key: "repo_${GITHUB_REPOSITORY}"
+
+---
+# Example AgentFlow for automated PR reviews
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: auto-pr-review
+
+spec:
+  trigger:
+    type: GitHub
+    config:
+      events:
+        - pull_request.opened
+        - pull_request.synchronize  # New commits pushed
+      webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+
+  nodes:
+    - id: fetch-pr-details
+      type: Transform
+      config:
+        script: |
+          export PR_NUMBER="${event.pull_request.number}"
+          export PR_TITLE="${event.pull_request.title}"
+          export PR_AUTHOR="${event.pull_request.user.login}"
+          export REPO="${event.repository.full_name}"
+          export BASE_BRANCH="${event.pull_request.base.ref}"
+          export HEAD_BRANCH="${event.pull_request.head.ref}"
+
+    - id: review-code
+      type: Agent
+      config:
+        agent: github-pr-reviewer
+        input: |
+          Review PR #${PR_NUMBER} in ${REPO}
+          Title: ${PR_TITLE}
+          Author: @${PR_AUTHOR}
+          Changes: ${BASE_BRANCH}...${HEAD_BRANCH}
+
+          Perform comprehensive code review covering:
+          - Code quality and maintainability
+          - Security vulnerabilities
+          - Performance issues
+          - Best practices
+          - Testing coverage
+        timeout_seconds: 300
+
+    - id: post-review
+      type: GitHub
+      config:
+        action: add_comment
+        repository: ${REPO}
+        issue_number: ${PR_NUMBER}
+        body: ${review-code.output}
+
+    - id: update-status
+      type: GitHub
+      config:
+        action: update_status
+        repository: ${REPO}
+        sha: ${event.pull_request.head.sha}
+        state: success  # or failure based on review
+        context: "AOF Code Review"
+        description: "Automated code review completed"
+
+  connections:
+    - from: fetch-pr-details
+      to: review-code
+    - from: review-code
+      to: post-review
+    - from: post-review
+      to: update-status
+
+---
+# Setup instructions:
+#
+# 1. Set environment variables:
+#    export GITHUB_TOKEN=ghp_...
+#    export GITHUB_WEBHOOK_SECRET=...
+#
+# 2. Apply the agent:
+#    aofctl agent apply -f github-pr-reviewer.yaml
+#
+# 3. Apply the flow for automation:
+#    aofctl flow apply -f github-pr-reviewer.yaml
+#
+# 4. Start the flow listener:
+#    aofctl flow run auto-pr-review --daemon
+#
+# 5. Configure GitHub webhook:
+#    URL: https://your-domain.com/github/webhook
+#    Events: Pull requests
+#    Secret: ${GITHUB_WEBHOOK_SECRET}
+#
+# Manual usage:
+#    aofctl agent exec github-pr-reviewer "Review PR #123 in myorg/myrepo"

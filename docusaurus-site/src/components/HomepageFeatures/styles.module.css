@@ -1,0 +1,20 @@
+.features {
+  display: flex;
+  align-items: center;
+  padding: 2rem 0;
+  width: 100%;
+}
+
+.featureIcon {
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.featureSvg {
+  color: var(--ifm-color-primary);
+}
+
+.features .row {
+  row-gap: 2rem;
+}

@@ -1,0 +1,34 @@
+[package]
+name = "aof-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Model Context Protocol (MCP) client implementation"
+
+[dependencies]
+aof-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true, optional = true }
+bytes = { workspace = true }
+uuid = { workspace = true }
+url = "2.5"
+
+[features]
+default = ["stdio", "sse"]
+stdio = []
+sse = ["reqwest"]
+http = ["reqwest"]
+all-transports = ["stdio", "sse", "http"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "full", "macros"] }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }

@@ -1,0 +1,210 @@
+# PR Review Flow
+#
+# Description: Automated pull request review that runs security and quality checks
+# in parallel, then posts a comprehensive review comment.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - GITHUB_TOKEN with repo access
+# - GitHub MCP server or webhook endpoint
+#
+# How to run:
+#   export GITHUB_TOKEN=ghp_xxxxx
+#   aof apply -f pr-review-flow.yaml
+#   # Open a PR in your repo - review posted automatically
+#
+# Expected output: PR comment with security and quality feedback
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFlow
+metadata:
+  name: pr-auto-review
+  description: "Automated PR review with security and quality checks"
+  labels:
+    team: engineering
+    role: automation
+    platform: github
+
+spec:
+  # Trigger on PR events
+  trigger:
+    type: github
+    config:
+      events:
+        - pull_request.opened
+        - pull_request.synchronize  # New commits pushed
+      token_env: GITHUB_TOKEN
+
+      # Optional: Filter by repo, branch, or labels
+      filters:
+        # Only review PRs targeting main/master
+        base_branches:
+          - main
+          - master
+
+        # Skip PRs with "skip-review" label
+        exclude_labels:
+          - skip-review
+          - wip
+
+  # Use the code review fleet we defined earlier
+  fleet:
+    name: code-review-team
+
+    # Pass PR context to the fleet
+    context:
+      pr_number: "{trigger.pull_request.number}"
+      repo: "{trigger.repository.full_name}"
+      author: "{trigger.pull_request.user.login}"
+      base_branch: "{trigger.pull_request.base.ref}"
+      head_branch: "{trigger.pull_request.head.ref}"
+      changed_files: "{trigger.pull_request.changed_files}"
+
+  # Post review results
+  actions:
+    # Add a review comment
+    - type: github_review
+      config:
+        # Use GitHub's review API
+        review_type: comment  # or approve/request_changes
+
+        # Comprehensive review comment
+        body: |
+          ## Automated Code Review
+
+          Hey @{trigger.pull_request.user.login}! I've reviewed your changes.
+
+          ### Summary
+          - **Files Changed**: {trigger.pull_request.changed_files}
+          - **Lines Added**: +{trigger.pull_request.additions}
+          - **Lines Removed**: -{trigger.pull_request.deletions}
+
+          {fleet.output}
+
+          ### Overall Assessment
+          {fleet.merged.assessment}
+
+          ---
+
+          <details>
+          <summary>📋 Review Checklist</summary>
+
+          - [ ] Tests added/updated
+          - [ ] Documentation updated
+          - [ ] No security vulnerabilities
+          - [ ] Performance considerations addressed
+          - [ ] Breaking changes documented
+          </details>
+
+          _Automated review by AOF Code Review Fleet_
+
+    # Add labels based on findings
+    - type: github_labels
+      config:
+        add:
+          # Add labels based on review results
+          - label: security-review-needed
+            condition: "fleet.security-reviewer.findings.critical > 0"
+
+          - label: performance-concerns
+            condition: "fleet.performance-reviewer.findings.high > 0"
+
+          - label: needs-refactoring
+            condition: "fleet.quality-reviewer.score < 7"
+
+          - label: lgtm
+            condition: "fleet.merged.approved == true"
+
+    # Request changes if critical issues found
+    - type: github_review
+      condition: "fleet.security-reviewer.findings.critical > 0"
+      config:
+        review_type: request_changes
+        body: |
+          ⚠️ **Critical security issues found**
+
+          Please address the security concerns before merging.
+
+          {fleet.security-reviewer.critical_findings}
+
+    # Auto-approve if everything looks good
+    - type: github_review
+      condition: |
+        fleet.security-reviewer.findings.critical == 0 &&
+        fleet.security-reviewer.findings.high == 0 &&
+        fleet.quality-reviewer.score >= 8
+      config:
+        review_type: approve
+        body: |
+          ✅ **Automated review passed!**
+
+          No critical issues found. Code quality looks good.
+
+          _Still recommend a human review before merging._
+
+    # Post to Slack for visibility
+    - type: slack_message
+      config:
+        channel: "#code-reviews"
+        message: |
+          📝 *PR Review Complete*
+
+          *PR*: <{trigger.pull_request.html_url}|#{trigger.pull_request.number} {trigger.pull_request.title}>
+          *Author*: {trigger.pull_request.user.login}
+          *Status*: {fleet.merged.status}
+
+          *Findings*:
+          • Security: {fleet.security-reviewer.findings.total} issues
+          • Performance: {fleet.performance-reviewer.findings.total} issues
+          • Quality Score: {fleet.quality-reviewer.score}/10
+
+  # Conditions for running the flow
+  conditions:
+    # Skip draft PRs
+    - type: skip_if
+      condition: "trigger.pull_request.draft == true"
+
+    # Skip very large PRs (review manually)
+    - type: skip_if
+      condition: "trigger.pull_request.changed_files > 50"
+      message: "PR too large for automated review (>50 files)"
+
+    # Skip bot PRs (like dependabot)
+    - type: skip_if
+      condition: "trigger.pull_request.user.type == 'Bot'"
+
+  # Error handling
+  error_handling:
+    - type: github_comment
+      config:
+        body: |
+          ⚠️ Automated review failed
+
+          Sorry @{trigger.pull_request.user.login}, the automated review encountered an error.
+          A human will review your PR soon.
+
+          Error: {error.message}
+
+    - type: slack_message
+      config:
+        channel: "#engineering"
+        message: "PR review bot failed for #{trigger.pull_request.number}: {error.message}"
+
+  # Resource limits
+  resources:
+    timeout: 180s  # 3 minutes max
+    max_tokens: 16384
+
+  # Track metrics
+  metrics:
+    enabled: true
+    track:
+      - review_duration
+      - findings_per_severity
+      - auto_approved_prs
+      - prs_reviewed
+
+  tags:
+    automation: code-review
+    platform: github
+    critical: true

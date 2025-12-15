@@ -1,0 +1,481 @@
+# ============================================================================
+# ModelConfig CRD Schema
+# ============================================================================
+# ModelConfig defines LLM provider configurations, including credentials,
+# endpoints, and model-specific settings. Supports multiple providers:
+# - OpenAI (OpenAI, Azure OpenAI)
+# - Anthropic (Claude)
+# - Google (Gemini)
+# - Ollama (local/self-hosted)
+# - xAI (Grok)
+# - Docker Model Runner (local containerized models)
+#
+# Use Cases:
+# - Centralized model configuration
+# - Multi-provider fallback chains
+# - Cost optimization (route by price/performance)
+# - Compliance (route by data residency requirements)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: ModelConfig
+metadata:
+  name: production-model-config
+  namespace: aof-system
+  labels:
+    environment: production
+    tier: enterprise
+  annotations:
+    aof.agenticops.org/description: "Production model configuration with multi-provider support"
+
+spec:
+  # -------------------------------------------------------------------------
+  # Provider Configurations
+  # -------------------------------------------------------------------------
+
+  providers:
+    # OpenAI Configuration
+    - name: openai
+      type: OpenAI
+
+      config:
+        # API endpoint (default: https://api.openai.com/v1)
+        endpoint: "https://api.openai.com/v1"
+
+        # API key from secret
+        apiKeySecretRef:
+          name: openai-credentials
+          key: api-key
+
+        # Organization ID (optional)
+        organization: "org-example123"
+
+        # Request timeout
+        timeout: "PT60S"
+
+        # Retry policy
+        retryPolicy:
+          maxRetries: 3
+          backoffMultiplier: 2.0
+          initialBackoff: "PT1S"
+
+      # Available models from this provider
+      models:
+        - id: "gpt-4-turbo-preview"
+          aliases: ["gpt-4-turbo", "gpt4-turbo"]
+          capabilities:
+            - text
+            - vision
+          contextWindow: 128000
+          maxOutputTokens: 4096
+          pricing:
+            inputTokens: 0.01    # Per 1K tokens (USD)
+            outputTokens: 0.03
+          rateLimits:
+            requestsPerMinute: 500
+            tokensPerMinute: 150000
+
+        - id: "gpt-3.5-turbo"
+          aliases: ["gpt-3.5", "turbo"]
+          capabilities:
+            - text
+          contextWindow: 16384
+          maxOutputTokens: 4096
+          pricing:
+            inputTokens: 0.0005
+            outputTokens: 0.0015
+          rateLimits:
+            requestsPerMinute: 3500
+            tokensPerMinute: 90000
+
+    # Anthropic Configuration
+    - name: anthropic
+      type: Anthropic
+
+      config:
+        endpoint: "https://api.anthropic.com/v1"
+
+        apiKeySecretRef:
+          name: anthropic-credentials
+          key: api-key
+
+        # Anthropic version header
+        version: "2023-06-01"
+
+        timeout: "PT90S"
+
+      models:
+        - id: "claude-3-5-sonnet-20241022"
+          aliases: ["claude-3.5-sonnet", "claude-sonnet"]
+          capabilities:
+            - text
+            - vision
+            - tool-use
+          contextWindow: 200000
+          maxOutputTokens: 8192
+          pricing:
+            inputTokens: 0.003
+            outputTokens: 0.015
+          rateLimits:
+            requestsPerMinute: 1000
+            tokensPerMinute: 400000
+
+        - id: "claude-3-opus-20240229"
+          aliases: ["claude-3-opus", "claude-opus"]
+          capabilities:
+            - text
+            - vision
+            - tool-use
+          contextWindow: 200000
+          maxOutputTokens: 4096
+          pricing:
+            inputTokens: 0.015
+            outputTokens: 0.075
+
+        - id: "claude-3-haiku-20240307"
+          aliases: ["claude-3-haiku", "claude-haiku"]
+          capabilities:
+            - text
+            - vision
+          contextWindow: 200000
+          maxOutputTokens: 4096
+          pricing:
+            inputTokens: 0.00025
+            outputTokens: 0.00125
+
+    # Google Gemini Configuration
+    - name: google
+      type: Google
+
+      config:
+        endpoint: "https://generativelanguage.googleapis.com/v1beta"
+
+        apiKeySecretRef:
+          name: google-credentials
+          key: api-key
+
+        # Optional: Use service account instead
+        # serviceAccountSecretRef:
+        #   name: google-sa
+        #   key: service-account.json
+
+        timeout: "PT60S"
+
+      models:
+        - id: "gemini-2.0-flash"
+          aliases: ["gemini-flash", "gemini-2"]
+          capabilities:
+            - text
+            - vision
+            - audio
+            - tool-use
+          contextWindow: 1000000
+          maxOutputTokens: 8192
+          pricing:
+            inputTokens: 0.0001
+            outputTokens: 0.0004
+
+        - id: "gemini-1.5-pro"
+          aliases: ["gemini-pro"]
+          capabilities:
+            - text
+            - vision
+            - audio
+          contextWindow: 2000000
+          maxOutputTokens: 8192
+          pricing:
+            inputTokens: 0.00125
+            outputTokens: 0.005
+
+    # Ollama (Self-hosted) Configuration
+    - name: ollama
+      type: Ollama
+
+      config:
+        # Ollama server endpoint
+        endpoint: "http://ollama-service:11434"
+
+        # No API key required for local Ollama
+        # Optional: Basic auth if configured
+        # authSecretRef:
+        #   name: ollama-auth
+        #   key: credentials
+
+        timeout: "PT120S"
+
+        # Model pull policy
+        pullPolicy: IfNotPresent  # Always, IfNotPresent, Never
+
+      models:
+        - id: "llama3:70b"
+          aliases: ["llama3-70b", "llama3"]
+          capabilities:
+            - text
+          contextWindow: 8192
+          maxOutputTokens: 4096
+          # No pricing for self-hosted
+          resourceRequirements:
+            memory: "48Gi"
+            gpu: "2"
+
+        - id: "codellama:13b"
+          aliases: ["codellama"]
+          capabilities:
+            - text
+            - code
+          contextWindow: 16384
+          maxOutputTokens: 4096
+          resourceRequirements:
+            memory: "16Gi"
+            gpu: "1"
+
+    # xAI Grok Configuration
+    - name: grok
+      type: Grok
+
+      config:
+        endpoint: "https://api.x.ai/v1"
+
+        apiKeySecretRef:
+          name: grok-credentials
+          key: api-key
+
+        timeout: "PT60S"
+
+      models:
+        - id: "grok-1"
+          aliases: ["grok"]
+          capabilities:
+            - text
+          contextWindow: 8192
+          maxOutputTokens: 4096
+          pricing:
+            inputTokens: 0.01
+            outputTokens: 0.02
+
+    # Docker Model Runner Configuration
+    - name: docker-mr
+      type: DockerModelRunner
+
+      config:
+        # Docker Model Runner endpoint
+        endpoint: "http://docker-model-runner:8000"
+
+        # Optional: Registry credentials for private images
+        registrySecretRef:
+          name: docker-registry-creds
+          key: .dockerconfigjson
+
+        timeout: "PT180S"
+
+        # Resource limits for container
+        resources:
+          requests:
+            memory: "8Gi"
+            cpu: "2"
+          limits:
+            memory: "16Gi"
+            cpu: "4"
+            nvidia.com/gpu: "1"
+
+      models:
+        - id: "mistral:7b-instruct"
+          aliases: ["mistral"]
+          image: "docker.io/mistralai/mistral-7b-instruct:latest"
+          capabilities:
+            - text
+          contextWindow: 8192
+          maxOutputTokens: 4096
+          resourceRequirements:
+            memory: "12Gi"
+            gpu: "1"
+
+  # -------------------------------------------------------------------------
+  # Routing & Fallback Strategy
+  # -------------------------------------------------------------------------
+
+  routing:
+    # Default routing strategy
+    strategy: CostOptimized  # CostOptimized, Performance, LatencyOptimized, Custom
+
+    # Model selection rules
+    rules:
+      # Route by capability requirement
+      - name: vision-tasks
+        when:
+          capabilities:
+            - vision
+        preferredModels:
+          - "anthropic:claude-3-5-sonnet-20241022"
+          - "google:gemini-2.0-flash"
+          - "openai:gpt-4-turbo-preview"
+
+      # Route by context window size
+      - name: large-context
+        when:
+          minContextWindow: 100000
+        preferredModels:
+          - "google:gemini-2.0-flash"
+          - "anthropic:claude-3-5-sonnet-20241022"
+
+      # Route by cost constraint
+      - name: budget-conscious
+        when:
+          maxCostPerRequest: 0.01
+        preferredModels:
+          - "google:gemini-2.0-flash"
+          - "anthropic:claude-3-haiku-20240307"
+          - "ollama:llama3:70b"
+
+      # Route by data residency (compliance)
+      - name: data-residency-eu
+        when:
+          region: "eu"
+        preferredModels:
+          - "ollama:llama3:70b"  # Self-hosted in EU
+        blockModels:
+          - "openai:*"  # US-based
+
+    # Fallback chain
+    fallback:
+      enabled: true
+
+      # Fallback order by tier
+      chains:
+        - name: production
+          models:
+            - "anthropic:claude-3-5-sonnet-20241022"
+            - "google:gemini-2.0-flash"
+            - "openai:gpt-4-turbo-preview"
+            - "ollama:llama3:70b"
+
+        - name: development
+          models:
+            - "google:gemini-2.0-flash"
+            - "anthropic:claude-3-haiku-20240307"
+            - "ollama:codellama:13b"
+
+      # Fallback triggers
+      triggers:
+        - type: RateLimitExceeded
+        - type: ServiceUnavailable
+        - type: Timeout
+
+  # -------------------------------------------------------------------------
+  # Default Model Parameters
+  # -------------------------------------------------------------------------
+
+  defaultParameters:
+    temperature: 0.7
+    topP: 0.9
+    topK: 40
+    maxTokens: 4096
+    stopSequences: []
+    frequencyPenalty: 0.0
+    presencePenalty: 0.0
+
+  # -------------------------------------------------------------------------
+  # Cost Management
+  # -------------------------------------------------------------------------
+
+  costManagement:
+    # Budget alerts
+    budgets:
+      - name: daily-budget
+        amount: 500.00  # USD
+        period: daily
+        alertThreshold: 0.8
+        notificationWebhook: "https://slack.example.com/webhook"
+
+      - name: monthly-budget
+        amount: 10000.00
+        period: monthly
+        alertThreshold: 0.9
+
+    # Cost tracking
+    tracking:
+      enabled: true
+      granularity: per-agent  # per-agent, per-workflow, per-namespace
+      exportEndpoint: "http://cost-analytics:8080"
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+
+  observability:
+    metrics:
+      enabled: true
+      # Track model-specific metrics
+      modelMetrics:
+        - latency
+        - tokens_used
+        - cost
+        - error_rate
+        - fallback_rate
+
+    logging:
+      # Log model interactions
+      logRequests: true
+      logResponses: false  # PII concerns
+      redactSecrets: true
+
+    tracing:
+      enabled: true
+      # Trace model calls with OpenTelemetry
+      propagateContext: true
+
+# ============================================================================
+# Status
+# ============================================================================
+status:
+  phase: Ready
+
+  conditions:
+    - type: Ready
+      status: "True"
+      lastTransitionTime: "2025-01-09T10:00:00Z"
+      reason: AllProvidersHealthy
+      message: "All model providers are operational"
+
+  # Provider health status
+  providerStatus:
+    - name: openai
+      healthy: true
+      availableModels: 2
+      lastHealthCheck: "2025-01-09T12:00:00Z"
+
+    - name: anthropic
+      healthy: true
+      availableModels: 3
+      lastHealthCheck: "2025-01-09T12:00:00Z"
+
+    - name: google
+      healthy: true
+      availableModels: 2
+      lastHealthCheck: "2025-01-09T12:00:00Z"
+
+    - name: ollama
+      healthy: true
+      availableModels: 2
+      lastHealthCheck: "2025-01-09T12:00:00Z"
+      localModels:
+        - llama3:70b
+        - codellama:13b
+
+  # Cost statistics
+  costStats:
+    today: 42.35
+    thisMonth: 1247.82
+    budgetRemaining: 8752.18
+
+  # Usage statistics
+  usage:
+    totalRequests: 15847
+    totalTokens: 48392847
+    byProvider:
+      anthropic: 8432
+      google: 5201
+      openai: 1847
+      ollama: 367
+
+  observedGeneration: 3

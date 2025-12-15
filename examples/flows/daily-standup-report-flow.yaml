@@ -1,0 +1,312 @@
+# Daily Standup Report Flow
+#
+# Description: Automated daily standup report that gathers insights from multiple
+# sources (GitHub, Jira, CI/CD) and posts a summary to Slack.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - GITHUB_TOKEN for repository access
+# - JIRA_TOKEN for issue tracking
+# - SLACK_BOT_TOKEN for posting
+#
+# How to run:
+#   aof apply -f daily-standup-report-flow.yaml
+#   # Runs automatically every weekday at 9am
+#   # Or trigger manually: aof trigger daily-standup
+#
+# Expected output: Comprehensive team status posted to Slack
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFlow
+metadata:
+  name: daily-standup
+  description: "Automated daily team status report"
+  labels:
+    team: engineering
+    automation: reporting
+
+spec:
+  # Scheduled trigger - weekdays at 9am
+  trigger:
+    type: cron
+    config:
+      schedule: "0 9 * * 1-5"  # 9am Monday-Friday
+      timezone: America/Los_Angeles
+
+  # Multiple agents analyze different aspects in parallel
+  fleet:
+    strategy: parallel
+    aggregation: merge
+
+    agents:
+      # Agent 1: GitHub activity analyzer
+      - name: github-analyzer
+        spec:
+          model: claude-3-5-sonnet-20241022
+
+          system: |
+            You analyze GitHub activity from the past 24 hours.
+
+            Provide:
+            - PRs merged (with titles and authors)
+            - PRs opened and awaiting review
+            - Active branches and their status
+            - Notable commits
+            - Release activity
+
+            Format as Slack markdown. Be concise but informative.
+
+          tools:
+            - name: mcp
+              enabled: true
+              config:
+                server: github
+                auth:
+                  token_env: GITHUB_TOKEN
+
+          resources:
+            max_tokens: 2048
+            timeout: 30s
+
+      # Agent 2: Jira ticket analyzer
+      - name: jira-analyzer
+        spec:
+          model: claude-3-5-sonnet-20241022
+
+          system: |
+            You analyze Jira ticket status from the past 24 hours.
+
+            Provide:
+            - Tickets completed
+            - Tickets in progress
+            - Blocked tickets (with reasons)
+            - New tickets created
+            - Sprint progress
+
+            Highlight any blockers or risks. Format for Slack.
+
+          tools:
+            - name: shell
+              enabled: true
+              config:
+                allowed_commands:
+                  - curl  # For Jira API
+                env:
+                  JIRA_TOKEN: "{env.JIRA_TOKEN}"
+                  JIRA_URL: "https://yourcompany.atlassian.net"
+
+          resources:
+            max_tokens: 2048
+            timeout: 30s
+
+      # Agent 3: CI/CD pipeline analyzer
+      - name: cicd-analyzer
+        spec:
+          model: claude-3-5-sonnet-20241022
+
+          system: |
+            You analyze CI/CD pipeline activity from the past 24 hours.
+
+            Provide:
+            - Successful deployments
+            - Failed builds (with reasons)
+            - Test results and coverage trends
+            - Pipeline performance
+            - Infrastructure changes
+
+            Highlight any recurring failures. Format for Slack.
+
+          tools:
+            - name: shell
+              enabled: true
+              config:
+                allowed_commands:
+                  - curl  # For CI/CD API (GitHub Actions, CircleCI, etc.)
+                  - kubectl  # For deployment status
+
+          resources:
+            max_tokens: 2048
+            timeout: 30s
+
+      # Agent 4: Team calendar analyzer
+      - name: calendar-analyzer
+        spec:
+          model: claude-3-5-sonnet-20241022
+
+          system: |
+            You check the team calendar for today.
+
+            Provide:
+            - Who's out today (PTO, sick, etc.)
+            - Important meetings scheduled
+            - Upcoming deadlines this week
+            - On-call rotation
+
+            Keep it brief. Format for Slack.
+
+          tools:
+            - name: shell
+              enabled: true
+              config:
+                allowed_commands:
+                  - curl  # For calendar API
+                env:
+                  GOOGLE_CALENDAR_TOKEN: "{env.GOOGLE_CALENDAR_TOKEN}"
+
+          resources:
+            max_tokens: 1024
+            timeout: 20s
+
+      # Agent 5: Metrics analyzer
+      - name: metrics-analyzer
+        spec:
+          model: claude-3-5-sonnet-20241022
+
+          system: |
+            You analyze key metrics from the past 24 hours.
+
+            Provide:
+            - Error rate trends
+            - Performance metrics (p95, p99 latency)
+            - Traffic patterns
+            - Infrastructure health
+            - Notable incidents
+
+            Highlight any anomalies. Format for Slack.
+
+          tools:
+            - name: shell
+              enabled: true
+              config:
+                allowed_commands:
+                  - curl  # For metrics API (Datadog, New Relic, etc.)
+
+          resources:
+            max_tokens: 2048
+            timeout: 30s
+
+  # Combine all insights into a standup report
+  actions:
+    # Post comprehensive report to Slack
+    - type: slack_message
+      config:
+        channel: "#daily-standup"
+        message: |
+          :sunrise: *Daily Standup Report - {date.today}*
+
+          ---
+
+          ## 📊 Yesterday's Highlights
+
+          ### 💻 GitHub Activity
+          {fleet.github-analyzer.output}
+
+          ### 🎫 Jira Status
+          {fleet.jira-analyzer.output}
+
+          ### 🚀 CI/CD Pipelines
+          {fleet.cicd-analyzer.output}
+
+          ### 📅 Today's Schedule
+          {fleet.calendar-analyzer.output}
+
+          ### 📈 System Metrics
+          {fleet.metrics-analyzer.output}
+
+          ---
+
+          ## 🎯 Focus Areas for Today
+          {fleet.merged.priorities}
+
+          ## 🚧 Blockers & Risks
+          {fleet.merged.blockers}
+
+          ---
+
+          _Generated automatically by AOF • {timestamp}_
+
+        # Make it pretty
+        unfurl_links: true
+        unfurl_media: true
+
+    # Optional: Post a summary to email
+    - type: email
+      config:
+        to:
+          - engineering@company.com
+          - managers@company.com
+        subject: "Daily Standup Report - {date.today}"
+        body: |
+          <h2>Daily Standup Report</h2>
+          {fleet.merged.html_report}
+
+    # Store report for history
+    - type: file_write
+      config:
+        path: "/var/log/standup-reports/{date.today}.md"
+        content: |
+          # Daily Standup Report - {date.today}
+
+          {fleet.merged.markdown_report}
+
+    # Track metrics
+    - type: datadog_metric
+      config:
+        metrics:
+          - name: standup.prs_merged
+            value: "{fleet.github-analyzer.prs_merged_count}"
+          - name: standup.tickets_completed
+            value: "{fleet.jira-analyzer.tickets_completed_count}"
+          - name: standup.deployments
+            value: "{fleet.cicd-analyzer.deployments_count}"
+          - name: standup.incidents
+            value: "{fleet.metrics-analyzer.incidents_count}"
+
+  # Handle weekends and holidays gracefully
+  conditions:
+    - type: skip_if
+      condition: "date.is_weekend == true"
+
+    - type: skip_if
+      condition: "date.is_holiday == true"
+
+    # Skip if no activity (company shutdown, etc.)
+    - type: skip_if
+      condition: |
+        fleet.github-analyzer.activity == 0 &&
+        fleet.jira-analyzer.activity == 0
+
+  # Error handling
+  error_handling:
+    - type: slack_message
+      config:
+        channel: "#engineering"
+        message: |
+          ⚠️ Daily standup report failed to generate.
+
+          Error: {error.message}
+
+          Check manually: https://github.com/yourorg, https://yourcompany.atlassian.net
+
+  # Resource limits
+  resources:
+    timeout: 120s  # 2 minutes total
+    max_tokens_per_agent: 2048
+
+  # Cache results to avoid re-fetching
+  caching:
+    enabled: true
+    ttl: 3600s  # 1 hour
+
+  # Metrics
+  metrics:
+    enabled: true
+    track:
+      - generation_time
+      - data_sources_queried
+      - items_reported
+
+  tags:
+    automation: reporting
+    schedule: daily
+    team: engineering

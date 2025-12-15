@@ -1,0 +1,200 @@
+name: Build and Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: aofctl
+            asset_name: aofctl-linux-x86_64
+
+          # macOS
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: aofctl
+            asset_name: aofctl-macos-x86_64
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: aofctl
+            asset_name: aofctl-macos-aarch64
+
+          # Windows
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            artifact_name: aofctl.exe
+            asset_name: aofctl-windows-x86_64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (for cross-compilation)
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: cargo install cross
+
+      - name: Build binary
+        run: |
+          cd aof
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]; then
+            cross build --release --target ${{ matrix.target }} --package aofctl
+          else
+            cargo build --release --target ${{ matrix.target }} --package aofctl
+          fi
+        shell: bash
+
+      - name: Calculate SHA256 checksum
+        run: |
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            certutil -hashfile "aof/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" SHA256 | grep -v "^$" | head -1 > checksum.txt
+          else
+            sha256sum "aof/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" | awk '{print $1}' > checksum.txt
+          fi
+        shell: bash
+
+      - name: Create release asset directory
+        run: |
+          mkdir -p release_assets
+          cp "aof/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "release_assets/${{ matrix.asset_name }}"
+          cp checksum.txt "release_assets/${{ matrix.asset_name }}.sha256"
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: release_assets/
+
+  create-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p final_artifacts
+          find release_artifacts -type f -exec cp {} final_artifacts/ \;
+          ls -la final_artifacts/
+
+      - name: Create Release Notes
+        run: |
+          VERSION=${{ github.ref_name }}
+          cat > RELEASE_NOTES.md <<EOF
+          # AOF $VERSION Release
+
+          ## Installation
+
+          ### Using install script (recommended)
+
+          \`\`\`bash
+          curl -sSL https://aof.sh/install.sh | bash
+          \`\`\`
+
+          ### Manual download
+
+          Download the appropriate binary for your platform below and add it to your PATH.
+
+          **Supported platforms:**
+          - Linux x86_64
+          - macOS x86_64 (Intel)
+          - macOS aarch64 (Apple Silicon)
+          - Windows x86_64
+
+          ### Verify checksum
+
+          \`\`\`bash
+          sha256sum -c aofctl-*.sha256
+          \`\`\`
+
+          ## Changelog
+
+          See commit history for detailed changes.
+
+          ## Getting Started
+
+          After installation, verify it works:
+
+          \`\`\`bash
+          aofctl --version
+          aofctl api-resources
+          \`\`\`
+
+          Check out the [documentation](https://aof.sh) to get started!
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: final_artifacts/*
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-install-script:
+    name: Deploy install.sh to web
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy install script
+        run: |
+          echo "Install script would be deployed to: https://aof.sh/install.sh"
+          echo "Location: scripts/install.sh"
+          echo ""
+          echo "Steps to configure:"
+          echo "1. Add scripts/install.sh to your web server"
+          echo "2. Configure aof.sh to serve it at /install.sh"
+          echo "3. Ensure GitHub releases are accessible"
+
+      - name: Create artifact for deployment
+        run: |
+          mkdir -p deploy
+          cp scripts/install.sh deploy/install.sh
+          chmod +x deploy/install.sh
+
+      - name: Upload deploy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-script
+          path: deploy/install.sh

@@ -1,0 +1,127 @@
+# Terraform Planner Agent
+#
+# Description: Analyzes Terraform plans, identifies security risks, and suggests
+# infrastructure optimizations.
+#
+# Prerequisites:
+# - Terraform installed and configured
+# - ANTHROPIC_API_KEY environment variable
+# - AWS/GCP/Azure credentials (depending on provider)
+#
+# How to run:
+#   terraform plan -out=plan.tfplan
+#   terraform show -json plan.tfplan > plan.json
+#   aof apply -f terraform-planner-agent.yaml
+#   aof query tf-planner "Review the Terraform plan in /workspace/plan.json"
+#
+# Expected output: Security analysis, cost estimates, and optimization suggestions
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: tf-planner
+  description: "Terraform plan analyzer and infrastructure advisor"
+  labels:
+    team: platform
+    role: infrastructure
+
+spec:
+  model: claude-3-5-sonnet-20241022
+
+  system: |
+    You are a Terraform and cloud infrastructure expert. You analyze Terraform plans
+    and provide security, cost, and best practice recommendations.
+
+    Your analysis should cover:
+
+    1. **Security Risks**:
+       - Publicly exposed resources (S3 buckets, databases, etc.)
+       - Missing encryption at rest/in transit
+       - Overly permissive IAM policies
+       - Security group misconfigurations
+       - Secrets in plaintext
+       - Missing tags for compliance
+
+    2. **Cost Optimization**:
+       - Oversized instances
+       - Unused resources
+       - Reserved instance opportunities
+       - Spot instance candidates
+       - Unnecessary data transfer
+       - Storage class optimization
+
+    3. **Best Practices**:
+       - Resource naming conventions
+       - Tagging strategy
+       - High availability configuration
+       - Backup and disaster recovery
+       - Monitoring and logging
+       - Terraform state management
+
+    4. **Compliance**:
+       - SOC2 requirements
+       - GDPR considerations
+       - HIPAA compliance (if applicable)
+       - Industry standards
+
+    5. **Infrastructure Design**:
+       - Resource dependencies
+       - Blast radius analysis
+       - Scalability concerns
+       - Maintenance windows
+
+    Output Format:
+    - Executive Summary (2-3 sentences)
+    - 🔴 Critical Issues (security risks, must fix)
+    - 🟡 Warnings (should fix)
+    - 💡 Suggestions (nice to have)
+    - 💰 Cost Impact (estimated monthly cost changes)
+    - ✅ Approved Changes (safe to apply)
+
+    Be specific with line numbers and resource names. Provide actionable fixes.
+
+  temperature: 0
+
+  tools:
+    - name: file
+      enabled: true
+      config:
+        allowed_paths:
+          - /workspace
+          - /tmp
+        read_only: true
+
+    - name: shell
+      enabled: true
+      config:
+        allowed_commands:
+          - terraform
+          - aws  # For AWS-specific checks
+          - gcloud  # For GCP-specific checks
+          - az  # For Azure-specific checks
+          - tflint  # Terraform linter
+          - tfsec  # Security scanner
+          - infracost  # Cost estimation
+        working_directory: /workspace
+
+  resources:
+    max_tokens: 8192  # Large plans need more tokens
+    timeout: 180s
+
+  guardrails:
+    # Prevent accidental approval of dangerous changes
+    - type: approval_required
+      config:
+        triggers:
+          - "destroy"
+          - "delete_protection = false"
+          - "publicly_accessible = true"
+
+  memory:
+    type: conversation
+    max_messages: 20
+
+  tags:
+    tool: terraform
+    security: compliance
+    cost: optimization

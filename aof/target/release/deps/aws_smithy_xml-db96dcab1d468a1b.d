@@ -1,0 +1,11 @@
+/Users/gshah/work/opsflow-sh/aof/aof/target/release/deps/aws_smithy_xml-db96dcab1d468a1b.d: /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/lib.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/decode.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/encode.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/escape.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/unescape.rs
+
+/Users/gshah/work/opsflow-sh/aof/aof/target/release/deps/libaws_smithy_xml-db96dcab1d468a1b.rlib: /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/lib.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/decode.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/encode.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/escape.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/unescape.rs
+
+/Users/gshah/work/opsflow-sh/aof/aof/target/release/deps/libaws_smithy_xml-db96dcab1d468a1b.rmeta: /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/lib.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/decode.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/encode.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/escape.rs /Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/unescape.rs
+
+/Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/lib.rs:
+/Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/decode.rs:
+/Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/encode.rs:
+/Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/escape.rs:
+/Users/gshah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/aws-smithy-xml-0.60.13/src/unescape.rs:

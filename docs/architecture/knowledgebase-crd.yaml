@@ -1,0 +1,560 @@
+# KnowledgeBase CRD - RAG Data Source Management
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: knowledgebases.aof.agenticops.org
+spec:
+  group: aof.agenticops.org
+  names:
+    kind: KnowledgeBase
+    listKind: KnowledgeBaseList
+    plural: knowledgebases
+    singular: knowledgebase
+    shortNames:
+      - kb
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                description:
+                  type: string
+                  description: "Human-readable description of this knowledge base"
+
+                # Data Sources
+                sources:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      type:
+                        type: string
+                        enum: [GitHub, GitLab, Confluence, Notion, LocalFiles, URL, S3, Git, API, Database]
+                      enabled:
+                        type: boolean
+                        default: true
+
+                      # GitHub source
+                      github:
+                        type: object
+                        properties:
+                          owner:
+                            type: string
+                          repo:
+                            type: string
+                          branch:
+                            type: string
+                            default: main
+                          paths:
+                            type: array
+                            items:
+                              type: string
+                            description: "Specific paths to index (e.g., docs/, *.md)"
+                          tokenSecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          includeIssues:
+                            type: boolean
+                            default: false
+                          includePRs:
+                            type: boolean
+                            default: false
+                          includeDiscussions:
+                            type: boolean
+                            default: false
+
+                      # GitLab source
+                      gitlab:
+                        type: object
+                        properties:
+                          projectId:
+                            type: string
+                          ref:
+                            type: string
+                            default: main
+                          paths:
+                            type: array
+                            items:
+                              type: string
+                          tokenSecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          baseUrl:
+                            type: string
+                            default: "https://gitlab.com"
+
+                      # Confluence source
+                      confluence:
+                        type: object
+                        properties:
+                          baseUrl:
+                            type: string
+                          spaceKey:
+                            type: string
+                          username:
+                            type: string
+                          apiTokenSecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          cql:
+                            type: string
+                            description: "CQL query to filter pages"
+                          includeAttachments:
+                            type: boolean
+                            default: false
+
+                      # Notion source
+                      notion:
+                        type: object
+                        properties:
+                          apiTokenSecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          databaseIds:
+                            type: array
+                            items:
+                              type: string
+                          pageIds:
+                            type: array
+                            items:
+                              type: string
+
+                      # Local Files source
+                      localFiles:
+                        type: object
+                        properties:
+                          paths:
+                            type: array
+                            items:
+                              type: string
+                            description: "File paths or glob patterns"
+                          volumeRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              mountPath:
+                                type: string
+                          exclude:
+                            type: array
+                            items:
+                              type: string
+                            description: "Patterns to exclude"
+
+                      # URL source
+                      url:
+                        type: object
+                        properties:
+                          urls:
+                            type: array
+                            items:
+                              type: string
+                          crawl:
+                            type: boolean
+                            default: false
+                          maxDepth:
+                            type: integer
+                            default: 1
+                          allowedDomains:
+                            type: array
+                            items:
+                              type: string
+                          selector:
+                            type: string
+                            description: "CSS selector for content extraction"
+
+                      # S3 source
+                      s3:
+                        type: object
+                        properties:
+                          bucket:
+                            type: string
+                          prefix:
+                            type: string
+                          region:
+                            type: string
+                          endpoint:
+                            type: string
+                          accessKeySecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          secretKeySecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          includePatterns:
+                            type: array
+                            items:
+                              type: string
+                          excludePatterns:
+                            type: array
+                            items:
+                              type: string
+
+                      # Git source (generic)
+                      git:
+                        type: object
+                        properties:
+                          url:
+                            type: string
+                          ref:
+                            type: string
+                            default: main
+                          sshKeySecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          credentialsSecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              usernameKey:
+                                type: string
+                              passwordKey:
+                                type: string
+
+                      # API source
+                      api:
+                        type: object
+                        properties:
+                          endpoint:
+                            type: string
+                          method:
+                            type: string
+                            enum: [GET, POST]
+                            default: GET
+                          headers:
+                            type: object
+                            x-kubernetes-preserve-unknown-fields: true
+                          authSecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          jsonPath:
+                            type: string
+                            description: "JSONPath to extract content"
+
+                      # Database source
+                      database:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                            enum: [PostgreSQL, MySQL, MongoDB]
+                          connectionSecretRef:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+                              key:
+                                type: string
+                          query:
+                            type: string
+                          columns:
+                            type: array
+                            items:
+                              type: string
+                            description: "Columns to use as content"
+
+                # Chunking Strategy
+                chunking:
+                  type: object
+                  properties:
+                    strategy:
+                      type: string
+                      enum: [fixed, semantic, markdown, recursive, custom]
+                      default: semantic
+
+                    # Fixed-size chunking
+                    fixed:
+                      type: object
+                      properties:
+                        chunkSize:
+                          type: integer
+                          default: 1000
+                        overlap:
+                          type: integer
+                          default: 200
+
+                    # Semantic chunking
+                    semantic:
+                      type: object
+                      properties:
+                        model:
+                          type: string
+                          description: "Model for semantic analysis"
+                        threshold:
+                          type: number
+                          format: float
+                          description: "Similarity threshold for splitting"
+                          default: 0.5
+                        minChunkSize:
+                          type: integer
+                          default: 100
+                        maxChunkSize:
+                          type: integer
+                          default: 2000
+
+                    # Markdown-aware chunking
+                    markdown:
+                      type: object
+                      properties:
+                        respectHeaders:
+                          type: boolean
+                          default: true
+                        respectCodeBlocks:
+                          type: boolean
+                          default: true
+                        maxChunkSize:
+                          type: integer
+                          default: 1500
+
+                    # Recursive chunking
+                    recursive:
+                      type: object
+                      properties:
+                        separators:
+                          type: array
+                          items:
+                            type: string
+                          default: ["\n\n", "\n", ". ", " "]
+                        chunkSize:
+                          type: integer
+                          default: 1000
+                        overlap:
+                          type: integer
+                          default: 200
+
+                    # Custom chunking (LLM-guided)
+                    custom:
+                      type: object
+                      properties:
+                        prompt:
+                          type: string
+                          description: "LLM prompt for chunking"
+                        model:
+                          type: string
+
+                # Processing
+                processing:
+                  type: object
+                  properties:
+                    # Text extraction
+                    extraction:
+                      type: object
+                      properties:
+                        stripHtml:
+                          type: boolean
+                          default: true
+                        stripMarkdown:
+                          type: boolean
+                          default: false
+                        preserveCodeBlocks:
+                          type: boolean
+                          default: true
+                        preserveLinks:
+                          type: boolean
+                          default: true
+
+                    # Metadata enrichment
+                    metadata:
+                      type: object
+                      properties:
+                        extract:
+                          type: array
+                          items:
+                            type: string
+                            enum: [title, author, date, tags, summary]
+                        custom:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+
+                    # Deduplication
+                    deduplication:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                        method:
+                          type: string
+                          enum: [hash, similarity, exact]
+                          default: hash
+                        threshold:
+                          type: number
+                          format: float
+                          default: 0.95
+
+                # Indexing Configuration
+                indexing:
+                  type: object
+                  properties:
+                    memoryRef:
+                      type: string
+                      description: "Reference to Memory CRD for storage"
+                    schedule:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [manual, cron, webhook, continuous]
+                          default: manual
+                        cron:
+                          type: string
+                          description: "Cron expression for scheduled indexing"
+                        webhook:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                            path:
+                              type: string
+                            secret:
+                              type: string
+                    batchSize:
+                      type: integer
+                      default: 100
+                      description: "Number of chunks to process in a batch"
+                    parallelism:
+                      type: integer
+                      default: 4
+                      description: "Number of parallel indexing workers"
+
+                # Sync Policy
+                sync:
+                  type: object
+                  properties:
+                    mode:
+                      type: string
+                      enum: [full, incremental, differential]
+                      default: incremental
+                    onStartup:
+                      type: boolean
+                      default: true
+                    webhook:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        providers:
+                          type: array
+                          items:
+                            type: string
+                            enum: [github, gitlab, confluence]
+
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                stats:
+                  type: object
+                  properties:
+                    totalDocuments:
+                      type: integer
+                    totalChunks:
+                      type: integer
+                    lastSyncTime:
+                      type: string
+                      format: date-time
+                    lastSyncStatus:
+                      type: string
+                      enum: [success, failed, in_progress]
+                    errors:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          source:
+                            type: string
+                          message:
+                            type: string
+                          timestamp:
+                            type: string
+                            format: date-time
+                sourceStatus:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      status:
+                        type: string
+                        enum: [ready, syncing, failed]
+                      documentsIndexed:
+                        type: integer
+                      lastSync:
+                        type: string
+                        format: date-time
+      additionalPrinterColumns:
+        - name: Sources
+          type: integer
+          jsonPath: .spec.sources.length
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+        - name: Documents
+          type: integer
+          jsonPath: .status.stats.totalDocuments
+        - name: Chunks
+          type: integer
+          jsonPath: .status.stats.totalChunks
+        - name: Last Sync
+          type: string
+          jsonPath: .status.stats.lastSyncTime

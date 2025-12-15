@@ -1,0 +1,175 @@
+# Slack Q&A Bot Flow
+#
+# Description: A complete Slack bot that answers questions about your codebase,
+# documentation, or infrastructure when mentioned in a channel.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - Slack Bot Token (xoxb-...) with permissions
+# - Slack MCP server installed and configured
+# - Bot invited to desired channels
+#
+# How to run:
+#   export SLACK_BOT_TOKEN=xoxb-xxxxx
+#   aof apply -f slack-qa-bot-flow.yaml
+#   # In Slack: @qa-bot How do I deploy to production?
+#
+# Expected output: Bot responds in thread with helpful answer
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFlow
+metadata:
+  name: slack-qa-bot
+  description: "Intelligent Slack Q&A assistant"
+  labels:
+    team: engineering
+    role: automation
+    channel: slack
+
+spec:
+  # Triggered when bot is mentioned in Slack
+  trigger:
+    type: slack
+    config:
+      event: app_mention
+      bot_token_env: SLACK_BOT_TOKEN
+      # Optional: Filter to specific channels
+      channels:
+        - general
+        - engineering
+        - help
+
+  # The Q&A agent
+  agent:
+    name: qa-assistant
+    spec:
+      model: claude-3-5-sonnet-20241022
+
+      system: |
+        You are a helpful technical assistant for the engineering team.
+
+        You can answer questions about:
+        - Codebase structure and how things work
+        - How to deploy, test, and debug
+        - Infrastructure and architecture
+        - Best practices and conventions
+        - Onboarding and documentation
+
+        Guidelines:
+        - Be friendly and professional
+        - Provide specific, actionable answers
+        - Link to relevant docs or code when possible
+        - If you don't know, say so and suggest who to ask
+        - Use Slack formatting (```code blocks```, *bold*, _italic_)
+        - Keep responses concise but complete
+        - Use threads for longer responses
+
+        You have access to:
+        - The codebase in /workspace
+        - Documentation in /docs
+        - Runbooks in /runbooks
+        - Recent Slack messages for context
+
+      temperature: 0.5  # Balanced between accuracy and helpfulness
+
+      tools:
+        # Read code and docs
+        - name: file
+          enabled: true
+          config:
+            allowed_paths:
+              - /workspace
+              - /docs
+              - /runbooks
+            read_only: true
+
+        # Search for specific information
+        - name: shell
+          enabled: true
+          config:
+            allowed_commands:
+              - grep
+              - find
+              - cat
+              - git
+            working_directory: /workspace
+
+        # Slack integration
+        - name: mcp
+          enabled: true
+          config:
+            server: slack
+
+      resources:
+        max_tokens: 4096
+        timeout: 30s  # Quick responses
+
+      # Remember conversation history per channel
+      memory:
+        type: conversation
+        max_messages: 20
+        scope: channel  # Separate memory per Slack channel
+
+  # Post the answer back to Slack
+  actions:
+    # Acknowledge immediately
+    - type: slack_reaction
+      config:
+        emoji: eyes  # 👀 to show bot is working
+
+    # Post response in thread
+    - type: slack_message
+      config:
+        # Reply in thread to keep channel clean
+        reply_in_thread: true
+
+        # Format the response nicely
+        message: |
+          {agent.output}
+
+          ---
+          _Need more help? Tag me again or ask in #engineering_
+
+        # Add a reaction when done
+        add_reaction: white_check_mark  # ✅
+
+    # Optional: Track questions for analytics
+    - type: log
+      config:
+        destination: /var/log/qa-bot.log
+        format: json
+        fields:
+          - timestamp
+          - channel
+          - user
+          - question
+          - answer
+
+  # Handle errors gracefully
+  error_handling:
+    - type: slack_message
+      config:
+        message: |
+          Sorry, I ran into an issue answering that.
+          Try asking in #engineering or ping @oncall for urgent issues.
+        reply_in_thread: true
+        add_reaction: x  # ❌
+
+  # Rate limiting to prevent abuse
+  rate_limit:
+    max_requests_per_minute: 20
+    max_requests_per_user_per_hour: 50
+
+  # Monitor performance
+  metrics:
+    enabled: true
+    track:
+      - response_time
+      - tokens_used
+      - questions_per_channel
+      - user_satisfaction  # Based on reactions
+
+  tags:
+    platform: slack
+    automation: qa
+    user_facing: true

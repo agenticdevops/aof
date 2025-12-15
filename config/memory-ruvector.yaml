@@ -1,0 +1,315 @@
+apiVersion: aof.dev/v1alpha1
+kind: Memory
+metadata:
+  name: ruvector-rag-memory
+  namespace: agentic-ops
+  labels:
+    aof.dev/component: memory
+    aof.dev/backend: ruvector
+spec:
+  # RuVector Backend Configuration
+  backend:
+    type: RuVector
+    ruvector:
+      # Deployment Mode
+      mode: Embedded  # Embedded | Cluster | Distributed
+
+      # Connection Settings (for Cluster/Distributed modes)
+      connection:
+        endpoints:
+          - "http://ruvector-0.ruvector-headless:8080"
+          - "http://ruvector-1.ruvector-headless:8080"
+          - "http://ruvector-2.ruvector-headless:8080"
+        timeout: 30s
+        maxRetries: 3
+
+      # Embedded Mode Settings
+      embedded:
+        dataPath: /var/lib/aof/ruvector
+        memoryLimit: 8Gi
+
+      # Vector Configuration
+      vector:
+        dimensions: 1536  # OpenAI ada-002 / text-embedding-3-small
+        metric: Cosine    # Cosine | Euclidean | DotProduct
+        normalize: true   # Auto-normalize vectors
+
+      # HNSW Index Configuration
+      hnsw:
+        m: 16              # Number of bi-directional links (4-64, higher = better recall)
+        efConstruction: 200 # Construction effort (100-500, higher = better quality)
+        efSearch: 100       # Search effort (50-200, higher = better recall)
+        maxLayers: 6        # Maximum graph layers
+
+      # Self-Learning GNN Configuration
+      gnn:
+        enabled: true
+        model: SONA-Adaptive  # SONA-Adaptive | GCN | GAT | GraphSAGE
+        learningRate: 0.001
+        adaptationInterval: 100  # Update model every N queries
+        feedbackWeight: 0.7      # Weight of user feedback (0.0-1.0)
+
+        # Query Pattern Learning
+        patterns:
+          trackSuccessRate: true
+          trackQueryLatency: true
+          trackRetrievalRelevance: true
+          minPatternsForAdaptation: 50
+
+        # Automatic Index Optimization
+        autoOptimize:
+          enabled: true
+          schedule: "0 2 * * *"  # Daily at 2 AM
+          minQueriesForOptimization: 1000
+
+      # Adaptive Compression Configuration
+      compression:
+        strategy: Adaptive  # Adaptive | Fixed | Disabled
+
+        # Compression Tiers (Adaptive mode)
+        tiers:
+          hot:
+            minAccessCount: 100
+            encoding: f32
+            maxAge: 7d
+          warm:
+            minAccessCount: 10
+            encoding: f16
+            maxAge: 30d
+          cold:
+            minAccessCount: 1
+            encoding: PQ8  # Product Quantization 8-bit
+            maxAge: 90d
+          archive:
+            encoding: PQ4  # Product Quantization 4-bit
+            maxAge: 365d
+
+        # Fixed Compression (when strategy: Fixed)
+        fixed:
+          encoding: f16  # f32 | f16 | PQ8 | PQ4 | binary
+
+      # Graph Database Configuration
+      graph:
+        enabled: true
+
+        # Relationship Types
+        relationships:
+          - type: SIMILAR_TO
+            threshold: 0.85
+            bidirectional: true
+          - type: DEPENDS_ON
+            threshold: 0.75
+            bidirectional: false
+          - type: PART_OF
+            threshold: 0.80
+            bidirectional: false
+          - type: RELATES_TO
+            threshold: 0.70
+            bidirectional: true
+
+        # Auto-create relationships
+        autoRelationships:
+          enabled: true
+          similarityThreshold: 0.85
+          maxRelationshipsPerNode: 50
+
+        # Cypher Query Optimization
+        cypher:
+          enableQueryCache: true
+          cacheTTL: 1h
+          maxCacheSize: 1000
+
+      # Distributed Configuration (for Cluster/Distributed modes)
+      distributed:
+        replication:
+          factor: 3           # Number of replicas
+          strategy: Raft      # Raft | MultiMaster
+          minSyncReplicas: 2  # Minimum replicas for write confirmation
+
+        sharding:
+          enabled: true
+          strategy: Consistent  # Consistent | Range | Hash
+          shardCount: 8         # Number of shards
+          rebalanceInterval: 1h
+
+        consensus:
+          protocol: Raft
+          electionTimeout: 5s
+          heartbeatInterval: 1s
+          maxLogSize: 1Gi
+          snapshotInterval: 10000  # Take snapshot every N entries
+
+      # Performance Tuning
+      performance:
+        queryParallelism: 8      # Parallel query execution
+        batchInsertSize: 1000    # Batch insert optimization
+        flushInterval: 5s        # Flush to disk interval
+        compactionInterval: 1h   # Compaction interval
+
+        # Memory Management
+        memory:
+          cacheSize: 4Gi
+          indexCacheSize: 2Gi
+          queryCacheSize: 512Mi
+
+      # Backup and Recovery
+      backup:
+        enabled: true
+        schedule: "0 0 * * *"  # Daily at midnight
+        retention: 30d
+        compression: zstd
+        destination:
+          type: S3
+          s3:
+            bucket: aof-ruvector-backups
+            prefix: rag-memory/
+            region: us-east-1
+
+      # Monitoring and Metrics
+      monitoring:
+        enabled: true
+        metricsPort: 9090
+        exportInterval: 10s
+
+        # Alert Thresholds
+        alerts:
+          queryLatencyP99: 100ms
+          indexMemoryUsage: 80%
+          replicationLag: 1000ms
+          errorRate: 1%
+
+  # RAG Configuration
+  rag:
+    # Retrieval Strategy
+    retrieval:
+      strategy: Hybrid  # Vector | Graph | Hybrid
+      topK: 10
+      rerankingEnabled: true
+
+      # Hybrid Retrieval Weights
+      hybrid:
+        vectorWeight: 0.7
+        graphWeight: 0.3
+
+      # Multi-hop Retrieval (Graph-based)
+      multiHop:
+        enabled: true
+        maxHops: 3
+        minRelevanceScore: 0.6
+
+    # Chunking Strategy
+    chunking:
+      strategy: Semantic  # Fixed | Semantic | Recursive
+      chunkSize: 512
+      chunkOverlap: 50
+
+      # Semantic Chunking
+      semantic:
+        model: sentence-transformers
+        similarityThreshold: 0.75
+
+    # Embedding Configuration
+    embedding:
+      provider: OpenAI  # OpenAI | HuggingFace | Local
+      model: text-embedding-3-small
+      dimensions: 1536
+      batchSize: 100
+
+    # Self-Learning Features
+    learning:
+      enabled: true
+
+      # Feedback Loop
+      feedback:
+        collectUserFeedback: true
+        implicitFeedback: true  # Learn from agent actions
+        feedbackStore: memory://feedback
+
+      # Query Expansion
+      queryExpansion:
+        enabled: true
+        maxExpansions: 5
+        confidenceThreshold: 0.7
+
+      # Result Ranking
+      ranking:
+        strategy: Learned  # Static | Learned | Hybrid
+        features:
+          - vectorSimilarity
+          - graphCentrality
+          - temporalRelevance
+          - userFeedback
+          - queryPatternMatch
+
+  # Operational Settings
+  operations:
+    # High Availability
+    highAvailability:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+
+    # Scaling
+    autoscaling:
+      enabled: true
+      metrics:
+        - type: QueryLatency
+          target: 50ms
+        - type: MemoryUsage
+          target: 70%
+        - type: QPS
+          target: 10000
+
+    # Health Checks
+    health:
+      livenessProbe:
+        endpoint: /health/live
+        interval: 10s
+        timeout: 5s
+      readinessProbe:
+        endpoint: /health/ready
+        interval: 5s
+        timeout: 3s
+
+    # Resource Limits
+    resources:
+      requests:
+        cpu: 2
+        memory: 4Gi
+      limits:
+        cpu: 8
+        memory: 16Gi
+
+  # Security
+  security:
+    encryption:
+      atRest: true
+      inTransit: true
+      algorithm: AES-256-GCM
+
+    authentication:
+      enabled: true
+      method: mTLS  # mTLS | JWT | APIKey
+
+    authorization:
+      enabled: true
+      rbac:
+        enabled: true
+
+status:
+  phase: Running
+  lastUpdated: "2025-12-09T00:00:00Z"
+  conditions:
+    - type: Ready
+      status: "True"
+      lastTransitionTime: "2025-12-09T00:00:00Z"
+    - type: GNNLearning
+      status: "True"
+      lastTransitionTime: "2025-12-09T00:00:00Z"
+  metrics:
+    vectorCount: 1000000
+    queryLatencyP50: 45ms
+    queryLatencyP99: 89ms
+    qps: 12500
+    indexMemoryUsage: 6.2Gi
+    learningAccuracy: 0.92

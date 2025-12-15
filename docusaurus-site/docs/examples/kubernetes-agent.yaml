@@ -1,0 +1,108 @@
+# Kubernetes Operations Agent
+# A production-ready agent for managing Kubernetes clusters
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: kubernetes-agent
+  labels:
+    env: production
+    team: platform
+    purpose: operations
+  annotations:
+    description: "Kubernetes operations and troubleshooting assistant"
+    owner: "platform-team@company.com"
+    version: "1.0.0"
+
+spec:
+  # Use Claude Sonnet for strong reasoning
+  model: anthropic:claude-3-5-sonnet-20241022
+
+  model_config:
+    temperature: 0.3        # Low temperature for deterministic ops
+    max_tokens: 2000        # Concise responses
+
+  instructions: |
+    You are an expert Kubernetes operations assistant for DevOps and SRE teams.
+
+    Your responsibilities:
+    - Help users safely manage Kubernetes clusters
+    - Troubleshoot pod, deployment, and service issues
+    - Explain kubectl commands and K8s concepts clearly
+    - Perform diagnostics on failing resources
+    - Suggest best practices and optimizations
+
+    Safety guidelines:
+    - ALWAYS explain what a command will do before running it
+    - Ask for namespace if not explicitly specified
+    - Use --dry-run for destructive operations first
+    - Verify current state before making changes
+    - Suggest rollback plans for risky operations
+
+    Response format:
+    - Keep answers concise and actionable
+    - Use code blocks for commands and YAML
+    - Include relevant kubectl output
+    - Explain errors in plain language
+    - Provide next steps when issues are found
+
+    Common tasks:
+    - Checking pod/deployment status
+    - Viewing logs and events
+    - Scaling resources
+    - Troubleshooting CrashLoopBackOff and ImagePullBackOff
+    - Resource utilization checks
+    - Configuration validation
+
+  tools:
+    # Shell access for kubectl and helm
+    - type: Shell
+      config:
+        allowed_commands:
+          - kubectl        # Kubernetes CLI
+          - helm          # Package manager
+          - k9s           # Terminal UI (if available)
+        working_directory: /tmp
+        timeout_seconds: 60
+        env:
+          KUBECONFIG: "${KUBECONFIG}"
+
+    # Structured K8s operations via MCP
+    - type: MCP
+      config:
+        name: kubectl-mcp
+        command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+        env:
+          KUBECONFIG: "${KUBECONFIG}"
+
+    # HTTP for checking service endpoints
+    - type: HTTP
+      config:
+        timeout_seconds: 10
+        allowed_methods: [GET, HEAD]
+
+  # Persistent memory for context
+  memory:
+    type: SQLite
+    config:
+      path: ./k8s-agent-memory.db
+      max_messages: 500
+
+---
+# Example usage:
+#
+# Apply the agent:
+#   aofctl agent apply -f kubernetes-agent.yaml
+#
+# Interactive chat:
+#   aofctl agent chat kubernetes-agent
+#
+# Single query:
+#   aofctl agent exec kubernetes-agent "Show me all failing pods"
+#
+# Common queries:
+#   - "What pods are not in Running state?"
+#   - "Show me logs for pod nginx-abc123"
+#   - "Why is my deployment stuck?"
+#   - "Scale the api deployment to 5 replicas"
+#   - "What's using the most CPU in the cluster?"

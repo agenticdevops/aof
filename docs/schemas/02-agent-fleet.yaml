@@ -1,0 +1,373 @@
+# ============================================================================
+# AgentFleet CRD Schema
+# ============================================================================
+# AgentFleet manages a coordinated team of agents working together on
+# collaborative tasks. Similar to Kubernetes Deployment/StatefulSet but for
+# AI agents. Useful for scenarios requiring multiple specialized agents.
+#
+# Use Cases:
+# - Code review teams (architect, security, performance reviewers)
+# - DevOps automation (planner, executor, validator)
+# - Incident response (triage, investigation, remediation)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFleet
+metadata:
+  name: code-review-team
+  namespace: engineering
+  labels:
+    team: platform
+    purpose: code-quality
+  annotations:
+    aof.agenticops.org/description: "Automated code review team with multiple specialized agents"
+
+spec:
+  # -------------------------------------------------------------------------
+  # Fleet Composition
+  # -------------------------------------------------------------------------
+
+  # Fleet coordination strategy
+  strategy:
+    type: Collaborative  # Collaborative, Competitive, Hierarchical, Consensus
+
+    # Leader selection (for hierarchical)
+    leader:
+      agentRef: architect-reviewer
+      electionPolicy: StaticAssignment  # StaticAssignment, RoundRobin, LoadBased
+
+    # Communication pattern
+    communication:
+      mode: Broadcast  # Broadcast, Directed, P2P
+      # Shared memory for coordination
+      sharedMemory:
+        enabled: true
+        memoryConfigRef:
+          name: fleet-shared-memory
+
+  # -------------------------------------------------------------------------
+  # Agent Members
+  # -------------------------------------------------------------------------
+
+  agents:
+    # Architect Reviewer - Evaluates system design
+    - name: architect-reviewer
+      spec:
+        model: "anthropic:claude-3-5-sonnet-20241022"
+        description: "Reviews architectural decisions and design patterns"
+        instructions: |
+          You are a senior software architect specializing in system design.
+
+          Evaluate:
+          1. Architectural patterns and adherence to best practices
+          2. Scalability and maintainability concerns
+          3. Design consistency with existing codebase
+          4. Component coupling and cohesion
+
+          Provide:
+          - Architectural score (1-10)
+          - Specific recommendations
+          - Risk assessment
+
+        tools:
+          - type: File
+            config:
+              baseDir: "/workspace"
+          - type: GitHub
+
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+
+    # Security Reviewer - Checks for vulnerabilities
+    - name: security-reviewer
+      spec:
+        model: "openai:gpt-4-turbo-preview"
+        description: "Identifies security vulnerabilities and compliance issues"
+        instructions: |
+          You are a security expert focused on application security.
+
+          Check for:
+          1. Common vulnerabilities (OWASP Top 10)
+          2. Authentication and authorization flaws
+          3. Input validation and sanitization
+          4. Secrets and credential management
+          5. Dependency vulnerabilities
+
+          Report:
+          - Critical/High/Medium/Low severity findings
+          - Remediation steps
+          - Compliance implications
+
+        tools:
+          - type: File
+          - type: Shell
+            config:
+              allowedCommands:
+                - trivy
+                - semgrep
+                - bandit
+          - type: MCPCLI
+            config:
+              command: "security-scanner --mcp-server"
+
+    # Performance Reviewer - Analyzes efficiency
+    - name: performance-reviewer
+      spec:
+        model: "google:gemini-2.0-flash"
+        description: "Reviews code for performance bottlenecks"
+        instructions: |
+          You are a performance optimization specialist.
+
+          Analyze:
+          1. Algorithmic complexity (Big O notation)
+          2. Database query efficiency
+          3. Memory usage patterns
+          4. Network I/O optimization
+          5. Caching opportunities
+
+          Deliver:
+          - Performance score
+          - Bottleneck identification
+          - Optimization suggestions with benchmarks
+
+        tools:
+          - type: File
+          - type: MCPCLI
+            config:
+              command: "perf-analyzer --mcp-server"
+
+    # Style Reviewer - Enforces coding standards
+    - name: style-reviewer
+      spec:
+        model: "ollama:codellama:13b"
+        modelParams:
+          temperature: 0.3
+        description: "Ensures code style and documentation standards"
+        instructions: |
+          You are a code quality enforcer.
+
+          Verify:
+          1. Code style consistency (formatting, naming)
+          2. Documentation completeness
+          3. Test coverage requirements
+          4. Comment quality and clarity
+
+          Output:
+          - Style compliance score
+          - Specific violations
+          - Auto-fix suggestions
+
+        tools:
+          - type: File
+          - type: Shell
+            config:
+              allowedCommands:
+                - prettier
+                - eslint
+                - rustfmt
+
+  # -------------------------------------------------------------------------
+  # Fleet Scaling
+  # -------------------------------------------------------------------------
+
+  replicas:
+    # Fixed number of each agent type
+    fixed: 1
+
+    # Optional: Autoscaling configuration
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      metrics:
+        - type: QueueDepth
+          threshold: 10
+        - type: AverageResponseTime
+          threshold: "PT30S"
+
+  # -------------------------------------------------------------------------
+  # Task Distribution
+  # -------------------------------------------------------------------------
+
+  taskDistribution:
+    # How tasks are distributed among agents
+    mode: Parallel  # Parallel, Sequential, Conditional
+
+    # Load balancing strategy
+    loadBalancing:
+      strategy: RoundRobin  # RoundRobin, LeastLoaded, Random, Weighted
+
+      # Optional: Agent weights (for weighted strategy)
+      weights:
+        architect-reviewer: 2
+        security-reviewer: 3
+        performance-reviewer: 2
+        style-reviewer: 1
+
+    # Task timeout
+    taskTimeout: "PT10M"
+
+    # Retry policy
+    retryPolicy:
+      maxRetries: 2
+      failureThreshold: 0.3  # Fail task if 30% of agents fail
+
+  # -------------------------------------------------------------------------
+  # Consensus and Aggregation
+  # -------------------------------------------------------------------------
+
+  consensus:
+    # Consensus mechanism
+    mechanism: MajorityVote  # MajorityVote, WeightedVote, AllAgree, LeaderDecides
+
+    # Quorum requirement (minimum agents that must respond)
+    quorum: 3
+
+    # Result aggregation
+    aggregation:
+      # Aggregation strategy
+      strategy: WeightedAverage
+
+      # Custom aggregation function (optional)
+      customAggregatorRef:
+        name: code-review-aggregator
+        namespace: aof-functions
+
+    # Conflict resolution
+    conflictResolution:
+      strategy: LeaderArbitration  # LeaderArbitration, HighestConfidence, Manual
+      escalationPolicy:
+        enabled: true
+        notificationWebhook: "https://slack.example.com/webhook"
+
+  # -------------------------------------------------------------------------
+  # Shared Resources
+  # -------------------------------------------------------------------------
+
+  sharedResources:
+    # Shared memory for inter-agent communication
+    memory:
+      memoryConfigRef:
+        name: fleet-shared-memory
+
+      # Memory namespacing
+      namespacing:
+        enabled: true
+        prefix: "fleet/code-review/"
+
+    # Shared tool servers
+    toolServers:
+      - name: github-server
+        namespace: aof-system
+      - name: security-scanner
+        namespace: security-tools
+
+    # Shared volumes
+    volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: code-review-workspace
+      - name: cache
+        emptyDir:
+          sizeLimit: "1Gi"
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+
+  observability:
+    # Fleet-level metrics
+    metrics:
+      enabled: true
+      aggregateAgentMetrics: true
+      customMetrics:
+        - name: review_quality_score
+          type: gauge
+        - name: consensus_time
+          type: histogram
+
+    # Distributed tracing
+    tracing:
+      enabled: true
+      correlationID: enabled
+
+    # Dashboards
+    dashboards:
+      - name: fleet-overview
+        url: "https://grafana.example.com/d/fleet-code-review"
+      - name: agent-performance
+        url: "https://grafana.example.com/d/agent-perf"
+
+  # -------------------------------------------------------------------------
+  # Lifecycle Management
+  # -------------------------------------------------------------------------
+
+  lifecycle:
+    # Deployment strategy
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 1
+
+    # Graceful shutdown
+    terminationGracePeriodSeconds: 30
+
+    # Health checks
+    healthCheck:
+      enabled: true
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+
+# ============================================================================
+# Status
+# ============================================================================
+status:
+  phase: Running  # Pending, Running, Degraded, Failed
+
+  # Overall fleet health
+  conditions:
+    - type: Ready
+      status: "True"
+      lastTransitionTime: "2025-01-09T10:00:00Z"
+      reason: FleetHealthy
+      message: "All agents operational"
+
+  # Per-agent status
+  agentStatus:
+    - name: architect-reviewer
+      phase: Ready
+      replicas: 1
+      readyReplicas: 1
+    - name: security-reviewer
+      phase: Ready
+      replicas: 1
+      readyReplicas: 1
+    - name: performance-reviewer
+      phase: Ready
+      replicas: 1
+      readyReplicas: 1
+    - name: style-reviewer
+      phase: Ready
+      replicas: 1
+      readyReplicas: 1
+
+  # Fleet statistics
+  stats:
+    totalTasks: 342
+    completedTasks: 315
+    failedTasks: 12
+    consensusRate: 0.92
+    averageConsensusTime: "PT45S"
+
+  # Resource usage
+  totalResourceUsage:
+    memory: "1.8Gi"
+    cpu: "0.8"
+
+  observedGeneration: 3
+  lastUpdateTime: "2025-01-09T12:00:00Z"

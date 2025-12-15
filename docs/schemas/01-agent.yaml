@@ -1,0 +1,350 @@
+# ============================================================================
+# Agent CRD Schema
+# ============================================================================
+# The Agent resource defines a single AI agent with model configuration,
+# instructions, and available tools. This is the fundamental building block
+# of the Agentic Ops Framework.
+#
+# apiVersion: Follows Kubernetes convention (group/version)
+# kind: Resource type identifier
+# metadata: Standard Kubernetes metadata (name, namespace, labels, annotations)
+# spec: Desired state specification
+# status: Runtime state (managed by controller)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Agent
+metadata:
+  # Required: Unique identifier for this agent
+  name: dockerfile-generator
+
+  # Optional: Namespace for multi-tenancy and isolation
+  namespace: devops-team
+
+  # Optional: Labels for filtering and selection
+  labels:
+    app.kubernetes.io/name: dockerfile-generator
+    app.kubernetes.io/component: container-tooling
+    team: platform-engineering
+    environment: production
+
+  # Optional: Annotations for additional metadata
+  annotations:
+    aof.agenticops.org/description: "Generates optimized Dockerfiles for various tech stacks"
+    aof.agenticops.org/version: "1.2.0"
+    aof.agenticops.org/owner: "platform-team@company.com"
+
+spec:
+  # -------------------------------------------------------------------------
+  # Model Configuration
+  # -------------------------------------------------------------------------
+
+  # Primary model specification (provider:model_id format)
+  # Supported providers: openai, anthropic, google, ollama, grok, docker-mr
+  model: "google:gemini-2.0-flash"
+
+  # Optional: Fallback models if primary fails (ordered by preference)
+  fallbackModels:
+    - "anthropic:claude-3-5-sonnet-20241022"
+    - "openai:gpt-4-turbo-preview"
+
+  # Optional: Model-specific parameters
+  modelParams:
+    temperature: 0.7
+    maxTokens: 4096
+    topP: 0.9
+    frequencyPenalty: 0.0
+    presencePenalty: 0.0
+    stopSequences: ["---END---"]
+
+  # Optional: Reference to ModelConfig resource for advanced settings
+  modelConfigRef:
+    name: production-model-config
+    namespace: aof-system
+
+  # -------------------------------------------------------------------------
+  # Agent Behavior
+  # -------------------------------------------------------------------------
+
+  # Enable markdown formatting in responses (default: true)
+  markdown: true
+
+  # Short description of agent's purpose
+  description: "Generates production-ready Dockerfiles with multi-stage builds and security best practices"
+
+  # Detailed system instructions (supports multi-line with |)
+  instructions: |
+    You are an expert DevOps engineer specializing in container optimization.
+
+    Your responsibilities:
+    1. Generate Dockerfiles following best practices:
+       - Multi-stage builds for minimal image size
+       - Non-root user execution
+       - Layer caching optimization
+       - Security scanning integration
+
+    2. Always include:
+       - Explicit base image versions (no :latest)
+       - HEALTHCHECK instructions
+       - Proper .dockerignore recommendations
+       - Build-time and runtime arguments
+
+    3. Optimize for:
+       - Image size (target <100MB for production)
+       - Build time (leverage cache layers)
+       - Security (scan for CVEs, use distroless when possible)
+
+    4. Support multiple tech stacks:
+       - Node.js, Python, Go, Rust, Java
+       - Static sites (Nginx/Caddy)
+
+  # Optional: Maximum conversation turns before auto-reset
+  maxTurns: 50
+
+  # Optional: Session timeout (ISO 8601 duration format)
+  sessionTimeout: "PT30M"  # 30 minutes
+
+  # Optional: Enable streaming responses
+  streaming: true
+
+  # -------------------------------------------------------------------------
+  # Tool Configuration (MCP-first approach)
+  # -------------------------------------------------------------------------
+
+  tools:
+    # GitHub integration for repository operations
+    - type: GitHub
+      config:
+        # Optional: Specific repositories to access
+        repositories:
+          - "org/repo1"
+          - "org/repo2"
+        # Optional: GitHub token from secret
+        tokenSecretRef:
+          name: github-token
+          key: token
+        # Optional: Permissions
+        permissions:
+          contents: read
+          pullRequests: write
+
+    # File system access (restricted to baseDir)
+    - type: File
+      config:
+        baseDir: "/workspace"
+        # Optional: Allowed operations
+        allowedOperations:
+          - read
+          - write
+          - list
+        # Optional: File patterns to exclude
+        excludePatterns:
+          - "**/.git/**"
+          - "**/node_modules/**"
+          - "**/*.env"
+
+    # MCP CLI tool server
+    - type: MCPCLI
+      config:
+        command: "kubectl-ai --mcp-server"
+        # Optional: Arguments
+        args:
+          - "--config=/etc/kubectl-ai/config.yaml"
+        # Optional: Environment variables
+        env:
+          - name: KUBECONFIG
+            value: /home/user/.kube/config
+          - name: KUBECTL_AI_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: kubectl-ai-secret
+                key: api-key
+        # Optional: Working directory
+        workingDir: /workspace
+
+    # Shell command execution (use with caution)
+    - type: Shell
+      config:
+        # Optional: Allowed commands (whitelist)
+        allowedCommands:
+          - docker
+          - hadolint
+          - trivy
+        # Optional: Timeout per command
+        commandTimeout: "PT5M"  # 5 minutes
+        # Optional: Run as specific user
+        runAsUser: 1000
+
+    # HTTP API tool
+    - type: HTTP
+      config:
+        baseURL: "https://api.example.com"
+        # Optional: Authentication
+        authSecretRef:
+          name: api-credentials
+          key: bearer-token
+        # Optional: Headers
+        headers:
+          User-Agent: "AOF-Agent/1.0"
+        # Optional: Timeout
+        timeout: "PT30S"
+
+    # Reference to external MCP ToolServer
+    - type: ToolServerRef
+      config:
+        name: docker-build-server
+        namespace: aof-system
+
+  # -------------------------------------------------------------------------
+  # Memory Configuration
+  # -------------------------------------------------------------------------
+
+  memory:
+    # Memory backend type: ephemeral, redis, postgres, s3
+    backend: redis
+
+    # Reference to Memory resource
+    memoryConfigRef:
+      name: shared-memory-backend
+      namespace: aof-system
+
+    # Optional: Memory-specific settings
+    settings:
+      # Maximum memory size (for ephemeral)
+      maxSize: "100Mi"
+      # TTL for conversation history
+      conversationTTL: "PT24H"  # 24 hours
+      # Enable persistent summaries
+      enableSummaries: true
+
+  # -------------------------------------------------------------------------
+  # Resource Limits (Kubernetes-style)
+  # -------------------------------------------------------------------------
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+
+  observability:
+    # Enable tracing
+    tracing:
+      enabled: true
+      # OpenTelemetry exporter endpoint
+      endpoint: "http://otel-collector:4317"
+      samplingRate: 0.1
+
+    # Enable metrics
+    metrics:
+      enabled: true
+      # Prometheus endpoint
+      endpoint: "http://prometheus:9090"
+
+    # Enable logging
+    logging:
+      level: info  # debug, info, warn, error
+      format: json  # json, text
+      # Optional: Log aggregation
+      aggregatorEndpoint: "http://loki:3100"
+
+  # -------------------------------------------------------------------------
+  # Security
+  # -------------------------------------------------------------------------
+
+  security:
+    # Run as non-root user
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+
+    # Read-only filesystem (except specified paths)
+    readOnlyRootFilesystem: true
+
+    # Allowed volumes
+    allowedVolumes:
+      - configMap
+      - secret
+      - emptyDir
+
+    # Network policies
+    networkPolicy:
+      # Egress rules
+      egress:
+        - to:
+            - podSelector:
+                matchLabels:
+                  app: model-server
+          ports:
+            - protocol: TCP
+              port: 8080
+
+  # -------------------------------------------------------------------------
+  # Advanced Configuration
+  # -------------------------------------------------------------------------
+
+  # Optional: Retry policy for model calls
+  retryPolicy:
+    maxRetries: 3
+    backoffMultiplier: 2.0
+    initialBackoff: "PT1S"
+    maxBackoff: "PT30S"
+
+  # Optional: Rate limiting
+  rateLimit:
+    requestsPerMinute: 60
+    tokensPerMinute: 100000
+
+  # Optional: Cost controls
+  costControl:
+    maxCostPerRequest: 0.10  # USD
+    maxCostPerDay: 100.00
+    budgetAlertThreshold: 80  # Percentage
+
+# ============================================================================
+# Status (Read-only, managed by controller)
+# ============================================================================
+status:
+  # Current state: Pending, Running, Ready, Failed, Terminating
+  phase: Ready
+
+  # Detailed conditions
+  conditions:
+    - type: Ready
+      status: "True"
+      lastTransitionTime: "2025-01-09T10:30:00Z"
+      reason: AgentInitialized
+      message: "Agent is ready to accept requests"
+
+    - type: ModelConnected
+      status: "True"
+      lastTransitionTime: "2025-01-09T10:30:05Z"
+      reason: ModelValidated
+      message: "Successfully connected to google:gemini-2.0-flash"
+
+  # Runtime statistics
+  stats:
+    totalRequests: 1542
+    successfulRequests: 1498
+    failedRequests: 44
+    averageResponseTime: "PT2.3S"
+    totalTokensUsed: 3847291
+    totalCost: 42.35  # USD
+
+  # Last activity timestamp
+  lastActivityTime: "2025-01-09T12:45:30Z"
+
+  # Resource usage
+  resourceUsage:
+    memory: "384Mi"
+    cpu: "250m"
+
+  # Observability URLs
+  observedGeneration: 5
+  dashboardURL: "https://grafana.example.com/d/agent-dockerfile-generator"

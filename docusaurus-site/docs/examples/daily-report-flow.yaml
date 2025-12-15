@@ -1,0 +1,532 @@
+# Daily Operations Report Flow
+# Automated daily/weekly reports for cluster health, deployments, and incidents
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: report-generator
+  labels:
+    purpose: reporting
+    team: platform
+
+spec:
+  model: anthropic:claude-3-5-sonnet-20241022
+
+  model_config:
+    temperature: 0.4
+    max_tokens: 3000
+
+  instructions: |
+    You are an operations reporting assistant that generates clear,
+    actionable reports for engineering and SRE teams.
+
+    Report principles:
+    - Start with executive summary (health status, key metrics)
+    - Use visual indicators (emoji, colors)
+    - Highlight issues and anomalies
+    - Include trends when available
+    - Provide actionable recommendations
+    - Keep it concise but comprehensive
+
+    Report sections:
+    1. **Executive Summary**
+       - Overall health status
+       - Key metrics at a glance
+       - Critical issues (if any)
+
+    2. **Cluster Health**
+       - Node status and resource usage
+       - Pod health across namespaces
+       - Any failing workloads
+
+    3. **Deployments**
+       - Recent deployments
+       - Rollback events
+       - Deployment failures
+
+    4. **Resource Usage**
+       - Top CPU consumers
+       - Top memory consumers
+       - Disk usage trends
+
+    5. **Incidents**
+       - Incidents triggered
+       - Resolution time
+       - Auto-remediation stats
+
+    6. **Recommendations**
+       - Resource optimization opportunities
+       - Configuration improvements
+       - Preventive actions
+
+    Format for Slack:
+    - Use markdown formatting
+    - Sections with headers
+    - Emoji for quick scanning
+    - Code blocks for metrics
+    - Links to dashboards
+
+  tools:
+    - type: Shell
+      config:
+        allowed_commands:
+          - kubectl
+          - helm
+        timeout_seconds: 120
+
+    - type: MCP
+      config:
+        name: kubectl-mcp
+        command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+
+    - type: HTTP
+      config:
+        timeout_seconds: 30
+
+  memory:
+    type: SQLite
+    config:
+      path: ./reports-memory.db
+
+---
+# Daily Cluster Health Report
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: daily-cluster-report
+  labels:
+    schedule: daily
+    team: platform
+
+spec:
+  # Run every weekday at 9 AM
+  trigger:
+    type: Schedule
+    config:
+      cron: "0 9 * * 1-5"  # Mon-Fri at 9 AM
+      timezone: America/New_York
+
+  variables:
+    SLACK_CHANNEL: "#platform-daily"
+    DASHBOARD_URL: "https://k8s-dashboard.company.com"
+
+  nodes:
+    # 1. Gather node metrics
+    - id: collect-node-data
+      type: Shell
+      config:
+        command: bash
+        args:
+          - -c
+          - |
+            kubectl get nodes -o json | jq '{
+              total: (.items | length),
+              ready: ([.items[] | select(.status.conditions[] | select(.type=="Ready" and .status=="True"))] | length),
+              nodes: [.items[] | {
+                name: .metadata.name,
+                cpu: (.status.capacity.cpu),
+                memory: (.status.capacity.memory),
+                conditions: [.status.conditions[] | {type: .type, status: .status}]
+              }]
+            }'
+
+    # 2. Gather pod metrics
+    - id: collect-pod-data
+      type: Shell
+      config:
+        command: bash
+        args:
+          - -c
+          - |
+            kubectl get pods --all-namespaces -o json | jq '{
+              total: (.items | length),
+              running: ([.items[] | select(.status.phase=="Running")] | length),
+              pending: ([.items[] | select(.status.phase=="Pending")] | length),
+              failed: ([.items[] | select(.status.phase=="Failed")] | length),
+              failing: [.items[] | select(.status.phase != "Running" and .status.phase != "Succeeded") | {
+                namespace: .metadata.namespace,
+                name: .metadata.name,
+                phase: .status.phase,
+                reason: .status.reason
+              }]
+            }'
+
+    # 3. Resource usage
+    - id: collect-resource-usage
+      type: Shell
+      config:
+        command: bash
+        args:
+          - -c
+          - |
+            echo "=== TOP CPU ==="
+            kubectl top pods --all-namespaces --sort-by=cpu | head -10
+
+            echo ""
+            echo "=== TOP MEMORY ==="
+            kubectl top pods --all-namespaces --sort-by=memory | head -10
+
+    # 4. Recent events
+    - id: collect-events
+      type: Shell
+      config:
+        command: bash
+        args:
+          - -c
+          - |
+            kubectl get events --all-namespaces \
+              --sort-by='.lastTimestamp' \
+              --field-selector type!=Normal \
+              -o json | jq '{
+                warnings: [.items[] | select(.type=="Warning") | {
+                  namespace: .metadata.namespace,
+                  object: (.involvedObject.kind + "/" + .involvedObject.name),
+                  reason: .reason,
+                  message: .message,
+                  count: .count,
+                  time: .lastTimestamp
+                }]
+              }' | head -20
+
+    # 5. Recent deployments
+    - id: collect-deployments
+      type: Shell
+      config:
+        command: bash
+        args:
+          - -c
+          - |
+            kubectl get deployments --all-namespaces -o json | jq '{
+              total: (.items | length),
+              healthy: ([.items[] | select(.status.replicas == .status.readyReplicas)] | length),
+              deployments: [.items[] | {
+                namespace: .metadata.namespace,
+                name: .metadata.name,
+                replicas: .status.replicas,
+                ready: .status.readyReplicas,
+                updated: .status.updatedReplicas,
+                available: .status.availableReplicas
+              }] | sort_by(.ready) | reverse
+            }'
+
+    # 6. Parallel data collection for incidents
+    - id: collect-incident-data
+      type: HTTP
+      config:
+        method: GET
+        url: https://api.company.com/incidents/last-24h
+        headers:
+          Authorization: "Bearer ${API_TOKEN}"
+
+    # 7. Generate comprehensive report
+    - id: generate-report
+      type: Agent
+      config:
+        agent: report-generator
+        input: |
+          Generate a daily cluster health report based on this data:
+
+          **Nodes**:
+          ${collect-node-data.output}
+
+          **Pods**:
+          ${collect-pod-data.output}
+
+          **Resource Usage**:
+          ${collect-resource-usage.output}
+
+          **Events (Warnings)**:
+          ${collect-events.output}
+
+          **Deployments**:
+          ${collect-deployments.output}
+
+          **Incidents (24h)**:
+          ${collect-incident-data.output}
+
+          Create a report for the engineering team with:
+          1. Executive summary with health emoji
+          2. Key metrics and trends
+          3. Issues requiring attention
+          4. Recommendations
+          5. Links to dashboard
+
+          Format for Slack with good visual structure.
+        timeout_seconds: 180
+
+    # 8. Send to Slack
+    - id: send-report
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        blocks:
+          - type: header
+            text:
+              type: plain_text
+              text: "📊 Daily Cluster Health Report"
+
+          - type: section
+            text:
+              type: mrkdwn
+              text: ${generate-report.output}
+
+          - type: divider
+
+          - type: context
+            elements:
+              - type: mrkdwn
+                text: |
+                  Generated by AOF • <${DASHBOARD_URL}|View Dashboard> • <https://wiki.company.com/runbooks|Runbooks>
+
+    # 9. Store report for history
+    - id: store-report
+      type: Transform
+      config:
+        script: |
+          REPORT_DATE=$(date +%Y-%m-%d)
+          REPORT_FILE="/tmp/cluster-reports/${REPORT_DATE}.json"
+
+          mkdir -p /tmp/cluster-reports
+
+          cat > "${REPORT_FILE}" <<EOF
+          {
+            "date": "${REPORT_DATE}",
+            "nodes": ${collect-node-data.output},
+            "pods": ${collect-pod-data.output},
+            "incidents": ${collect-incident-data.output},
+            "report": ${generate-report.output}
+          }
+          EOF
+
+          echo "Report saved to ${REPORT_FILE}"
+
+  connections:
+    - from: collect-node-data
+      to: collect-pod-data
+    - from: collect-pod-data
+      to: collect-resource-usage
+      to: collect-events
+      to: collect-deployments
+      to: collect-incident-data
+    - from: collect-resource-usage
+      to: generate-report
+    - from: collect-events
+      to: generate-report
+    - from: collect-deployments
+      to: generate-report
+    - from: collect-incident-data
+      to: generate-report
+    - from: generate-report
+      to: send-report
+    - from: send-report
+      to: store-report
+
+---
+# Weekly Summary Report
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: weekly-summary-report
+  labels:
+    schedule: weekly
+    team: sre
+
+spec:
+  # Run every Monday at 10 AM
+  trigger:
+    type: Schedule
+    config:
+      cron: "0 10 * * 1"  # Mondays at 10 AM
+      timezone: America/New_York
+
+  variables:
+    SLACK_CHANNEL: "#sre-weekly"
+    LOOKBACK_DAYS: "7"
+
+  nodes:
+    - id: collect-weekly-data
+      type: Shell
+      config:
+        command: bash
+        args:
+          - -c
+          - |
+            # Aggregate last 7 days of daily reports
+            cat /tmp/cluster-reports/*.json | jq -s '{
+              reports: length,
+              date_range: {
+                start: (map(.date) | min),
+                end: (map(.date) | max)
+              },
+              aggregate: {
+                total_incidents: (map(.incidents.total) | add),
+                avg_pod_count: (map(.pods.total) | add / length),
+                failures: (map(.pods.failing | length) | add)
+              }
+            }'
+
+    - id: fetch-deployment-stats
+      type: HTTP
+      config:
+        method: GET
+        url: https://api.company.com/deployments/weekly
+        headers:
+          Authorization: "Bearer ${API_TOKEN}"
+
+    - id: fetch-incident-stats
+      type: HTTP
+      config:
+        method: GET
+        url: https://api.company.com/incidents/weekly
+        headers:
+          Authorization: "Bearer ${API_TOKEN}"
+
+    - id: generate-weekly-summary
+      type: Agent
+      config:
+        agent: report-generator
+        input: |
+          Generate a comprehensive weekly summary report:
+
+          **Period**: Last 7 days
+          **Cluster Data**: ${collect-weekly-data.output}
+          **Deployments**: ${fetch-deployment-stats.output}
+          **Incidents**: ${fetch-incident-stats.output}
+
+          Include:
+          1. Week in review (highlights and lowlights)
+          2. Key metrics and trends
+          3. Incident analysis
+             - Total incidents
+             - MTTR (mean time to resolution)
+             - Auto-remediation success rate
+             - Top incident types
+          4. Deployment statistics
+             - Total deployments
+             - Success rate
+             - Rollbacks
+          5. Capacity planning insights
+          6. Recommendations for next week
+
+          Make it executive-friendly with clear insights.
+
+    - id: send-weekly-report
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        blocks:
+          - type: header
+            text:
+              type: plain_text
+              text: "📈 Weekly Operations Summary"
+
+          - type: section
+            text:
+              type: mrkdwn
+              text: ${generate-weekly-summary.output}
+
+          - type: actions
+            elements:
+              - type: button
+                text:
+                  type: plain_text
+                  text: "View Detailed Metrics"
+                url: "https://grafana.company.com/weekly"
+                style: primary
+
+              - type: button
+                text:
+                  type: plain_text
+                  text: "Download Report"
+                url: "https://reports.company.com/weekly/latest"
+
+---
+# On-Demand Custom Report
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: custom-report-generator
+
+spec:
+  # Triggered by Slack slash command
+  trigger:
+    type: Slack
+    config:
+      events: [slash_command]
+      commands: [/report]
+      bot_token: ${SLACK_BOT_TOKEN}
+
+  nodes:
+    - id: parse-request
+      type: Transform
+      config:
+        script: |
+          # Parse slash command input
+          # /report [type] [timeframe] [namespace]
+          export REPORT_TYPE=$(echo "${event.text}" | awk '{print $1}')
+          export TIMEFRAME=$(echo "${event.text}" | awk '{print $2}')
+          export NAMESPACE=$(echo "${event.text}" | awk '{print $3}')
+
+          # Defaults
+          export REPORT_TYPE=${REPORT_TYPE:-health}
+          export TIMEFRAME=${TIMEFRAME:-24h}
+          export NAMESPACE=${NAMESPACE:-all}
+
+    - id: collect-custom-data
+      type: Shell
+      config:
+        command: bash
+        args:
+          - -c
+          - |
+            # Collect data based on request
+            if [[ "${REPORT_TYPE}" == "health" ]]; then
+              kubectl get pods -n ${NAMESPACE} -o json
+            elif [[ "${REPORT_TYPE}" == "resources" ]]; then
+              kubectl top pods -n ${NAMESPACE}
+            elif [[ "${REPORT_TYPE}" == "events" ]]; then
+              kubectl get events -n ${NAMESPACE} --sort-by='.lastTimestamp'
+            fi
+
+    - id: generate-custom-report
+      type: Agent
+      config:
+        agent: report-generator
+        input: |
+          Generate a ${REPORT_TYPE} report for:
+          - Timeframe: ${TIMEFRAME}
+          - Namespace: ${NAMESPACE}
+
+          Data: ${collect-custom-data.output}
+
+    - id: send-custom-report
+      type: Slack
+      config:
+        channel: ${event.channel_id}
+        message: |
+          📊 **Custom Report: ${REPORT_TYPE}**
+
+          ${generate-custom-report.output}
+
+---
+# Setup:
+#
+# 1. Set environment variables:
+#    export SLACK_BOT_TOKEN=xoxb-...
+#    export API_TOKEN=...
+#
+# 2. Apply agent and flows:
+#    aofctl agent apply -f daily-report-flow.yaml
+#    aofctl flow apply -f daily-report-flow.yaml
+#
+# 3. Start flows:
+#    aofctl flow run daily-cluster-report --daemon
+#    aofctl flow run weekly-summary-report --daemon
+#    aofctl flow run custom-report-generator --daemon
+#
+# 4. Test:
+#    # Wait for scheduled time or trigger manually
+#    aofctl flow run daily-cluster-report
+#
+#    # Custom report via Slack
+#    /report health 24h production

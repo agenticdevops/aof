@@ -1,0 +1,305 @@
+# Example 1: Slack Command → Agent Analysis → Slack Response
+# Use case: Team asks agent questions via Slack, agent responds in thread
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFlow
+metadata:
+  name: slack-qa-agent
+  namespace: aof-workflows
+  labels:
+    app: slack-integration
+    team: platform
+  annotations:
+    description: "AI agent answers team questions via Slack"
+    owner: "platform-team@company.com"
+
+spec:
+  config:
+    timeout: "5m"
+    retryPolicy:
+      maxAttempts: 2
+      backoff: exponential
+      initialDelay: "2s"
+    variables:
+      botName: "DevOps Assistant"
+      defaultModel: "claude-3-5-sonnet-20241022"
+    secretsRef:
+      - name: slack-bot-token
+      - name: anthropic-api-key
+
+  triggers:
+    - id: slack-command
+      type: Slack
+      config:
+        workspace: "T0123COMPANY"
+        event: message
+        channel: "C0123DEVOPS"
+        pattern: "^<@U0123BOT>.*"        # Messages mentioning bot
+        botToken:
+          secretRef: slack-bot-token
+        filters:
+          bots: false                     # Ignore bot messages
+
+  nodes:
+    # Node 1: Extract question from Slack message
+    - id: extract-question
+      type: Transform
+      name: "Extract Question"
+      description: "Parse Slack message to extract user question"
+      timeout: "10s"
+      input:
+        slackMessage:
+          $ref: "$.context.trigger.payload.text"
+        userId:
+          $ref: "$.context.trigger.payload.user"
+        channelId:
+          $ref: "$.context.trigger.payload.channel"
+        threadTs:
+          $ref: "$.context.trigger.payload.ts"
+      config:
+        transformType: cel
+        cel:
+          expression: |
+            {
+              "question": context.trigger.payload.text.replace('<@U0123BOT>', '').trim(),
+              "user": context.trigger.payload.user,
+              "channel": context.trigger.payload.channel,
+              "thread_ts": context.trigger.payload.ts,
+              "original_message": context.trigger.payload.text
+            }
+
+    # Node 2: Post "thinking" reaction
+    - id: thinking-reaction
+      type: Action
+      name: "Show Thinking Status"
+      description: "Add 🤔 reaction to show bot is processing"
+      timeout: "5s"
+      input:
+        channel:
+          $ref: "$.context.nodes.extract-question.output.channel"
+        timestamp:
+          $ref: "$.context.nodes.extract-question.output.thread_ts"
+      config:
+        actionType: Slack
+        slack:
+          action: add-reaction
+          channel:
+            $ref: "$.input.channel"
+          message:
+            threadTs:
+              $ref: "$.input.timestamp"
+          reaction: "thinking_face"
+          botToken:
+            secretRef: slack-bot-token
+
+    # Node 3: Agent analyzes and answers question
+    - id: qa-agent
+      type: Agent
+      name: "QA Agent"
+      description: "AI agent analyzes question and provides answer"
+      timeout: "3m"
+      retryPolicy:
+        maxAttempts: 2
+        retryOn: ["agent-error", "timeout"]
+      input:
+        question:
+          $ref: "$.context.nodes.extract-question.output.question"
+        user:
+          $ref: "$.context.nodes.extract-question.output.user"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: |
+            You are a helpful DevOps assistant for the engineering team.
+            Answer questions about infrastructure, deployments, monitoring, and best practices.
+            Be concise but thorough. Use bullet points for clarity.
+            If you don't know something, say so - don't make up information.
+
+            Available context: Kubernetes cluster, AWS infrastructure, GitHub repositories.
+          tools:
+            - name: search-documentation
+              description: "Search internal documentation"
+            - name: query-metrics
+              description: "Query Prometheus metrics"
+            - name: check-deployment-status
+              description: "Check status of deployments"
+          maxTokens: 2048
+          temperature: 0.7
+        prompt:
+          template: |
+            User <@{{.user}}> asked: {{.question}}
+
+            Please provide a helpful, accurate answer. Format your response for Slack (use markdown).
+          variables:
+            question:
+              $ref: "$.input.question"
+            user:
+              $ref: "$.input.user"
+        allowedTools:
+          - search-documentation
+          - query-metrics
+          - check-deployment-status
+        maxIterations: 5
+        outputFormat: markdown
+        streaming: false
+
+    # Node 4: Format response for Slack
+    - id: format-response
+      type: Transform
+      name: "Format Slack Response"
+      description: "Format agent response with proper Slack formatting"
+      timeout: "10s"
+      input:
+        answer:
+          $ref: "$.context.nodes.qa-agent.output.response"
+        user:
+          $ref: "$.context.nodes.extract-question.output.user"
+      config:
+        transformType: template
+        template:
+          engine: go-template
+          template: |
+            Hi <@{{.user}}>! Here's what I found:
+
+            {{.answer}}
+
+            _Asked at {{.timestamp}}_
+          variables:
+            answer:
+              $ref: "$.input.answer"
+            user:
+              $ref: "$.input.user"
+            timestamp:
+              $cel: "now().format('15:04 MST')"
+
+    # Node 5: Post answer to Slack thread
+    - id: post-answer
+      type: Action
+      name: "Post Answer"
+      description: "Post agent's answer as thread reply"
+      timeout: "10s"
+      retryPolicy:
+        maxAttempts: 3
+        backoff: exponential
+      input:
+        channel:
+          $ref: "$.context.nodes.extract-question.output.channel"
+        threadTs:
+          $ref: "$.context.nodes.extract-question.output.thread_ts"
+        message:
+          $ref: "$.context.nodes.format-response.output.result"
+      config:
+        actionType: Slack
+        slack:
+          action: post-message
+          channel:
+            $ref: "$.input.channel"
+          message:
+            text:
+              $ref: "$.input.message"
+            threadTs:
+              $ref: "$.input.threadTs"
+          botToken:
+            secretRef: slack-bot-token
+
+    # Node 6: Add checkmark reaction on success
+    - id: success-reaction
+      type: Action
+      name: "Mark Complete"
+      description: "Add ✅ reaction to show completion"
+      timeout: "5s"
+      input:
+        channel:
+          $ref: "$.context.nodes.extract-question.output.channel"
+        timestamp:
+          $ref: "$.context.nodes.extract-question.output.thread_ts"
+      config:
+        actionType: Slack
+        slack:
+          action: add-reaction
+          channel:
+            $ref: "$.input.channel"
+          message:
+            threadTs:
+              $ref: "$.input.timestamp"
+          reaction: "white_check_mark"
+          botToken:
+            secretRef: slack-bot-token
+
+    # Error handling node
+    - id: error-notification
+      type: Action
+      name: "Error Notification"
+      description: "Notify user if agent fails"
+      timeout: "10s"
+      input:
+        channel:
+          $ref: "$.context.nodes.extract-question.output.channel"
+        threadTs:
+          $ref: "$.context.nodes.extract-question.output.thread_ts"
+        error:
+          $ref: "$.context.nodes.qa-agent.error.message"
+      config:
+        actionType: Slack
+        slack:
+          action: post-message
+          channel:
+            $ref: "$.input.channel"
+          message:
+            text: |
+              Sorry, I encountered an error processing your request: {{.error}}
+              Please try again or contact the platform team if the issue persists.
+            threadTs:
+              $ref: "$.input.threadTs"
+          botToken:
+            secretRef: slack-bot-token
+
+  connections:
+    # Main success flow
+    - from: extract-question
+      to: thinking-reaction
+
+    - from: thinking-reaction
+      to: qa-agent
+
+    - from: qa-agent
+      to: format-response
+
+    - from: format-response
+      to: post-answer
+
+    - from: post-answer
+      to: success-reaction
+
+  # Error handling
+  errorHandling:
+    onError:
+      - nodeId: error-notification
+        condition: "context.nodes.qa-agent.status == 'failed'"
+
+  # Observability
+  observability:
+    logging:
+      level: info
+      includeInputs: true
+      includeOutputs: true
+      redactSecrets: true
+    metrics:
+      enabled: true
+      customMetrics:
+        - name: slack_qa_requests_total
+          type: counter
+          labels: ["user", "channel"]
+        - name: slack_qa_response_time_seconds
+          type: histogram
+          labels: ["status"]
+    tracing:
+      enabled: true
+      samplingRate: 1.0
+    notifications:
+      - type: slack
+        on: ["failure"]
+        config:
+          channel: "C0123ALERTS"
+          botToken:
+            secretRef: slack-bot-token

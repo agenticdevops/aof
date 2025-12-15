@@ -1,0 +1,311 @@
+# Incident Auto-Remediation Flow
+#
+# Description: Full incident response pipeline that detects issues via PagerDuty,
+# diagnoses with AI, attempts auto-remediation if safe, or escalates to humans.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - PAGERDUTY_TOKEN for webhook integration
+# - kubectl access to cluster
+# - Slack Bot Token for notifications
+#
+# How to run:
+#   export PAGERDUTY_TOKEN=xxxxx
+#   export SLACK_BOT_TOKEN=xoxb-xxxxx
+#   aof apply -f incident-auto-remediation-flow.yaml
+#   # Alerts from PagerDuty trigger automatic response
+#
+# Expected output: Auto-remediation or escalation with full audit trail
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFlow
+metadata:
+  name: incident-auto-fix
+  description: "Automated incident detection and remediation"
+  labels:
+    team: sre
+    priority: critical
+    automation: incident-response
+
+spec:
+  # Triggered by PagerDuty alerts
+  trigger:
+    type: pagerduty
+    config:
+      token_env: PAGERDUTY_TOKEN
+      services:
+        - production-k8s
+        - production-api
+        - production-db
+
+      # Only auto-remediate specific alert types
+      include_alert_types:
+        - pod_crash_loop
+        - high_memory_usage
+        - deployment_failed
+        - node_not_ready
+        - high_error_rate
+
+      # Never auto-remediate these (too risky)
+      exclude_alert_types:
+        - data_loss
+        - security_breach
+        - database_corruption
+
+  # Use the SRE on-call fleet for diagnosis and remediation
+  fleet:
+    name: sre-oncall
+
+    # Pass alert context
+    context:
+      incident_id: "{trigger.incident.id}"
+      service: "{trigger.incident.service.name}"
+      severity: "{trigger.incident.urgency}"
+      description: "{trigger.incident.description}"
+      triggered_at: "{trigger.incident.created_at}"
+      alert_type: "{trigger.incident.type}"
+
+  # Decision tree for remediation
+  conditions:
+    # Can we auto-remediate this?
+    - name: auto_remediable
+      condition: |
+        fleet.diagnostic-agent.severity in ['P2', 'P3'] &&
+        fleet.diagnostic-agent.auto_fix_confidence > 0.8 &&
+        fleet.diagnostic-agent.blast_radius == 'low'
+
+    # Requires manual approval?
+    - name: needs_approval
+      condition: |
+        fleet.diagnostic-agent.severity == 'P1' &&
+        fleet.diagnostic-agent.auto_fix_confidence > 0.6
+
+    # Too risky - escalate immediately
+    - name: must_escalate
+      condition: |
+        fleet.diagnostic-agent.severity == 'P0' ||
+        fleet.diagnostic-agent.auto_fix_confidence < 0.6 ||
+        fleet.diagnostic-agent.blast_radius in ['medium', 'high']
+
+  # Actions based on conditions
+  actions:
+    # Always: Update PagerDuty with diagnosis
+    - type: pagerduty_note
+      config:
+        incident_id: "{trigger.incident.id}"
+        note: |
+          🤖 Automated Diagnosis Complete
+
+          **Incident ID**: {fleet.diagnostic-agent.incident_id}
+          **Root Cause**: {fleet.diagnostic-agent.root_cause}
+          **Severity**: {fleet.diagnostic-agent.severity}
+          **Impact**: {fleet.diagnostic-agent.impact}
+
+          **Remediation Plan**:
+          {fleet.diagnostic-agent.remediation_plan}
+
+          **Auto-Fix Confidence**: {fleet.diagnostic-agent.auto_fix_confidence}
+          **Blast Radius**: {fleet.diagnostic-agent.blast_radius}
+
+    # Always: Post to Slack
+    - type: slack_message
+      config:
+        channel: "#incidents"
+        message: |
+          🚨 *Incident Detected*
+
+          *Service*: {trigger.incident.service.name}
+          *Severity*: {fleet.diagnostic-agent.severity}
+          *Root Cause*: {fleet.diagnostic-agent.root_cause}
+
+          *Status*: {action.next_step}
+
+          <{trigger.incident.html_url}|View in PagerDuty>
+
+    # Condition 1: Auto-remediate (safe, high confidence)
+    - condition: auto_remediable
+      type: execute_remediation
+      config:
+        fleet: sre-oncall
+        agent: remediation-agent
+
+    - condition: auto_remediable
+      type: pagerduty_resolve
+      config:
+        incident_id: "{trigger.incident.id}"
+        resolution: |
+          ✅ Auto-remediated by AOF
+
+          **Actions Taken**:
+          {fleet.remediation-agent.actions_taken}
+
+          **Verification**:
+          {fleet.remediation-agent.verification}
+
+          **Monitoring**:
+          {fleet.remediation-agent.monitoring}
+
+    - condition: auto_remediable
+      type: slack_message
+      config:
+        channel: "#incidents"
+        message: |
+          ✅ *Incident Auto-Resolved*
+
+          *Incident ID*: {fleet.diagnostic-agent.incident_id}
+          *Service*: {trigger.incident.service.name}
+
+          *Actions Taken*:
+          {fleet.remediation-agent.actions_taken}
+
+          *Verification*: {fleet.remediation-agent.status}
+
+    # Condition 2: Request approval (P1, medium confidence)
+    - condition: needs_approval
+      type: slack_message
+      config:
+        channel: "#incidents"
+        message: |
+          ⚠️ *Incident Remediation Approval Needed*
+
+          *Incident ID*: {fleet.diagnostic-agent.incident_id}
+          *Service*: {trigger.incident.service.name}
+          *Severity*: P1
+
+          *Proposed Fix*:
+          {fleet.diagnostic-agent.remediation_plan}
+
+          *Confidence*: {fleet.diagnostic-agent.auto_fix_confidence}
+
+          React with ✅ to approve auto-remediation
+          React with ❌ to escalate to on-call engineer
+
+        await_reaction: true
+        timeout: 300s  # 5 minutes
+
+    - condition: needs_approval
+      type: conditional_remediation
+      config:
+        if_approved: execute_remediation
+        if_denied: escalate_to_oncall
+
+    # Condition 3: Escalate (P0 or low confidence)
+    - condition: must_escalate
+      type: pagerduty_escalate
+      config:
+        incident_id: "{trigger.incident.id}"
+        escalation_policy: "senior-sre-oncall"
+        urgency: high
+        note: |
+          ⚠️ Automated remediation not recommended
+
+          **Reason**: {escalation.reason}
+          **Diagnosis**: {fleet.diagnostic-agent.root_cause}
+          **Recommended Actions**: {fleet.diagnostic-agent.remediation_plan}
+
+          Please handle manually.
+
+    - condition: must_escalate
+      type: slack_message
+      config:
+        channel: "#incidents"
+        mentions:
+          - "@oncall-lead"
+          - "@sre-manager"
+        message: |
+          🔴 *Critical Incident - Manual Intervention Required*
+
+          *Incident ID*: {fleet.diagnostic-agent.incident_id}
+          *Service*: {trigger.incident.service.name}
+          *Severity*: {fleet.diagnostic-agent.severity}
+
+          *Root Cause*: {fleet.diagnostic-agent.root_cause}
+          *Impact*: {fleet.diagnostic-agent.impact}
+
+          *Why Escalating*: {escalation.reason}
+
+          *Recommended Actions*:
+          {fleet.diagnostic-agent.remediation_plan}
+
+          <{trigger.incident.html_url}|View in PagerDuty>
+
+  # Rollback plan if remediation fails
+  rollback:
+    - type: execute_rollback
+      condition: "remediation.failed == true"
+      config:
+        plan: "{fleet.remediation-agent.rollback_plan}"
+
+    - type: pagerduty_note
+      condition: "remediation.failed == true"
+      config:
+        note: "❌ Auto-remediation failed. Rolled back changes. Manual intervention required."
+
+    - type: slack_message
+      condition: "remediation.failed == true"
+      config:
+        channel: "#incidents"
+        mentions: ["@oncall"]
+        message: "❌ Auto-remediation failed for {fleet.diagnostic-agent.incident_id}. Changes rolled back. Please investigate."
+
+  # Error handling
+  error_handling:
+    - type: pagerduty_note
+      config:
+        note: "⚠️ Automated incident response failed: {error.message}"
+
+    - type: slack_message
+      config:
+        channel: "#incidents"
+        mentions: ["@oncall"]
+        message: |
+          ⚠️ *Incident Response Bot Failed*
+
+          *Incident*: {trigger.incident.id}
+          *Error*: {error.message}
+
+          Please handle manually.
+
+    - type: escalate_to_oncall
+
+  # Audit trail
+  audit:
+    enabled: true
+    log_to:
+      - file: /var/log/incidents/auto-remediation.log
+      - datadog: incidents
+      - pagerduty: timeline
+
+    include:
+      - trigger_data
+      - diagnosis
+      - decision_reasoning
+      - actions_taken
+      - verification_results
+      - timeline
+
+  # Resource limits
+  resources:
+    timeout: 600s  # 10 minutes total
+    max_tokens: 16384
+
+  # Monitoring
+  metrics:
+    enabled: true
+    track:
+      - auto_remediation_success_rate
+      - time_to_remediation
+      - incidents_by_type
+      - escalation_reasons
+      - confidence_scores
+
+  # SLOs
+  slo:
+    time_to_first_response: 60s
+    time_to_remediation: 300s
+    auto_remediation_success_rate: 0.85
+
+  tags:
+    priority: critical
+    automation: incident-response
+    slo_critical: true

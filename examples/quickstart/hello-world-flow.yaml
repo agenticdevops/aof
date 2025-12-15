@@ -1,0 +1,90 @@
+# Hello World Flow
+#
+# Description: The simplest possible AOF flow - webhook trigger → agent → response.
+# Perfect for understanding how flows work.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - Webhook endpoint configured (optional, can test with manual trigger)
+#
+# How to run:
+#   export ANTHROPIC_API_KEY=sk-ant-xxxxx
+#   aof apply -f hello-world-flow.yaml
+#
+#   # Option 1: Trigger via webhook
+#   curl -X POST http://localhost:8080/webhook/hello-flow \
+#     -H "Content-Type: application/json" \
+#     -d '{"message": "Hello AOF!"}'
+#
+#   # Option 2: Trigger manually
+#   aof trigger hello-flow --data '{"message": "Hello AOF!"}'
+#
+# Expected output: JSON response with agent's greeting
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFlow
+metadata:
+  name: hello-flow
+  description: "Simple webhook to response flow"
+
+spec:
+  # Triggered by HTTP webhook
+  trigger:
+    type: webhook
+    config:
+      path: /webhook/hello-flow
+      method: POST
+      # Optional: Verify webhook signature
+      # secret_env: WEBHOOK_SECRET
+
+  # Simple greeting agent
+  agent:
+    name: greeter
+    spec:
+      model: claude-3-5-sonnet-20241022
+
+      system: |
+        You are a friendly greeter. When you receive a message,
+        respond with a warm greeting and echo back what they said.
+
+        Format: "Hello! You said: [their message]. How can I help you today?"
+
+      temperature: 0.7
+
+      # Pass the webhook data to the agent
+      context:
+        user_message: "{trigger.body.message}"
+
+  # Return the response
+  actions:
+    # Respond to the webhook
+    - type: webhook_response
+      config:
+        status: 200
+        body:
+          success: true
+          agent_response: "{agent.output}"
+          timestamp: "{timestamp}"
+
+    # Optional: Log it
+    - type: log
+      config:
+        message: "Greeted user with: {agent.output}"
+
+  # Simple error handling
+  error_handling:
+    - type: webhook_response
+      config:
+        status: 500
+        body:
+          success: false
+          error: "{error.message}"
+
+  # Resource limits
+  resources:
+    timeout: 10s
+    max_tokens: 512
+
+  tags:
+    example: quickstart
+    difficulty: beginner

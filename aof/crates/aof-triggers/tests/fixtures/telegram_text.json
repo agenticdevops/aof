@@ -1,0 +1,20 @@
+{
+  "update_id": 123456789,
+  "message": {
+    "message_id": 1001,
+    "from": {
+      "id": 987654321,
+      "is_bot": false,
+      "first_name": "John",
+      "username": "johndoe"
+    },
+    "chat": {
+      "id": 987654321,
+      "first_name": "John",
+      "username": "johndoe",
+      "type": "private"
+    },
+    "date": 1638360000,
+    "text": "/agent run test-bot hello"
+  }
+}

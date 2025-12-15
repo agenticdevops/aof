@@ -1,0 +1,7 @@
+name: test-agent
+model: claude-3-5-sonnet-20241022
+provider: anthropic
+max_iterations: 5
+temperature: 0.7
+system_prompt: "You are a test agent"
+tools: []

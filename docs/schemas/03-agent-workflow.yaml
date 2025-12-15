@@ -1,0 +1,538 @@
+# ============================================================================
+# AgentWorkflow CRD Schema
+# ============================================================================
+# AgentWorkflow defines sequential or parallel multi-step pipelines with
+# agents. Similar to Argo Workflows or Tekton Pipelines, but for AI agents.
+# Workflows are DAGs (Directed Acyclic Graphs) of agent tasks.
+#
+# Use Cases:
+# - CI/CD pipelines (build, test, deploy)
+# - Incident response workflows (detect, diagnose, remediate, document)
+# - Data processing pipelines (extract, transform, load, validate)
+# - Infrastructure provisioning (plan, validate, apply, verify)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: incident-response-pipeline
+  namespace: sre-team
+  labels:
+    workflow-type: incident-management
+    severity: high
+  annotations:
+    aof.agenticops.org/description: "Automated incident response workflow"
+    aof.agenticops.org/runbook: "https://wiki.example.com/runbooks/incident-response"
+
+spec:
+  # -------------------------------------------------------------------------
+  # Workflow Configuration
+  # -------------------------------------------------------------------------
+
+  # Workflow entry point
+  entrypoint: incident-triage
+
+  # Optional: Workflow timeout
+  timeout: "PT2H"
+
+  # Optional: Retry policy for entire workflow
+  retryPolicy:
+    maxRetries: 1
+    retryOn:
+      - AgentFailure
+      - TimeoutExceeded
+
+  # Optional: Workflow-level parameters (can be overridden at runtime)
+  parameters:
+    - name: incident-severity
+      value: "high"
+      description: "Incident severity level"
+
+    - name: notification-channel
+      value: "#incidents"
+      description: "Slack channel for notifications"
+
+    - name: auto-remediate
+      value: "false"
+      description: "Enable automatic remediation"
+
+  # -------------------------------------------------------------------------
+  # Workflow Steps (DAG nodes)
+  # -------------------------------------------------------------------------
+
+  steps:
+    # Step 1: Initial incident triage
+    - name: incident-triage
+      agent:
+        # Reference existing Agent resource
+        agentRef:
+          name: triage-agent
+          namespace: sre-team
+
+        # Or define inline agent spec
+        # spec:
+        #   model: "anthropic:claude-3-5-sonnet-20241022"
+        #   instructions: "..."
+
+      # Input for this step
+      inputs:
+        parameters:
+          - name: alert-data
+            valueFrom:
+              expression: "{{workflow.parameters.alert-data}}"
+          - name: severity
+            value: "{{workflow.parameters.incident-severity}}"
+
+        # Artifacts (files, logs)
+        artifacts:
+          - name: alert-json
+            path: "/inputs/alert.json"
+            source:
+              http:
+                url: "{{workflow.parameters.alert-url}}"
+
+      # Expected outputs
+      outputs:
+        parameters:
+          - name: incident-type
+            valueFrom:
+              path: "/outputs/incident-type.txt"
+          - name: affected-services
+            valueFrom:
+              jsonPath: "$.services[*].name"
+
+        artifacts:
+          - name: triage-report
+            path: "/outputs/triage-report.md"
+            archive:
+              none: {}
+
+      # Next steps (DAG edges)
+      when: "{{steps.incident-triage.outputs.parameters.incident-type}} != 'false-positive'"
+      next:
+        - investigate-logs
+        - check-metrics
+
+    # Step 2a: Parallel investigation - Logs
+    - name: investigate-logs
+      dependsOn:
+        - incident-triage
+
+      agent:
+        agentRef:
+          name: log-analyzer
+          namespace: sre-team
+
+      inputs:
+        parameters:
+          - name: services
+            value: "{{steps.incident-triage.outputs.parameters.affected-services}}"
+          - name: time-range
+            value: "1h"
+
+        artifacts:
+          - name: log-query-template
+            path: "/inputs/query.tmpl"
+            source:
+              configMap:
+                name: log-queries
+                key: incident-query
+
+      outputs:
+        parameters:
+          - name: root-cause-candidate
+            valueFrom:
+              path: "/outputs/root-cause.txt"
+
+        artifacts:
+          - name: relevant-logs
+            path: "/outputs/logs.json"
+
+      # Resource limits for this step
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "1000m"
+
+      next:
+        - correlate-findings
+
+    # Step 2b: Parallel investigation - Metrics
+    - name: check-metrics
+      dependsOn:
+        - incident-triage
+
+      agent:
+        spec:
+          model: "openai:gpt-4-turbo-preview"
+          description: "Analyzes metrics and time-series data"
+          instructions: |
+            You are an SRE specialist analyzing system metrics.
+
+            Tasks:
+            1. Query Prometheus/Grafana for affected services
+            2. Identify anomalous patterns in last 2 hours
+            3. Correlate metrics with incident timeline
+            4. Determine if metrics support log findings
+
+          tools:
+            - type: MCPCLI
+              config:
+                command: "prometheus-cli --mcp-server"
+            - type: HTTP
+              config:
+                baseURL: "https://grafana.example.com"
+
+      inputs:
+        parameters:
+          - name: services
+            value: "{{steps.incident-triage.outputs.parameters.affected-services}}"
+
+      outputs:
+        parameters:
+          - name: anomaly-score
+            valueFrom:
+              path: "/outputs/anomaly-score.txt"
+
+        artifacts:
+          - name: metric-dashboard
+            path: "/outputs/dashboard.png"
+            archive:
+              none: {}
+
+      next:
+        - correlate-findings
+
+    # Step 3: Correlate findings from parallel investigations
+    - name: correlate-findings
+      dependsOn:
+        - investigate-logs
+        - check-metrics
+
+      agent:
+        spec:
+          model: "anthropic:claude-3-5-sonnet-20241022"
+          description: "Correlates findings from multiple sources"
+          instructions: |
+            You are a senior SRE performing root cause analysis.
+
+            Correlate findings from:
+            - Log analysis results
+            - Metric anomaly detection
+            - Triage report
+
+            Produce:
+            1. Root cause hypothesis with confidence score
+            2. Supporting evidence from each source
+            3. Recommended remediation steps
+            4. Rollback plan if remediation fails
+
+          tools:
+            - type: File
+              config:
+                baseDir: "/workspace"
+
+      inputs:
+        parameters:
+          - name: log-findings
+            value: "{{steps.investigate-logs.outputs.parameters.root-cause-candidate}}"
+          - name: metric-findings
+            value: "{{steps.check-metrics.outputs.parameters.anomaly-score}}"
+
+        artifacts:
+          - name: triage-report
+            from: "{{steps.incident-triage.outputs.artifacts.triage-report}}"
+          - name: logs
+            from: "{{steps.investigate-logs.outputs.artifacts.relevant-logs}}"
+          - name: metrics
+            from: "{{steps.check-metrics.outputs.artifacts.metric-dashboard}}"
+
+      outputs:
+        parameters:
+          - name: root-cause
+            valueFrom:
+              path: "/outputs/root-cause.txt"
+          - name: confidence
+            valueFrom:
+              path: "/outputs/confidence.txt"
+          - name: remediation-plan
+            valueFrom:
+              path: "/outputs/remediation.txt"
+
+        artifacts:
+          - name: rca-report
+            path: "/outputs/rca-report.md"
+
+      next:
+        - remediate
+
+    # Step 4: Conditional remediation
+    - name: remediate
+      dependsOn:
+        - correlate-findings
+
+      # Conditional execution based on parameter and confidence
+      when: |
+        {{workflow.parameters.auto-remediate}} == "true" &&
+        {{steps.correlate-findings.outputs.parameters.confidence}} > "0.8"
+
+      agent:
+        spec:
+          model: "google:gemini-2.0-flash"
+          description: "Executes remediation steps"
+          instructions: |
+            You are an SRE automation specialist.
+
+            Execute remediation plan carefully:
+            1. Verify current state matches expected
+            2. Execute remediation steps sequentially
+            3. Validate after each step
+            4. Rollback if any step fails
+            5. Document all actions taken
+
+          tools:
+            - type: Shell
+              config:
+                allowedCommands:
+                  - kubectl
+                  - docker
+                  - systemctl
+            - type: MCPCLI
+              config:
+                command: "kubectl-ai --mcp-server"
+
+          security:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: false
+
+      inputs:
+        parameters:
+          - name: remediation-plan
+            value: "{{steps.correlate-findings.outputs.parameters.remediation-plan}}"
+
+      outputs:
+        parameters:
+          - name: remediation-status
+            valueFrom:
+              path: "/outputs/status.txt"
+
+        artifacts:
+          - name: remediation-log
+            path: "/outputs/remediation.log"
+
+      # Retry policy specific to this step
+      retryPolicy:
+        maxRetries: 2
+        backoff:
+          duration: "PT30S"
+          factor: 2
+          maxDuration: "PT5M"
+
+      next:
+        - verify-resolution
+
+    # Step 5: Verify incident resolution
+    - name: verify-resolution
+      dependsOn:
+        - remediate
+
+      agent:
+        agentRef:
+          name: verification-agent
+          namespace: sre-team
+
+      inputs:
+        parameters:
+          - name: affected-services
+            value: "{{steps.incident-triage.outputs.parameters.affected-services}}"
+
+      outputs:
+        parameters:
+          - name: resolution-confirmed
+            valueFrom:
+              path: "/outputs/confirmed.txt"
+
+      # Timeout for this step
+      timeout: "PT10M"
+
+      next:
+        - generate-postmortem
+
+    # Step 6: Generate incident postmortem
+    - name: generate-postmortem
+      dependsOn:
+        - verify-resolution
+
+      agent:
+        spec:
+          model: "anthropic:claude-3-5-sonnet-20241022"
+          description: "Generates comprehensive incident postmortem"
+          instructions: |
+            You are an SRE documentation specialist.
+
+            Create a comprehensive postmortem including:
+            1. Incident timeline
+            2. Root cause analysis
+            3. Impact assessment
+            4. Resolution steps taken
+            5. Action items to prevent recurrence
+            6. Lessons learned
+
+            Format: Markdown following company postmortem template
+
+          tools:
+            - type: File
+            - type: GitHub
+
+      inputs:
+        artifacts:
+          - name: triage-report
+            from: "{{steps.incident-triage.outputs.artifacts.triage-report}}"
+          - name: rca-report
+            from: "{{steps.correlate-findings.outputs.artifacts.rca-report}}"
+          - name: remediation-log
+            from: "{{steps.remediate.outputs.artifacts.remediation-log}}"
+
+      outputs:
+        artifacts:
+          - name: postmortem
+            path: "/outputs/postmortem.md"
+            destination:
+              github:
+                repo: "org/postmortems"
+                branch: "main"
+                path: "incidents/{{workflow.metadata.uid}}.md"
+
+      # Always run this step even if previous steps failed
+      continueOn:
+        failed: true
+
+  # -------------------------------------------------------------------------
+  # Workflow Hooks
+  # -------------------------------------------------------------------------
+
+  hooks:
+    # Execute before workflow starts
+    - name: notify-start
+      trigger: WorkflowStart
+      action:
+        http:
+          url: "{{workflow.parameters.notification-webhook}}"
+          method: POST
+          body: |
+            {
+              "text": "Incident response workflow started",
+              "incident_id": "{{workflow.metadata.uid}}",
+              "severity": "{{workflow.parameters.incident-severity}}"
+            }
+
+    # Execute after workflow completes
+    - name: notify-completion
+      trigger: WorkflowComplete
+      action:
+        http:
+          url: "{{workflow.parameters.notification-webhook}}"
+          method: POST
+          body: |
+            {
+              "text": "Incident resolved",
+              "incident_id": "{{workflow.metadata.uid}}",
+              "duration": "{{workflow.status.duration}}",
+              "status": "{{workflow.status.phase}}"
+            }
+
+    # Execute on workflow failure
+    - name: escalate-on-failure
+      trigger: WorkflowFailed
+      action:
+        agentCall:
+          agentRef:
+            name: escalation-agent
+          inputs:
+            parameters:
+              - name: workflow-id
+                value: "{{workflow.metadata.uid}}"
+              - name: failure-reason
+                value: "{{workflow.status.message}}"
+
+  # -------------------------------------------------------------------------
+  # Shared Resources
+  # -------------------------------------------------------------------------
+
+  volumes:
+    - name: workspace
+      emptyDir:
+        sizeLimit: "5Gi"
+
+    - name: incident-data
+      persistentVolumeClaim:
+        claimName: incident-pvc
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+
+  observability:
+    metrics:
+      enabled: true
+      customMetrics:
+        - name: incident_resolution_time
+          type: histogram
+        - name: auto_remediation_success_rate
+          type: gauge
+
+    tracing:
+      enabled: true
+      # Correlate with external trace IDs
+      propagateTraceContext: true
+
+# ============================================================================
+# Status
+# ============================================================================
+status:
+  phase: Running  # Pending, Running, Succeeded, Failed, Error
+
+  startedAt: "2025-01-09T14:30:00Z"
+  finishedAt: null
+
+  # Current step execution
+  currentStep: correlate-findings
+
+  # Step statuses
+  stepStatuses:
+    - name: incident-triage
+      phase: Succeeded
+      startedAt: "2025-01-09T14:30:00Z"
+      finishedAt: "2025-01-09T14:32:15Z"
+      outputs:
+        parameters:
+          - name: incident-type
+            value: "database-outage"
+          - name: affected-services
+            value: '["api-server", "worker-queue"]'
+
+    - name: investigate-logs
+      phase: Running
+      startedAt: "2025-01-09T14:32:20Z"
+
+    - name: check-metrics
+      phase: Running
+      startedAt: "2025-01-09T14:32:20Z"
+
+  # Workflow statistics
+  stats:
+    totalSteps: 7
+    completedSteps: 1
+    runningSteps: 2
+    pendingSteps: 4
+    failedSteps: 0
+
+  # Resource usage
+  resourceUsage:
+    memory: "2.5Gi"
+    cpu: "1.2"
+
+  observedGeneration: 1

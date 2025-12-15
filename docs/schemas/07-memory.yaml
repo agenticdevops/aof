@@ -1,0 +1,550 @@
+# ============================================================================
+# Memory CRD Schema
+# ============================================================================
+# Memory defines backend storage for agent conversation history, context,
+# and state persistence. Supports multiple backend types:
+# - ephemeral: In-memory (for development/testing)
+# - redis: Distributed cache (for production)
+# - postgres: Relational database (for complex queries)
+# - s3: Object storage (for long-term archival)
+# - vector: Vector database (for semantic search)
+#
+# Use Cases:
+# - Conversation history persistence
+# - Agent state management
+# - Cross-agent knowledge sharing
+# - Semantic memory search
+# - Long-term context retention
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Memory
+metadata:
+  name: production-memory-backend
+  namespace: aof-system
+  labels:
+    backend-type: redis
+    tier: production
+  annotations:
+    aof.agenticops.org/description: "Production memory backend with Redis cluster"
+
+spec:
+  # -------------------------------------------------------------------------
+  # Backend Configuration
+  # -------------------------------------------------------------------------
+
+  # Backend type: ephemeral, redis, postgres, s3, vector
+  backend: redis
+
+  # Redis configuration
+  redis:
+    # Connection mode: standalone, sentinel, cluster
+    mode: cluster
+
+    # Cluster configuration
+    cluster:
+      # Redis cluster endpoints
+      endpoints:
+        - redis-cluster-0.redis-cluster.aof-system.svc.cluster.local:6379
+        - redis-cluster-1.redis-cluster.aof-system.svc.cluster.local:6379
+        - redis-cluster-2.redis-cluster.aof-system.svc.cluster.local:6379
+
+      # Read preference
+      readPreference: PreferReplica  # Master, PreferReplica, Replica
+
+    # Authentication
+    auth:
+      # Password from secret
+      passwordSecretRef:
+        name: redis-credentials
+        key: password
+
+      # TLS configuration
+      tls:
+        enabled: true
+        insecureSkipVerify: false
+        caCertSecretRef:
+          name: redis-ca-cert
+          key: ca.crt
+        clientCertSecretRef:
+          name: redis-client-cert
+          key: tls.crt
+        clientKeySecretRef:
+          name: redis-client-cert
+          key: tls.key
+
+    # Connection pool
+    pool:
+      minIdle: 5
+      maxIdle: 20
+      maxActive: 100
+      maxConnLifetime: "PT30M"
+      idleTimeout: "PT5M"
+
+    # Database selection
+    database: 0
+
+    # Key prefix for namespacing
+    keyPrefix: "aof:memory:"
+
+    # Timeouts
+    dialTimeout: "PT5S"
+    readTimeout: "PT3S"
+    writeTimeout: "PT3S"
+
+  # -------------------------------------------------------------------------
+  # Memory Configuration
+  # -------------------------------------------------------------------------
+
+  memory:
+    # Default TTL for conversation history
+    conversationTTL: "PT24H"  # 24 hours
+
+    # Maximum conversation history per agent
+    maxConversationHistory: 100
+
+    # Enable automatic summarization
+    summarization:
+      enabled: true
+
+      # Summarize when conversation exceeds threshold
+      threshold: 50  # messages
+
+      # Model to use for summarization
+      modelRef:
+        provider: google
+        model: gemini-2.0-flash
+
+      # Store summaries separately
+      storeSummaries: true
+      summaryTTL: "P30D"  # 30 days
+
+    # Enable semantic indexing
+    semanticIndexing:
+      enabled: true
+
+      # Vector database for semantic search
+      vectorBackendRef:
+        name: chroma-vector-db
+        namespace: aof-system
+
+      # Embedding model
+      embeddingModel:
+        provider: openai
+        model: text-embedding-3-small
+
+      # Index configuration
+      indexSettings:
+        dimensions: 1536
+        metric: cosine
+        indexType: hnsw
+
+    # Compression settings
+    compression:
+      enabled: true
+      algorithm: gzip  # gzip, lz4, zstd
+      level: 6
+
+  # -------------------------------------------------------------------------
+  # Partitioning & Sharding
+  # -------------------------------------------------------------------------
+
+  partitioning:
+    # Partitioning strategy
+    strategy: ByNamespace  # ByNamespace, ByAgent, ByTime, Hash
+
+    # Partition configuration
+    config:
+      # Namespace-based partitioning
+      namespacePrefix: "ns:"
+
+      # Time-based partitioning (for archival)
+      timeFormat: "2006-01"  # YYYY-MM
+      retentionPolicy:
+        # Archive conversations older than 30 days
+        archiveAfter: "P30D"
+        # Delete conversations older than 1 year
+        deleteAfter: "P365D"
+
+  # -------------------------------------------------------------------------
+  # Data Management
+  # -------------------------------------------------------------------------
+
+  dataManagement:
+    # Backup configuration
+    backup:
+      enabled: true
+
+      # Backup schedule (cron)
+      schedule: "0 2 * * *"  # Daily at 2 AM
+
+      # Backup destination
+      destination:
+        type: s3
+        s3:
+          bucket: aof-memory-backups
+          region: us-east-1
+          prefix: "backups/"
+          credentialsSecretRef:
+            name: s3-credentials
+            key: credentials
+
+      # Retention policy for backups
+      retention:
+        keepDaily: 7
+        keepWeekly: 4
+        keepMonthly: 12
+
+    # Replication
+    replication:
+      enabled: true
+
+      # Replicas
+      replicas:
+        - name: dr-replica
+          backend: redis
+          redis:
+            mode: cluster
+            cluster:
+              endpoints:
+                - redis-dr-0.redis-dr.aof-dr.svc.cluster.local:6379
+
+      # Replication lag alert threshold
+      maxReplicationLag: "PT5S"
+
+  # -------------------------------------------------------------------------
+  # Access Control
+  # -------------------------------------------------------------------------
+
+  accessControl:
+    # Enable RBAC for memory access
+    rbac:
+      enabled: true
+
+      # Default policy: allow, deny
+      defaultPolicy: deny
+
+      # Access rules
+      rules:
+        # Agents can read/write their own memory
+        - subjects:
+            - kind: Agent
+              name: "*"
+          actions:
+            - read
+            - write
+          resources:
+            - "agent:{{agent.metadata.name}}:*"
+
+        # Fleet agents can share memory
+        - subjects:
+            - kind: AgentFleet
+              name: "*"
+          actions:
+            - read
+            - write
+          resources:
+            - "fleet:{{fleet.metadata.name}}:*"
+
+        # Admin can access all memory
+        - subjects:
+            - kind: User
+              name: "admin"
+          actions:
+            - "*"
+          resources:
+            - "*"
+
+    # Encryption
+    encryption:
+      # Encryption at rest
+      atRest:
+        enabled: true
+        algorithm: AES256
+        keySecretRef:
+          name: memory-encryption-key
+          key: key
+
+      # Encryption in transit (covered by TLS above)
+      inTransit:
+        enabled: true
+
+  # -------------------------------------------------------------------------
+  # Observability
+  # -------------------------------------------------------------------------
+
+  observability:
+    metrics:
+      enabled: true
+
+      # Memory-specific metrics
+      customMetrics:
+        - name: memory_size_bytes
+          type: gauge
+          labels:
+            - namespace
+            - agent
+
+        - name: memory_operations_total
+          type: counter
+          labels:
+            - operation
+            - status
+
+        - name: memory_latency_seconds
+          type: histogram
+          labels:
+            - operation
+
+    logging:
+      level: info
+      # Log access patterns
+      logAccess: true
+      # Redact sensitive data
+      redactSensitive: true
+
+    tracing:
+      enabled: true
+
+---
+# ============================================================================
+# Example: PostgreSQL Memory Backend
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Memory
+metadata:
+  name: postgres-memory-backend
+  namespace: aof-system
+  labels:
+    backend-type: postgres
+
+spec:
+  backend: postgres
+
+  postgres:
+    # Connection string (DSN)
+    host: postgres.aof-system.svc.cluster.local
+    port: 5432
+    database: aof_memory
+    user: aof_user
+
+    # Password from secret
+    passwordSecretRef:
+      name: postgres-credentials
+      key: password
+
+    # SSL mode: disable, require, verify-ca, verify-full
+    sslMode: verify-full
+    sslCertSecretRef:
+      name: postgres-ssl-cert
+      key: tls.crt
+    sslKeySecretRef:
+      name: postgres-ssl-cert
+      key: tls.key
+    sslRootCertSecretRef:
+      name: postgres-ca-cert
+      key: ca.crt
+
+    # Connection pool
+    pool:
+      maxOpenConnections: 50
+      maxIdleConnections: 10
+      connMaxLifetime: "PT30M"
+      connMaxIdleTime: "PT5M"
+
+    # Schema configuration
+    schema:
+      # Table prefix
+      tablePrefix: "aof_"
+
+      # Auto-create tables
+      autoMigrate: true
+
+      # Partition strategy
+      partitioning:
+        enabled: true
+        partitionBy: time  # time, hash
+        interval: month  # day, week, month
+
+  memory:
+    conversationTTL: "P7D"
+    maxConversationHistory: 500
+
+    # Enable full-text search
+    fullTextSearch:
+      enabled: true
+      language: english
+      indexConfiguration:
+        - column: message_content
+          weight: A
+        - column: message_metadata
+          weight: B
+
+---
+# ============================================================================
+# Example: S3 Memory Backend (Archival)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Memory
+metadata:
+  name: s3-archival-backend
+  namespace: aof-system
+  labels:
+    backend-type: s3
+
+spec:
+  backend: s3
+
+  s3:
+    # S3 bucket
+    bucket: aof-memory-archive
+    region: us-east-1
+
+    # Path prefix
+    prefix: "memory/"
+
+    # Credentials
+    credentialsSecretRef:
+      name: s3-credentials
+      key: credentials
+
+    # Endpoint (for S3-compatible storage like MinIO)
+    # endpoint: "https://minio.example.com"
+
+    # Storage class
+    storageClass: GLACIER_IR  # STANDARD, GLACIER, GLACIER_IR, DEEP_ARCHIVE
+
+    # Lifecycle policy
+    lifecycle:
+      transitions:
+        - days: 30
+          storageClass: GLACIER
+        - days: 90
+          storageClass: DEEP_ARCHIVE
+      expiration:
+        days: 365
+
+    # Encryption
+    serverSideEncryption:
+      enabled: true
+      algorithm: AES256
+      # Optional: Use KMS
+      # kmsKeyID: "arn:aws:kms:us-east-1:123456789012:key/..."
+
+  memory:
+    # Archive format
+    format: parquet  # json, parquet, avro
+
+    # Compression
+    compression:
+      enabled: true
+      algorithm: zstd
+
+---
+# ============================================================================
+# Example: Vector Database Memory (Semantic Search)
+# ============================================================================
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: Memory
+metadata:
+  name: chroma-vector-db
+  namespace: aof-system
+  labels:
+    backend-type: vector
+
+spec:
+  backend: vector
+
+  vector:
+    # Vector database type: chroma, pinecone, weaviate, qdrant
+    type: chroma
+
+    # Chroma configuration
+    chroma:
+      # HTTP endpoint
+      endpoint: "http://chroma.aof-system.svc.cluster.local:8000"
+
+      # Optional: Authentication
+      # authSecretRef:
+      #   name: chroma-credentials
+      #   key: token
+
+      # Collection settings
+      collection:
+        name: aof_memory
+
+        # Embedding function
+        embeddingFunction:
+          provider: openai
+          model: text-embedding-3-small
+          dimensions: 1536
+
+        # Distance metric
+        distanceMetric: cosine  # cosine, euclidean, dot
+
+        # HNSW index parameters
+        hnsw:
+          m: 16
+          efConstruction: 200
+          efSearch: 50
+
+  memory:
+    # Semantic search configuration
+    semanticSearch:
+      enabled: true
+
+      # Default search parameters
+      defaultTopK: 10
+      scoreThreshold: 0.7
+
+      # Hybrid search (combine with keyword search)
+      hybridSearch:
+        enabled: true
+        keywordWeight: 0.3
+        semanticWeight: 0.7
+
+# ============================================================================
+# Status
+# ============================================================================
+status:
+  phase: Ready
+
+  conditions:
+    - type: Ready
+      status: "True"
+      lastTransitionTime: "2025-01-09T10:00:00Z"
+      reason: BackendHealthy
+      message: "Memory backend is operational"
+
+    - type: BackupHealthy
+      status: "True"
+      lastTransitionTime: "2025-01-09T02:00:00Z"
+      reason: BackupSuccessful
+      message: "Last backup completed successfully"
+
+  # Backend statistics
+  stats:
+    totalKeys: 15847
+    totalSize: "2.4Gi"
+    usedMemory: "1.8Gi"
+    fragmentationRatio: 1.2
+
+  # Backup status
+  lastBackup:
+    timestamp: "2025-01-09T02:00:00Z"
+    status: Succeeded
+    size: "2.2Gi"
+    duration: "PT5M"
+
+  # Replication status
+  replication:
+    replicas:
+      - name: dr-replica
+        healthy: true
+        lag: "PT2S"
+        lastSync: "2025-01-09T12:30:00Z"
+
+  observedGeneration: 2

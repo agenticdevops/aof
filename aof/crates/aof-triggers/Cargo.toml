@@ -1,0 +1,71 @@
+[package]
+name = "aof-triggers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Workspace dependencies
+aof-core.workspace = true
+aof-runtime.workspace = true
+aof-llm.workspace = true
+aof-memory.workspace = true
+
+# Async runtime
+tokio.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging/Tracing
+tracing.workspace = true
+
+# HTTP server
+axum = "0.7"
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+hyper.workspace = true
+
+# Utilities
+uuid.workspace = true
+chrono.workspace = true
+bytes.workspace = true
+dashmap.workspace = true
+
+# Cryptography for signature verification
+hmac = "0.12"
+sha2 = "0.10"
+ed25519-dalek = "2.1"
+hex = "0.4"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# Regular expressions
+regex = "1.10"
+
+# Rate limiting
+governor = "0.6"
+nonzero_ext = "0.3"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber.workspace = true
+
+[features]
+default = []
+# Feature flags for platform-specific implementations
+telegram = []
+slack = []
+discord = []
+whatsapp = []

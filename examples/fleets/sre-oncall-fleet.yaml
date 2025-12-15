@@ -1,0 +1,244 @@
+# SRE On-Call Fleet
+#
+# Description: A hierarchical team for incident response. Diagnostic agent first
+# identifies the issue, then remediation agent fixes it, and communication agent
+# updates stakeholders.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - kubectl access to cluster
+# - Slack MCP for notifications (optional)
+#
+# How to run:
+#   aof apply -f sre-oncall-fleet.yaml
+#   aof query sre-oncall "Pod myapp-7d8f9c is CrashLoopBackOff in production"
+#   aof query sre-oncall "High CPU usage on node ip-10-0-1-42"
+#
+# Expected output: Diagnosis → Remediation → Status update
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: sre-oncall
+  description: "Automated incident response team"
+  labels:
+    team: sre
+    role: incident-response
+    severity: high
+
+spec:
+  # Sequential execution: diagnose → remediate → communicate
+  strategy: sequential
+
+  # Stop if any agent fails
+  fail_fast: true
+
+  # The incident response team
+  agents:
+    # Stage 1: Diagnose the issue
+    - name: diagnostic-agent
+      spec:
+        model: claude-3-5-sonnet-20241022
+
+        system: |
+          You are an SRE on-call engineer diagnosing production incidents.
+
+          Your goal: Quickly identify the root cause of the issue.
+
+          Diagnostic Process:
+          1. Gather symptoms and context
+          2. Check recent changes (deployments, config updates)
+          3. Examine metrics and logs
+          4. Identify affected components
+          5. Determine root cause
+          6. Assess severity and impact
+
+          For each incident, provide:
+          - **Incident ID**: Generate a unique ID (INC-YYYYMMDD-XXXX)
+          - **Severity**: P0 (critical), P1 (high), P2 (medium), P3 (low)
+          - **Impact**: Users affected, services down
+          - **Root Cause**: What's actually broken
+          - **Contributing Factors**: What made it worse
+          - **Remediation Plan**: Steps to fix it
+          - **ETA**: Estimated time to resolution
+
+          Be thorough but fast. Lives (and revenue) depend on it.
+
+        temperature: 0
+
+        tools:
+          - name: shell
+            enabled: true
+            config:
+              allowed_commands:
+                - kubectl
+                - journalctl
+                - systemctl
+                - top
+                - htop
+                - netstat
+                - curl
+
+          - name: file
+            enabled: true
+            config:
+              allowed_paths: [/var/log, /tmp]
+              read_only: true
+
+        # Pass diagnosis to next agent
+        output:
+          export:
+            - incident_id
+            - severity
+            - root_cause
+            - remediation_plan
+
+    # Stage 2: Execute remediation
+    - name: remediation-agent
+      spec:
+        model: claude-3-5-sonnet-20241022
+
+        system: |
+          You are an SRE executing incident remediation plans.
+
+          You receive a diagnosis and remediation plan from the diagnostic agent.
+          Your job: Execute the fix safely and verify it worked.
+
+          Remediation Process:
+          1. Review the remediation plan
+          2. Verify prerequisites
+          3. Execute fix step-by-step
+          4. Verify the fix worked
+          5. Monitor for new issues
+          6. Document what was done
+
+          Safety Rules:
+          - Always check current state before making changes
+          - Prefer rolling restarts over hard restarts
+          - Verify changes in staging first if possible
+          - Have a rollback plan ready
+          - Monitor during and after changes
+
+          Output:
+          - **Actions Taken**: Commands executed
+          - **Results**: What happened
+          - **Verification**: How you confirmed the fix
+          - **Rollback Plan**: How to undo if needed
+          - **Monitoring**: What to watch
+
+          If you can't safely remediate, escalate to humans.
+
+        temperature: 0
+
+        # Import context from diagnostic agent
+        input:
+          from: diagnostic-agent
+          fields:
+            - incident_id
+            - severity
+            - root_cause
+            - remediation_plan
+
+        tools:
+          - name: shell
+            enabled: true
+            config:
+              allowed_commands:
+                - kubectl
+                - systemctl
+                - docker
+                - helm
+                - terraform
+
+          - name: file
+            enabled: true
+            config:
+              allowed_paths: [/workspace, /tmp]
+
+        # Require approval for P0/P1 incidents
+        guardrails:
+          - type: approval_required
+            config:
+              condition: "severity in ['P0', 'P1']"
+              approvers: ["oncall-lead"]
+
+        output:
+          export:
+            - actions_taken
+            - status
+            - verification
+
+    # Stage 3: Communicate status
+    - name: communication-agent
+      spec:
+        model: claude-3-5-sonnet-20241022
+
+        system: |
+          You are an SRE communicating incident status to stakeholders.
+
+          You receive the diagnosis and remediation results.
+          Your job: Keep everyone informed with clear, timely updates.
+
+          Communication Guidelines:
+          - Be clear and concise
+          - Use non-technical language for executives
+          - Provide technical details for engineers
+          - Include impact and ETA
+          - Update regularly (every 15-30 min for P0/P1)
+
+          Message Types:
+          1. **Initial Alert**: Incident detected
+          2. **Update**: Progress on resolution
+          3. **Resolution**: Incident resolved
+          4. **Postmortem**: Follow-up analysis
+
+          Channels by Severity:
+          - P0: Slack, PagerDuty, Email, Status page
+          - P1: Slack, Email, Status page
+          - P2: Slack, Email
+          - P3: Slack
+
+          Always include:
+          - Incident ID
+          - Current status
+          - Impact
+          - Next update time
+
+        temperature: 0.4  # Slightly creative for clear communication
+
+        input:
+          from: [diagnostic-agent, remediation-agent]
+          fields: all
+
+        tools:
+          - name: mcp
+            enabled: true
+            config:
+              server: slack
+
+          # Optional: PagerDuty integration
+          - name: shell
+            enabled: true
+            config:
+              allowed_commands:
+                - curl  # For API calls
+
+  # Fleet-level settings
+  resources:
+    max_tokens_per_agent: 4096
+    timeout: 300s  # 5 minutes per agent
+
+  # Shared context across all agents
+  memory:
+    type: shared
+    max_messages: 50
+
+  # Track incidents for learning
+  state:
+    type: key_value
+    backend: local
+
+  tags:
+    priority: high
+    automation: incident-response
+    oncall: true

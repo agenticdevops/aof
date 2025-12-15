@@ -1,0 +1,38 @@
+[package]
+name = "aofctl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "CLI for AOF framework - kubectl-style agent orchestration"
+
+[[bin]]
+name = "aofctl"
+path = "src/main.rs"
+
+[dependencies]
+aof-core = { workspace = true }
+aof-mcp = { workspace = true, features = ["all-transports"] }
+aof-llm = { workspace = true, features = ["all-providers"] }
+aof-runtime = { workspace = true }
+aof-memory = { workspace = true, features = ["all-backends"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+clap = { workspace = true }
+clap_complete = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+crossterm = "0.27"
+ratatui = "0.26"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+assert_cmd = "2.0"
+predicates = "3.0"
+tempfile = "3.8"

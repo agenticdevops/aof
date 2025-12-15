@@ -1,0 +1,568 @@
+# Example 3: PagerDuty Incident Auto-Remediation Flow
+# Use case: PagerDuty alert → K8s diagnosis → Auto-fix or escalate
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFlow
+metadata:
+  name: incident-auto-remediation
+  namespace: aof-workflows
+  labels:
+    app: incident-response
+    team: sre
+  annotations:
+    description: "Automated incident diagnosis and remediation for K8s issues"
+    owner: "sre-team@company.com"
+
+spec:
+  config:
+    timeout: "30m"
+    retryPolicy:
+      maxAttempts: 1               # Don't retry incident responses
+      backoff: fixed
+    variables:
+      k8sCluster: "production-us-west-2"
+      autoFixEnabled: true
+      maxPodRestarts: 3
+    secretsRef:
+      - name: pagerduty-token
+      - name: k8s-admin-token
+      - name: slack-bot-token
+      - name: anthropic-api-key
+    concurrency:
+      limit: 5                     # Max 5 concurrent incident flows
+      strategy: queue
+
+  triggers:
+    - id: pagerduty-incident
+      type: PagerDuty
+      config:
+        serviceId: "P0ABCDE"       # Production K8s service
+        events:
+          - incident.triggered
+        urgency:
+          - high
+        apiToken:
+          secretRef: pagerduty-token
+        webhookSignature:
+          secretRef: pagerduty-webhook-secret
+
+  nodes:
+    # Node 1: Extract incident details
+    - id: extract-incident
+      type: Transform
+      name: "Extract Incident Info"
+      timeout: "10s"
+      config:
+        transformType: cel
+        cel:
+          expression: |
+            {
+              "incident_id": context.trigger.payload.incident.id,
+              "incident_number": context.trigger.payload.incident.incident_number,
+              "title": context.trigger.payload.incident.title,
+              "description": context.trigger.payload.incident.description,
+              "urgency": context.trigger.payload.incident.urgency,
+              "service": context.trigger.payload.incident.service.name,
+              "alert_key": context.trigger.payload.incident.alert_key,
+              "details": context.trigger.payload.incident.body?.details ?? {},
+              "created_at": context.trigger.payload.incident.created_at
+            }
+
+    # Node 2: Acknowledge incident in PagerDuty
+    - id: ack-incident
+      type: Action
+      name: "Acknowledge Incident"
+      timeout: "10s"
+      input:
+        incidentId:
+          $ref: "$.context.nodes.extract-incident.output.incident_id"
+      config:
+        actionType: HTTP
+        http:
+          url: "https://api.pagerduty.com/incidents/{{.incidentId}}"
+          method: PUT
+          headers:
+            Content-Type: "application/json"
+            Accept: "application/vnd.pagerduty+json;version=2"
+          body:
+            $template: |
+              {
+                "incident": {
+                  "type": "incident_reference",
+                  "status": "acknowledged"
+                }
+              }
+          authentication:
+            type: bearer
+            secretRef: pagerduty-token
+          timeout: "10s"
+
+    # Node 3: Post to Slack war room
+    - id: notify-slack-start
+      type: Action
+      name: "Notify Slack"
+      timeout: "10s"
+      input:
+        incident:
+          $ref: "$.context.nodes.extract-incident.output"
+      config:
+        actionType: Slack
+        slack:
+          action: post-message
+          channel: "C0123INCIDENTS"
+          message:
+            text: |
+              🚨 *New Production Incident*
+
+              *Incident #{{.incident_number}}:* {{.title}}
+              *Urgency:* {{.urgency}}
+              *Service:* {{.service}}
+
+              🤖 AI agent is investigating...
+            blocks:
+              - type: header
+                text:
+                  type: plain_text
+                  text: "🚨 Production Incident Alert"
+              - type: section
+                fields:
+                  - type: mrkdwn
+                    text: "*Incident:*\n#{{.incident_number}}"
+                  - type: mrkdwn
+                    text: "*Urgency:*\n{{.urgency}}"
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*Description:*\n{{.title}}"
+              - type: context
+                elements:
+                  - type: mrkdwn
+                    text: "🤖 AI diagnostic agent investigating..."
+          botToken:
+            secretRef: slack-bot-token
+
+    # Node 4: K8s Diagnostic Agent
+    - id: k8s-diagnostic-agent
+      type: Agent
+      name: "K8s Diagnostic Agent"
+      timeout: "10m"
+      input:
+        incident:
+          $ref: "$.context.nodes.extract-incident.output"
+        cluster:
+          $ref: "$.context.flow.variables.k8sCluster"
+      config:
+        agentRef:
+          name: k8s-diagnostics-agent
+          namespace: aof-agents
+        prompt:
+          template: |
+            Production incident detected in K8s cluster {{.cluster}}:
+
+            Incident: {{.incident.title}}
+            Description: {{.incident.description}}
+            Alert Details: {{.incident.details}}
+
+            Perform comprehensive diagnostics:
+            1. Identify affected pods/services/nodes
+            2. Check resource usage (CPU, memory, disk)
+            3. Analyze recent events and logs
+            4. Identify root cause
+            5. Determine if auto-remediation is safe
+
+            Output JSON with:
+            {
+              "root_cause": "description",
+              "affected_resources": [{"type": "pod|service|node", "name": "", "namespace": ""}],
+              "severity_assessment": "critical|high|medium|low",
+              "auto_fixable": true|false,
+              "remediation_plan": "step by step plan",
+              "risks": ["risk1", "risk2"],
+              "estimated_downtime": "duration"
+            }
+          variables:
+            cluster:
+              $ref: "$.input.cluster"
+            incident:
+              $ref: "$.input.incident"
+        allowedTools:
+          - kubectl_get
+          - kubectl_describe
+          - kubectl_logs
+          - kubectl_top
+          - kubectl_events
+          - prometheus_query
+        maxIterations: 10
+        outputFormat: json
+        streaming: true
+
+    # Node 5: Decision point - Can auto-fix?
+    - id: auto-fix-decision
+      type: Condition
+      name: "Auto-Fix Decision"
+      config:
+        conditions:
+          - label: auto-fix
+            expression: |
+              context.nodes.k8s-diagnostic-agent.output.auto_fixable == true &&
+              context.nodes.k8s-diagnostic-agent.output.severity_assessment in ['medium', 'low'] &&
+              context.flow.variables.autoFixEnabled == true
+            priority: 1
+
+          - label: escalate
+            expression: |
+              context.nodes.k8s-diagnostic-agent.output.auto_fixable == false ||
+              context.nodes.k8s-diagnostic-agent.output.severity_assessment in ['critical', 'high']
+            priority: 2
+
+          - label: manual-approval
+            expression: "true"      # Default
+            priority: 3
+
+    # Node 6a: Auto-remediation agent (if auto-fixable)
+    - id: remediation-agent
+      type: Agent
+      name: "Auto-Remediation Agent"
+      timeout: "15m"
+      input:
+        diagnostics:
+          $ref: "$.context.nodes.k8s-diagnostic-agent.output"
+        cluster:
+          $ref: "$.context.flow.variables.k8sCluster"
+      config:
+        agentRef:
+          name: k8s-remediation-agent
+          namespace: aof-agents
+        prompt:
+          template: |
+            Execute remediation plan for K8s incident in cluster {{.cluster}}:
+
+            Root Cause: {{.diagnostics.root_cause}}
+            Affected Resources: {{.diagnostics.affected_resources}}
+            Remediation Plan: {{.diagnostics.remediation_plan}}
+
+            Execute the plan carefully:
+            1. Take backup/snapshot if needed
+            2. Execute remediation steps
+            3. Verify each step
+            4. Confirm resolution
+
+            Output JSON:
+            {
+              "success": true|false,
+              "steps_executed": [{"step": "", "status": "success|failed", "output": ""}],
+              "resolution_confirmed": true|false,
+              "rollback_required": true|false,
+              "notes": "additional context"
+            }
+          variables:
+            cluster:
+              $ref: "$.input.cluster"
+            diagnostics:
+              $ref: "$.input.diagnostics"
+        allowedTools:
+          - kubectl_apply
+          - kubectl_delete
+          - kubectl_rollout
+          - kubectl_scale
+          - kubectl_restart
+          - helm_rollback
+        maxIterations: 20
+        outputFormat: json
+
+    # Node 6b: Request human approval (if not auto-fixable)
+    - id: human-approval
+      type: Human
+      name: "SRE Approval"
+      timeout: "30m"
+      input:
+        diagnostics:
+          $ref: "$.context.nodes.k8s-diagnostic-agent.output"
+        incident:
+          $ref: "$.context.nodes.extract-incident.output"
+      config:
+        task: "Review incident diagnostics and approve remediation"
+        notification:
+          type: slack
+          config:
+            channel: "C0123INCIDENTS"
+            message:
+              text: |
+                🔔 *Manual Approval Required*
+
+                Incident #{{.incident.incident_number}} requires SRE review.
+
+                *Root Cause:* {{.diagnostics.root_cause}}
+                *Severity:* {{.diagnostics.severity_assessment}}
+                *Auto-fix:* Not safe for automated remediation
+
+                Please review diagnostics and approve action.
+            botToken:
+              secretRef: slack-bot-token
+        form:
+          fields:
+            - name: action
+              type: select
+              label: "Action to take"
+              required: true
+              options:
+                - "execute_remediation"
+                - "escalate_to_oncall"
+                - "manual_intervention"
+            - name: notes
+              type: textarea
+              label: "Additional notes"
+              required: false
+        onTimeout: escalate
+        defaultResponse:
+          action: escalate_to_oncall
+
+    # Node 6c: Escalate to on-call engineer
+    - id: escalate
+      type: Action
+      name: "Escalate Incident"
+      timeout: "10s"
+      input:
+        incidentId:
+          $ref: "$.context.nodes.extract-incident.output.incident_id"
+        diagnostics:
+          $ref: "$.context.nodes.k8s-diagnostic-agent.output"
+      config:
+        actionType: HTTP
+        http:
+          url: "https://api.pagerduty.com/incidents/{{.incidentId}}/notes"
+          method: POST
+          headers:
+            Content-Type: "application/json"
+          body:
+            $template: |
+              {
+                "note": {
+                  "content": "AI Diagnostics:\n\nRoot Cause: {{.diagnostics.root_cause}}\n\nAffected Resources: {{.diagnostics.affected_resources}}\n\nNot suitable for auto-remediation. Manual intervention required."
+                }
+              }
+          authentication:
+            type: bearer
+            secretRef: pagerduty-token
+
+    # Node 7: Verify resolution
+    - id: verify-resolution
+      type: Agent
+      name: "Verify Resolution"
+      timeout: "5m"
+      input:
+        diagnostics:
+          $ref: "$.context.nodes.k8s-diagnostic-agent.output"
+        remediation:
+          $ref: "$.context.nodes.remediation-agent.output"
+      config:
+        agentInline:
+          model: "claude-3-5-sonnet-20241022"
+          systemPrompt: "Verify that K8s incident has been resolved"
+          maxTokens: 2048
+        prompt:
+          template: |
+            Verify that the incident has been resolved:
+
+            Original Issue: {{.diagnostics.root_cause}}
+            Remediation Steps: {{.remediation.steps_executed}}
+
+            Check:
+            1. All affected resources are healthy
+            2. No error logs
+            3. Metrics returned to normal
+            4. No ongoing alerts
+
+            Output: {"resolved": true|false, "confidence": 0-100, "notes": ""}
+          variables:
+            diagnostics:
+              $ref: "$.input.diagnostics"
+            remediation:
+              $ref: "$.input.remediation"
+        allowedTools:
+          - kubectl_get
+          - kubectl_logs
+          - prometheus_query
+        outputFormat: json
+
+    # Node 8: Update PagerDuty incident
+    - id: resolve-incident
+      type: Action
+      name: "Resolve PagerDuty Incident"
+      timeout: "10s"
+      input:
+        incidentId:
+          $ref: "$.context.nodes.extract-incident.output.incident_id"
+        verification:
+          $ref: "$.context.nodes.verify-resolution.output"
+      config:
+        actionType: HTTP
+        http:
+          url: "https://api.pagerduty.com/incidents/{{.incidentId}}"
+          method: PUT
+          body:
+            $template: |
+              {
+                "incident": {
+                  "type": "incident_reference",
+                  "status": "resolved",
+                  "resolution": "Auto-remediated by AI agent. Verification confidence: {{.verification.confidence}}%"
+                }
+              }
+          authentication:
+            type: bearer
+            secretRef: pagerduty-token
+
+    # Node 9: Post resolution summary to Slack
+    - id: notify-slack-resolved
+      type: Action
+      name: "Notify Resolution"
+      timeout: "10s"
+      input:
+        incident:
+          $ref: "$.context.nodes.extract-incident.output"
+        diagnostics:
+          $ref: "$.context.nodes.k8s-diagnostic-agent.output"
+        remediation:
+          $ref: "$.context.nodes.remediation-agent.output"
+        verification:
+          $ref: "$.context.nodes.verify-resolution.output"
+      config:
+        actionType: Slack
+        slack:
+          action: post-message
+          channel: "C0123INCIDENTS"
+          message:
+            text: |
+              ✅ *Incident Resolved Automatically*
+
+              *Incident #{{.incident.incident_number}}:* {{.incident.title}}
+              *Resolution Time:* {{duration .incident.created_at now}}
+
+              *Root Cause:* {{.diagnostics.root_cause}}
+              *Remediation:* {{.remediation.steps_executed | len}} steps executed
+              *Verification:* {{.verification.confidence}}% confidence
+
+              Details: {{.verification.notes}}
+          botToken:
+            secretRef: slack-bot-token
+
+    # Error handling node
+    - id: remediation-failed
+      type: Action
+      name: "Remediation Failed"
+      timeout: "10s"
+      input:
+        incident:
+          $ref: "$.context.nodes.extract-incident.output"
+        error:
+          $ref: "$.context.nodes.remediation-agent.error"
+      config:
+        actionType: Slack
+        slack:
+          action: post-message
+          channel: "C0123INCIDENTS"
+          message:
+            text: |
+              ⚠️ *Auto-Remediation Failed*
+
+              Incident #{{.incident.incident_number}} could not be auto-remediated.
+              Error: {{.error.message}}
+
+              Manual intervention required. @oncall
+          botToken:
+            secretRef: slack-bot-token
+
+  connections:
+    # Main diagnostic flow
+    - from: extract-incident
+      to: ack-incident
+
+    - from: ack-incident
+      to: notify-slack-start
+
+    - from: notify-slack-start
+      to: k8s-diagnostic-agent
+
+    - from: k8s-diagnostic-agent
+      to: auto-fix-decision
+
+    # Conditional branches based on auto-fix decision
+    - from: auto-fix-decision
+      to: remediation-agent
+      condition: "context.nodes.auto-fix-decision.output.label == 'auto-fix'"
+      label: "auto-fix"
+
+    - from: auto-fix-decision
+      to: human-approval
+      condition: "context.nodes.auto-fix-decision.output.label == 'manual-approval'"
+      label: "manual-approval"
+
+    - from: auto-fix-decision
+      to: escalate
+      condition: "context.nodes.auto-fix-decision.output.label == 'escalate'"
+      label: "escalate"
+
+    # After remediation, verify
+    - from: remediation-agent
+      to: verify-resolution
+
+    # After verification, resolve
+    - from: verify-resolution
+      to: resolve-incident
+      condition: "context.nodes.verify-resolution.output.resolved == true"
+
+    # After resolving PD, notify Slack
+    - from: resolve-incident
+      to: notify-slack-resolved
+
+    # Human approval can lead to remediation
+    - from: human-approval
+      to: remediation-agent
+      condition: "context.nodes.human-approval.output.action == 'execute_remediation'"
+
+    - from: human-approval
+      to: escalate
+      condition: "context.nodes.human-approval.output.action in ['escalate_to_oncall', 'manual_intervention']"
+
+  # Error handling
+  errorHandling:
+    strategy: fallback
+    onError:
+      - nodeId: remediation-failed
+        condition: |
+          context.nodes.remediation-agent.status == 'failed' ||
+          context.nodes.verify-resolution.output.resolved == false
+    onFailure:
+      - nodeId: escalate
+    onTimeout:
+      - nodeId: escalate
+
+  # Observability
+  observability:
+    logging:
+      level: info
+      includeInputs: true
+      includeOutputs: true
+    metrics:
+      enabled: true
+      customMetrics:
+        - name: incidents_total
+          type: counter
+          labels: ["severity", "auto_fixed"]
+        - name: incident_resolution_time_seconds
+          type: histogram
+          labels: ["resolution_type"]
+        - name: remediation_success_rate
+          type: gauge
+    tracing:
+      enabled: true
+      samplingRate: 1.0
+    notifications:
+      - type: slack
+        on: ["failure", "timeout"]
+        config:
+          channel: "C0123INCIDENTS"
+          message: "🚨 Incident flow failed: {{.context.flow.name}}"
+          botToken:
+            secretRef: slack-bot-token

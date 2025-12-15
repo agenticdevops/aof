@@ -1,0 +1,314 @@
+# Deploy Notification Flow
+#
+# Description: Tracks deployments via GitHub deployment events, summarizes changes,
+# and posts notifications to Slack with rollback instructions.
+#
+# Prerequisites:
+# - ANTHROPIC_API_KEY environment variable
+# - GITHUB_TOKEN with repo access
+# - SLACK_BOT_TOKEN for notifications
+# - GitHub MCP or webhook endpoint
+#
+# How to run:
+#   export GITHUB_TOKEN=ghp_xxxxx
+#   export SLACK_BOT_TOKEN=xoxb-xxxxx
+#   aof apply -f deploy-notification-flow.yaml
+#   # Triggers automatically on deployments
+#
+# Expected output: Slack notification with deployment summary and status
+
+apiVersion: aof.dev/v1alpha1
+kind: AgentFlow
+metadata:
+  name: deploy-notifier
+  description: "Automated deployment tracking and notifications"
+  labels:
+    team: platform
+    role: automation
+    category: deployment
+
+spec:
+  # Triggered by GitHub deployment events
+  trigger:
+    type: github
+    config:
+      events:
+        - deployment
+        - deployment_status
+      token_env: GITHUB_TOKEN
+
+      # Filter to specific environments
+      filters:
+        environments:
+          - production
+          - staging
+
+  # Agent analyzes the deployment
+  agent:
+    name: deployment-analyzer
+    spec:
+      model: claude-3-5-sonnet-20241022
+
+      system: |
+        You analyze deployments and create clear, informative notifications.
+
+        Your job:
+        1. Summarize what's being deployed (new features, bug fixes, etc.)
+        2. Identify the commits included
+        3. Highlight breaking changes or risks
+        4. Provide rollback instructions
+        5. Suggest monitoring focus areas
+
+        Be concise but complete. Use Slack formatting.
+
+        Output format:
+        - **Summary**: One sentence overview
+        - **Changes**: Bulleted list of key changes
+        - **Authors**: Who contributed
+        - **Risks**: Any potential issues
+        - **Monitoring**: What to watch
+        - **Rollback**: How to revert if needed
+
+      temperature: 0.3
+
+      tools:
+        # GitHub access for commit history
+        - name: mcp
+          enabled: true
+          config:
+            server: github
+            auth:
+              token_env: GITHUB_TOKEN
+
+        # File access for reading changelogs
+        - name: file
+          enabled: true
+          config:
+            allowed_paths:
+              - /workspace
+              - /tmp
+            read_only: true
+
+      resources:
+        max_tokens: 4096
+        timeout: 45s
+
+      # Pass deployment context
+      context:
+        repo: "{trigger.repository.full_name}"
+        environment: "{trigger.deployment.environment}"
+        ref: "{trigger.deployment.ref}"
+        sha: "{trigger.deployment.sha}"
+        created_at: "{trigger.deployment.created_at}"
+        creator: "{trigger.deployment.creator.login}"
+
+  # Actions based on deployment status
+  actions:
+    # Deployment started
+    - condition: "trigger.deployment_status.state == 'pending'"
+      type: slack_message
+      config:
+        channel: "#deployments"
+        message: |
+          🚀 *Deployment Started*
+
+          *Environment*: {trigger.deployment.environment}
+          *Repository*: {trigger.repository.full_name}
+          *Branch*: {trigger.deployment.ref}
+          *Deployer*: @{trigger.deployment.creator.login}
+
+          ⏳ Deployment in progress...
+
+        # Store message TS for updates
+        save_response: deployment_message_ts
+
+    # Deployment succeeded
+    - condition: "trigger.deployment_status.state == 'success'"
+      type: slack_message
+      config:
+        channel: "#deployments"
+        # Update the original message
+        update_message: "{state.deployment_message_ts}"
+        message: |
+          ✅ *Deployment Successful*
+
+          *Environment*: {trigger.deployment.environment}
+          *Repository*: {trigger.repository.full_name}
+          *Branch*: {trigger.deployment.ref}
+          *Deployer*: @{trigger.deployment.creator.login}
+          *Duration*: {deployment.duration}
+
+          ---
+
+          {agent.output}
+
+          ---
+
+          *Links*:
+          • <{trigger.deployment_status.target_url}|View Deployment>
+          • <{trigger.repository.html_url}/compare/{trigger.deployment.previous_sha}...{trigger.deployment.sha}|Compare Changes>
+
+          *Rollback Command*:
+          ```
+          {agent.rollback_command}
+          ```
+
+    # Deployment failed
+    - condition: "trigger.deployment_status.state == 'failure'"
+      type: slack_message
+      config:
+        channel: "#deployments"
+        mentions:
+          - "@{trigger.deployment.creator.login}"
+          - "@oncall"
+        # Update the original message
+        update_message: "{state.deployment_message_ts}"
+        message: |
+          ❌ *Deployment Failed*
+
+          *Environment*: {trigger.deployment.environment}
+          *Repository*: {trigger.repository.full_name}
+          *Branch*: {trigger.deployment.ref}
+          *Deployer*: @{trigger.deployment.creator.login}
+          *Duration*: {deployment.duration}
+
+          *Failure Reason*:
+          {trigger.deployment_status.description}
+
+          *Logs*: <{trigger.deployment_status.log_url}|View Logs>
+
+          *Rollback Command*:
+          ```
+          {agent.rollback_command}
+          ```
+
+          Please investigate and re-deploy or rollback.
+
+    # Post to production channel for production deployments
+    - condition: "trigger.deployment.environment == 'production'"
+      type: slack_message
+      config:
+        channel: "#production"
+        message: |
+          🚀 *Production Deployment*
+
+          {agent.summary}
+
+          *Changes*:
+          {agent.changes}
+
+          *Monitor*: {agent.monitoring_focus}
+
+          <{trigger.deployment_status.target_url}|View Live>
+
+    # Update deployment status page
+    - type: http_request
+      config:
+        url: "https://status.yourcompany.com/api/deployments"
+        method: POST
+        headers:
+          Authorization: "Bearer {env.STATUS_PAGE_TOKEN}"
+        body:
+          environment: "{trigger.deployment.environment}"
+          status: "{trigger.deployment_status.state}"
+          version: "{trigger.deployment.ref}"
+          timestamp: "{trigger.deployment.created_at}"
+          summary: "{agent.summary}"
+
+    # Track deployment metrics
+    - type: datadog_event
+      config:
+        title: "Deployment: {trigger.deployment.environment}"
+        text: "{agent.summary}"
+        tags:
+          - "env:{trigger.deployment.environment}"
+          - "repo:{trigger.repository.name}"
+          - "status:{trigger.deployment_status.state}"
+          - "deployer:{trigger.deployment.creator.login}"
+
+    # Optional: Notify external services
+    - condition: "trigger.deployment.environment == 'production'"
+      type: webhook
+      config:
+        url: "https://api.newrelic.com/v2/applications/{app_id}/deployments.json"
+        headers:
+          X-Api-Key: "{env.NEW_RELIC_API_KEY}"
+        body:
+          deployment:
+            revision: "{trigger.deployment.sha}"
+            changelog: "{agent.changes}"
+            description: "{agent.summary}"
+            user: "{trigger.deployment.creator.login}"
+
+  # Automatic rollback for failed production deployments
+  rollback:
+    enabled: true
+    condition: |
+      trigger.deployment.environment == 'production' &&
+      trigger.deployment_status.state == 'failure'
+
+    actions:
+      # Ask for approval
+      - type: slack_message
+        config:
+          channel: "#production"
+          mentions: ["@oncall-lead"]
+          message: |
+            🔴 *Production Deployment Failed - Auto-Rollback Available*
+
+            Failed deployment: {trigger.deployment.sha}
+            Previous version: {trigger.deployment.previous_sha}
+
+            React with ✅ to auto-rollback
+            React with ❌ to investigate manually
+
+          await_reaction: true
+          timeout: 180s  # 3 minutes
+
+      # Execute rollback if approved
+      - type: github_deployment
+        condition: "rollback_approved == true"
+        config:
+          repo: "{trigger.repository.full_name}"
+          ref: "{trigger.deployment.previous_sha}"
+          environment: "production"
+          description: "Auto-rollback from failed deployment"
+
+  # Error handling
+  error_handling:
+    - type: slack_message
+      config:
+        channel: "#engineering"
+        message: |
+          ⚠️ Deployment notification failed
+
+          Deployment: {trigger.deployment.id}
+          Error: {error.message}
+
+  # Resource limits
+  resources:
+    timeout: 60s
+    max_tokens: 4096
+
+  # State management
+  state:
+    type: key_value
+    backend: local
+    # Track deployment history
+    persist:
+      - deployment_message_ts
+      - deployment_history
+
+  # Metrics
+  metrics:
+    enabled: true
+    track:
+      - deployments_per_day
+      - deployment_success_rate
+      - deployment_duration
+      - rollbacks_count
+
+  tags:
+    automation: deployment
+    notification: true
+    critical: true

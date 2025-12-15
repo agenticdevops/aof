@@ -1,0 +1,444 @@
+# Slack Bot AgentFlow
+# Complete Slack bot with interactive features and human-in-the-loop approvals
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: slack-k8s-assistant
+  labels:
+    platform: slack
+    team: platform
+
+spec:
+  model: openai:gpt-4
+
+  model_config:
+    temperature: 0.4
+    max_tokens: 1500
+
+  instructions: |
+    You are a friendly Kubernetes assistant in Slack.
+
+    Your personality:
+    - Helpful and professional but approachable
+    - Use emoji sparingly for readability
+    - Keep responses concise - this is chat, not documentation
+    - Be proactive in suggesting next steps
+
+    Your capabilities:
+    - Answer K8s questions
+    - Run kubectl commands (with approval for destructive ops)
+    - Troubleshoot cluster issues
+    - Generate reports
+    - Format responses for Slack
+
+    Response formatting:
+    - Use Slack markdown (bold, code blocks, lists)
+    - Format kubectl output in code blocks: ```text```
+    - Use sections for longer responses
+    - Include relevant emoji for visual scanning
+
+    Safety rules:
+    - ALWAYS ask for approval before:
+      - Deleting resources
+      - Scaling down (replicas < current)
+      - Modifying production namespace
+      - Rolling back deployments
+    - Read-only operations (get, describe, logs) don't need approval
+    - Explain what commands will do
+
+    Output format for approval requests:
+    ```json
+    {
+      "requires_approval": true,
+      "command": "kubectl delete pod xyz",
+      "reason": "Destructive operation",
+      "impact": "Pod will be terminated and recreated"
+    }
+    ```
+
+  tools:
+    - type: Shell
+      config:
+        allowed_commands: [kubectl, helm]
+        timeout_seconds: 60
+
+    - type: MCP
+      config:
+        name: kubectl-mcp
+        command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+
+    - type: Slack
+      config:
+        bot_token: ${SLACK_BOT_TOKEN}
+        signing_secret: ${SLACK_SIGNING_SECRET}
+
+  memory:
+    type: SQLite
+    config:
+      path: ./slack-bot-memory.db
+      # Separate memory per Slack channel
+      context_key: "slack_channel_${SLACK_CHANNEL_ID}"
+
+---
+# Slack Bot Flow
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: slack-k8s-bot
+
+spec:
+  # Listen for Slack events
+  trigger:
+    type: Slack
+    config:
+      events:
+        - app_mention          # @bot-name message
+        - message             # Direct messages
+        - slash_command       # /k8s command
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
+
+  variables:
+    BOT_USER_ID: ${SLACK_BOT_USER_ID}
+
+  nodes:
+    # 1. Parse Slack message
+    - id: parse-message
+      type: Transform
+      config:
+        script: |
+          # Extract message details
+          export MESSAGE_TEXT="${event.text}"
+          export SLACK_USER="${event.user}"
+          export SLACK_CHANNEL="${event.channel}"
+          export SLACK_TIMESTAMP="${event.ts}"
+          export MESSAGE_TYPE="${event.type}"
+
+          # Remove bot mention from text
+          export CLEAN_TEXT=$(echo "${MESSAGE_TEXT}" | sed "s/<@${BOT_USER_ID}>//g" | xargs)
+
+          # Check if this is a slash command
+          if [[ "${event.command}" != "" ]]; then
+            export CLEAN_TEXT="${event.text}"
+            export MESSAGE_TYPE="slash_command"
+          fi
+
+    # 2. Send "typing" indicator
+    - id: typing-indicator
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        typing: true
+
+    # 3. Route to agent
+    - id: agent-process
+      type: Agent
+      config:
+        agent: slack-k8s-assistant
+        input: ${CLEAN_TEXT}
+        context:
+          slack_channel: ${SLACK_CHANNEL}
+          slack_user: ${SLACK_USER}
+          message_type: ${MESSAGE_TYPE}
+
+    # 4. Check if approval needed
+    - id: check-approval
+      type: Conditional
+      config:
+        conditions:
+          - name: needs_approval
+            expression: ${agent-process.output.requires_approval} == true
+          - name: no_approval
+            expression: true
+
+    # 5a. Request approval via reaction
+    - id: request-approval
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        thread_ts: ${SLACK_TIMESTAMP}
+        blocks:
+          - type: section
+            text:
+              type: mrkdwn
+              text: |
+                ⚠️ *Approval Required*
+
+                **User**: <@${SLACK_USER}>
+                **Command**: `${agent-process.output.command}`
+                **Impact**: ${agent-process.output.impact}
+
+                React with ✅ to approve or ❌ to cancel
+        wait_for_reaction: true
+        reactions: [white_check_mark, x]
+        timeout_seconds: 300  # 5 minutes
+      conditions:
+        - from: check-approval
+          value: needs_approval
+
+    # 5b. Auto-execute for safe operations
+    - id: auto-execute
+      type: Transform
+      config:
+        script: export APPROVED=true
+      conditions:
+        - from: check-approval
+          value: no_approval
+
+    # 6. Execute approved command
+    - id: execute-command
+      type: Agent
+      config:
+        agent: slack-k8s-assistant
+        input: "Execute the approved command: ${agent-process.output.command}"
+      conditions:
+        - from: request-approval
+          when: reaction == "white_check_mark"
+
+    # 7. Handle cancellation
+    - id: notify-cancelled
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        thread_ts: ${SLACK_TIMESTAMP}
+        message: "❌ Command cancelled by <@${SLACK_USER}>"
+      conditions:
+        - from: request-approval
+          when: reaction == "x"
+
+    # 8. Handle approval timeout
+    - id: notify-timeout
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        thread_ts: ${SLACK_TIMESTAMP}
+        message: "⏱️ Approval request timed out after 5 minutes"
+      conditions:
+        - from: request-approval
+          when: timeout == true
+
+    # 9. Send response
+    - id: send-response
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        thread_ts: ${SLACK_TIMESTAMP}  # Reply in thread
+        blocks:
+          - type: section
+            text:
+              type: mrkdwn
+              text: ${agent-process.output}
+
+          # Add helpful buttons for common actions
+          - type: actions
+            elements:
+              - type: button
+                text:
+                  type: plain_text
+                  text: "View Logs"
+                action_id: view_logs
+                style: primary
+
+              - type: button
+                text:
+                  type: plain_text
+                  text: "Check Events"
+                action_id: check_events
+
+              - type: button
+                text:
+                  type: plain_text
+                  text: "Describe Resource"
+                action_id: describe_resource
+      conditions:
+        - from: check-approval
+          value: no_approval
+        - from: execute-command
+
+  connections:
+    - from: parse-message
+      to: typing-indicator
+    - from: typing-indicator
+      to: agent-process
+    - from: agent-process
+      to: check-approval
+    - from: check-approval
+      to: request-approval
+      to: auto-execute
+    - from: request-approval
+      to: execute-command
+      to: notify-cancelled
+      to: notify-timeout
+    - from: auto-execute
+      to: send-response
+    - from: execute-command
+      to: send-response
+
+---
+# Daily Cluster Report Flow
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: daily-cluster-report
+
+spec:
+  # Run every weekday at 9 AM
+  trigger:
+    type: Schedule
+    config:
+      cron: "0 9 * * 1-5"  # Mon-Fri at 9 AM
+      timezone: America/New_York
+
+  variables:
+    REPORT_CHANNEL: "#platform-daily"
+
+  nodes:
+    - id: gather-data
+      type: Shell
+      config:
+        command: bash
+        args:
+          - -c
+          - |
+            # Collect cluster stats
+            echo "=== NODES ==="
+            kubectl top nodes
+
+            echo ""
+            echo "=== PODS ==="
+            kubectl top pods --all-namespaces | head -10
+
+            echo ""
+            echo "=== FAILING PODS ==="
+            kubectl get pods --all-namespaces --field-selector=status.phase!=Running,status.phase!=Succeeded
+
+            echo ""
+            echo "=== RECENT EVENTS ==="
+            kubectl get events --all-namespaces --sort-by='.lastTimestamp' | tail -20
+
+    - id: generate-report
+      type: Agent
+      config:
+        agent: slack-k8s-assistant
+        input: |
+          Generate a concise daily cluster health report based on this data:
+
+          ${gather-data.output}
+
+          Include:
+          - Overall cluster health status (emoji)
+          - Node resource usage summary
+          - Top resource-consuming pods
+          - Any failing pods or issues
+          - Notable recent events
+          - Recommended actions (if any)
+
+          Format for Slack with sections and emoji.
+
+    - id: send-report
+      type: Slack
+      config:
+        channel: ${REPORT_CHANNEL}
+        blocks:
+          - type: header
+            text:
+              type: plain_text
+              text: "📊 Daily Cluster Health Report"
+
+          - type: section
+            text:
+              type: mrkdwn
+              text: ${generate-report.output}
+
+          - type: context
+            elements:
+              - type: mrkdwn
+                text: "Generated by AOF | <https://k8s-dashboard.company.com|View Dashboard>"
+
+---
+# Interactive Help Flow
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: slack-bot-help
+
+spec:
+  trigger:
+    type: Slack
+    config:
+      events: [slash_command]
+      commands: [/k8s-help]
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
+
+  nodes:
+    - id: send-help
+      type: Slack
+      config:
+        channel: ${event.channel_id}
+        blocks:
+          - type: header
+            text:
+              type: plain_text
+              text: "🤖 K8s Assistant Help"
+
+          - type: section
+            text:
+              type: mrkdwn
+              text: |
+                *How to use me:*
+                • Mention me: `@k8s-assistant show me all pods`
+                • Direct message: Just type your question
+                • Slash command: `/k8s show me all pods`
+
+          - type: divider
+
+          - type: section
+            text:
+              type: mrkdwn
+              text: |
+                *Common commands:*
+                • `show pods` - List pods
+                • `check deployment <name>` - Check deployment status
+                • `logs <pod-name>` - View pod logs
+                • `scale <deployment> to <N>` - Scale deployment
+                • `what's wrong?` - Troubleshoot issues
+
+          - type: section
+            text:
+              type: mrkdwn
+              text: |
+                *Pro tips:*
+                ✅ I can run read-only commands automatically
+                ⚠️ I'll ask for approval on destructive operations
+                📊 Try `/k8s help` for more info
+
+---
+# Setup instructions:
+#
+# 1. Create Slack App:
+#    - https://api.slack.com/apps
+#    - Bot Token Scopes: chat:write, app_mentions:read, commands
+#
+# 2. Set environment variables:
+#    export SLACK_BOT_TOKEN=xoxb-...
+#    export SLACK_SIGNING_SECRET=...
+#    export SLACK_BOT_USER_ID=U...
+#
+# 3. Apply:
+#    aofctl agent apply -f slack-bot-flow.yaml
+#    aofctl flow apply -f slack-bot-flow.yaml
+#
+# 4. Start flows:
+#    aofctl flow run slack-k8s-bot --daemon
+#    aofctl flow run daily-cluster-report --daemon
+#    aofctl flow run slack-bot-help --daemon
+#
+# 5. Configure Slack:
+#    - Event Subscriptions URL: https://your-domain.com/slack/events
+#    - Slash Command: /k8s, /k8s-help
+#
+# Test:
+#    - In Slack: @k8s-assistant show me all pods
+#    - Or: /k8s show me all pods

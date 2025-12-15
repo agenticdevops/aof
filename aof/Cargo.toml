@@ -1,0 +1,80 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/aof-core",
+    "crates/aof-mcp",
+    "crates/aof-llm",
+    "crates/aof-runtime",
+    "crates/aof-memory",
+    "crates/aof-triggers",
+    "crates/aofctl",
+    "crates/smoke-test-mcp",
+]
+
+[workspace.package]
+version = "0.1.11"
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+repository = "https://github.com/yourusername/aof"
+authors = ["Your Name <you@example.com>"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# HTTP/Networking
+reqwest = { version = "0.11", features = ["json", "stream"] }
+hyper = { version = "1.0", features = ["full"] }
+tower = "0.4"
+
+# CLI
+clap = { version = "4.4", features = ["derive", "cargo"] }
+clap_complete = "4.4"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging/Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Performance
+dashmap = "5.5"
+arc-swap = "1.6"
+parking_lot = "0.12"
+
+# Zero-copy
+bytes = "1.5"
+memmap2 = "0.9"
+
+# UUID
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Internal workspace dependencies
+aof-core = { path = "crates/aof-core" }
+aof-mcp = { path = "crates/aof-mcp" }
+aof-llm = { path = "crates/aof-llm" }
+aof-runtime = { path = "crates/aof-runtime" }
+aof-memory = { path = "crates/aof-memory" }
+aof-triggers = { path = "crates/aof-triggers" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.bench]
+inherits = "release"

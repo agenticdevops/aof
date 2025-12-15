@@ -1,0 +1,637 @@
+# AgentFlow YAML Schema Definition
+# Version: v1alpha1
+# Purpose: Declarative DAG workflow system for agentic DevOps/SRE operations
+
+apiVersion: aof.agenticops.org/v1alpha1
+kind: AgentFlow
+
+metadata:
+  # Standard Kubernetes-style metadata
+  name: string                    # Required: Flow name (DNS-1123 compliant)
+  namespace: string               # Optional: Kubernetes namespace
+  labels:                         # Optional: Key-value labels
+    app: string
+    team: string
+    environment: string
+  annotations:                    # Optional: Non-identifying metadata
+    description: string
+    owner: string
+    documentation: string
+
+spec:
+  # Global flow configuration
+  config:
+    # Timeout for entire flow execution
+    timeout: duration             # e.g., "30m", "1h", "2h30m"
+
+    # Retry policy for entire flow
+    retryPolicy:
+      maxAttempts: integer        # Default: 3
+      backoff: string             # "exponential" | "linear" | "fixed"
+      initialDelay: duration      # e.g., "1s", "5s"
+      maxDelay: duration          # e.g., "5m", "10m"
+      retryOn:                    # List of error types to retry on
+        - "timeout"
+        - "connection-error"
+        - "rate-limit"
+
+    # Variables available to all nodes
+    variables:
+      key: value                  # Static variables
+
+    # Secrets from Kubernetes or external stores
+    secretsRef:
+      - name: string              # Secret name
+        namespace: string         # Optional: Secret namespace
+
+    # Concurrency control
+    concurrency:
+      limit: integer              # Max parallel executions of this flow
+      strategy: string            # "queue" | "reject" | "cancel-running"
+
+  # Triggers - How the flow starts
+  triggers:
+    - id: string                  # Required: Unique trigger ID
+      type: string                # Required: Trigger type (see below)
+      enabled: boolean            # Default: true
+      config:                     # Type-specific configuration
+        # ... varies by trigger type
+
+  # Nodes - DAG vertices (agents, actions, control flow)
+  nodes:
+    - id: string                  # Required: Unique node ID
+      type: string                # Required: Node type (see below)
+      name: string                # Optional: Human-readable name
+      description: string         # Optional: Node documentation
+
+      # Retry policy (overrides global)
+      retryPolicy:
+        maxAttempts: integer
+        backoff: string
+        initialDelay: duration
+        maxDelay: duration
+        retryOn: []
+
+      # Timeout for this node
+      timeout: duration
+
+      # Input mapping from context/previous nodes
+      input:
+        # Static inputs
+        staticKey: value
+
+        # Dynamic inputs from context using JSONPath or CEL
+        dynamicKey:
+          $ref: string            # JSONPath: "$.trigger.payload.field"
+          $cel: string            # CEL: "context.trigger.payload.field"
+
+      # Output schema validation (optional)
+      outputSchema:
+        type: object
+        properties:
+          key:
+            type: string
+        required: []
+
+      # Node-specific configuration
+      config:
+        # ... varies by node type
+
+  # Connections - DAG edges
+  connections:
+    - id: string                  # Optional: Connection ID
+      from: string                # Required: Source node ID
+      to: string                  # Required: Target node ID
+
+      # Optional condition using CEL
+      condition: string           # e.g., "output.status == 'success'"
+
+      # Optional data transformation
+      transform:
+        # Map outputs to inputs
+        mapping:
+          targetInputKey:
+            $ref: "$.from.output.sourceKey"
+            $cel: "from.output.sourceKey"
+
+      # Connection metadata
+      label: string               # Optional: Edge label for visualization
+      priority: integer           # Optional: Execution priority (lower = higher priority)
+
+  # Error handling
+  errorHandling:
+    # On error, execute these nodes
+    onError:
+      - nodeId: string
+        condition: string         # Optional: Only run if condition matches
+
+    # On failure (after all retries), execute these nodes
+    onFailure:
+      - nodeId: string
+
+    # On timeout, execute these nodes
+    onTimeout:
+      - nodeId: string
+
+  # Success handling
+  onSuccess:
+    - nodeId: string              # Nodes to run on successful completion
+
+  # Observability
+  observability:
+    # Logging configuration
+    logging:
+      level: string               # "debug" | "info" | "warn" | "error"
+      includeInputs: boolean      # Log node inputs
+      includeOutputs: boolean     # Log node outputs
+      redactSecrets: boolean      # Default: true
+
+    # Metrics
+    metrics:
+      enabled: boolean
+      customMetrics:
+        - name: string
+          type: string            # "counter" | "gauge" | "histogram"
+          labels: []
+
+    # Tracing
+    tracing:
+      enabled: boolean
+      samplingRate: float         # 0.0 to 1.0
+
+    # Notifications
+    notifications:
+      - type: string              # "slack" | "email" | "webhook"
+        on: []                    # ["success", "failure", "timeout"]
+        config:
+          # Type-specific notification config
+
+---
+# TRIGGER TYPE SPECIFICATIONS
+# Each trigger type has specific configuration
+
+# 1. Webhook Trigger
+type: Webhook
+config:
+  path: string                    # URL path (e.g., "/webhooks/incident")
+  methods: []                     # ["POST", "GET", "PUT"] - default: ["POST"]
+  authentication:
+    type: string                  # "none" | "basic" | "bearer" | "hmac" | "oauth2"
+    secretRef: string             # Reference to secret
+  validation:
+    schema: object                # JSON schema for payload validation
+    headers: object               # Required headers
+  rateLimit:
+    requestsPerMinute: integer
+    burst: integer
+
+# 2. Slack Trigger
+type: Slack
+config:
+  workspace: string               # Slack workspace ID
+  event: string                   # "message" | "reaction" | "slash-command" | "interaction"
+  channel: string                 # Channel ID or name (optional)
+  pattern: string                 # Regex pattern to match message text
+  slashCommand: string            # For slash-command events (e.g., "/incident")
+  botToken:
+    secretRef: string             # Reference to bot token secret
+  filters:
+    users: []                     # Filter by user IDs
+    bots: boolean                 # Include bot messages (default: false)
+
+# 3. GitHub Trigger
+type: GitHub
+config:
+  repository: string              # "owner/repo" format
+  events: []                      # ["pull_request", "push", "issue", "workflow_run", "deployment"]
+  branches: []                    # Filter by branches (for push events)
+  actions: []                     # Filter by event actions (e.g., ["opened", "synchronize"])
+  webhookSecret:
+    secretRef: string             # GitHub webhook secret for verification
+  filters:
+    labels: []                    # Filter by PR/issue labels
+    authors: []                   # Filter by author usernames
+    paths: []                     # Filter by changed file paths (glob patterns)
+
+# 4. PagerDuty Trigger
+type: PagerDuty
+config:
+  serviceId: string               # PagerDuty service ID
+  events: []                      # ["incident.triggered", "incident.acknowledged", "incident.resolved"]
+  urgency: []                     # Filter by urgency: ["high", "low"]
+  priority: []                    # Filter by priority
+  apiToken:
+    secretRef: string             # PagerDuty API token
+  webhookSignature:
+    secretRef: string             # Webhook signature verification
+
+# 5. Cron Trigger
+type: Cron
+config:
+  schedule: string                # Cron expression (e.g., "0 9 * * 1-5" for weekdays at 9am)
+  timezone: string                # IANA timezone (default: "UTC")
+  concurrencyPolicy: string       # "Allow" | "Forbid" | "Replace"
+  startingDeadlineSeconds: integer # Optional: Latest time to start if missed
+
+# 6. Kafka Trigger
+type: Kafka
+config:
+  brokers: []                     # Kafka broker addresses
+  topic: string                   # Topic to consume from
+  groupId: string                 # Consumer group ID
+  consumerConfig:                 # Additional Kafka consumer config
+    autoOffsetReset: string       # "earliest" | "latest"
+    enableAutoCommit: boolean
+  authentication:
+    type: string                  # "none" | "sasl" | "ssl"
+    secretRef: string
+  filters:
+    keyPattern: string            # Regex for message key
+    headerFilters: object         # Filter by message headers
+
+# 7. SQS Trigger
+type: SQS
+config:
+  queueUrl: string                # SQS queue URL
+  region: string                  # AWS region
+  maxMessages: integer            # Max messages per poll (1-10)
+  visibilityTimeout: integer      # Message visibility timeout in seconds
+  waitTimeSeconds: integer        # Long polling wait time
+  deleteOnSuccess: boolean        # Delete message after successful processing (default: true)
+  awsCredentials:
+    secretRef: string             # AWS credentials secret
+
+# 8. Manual Trigger
+type: Manual
+config:
+  requireApproval: boolean        # Require manual approval to start
+  approvers: []                   # List of user/service account names
+  inputSchema: object             # JSON schema for manual input parameters
+
+---
+# NODE TYPE SPECIFICATIONS
+
+# 1. AGENT NODE - Execute AI agent
+type: Agent
+config:
+  # Reference existing Agent resource
+  agentRef:
+    name: string                  # Agent resource name
+    namespace: string             # Optional: Agent namespace
+
+  # Or inline agent definition
+  agentInline:
+    model: string                 # LLM model (e.g., "claude-3-5-sonnet-20241022")
+    systemPrompt: string          # Agent system prompt
+    tools: []                     # Available tools
+    maxTokens: integer
+    temperature: float
+
+  # Input to agent (prompt/context)
+  prompt:
+    template: string              # Prompt template with variables
+    variables:                    # Variable mappings
+      key:
+        $ref: string              # Reference from context
+
+  # Tool execution permissions
+  allowedTools: []                # List of allowed tool names
+
+  # Agent execution options
+  streaming: boolean              # Stream agent output
+  maxIterations: integer          # Max tool use iterations
+
+  # Output parsing
+  outputFormat: string            # "json" | "text" | "markdown"
+  outputExtraction:
+    jsonPath: string              # Extract specific field from output
+
+# 2. ACTION NODE - Non-AI operations
+
+# 2a. HTTP Action
+type: Action
+config:
+  actionType: HTTP
+  http:
+    url: string                   # URL to call (supports templating)
+    method: string                # GET, POST, PUT, DELETE, PATCH
+    headers: object               # HTTP headers
+    body:                         # Request body
+      $ref: string                # Reference from context
+      $template: string           # Template string
+    authentication:
+      type: string                # "none" | "basic" | "bearer" | "oauth2"
+      secretRef: string
+    timeout: duration
+    retryPolicy:
+      maxAttempts: integer
+      statusCodes: []             # Retry on specific status codes
+    validation:
+      expectedStatusCodes: []     # [200, 201, 204]
+      responseSchema: object      # JSON schema for response
+
+# 2b. Slack Action
+type: Action
+config:
+  actionType: Slack
+  slack:
+    action: string                # "post-message" | "add-reaction" | "update-message"
+    channel: string               # Channel ID or name
+    message:
+      text: string                # Message text (supports templating)
+      blocks: []                  # Slack Block Kit blocks
+      threadTs: string            # Reply in thread (optional)
+    reaction: string              # Emoji name (for add-reaction)
+    botToken:
+      secretRef: string
+
+# 2c. GitHub Action
+type: Action
+config:
+  actionType: GitHub
+  github:
+    action: string                # "create-comment" | "add-label" | "create-issue" | "update-pr"
+    repository: string            # "owner/repo"
+    target:
+      issueNumber: integer
+      pullRequestNumber: integer
+    content:
+      comment: string             # Comment body (supports templating)
+      labels: []                  # Labels to add
+      title: string               # Issue title
+      body: string                # Issue/PR body
+    token:
+      secretRef: string           # GitHub token
+
+# 2d. Jira Action
+type: Action
+config:
+  actionType: Jira
+  jira:
+    action: string                # "create-issue" | "update-issue" | "add-comment"
+    baseUrl: string               # Jira instance URL
+    project: string               # Project key
+    issueType: string             # "Bug", "Task", "Story", etc.
+    fields:
+      summary: string
+      description: string
+      priority: string
+      labels: []
+      assignee: string
+    credentials:
+      secretRef: string           # Jira API credentials
+
+# 2e. Shell Command Action
+type: Action
+config:
+  actionType: Shell
+  shell:
+    command: string               # Shell command to execute
+    args: []                      # Command arguments
+    workingDir: string            # Working directory
+    env:                          # Environment variables
+      key: value
+    timeout: duration
+    captureOutput: boolean        # Capture stdout/stderr
+
+    # Security constraints
+    allowedCommands: []           # Whitelist of allowed commands
+    isolationMode: string         # "container" | "namespace" | "chroot"
+
+# 2f. MCP Tool Call Action
+type: Action
+config:
+  actionType: MCPTool
+  mcpTool:
+    serverName: string            # MCP server name
+    toolName: string              # Tool to invoke
+    parameters: object            # Tool parameters
+    timeout: duration
+
+# 3. CONDITION NODE - Branching logic
+type: Condition
+config:
+  # Evaluation expression using CEL
+  expression: string              # e.g., "context.severity == 'critical' && context.autoFixable"
+
+  # Alternative: Multiple conditions with labels
+  conditions:
+    - label: string               # Label for connection matching
+      expression: string
+      priority: integer           # Evaluation order
+
+# 4. SPLIT NODE - Parallel execution
+type: Split
+config:
+  strategy: string                # "all" | "race" | "first-n"
+
+  # For "first-n" strategy
+  n: integer                      # Number of branches to wait for
+
+  # Timeout for parallel branches
+  timeout: duration
+
+  # Continue on partial failure
+  continueOnError: boolean        # Default: false
+
+# 5. MERGE NODE - Join parallel paths
+type: Merge
+config:
+  strategy: string                # "wait-all" | "wait-any" | "wait-n"
+
+  # For "wait-n" strategy
+  n: integer                      # Number of inputs to wait for
+
+  # Aggregation strategy
+  aggregation: string             # "collect" | "merge" | "first" | "custom"
+
+  # Custom aggregation using CEL
+  customAggregation: string       # CEL expression to combine inputs
+
+  # Timeout for waiting
+  timeout: duration
+
+# 6. LOOP NODE - Iteration
+type: Loop
+config:
+  # What to iterate over
+  iterator:
+    $ref: string                  # Reference to array in context
+
+  # Variable name for current item
+  itemVariable: string            # Default: "item"
+
+  # Variable name for index
+  indexVariable: string           # Default: "index"
+
+  # Loop controls
+  maxIterations: integer          # Safety limit
+  parallel: boolean               # Run iterations in parallel
+  parallelism: integer            # Max parallel iterations
+
+  # Continue on item failure
+  continueOnError: boolean        # Default: false
+
+  # Break condition
+  breakOn: string                 # CEL expression to break loop
+
+# 7. WAIT NODE - Delay or approval
+type: Wait
+config:
+  waitType: string                # "duration" | "until" | "approval"
+
+  # For duration wait
+  duration: duration              # e.g., "5m", "1h"
+
+  # For conditional wait
+  until:
+    expression: string            # CEL expression
+    checkInterval: duration       # How often to check
+    timeout: duration             # Max wait time
+
+  # For approval wait
+  approval:
+    approvers: []                 # List of approvers
+    requireAll: boolean           # All must approve vs. any
+    timeout: duration
+    notificationConfig: object    # How to notify approvers
+
+# 8. HUMAN NODE - Human-in-the-loop
+type: Human
+config:
+  task: string                    # Task description for human
+
+  # How to notify human
+  notification:
+    type: string                  # "slack" | "email" | "webhook"
+    config: object
+
+  # Input form for human response
+  form:
+    fields:
+      - name: string
+        type: string              # "text" | "textarea" | "select" | "multiselect" | "boolean"
+        label: string
+        required: boolean
+        options: []               # For select/multiselect
+        validation:
+          pattern: string
+          min: integer
+          max: integer
+
+  # Response handling
+  timeout: duration               # How long to wait for human
+  onTimeout: string               # "fail" | "skip" | "default"
+  defaultResponse: object         # Default values on timeout
+
+# 9. TRANSFORM NODE - Data manipulation
+type: Transform
+config:
+  transformType: string           # "jsonpath" | "jq" | "template" | "cel"
+
+  # JSONPath extraction
+  jsonPath:
+    expression: string
+    source:
+      $ref: string                # Source data reference
+
+  # JQ transformation
+  jq:
+    expression: string
+    source:
+      $ref: string
+
+  # Template rendering
+  template:
+    engine: string                # "go-template" | "jinja2" | "handlebars"
+    template: string
+    variables: object
+
+  # CEL transformation
+  cel:
+    expression: string
+
+  # Output mapping
+  outputMapping: object           # Map transformed data to output keys
+
+---
+# CONTEXT AND VARIABLE PASSING
+
+# Context structure available to all nodes
+context:
+  # Trigger information
+  trigger:
+    id: string                    # Trigger ID
+    type: string                  # Trigger type
+    timestamp: string             # ISO 8601 timestamp
+    payload: object               # Trigger-specific payload
+
+  # Flow metadata
+  flow:
+    id: string                    # Flow execution ID
+    name: string                  # Flow name
+    namespace: string
+    startTime: string
+
+  # Node execution history
+  nodes:
+    nodeId:
+      status: string              # "pending" | "running" | "success" | "failed" | "skipped"
+      startTime: string
+      endTime: string
+      duration: duration
+      input: object
+      output: object
+      error: object               # If failed
+      attempts: integer           # Retry attempts
+
+  # Global variables
+  variables: object
+
+  # Secrets (injected securely, not logged)
+  secrets: object
+
+# Variable reference syntax
+$ref: "$.context.path.to.value"   # JSONPath syntax
+$cel: "context.path.to.value"     # CEL syntax
+$template: "{{ .context.path }}"  # Go template syntax
+
+---
+# ERROR HANDLING SPECIFICATIONS
+
+retryPolicy:
+  maxAttempts: integer            # Max retry attempts (default: 3)
+
+  # Backoff strategy
+  backoff: string                 # "exponential" | "linear" | "fixed"
+  initialDelay: duration          # First retry delay (default: "1s")
+  maxDelay: duration              # Max retry delay (default: "5m")
+  multiplier: float               # Backoff multiplier (default: 2.0)
+  jitter: float                   # Random jitter (0.0-1.0, default: 0.1)
+
+  # Retry conditions
+  retryOn: []                     # List of error types to retry
+    # - "timeout"
+    # - "connection-error"
+    # - "rate-limit"
+    # - "5xx"                     # HTTP 5xx errors
+    # - "agent-error"
+    # - "tool-error"
+
+  # Don't retry on these errors
+  noRetryOn: []
+
+  # Custom retry condition
+  retryIf: string                 # CEL expression
+
+# Error recovery
+errorHandling:
+  strategy: string                # "fail-fast" | "continue" | "fallback"
+
+  # Fallback node to execute on error
+  fallbackNode: string            # Node ID
+
+  # Compensating actions (rollback)
+  compensation:
+    - nodeId: string              # Node to execute for compensation
+      condition: string           # Optional: Only if condition matches
