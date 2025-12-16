@@ -5,8 +5,8 @@
 
 use super::{AgentExecutor, agent_executor::StreamEvent};
 use aof_core::{
-    AgentConfig, AgentContext, AofError, AofResult, ModelConfig, ModelProvider, Tool,
-    ToolDefinition, ToolExecutor, ToolInput,
+    AgentConfig, AgentContext, AofError, AofResult, McpServerConfig, McpTransport,
+    ModelConfig, ModelProvider, Tool, ToolDefinition, ToolExecutor, ToolInput,
 };
 use aof_llm::create_model;
 use aof_mcp::McpClientBuilder;
@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Top-level runtime for agent execution
 ///
@@ -76,9 +76,13 @@ impl Runtime {
         let model = create_model(model_config).await?;
         debug!("Model created for agent: {}", agent_name);
 
-        // Create tool executor if tools are specified
-        // Only create MCP executor for tools that are MCP-based (not system tools like shell, kubectl)
-        let tool_executor: Option<Arc<dyn ToolExecutor>> = if !config.tools.is_empty() {
+        // Create tool executor
+        // Priority: mcp_servers > tools (legacy)
+        let tool_executor: Option<Arc<dyn ToolExecutor>> = if !config.mcp_servers.is_empty() {
+            // Use the new flexible MCP configuration
+            Some(self.create_mcp_executor_from_config(&config.mcp_servers).await?)
+        } else if !config.tools.is_empty() {
+            // Legacy: tools list (backward compatibility)
             let system_tools = ["shell", "kubectl", "bash", "sh", "python", "node"];
             let has_system_tools = config.tools.iter().any(|t| system_tools.contains(&t.as_str()));
             let has_mcp_tools = config.tools.iter().any(|t| !system_tools.contains(&t.as_str()));
@@ -334,12 +338,12 @@ impl Runtime {
         }
     }
 
-    // Helper: Create tool executor from tool list
+    // Helper: Create tool executor from tool list (legacy)
     async fn create_tool_executor(
         &self,
         tool_names: &[String],
     ) -> AofResult<Arc<dyn ToolExecutor>> {
-        info!("Creating tool executor with {} tools", tool_names.len());
+        info!("Creating tool executor with {} tools (legacy mode)", tool_names.len());
 
         // Find smoke-test-mcp binary in standard locations
         let mcp_path = if std::path::Path::new("/usr/local/bin/smoke-test-mcp").exists() {
@@ -369,6 +373,121 @@ impl Runtime {
         Ok(Arc::new(McpToolExecutor {
             client: Arc::new(mcp_client),
             tool_names: tool_names.to_vec(),
+        }))
+    }
+
+    // Helper: Create MCP executor from flexible config
+    async fn create_mcp_executor_from_config(
+        &self,
+        mcp_servers: &[McpServerConfig],
+    ) -> AofResult<Arc<dyn ToolExecutor>> {
+        info!("Creating MCP executor from {} server configs", mcp_servers.len());
+
+        let mut clients: Vec<Arc<aof_mcp::McpClient>> = Vec::new();
+        let mut all_tool_names: Vec<String> = Vec::new();
+
+        for server_config in mcp_servers {
+            // Validate the config
+            if let Err(e) = server_config.validate() {
+                warn!("Invalid MCP server config '{}': {}", server_config.name, e);
+                continue;
+            }
+
+            info!("Initializing MCP server: {} ({:?})", server_config.name, server_config.transport);
+
+            let mcp_client = match server_config.transport {
+                McpTransport::Stdio => {
+                    let command = server_config.command.as_ref()
+                        .ok_or_else(|| AofError::config("Stdio transport requires command"))?;
+
+                    let mut builder = McpClientBuilder::new()
+                        .stdio(command.clone(), server_config.args.clone());
+
+                    // Add environment variables
+                    for (key, value) in &server_config.env {
+                        builder = builder.with_env(key.clone(), value.clone());
+                    }
+
+                    builder.build()
+                        .map_err(|e| AofError::tool(format!(
+                            "Failed to create MCP client for '{}': {}", server_config.name, e
+                        )))?
+                }
+                #[cfg(feature = "sse")]
+                McpTransport::Sse => {
+                    let endpoint = server_config.endpoint.as_ref()
+                        .ok_or_else(|| AofError::config("SSE transport requires endpoint"))?;
+
+                    McpClientBuilder::new()
+                        .sse(endpoint.clone())
+                        .build()
+                        .map_err(|e| AofError::tool(format!(
+                            "Failed to create SSE MCP client for '{}': {}", server_config.name, e
+                        )))?
+                }
+                #[cfg(feature = "http")]
+                McpTransport::Http => {
+                    let endpoint = server_config.endpoint.as_ref()
+                        .ok_or_else(|| AofError::config("HTTP transport requires endpoint"))?;
+
+                    McpClientBuilder::new()
+                        .http(endpoint.clone())
+                        .build()
+                        .map_err(|e| AofError::tool(format!(
+                            "Failed to create HTTP MCP client for '{}': {}", server_config.name, e
+                        )))?
+                }
+                #[cfg(not(feature = "sse"))]
+                McpTransport::Sse => {
+                    return Err(AofError::config(
+                        "SSE transport not enabled. Enable the 'sse' feature in aof-mcp"
+                    ));
+                }
+                #[cfg(not(feature = "http"))]
+                McpTransport::Http => {
+                    return Err(AofError::config(
+                        "HTTP transport not enabled. Enable the 'http' feature in aof-mcp"
+                    ));
+                }
+            };
+
+            // Initialize the client with optional init_options
+            match mcp_client.initialize_with_options(server_config.init_options.clone()).await {
+                Ok(_) => {
+                    info!("MCP server '{}' initialized successfully", server_config.name);
+
+                    // Get tool list from the server
+                    if let Ok(tools) = mcp_client.list_tools().await {
+                        for tool in tools {
+                            // Apply tool filter if specified
+                            if server_config.tools.is_empty() || server_config.tools.contains(&tool.name) {
+                                all_tool_names.push(tool.name);
+                            }
+                        }
+                    }
+
+                    clients.push(Arc::new(mcp_client));
+                }
+                Err(e) => {
+                    warn!("Failed to initialize MCP server '{}': {}", server_config.name, e);
+                    if !server_config.auto_reconnect {
+                        return Err(AofError::tool(format!(
+                            "MCP server '{}' initialization failed: {}", server_config.name, e
+                        )));
+                    }
+                }
+            }
+        }
+
+        if clients.is_empty() {
+            return Err(AofError::tool("No MCP servers could be initialized"));
+        }
+
+        info!("MCP executor created with {} servers and {} tools", clients.len(), all_tool_names.len());
+
+        Ok(Arc::new(MultiMcpToolExecutor {
+            clients,
+            tool_names: all_tool_names,
         }))
     }
 
@@ -432,6 +551,77 @@ impl ToolExecutor for McpToolExecutor {
     fn list_tools(&self) -> Vec<ToolDefinition> {
         // In a real implementation, this would query MCP for tool definitions
         // For now, return basic definitions
+        self.tool_names
+            .iter()
+            .map(|name| ToolDefinition {
+                name: name.clone(),
+                description: format!("MCP tool: {}", name),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+            })
+            .collect()
+    }
+
+    fn get_tool(&self, _name: &str) -> Option<Arc<dyn Tool>> {
+        // MCP tools are dynamically resolved, not stored as objects
+        None
+    }
+}
+
+/// Multi-server MCP tool executor
+/// Supports multiple MCP servers with different transports
+struct MultiMcpToolExecutor {
+    clients: Vec<Arc<aof_mcp::McpClient>>,
+    tool_names: Vec<String>,
+}
+
+#[async_trait]
+impl ToolExecutor for MultiMcpToolExecutor {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        input: ToolInput,
+    ) -> AofResult<aof_core::ToolResult> {
+        debug!("Executing MCP tool (multi-server): {}", name);
+        let start = std::time::Instant::now();
+
+        // Try each client until one succeeds
+        let mut last_error = None;
+        for client in &self.clients {
+            match client.call_tool(name, input.arguments.clone()).await {
+                Ok(result) => {
+                    let execution_time_ms = start.elapsed().as_millis() as u64;
+                    return Ok(aof_core::ToolResult {
+                        success: true,
+                        data: result,
+                        error: None,
+                        execution_time_ms,
+                    });
+                }
+                Err(e) => {
+                    debug!("Tool '{}' not found on server, trying next: {}", name, e);
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        // All clients failed
+        let execution_time_ms = start.elapsed().as_millis() as u64;
+        let error_msg = last_error
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| format!("Tool '{}' not found on any MCP server", name));
+
+        Ok(aof_core::ToolResult {
+            success: false,
+            data: serde_json::json!({}),
+            error: Some(error_msg),
+            execution_time_ms,
+        })
+    }
+
+    fn list_tools(&self) -> Vec<ToolDefinition> {
         self.tool_names
             .iter()
             .map(|name| ToolDefinition {
@@ -676,6 +866,7 @@ mod tests {
             model: "anthropic:claude-3-5-sonnet-20241022".to_string(),
             provider: None,
             tools: vec![],
+            mcp_servers: vec![],
             memory: None,
             max_iterations: 10,
             temperature: 0.7,
@@ -699,6 +890,7 @@ mod tests {
             model: "gpt-4".to_string(),
             provider: None,
             tools: vec![],
+            mcp_servers: vec![],
             memory: None,
             max_iterations: 10,
             temperature: 0.7,

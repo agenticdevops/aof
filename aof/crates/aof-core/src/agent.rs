@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::mcp::McpServerConfig;
 use crate::AofResult;
 
 /// Core agent trait - the foundation of AOF
@@ -176,9 +177,14 @@ pub struct AgentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
 
-    /// Tools available to agent
+    /// Tools available to agent (simple tool names for backward compatibility)
     #[serde(default)]
     pub tools: Vec<String>,
+
+    /// MCP servers configuration (flexible MCP tool sources)
+    /// Each server can use stdio, sse, or http transport
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<McpServerConfig>,
 
     /// Memory backend
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -239,6 +245,8 @@ struct AgentSpec {
     instructions: Option<String>,
     #[serde(default)]
     tools: Vec<String>,
+    #[serde(default)]
+    mcp_servers: Vec<McpServerConfig>,
     memory: Option<String>,
     #[serde(default = "default_max_iterations")]
     max_iterations: usize,
@@ -258,6 +266,8 @@ struct FlatAgentConfig {
     provider: Option<String>,
     #[serde(default)]
     tools: Vec<String>,
+    #[serde(default)]
+    mcp_servers: Vec<McpServerConfig>,
     memory: Option<String>,
     #[serde(default = "default_max_iterations")]
     max_iterations: usize,
@@ -277,6 +287,7 @@ impl From<AgentConfigInput> for AgentConfig {
                 model: flat.model,
                 provider: flat.provider,
                 tools: flat.tools,
+                mcp_servers: flat.mcp_servers,
                 memory: flat.memory,
                 max_iterations: flat.max_iterations,
                 temperature: flat.temperature,
@@ -290,6 +301,7 @@ impl From<AgentConfigInput> for AgentConfig {
                     model: k8s.spec.model,
                     provider: k8s.spec.provider,
                     tools: k8s.spec.tools,
+                    mcp_servers: k8s.spec.mcp_servers,
                     memory: k8s.spec.memory,
                     max_iterations: k8s.spec.max_iterations,
                     temperature: k8s.spec.temperature,
@@ -450,5 +462,66 @@ mod tests {
 
         assert_eq!(deserialized.name, "test");
         assert_eq!(deserialized.capabilities.len(), 2);
+    }
+
+    #[test]
+    fn test_agent_config_with_mcp_servers() {
+        let yaml = r#"
+            name: mcp-agent
+            model: gpt-4
+            mcp_servers:
+              - name: filesystem
+                transport: stdio
+                command: npx
+                args:
+                  - "@anthropic-ai/mcp-server-fs"
+                env:
+                  MCP_FS_ROOT: /workspace
+              - name: remote
+                transport: sse
+                endpoint: http://localhost:3000/mcp
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.name, "mcp-agent");
+        assert_eq!(config.mcp_servers.len(), 2);
+
+        // Check first server (stdio)
+        let fs_server = &config.mcp_servers[0];
+        assert_eq!(fs_server.name, "filesystem");
+        assert_eq!(fs_server.transport, crate::mcp::McpTransport::Stdio);
+        assert_eq!(fs_server.command, Some("npx".to_string()));
+        assert_eq!(fs_server.args.len(), 1);
+        assert!(fs_server.env.contains_key("MCP_FS_ROOT"));
+
+        // Check second server (sse)
+        let remote_server = &config.mcp_servers[1];
+        assert_eq!(remote_server.name, "remote");
+        assert_eq!(remote_server.transport, crate::mcp::McpTransport::Sse);
+        assert_eq!(remote_server.endpoint, Some("http://localhost:3000/mcp".to_string()));
+    }
+
+    #[test]
+    fn test_agent_config_k8s_style_with_mcp_servers() {
+        let yaml = r#"
+            apiVersion: aof.dev/v1
+            kind: Agent
+            metadata:
+              name: k8s-mcp-agent
+              labels:
+                env: test
+            spec:
+              model: claude-3-5-sonnet
+              instructions: Test agent with MCP
+              mcp_servers:
+                - name: tools
+                  command: ./my-mcp-server
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.name, "k8s-mcp-agent");
+        assert_eq!(config.mcp_servers.len(), 1);
+        assert_eq!(config.mcp_servers[0].name, "tools");
+        assert_eq!(config.mcp_servers[0].command, Some("./my-mcp-server".to_string()));
     }
 }

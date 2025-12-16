@@ -288,6 +288,7 @@ mod tests {
                     role: MessageRole::User,
                     content: "Hello".to_string(),
                     tool_calls: None,
+                    tool_call_id: None,
                 },
             ],
             system: Some("You are a helpful assistant.".to_string()),
