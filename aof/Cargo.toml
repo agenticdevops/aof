@@ -63,6 +63,9 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 # Date/Time
 chrono = { version = "0.4", features = ["serde"] }
 
+# Random
+rand = "0.8"
+
 # Internal workspace dependencies
 aof-core = { path = "crates/aof-core" }
 aof-mcp = { path = "crates/aof-mcp" }

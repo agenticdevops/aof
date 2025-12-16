@@ -42,6 +42,12 @@ pub enum AofError {
     #[error("Workflow error: {0}")]
     Workflow(String),
 
+    #[error("Fleet error: {0}")]
+    Fleet(String),
+
+    #[error("Runtime error: {0}")]
+    Runtime(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
@@ -83,6 +89,16 @@ impl AofError {
     /// Create a workflow error
     pub fn workflow(msg: impl Into<String>) -> Self {
         Self::Workflow(msg.into())
+    }
+
+    /// Create a fleet error
+    pub fn fleet(msg: impl Into<String>) -> Self {
+        Self::Fleet(msg.into())
+    }
+
+    /// Create a runtime error
+    pub fn runtime(msg: impl Into<String>) -> Self {
+        Self::Runtime(msg.into())
     }
 }
 

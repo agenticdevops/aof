@@ -6,6 +6,7 @@
 pub mod agent;
 pub mod error;
 pub mod error_tracker;
+pub mod fleet;
 pub mod mcp;
 pub mod memory;
 pub mod model;
@@ -34,6 +35,13 @@ pub use workflow::{
     ParallelBranch, RecoveryConfig, ReducerType, RetryConfig, StateReducer, StateSchema, StepConfig,
     StepResult, StepStatus, StepType, TerminalStatus, ValidatorType, Workflow, WorkflowConfigInput,
     WorkflowError, WorkflowMetadata, WorkflowSpec, WorkflowState, WorkflowStatus, WorkflowStep,
+};
+pub use fleet::{
+    AgentFleet, AgentInstanceState, AgentInstanceStatus, AgentRole, CoordinationConfig,
+    CoordinationMode, ConsensusConfig, ConsensusAlgorithm, FleetAgent, FleetAgentSpec,
+    FleetMetadata, FleetMetrics, FleetSpec, FleetState, FleetStatus, FleetTask, FleetTaskStatus,
+    SharedResources, SharedMemoryConfig, SharedMemoryType, CommunicationConfig, MessagePattern,
+    TaskDistribution, ScalingConfig,
 };
 
 /// Version information

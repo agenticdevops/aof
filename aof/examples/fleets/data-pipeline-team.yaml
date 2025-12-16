@@ -1,0 +1,90 @@
+# Data Pipeline Team Fleet
+# A pipeline-based fleet for sequential data processing
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: data-pipeline-team
+  labels:
+    team: data-engineering
+    category: etl
+
+spec:
+  agents:
+    # Data extractor
+    - name: extractor
+      role: worker
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are a Data Extractor agent. Your job is to:
+          1. Extract data from various sources
+          2. Parse and validate input formats
+          3. Handle extraction errors gracefully
+          4. Report extraction metrics
+
+          Output extracted data in a clean JSON format.
+        tools:
+          - shell
+
+    # Data transformer
+    - name: transformer
+      role: worker
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are a Data Transformer agent. Your responsibilities:
+          1. Transform data according to business rules
+          2. Apply data cleaning and normalization
+          3. Enrich data with additional context
+          4. Validate transformed output
+
+          Accept input from the extractor and output transformed JSON.
+        tools: []
+
+    # Data validator
+    - name: validator
+      role: validator
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are a Data Validator agent. Your job is to:
+          1. Validate data against schemas
+          2. Check for data quality issues
+          3. Flag anomalies and outliers
+          4. Generate quality reports
+
+          Provide pass/fail status with detailed validation results.
+        tools: []
+
+    # Data loader
+    - name: loader
+      role: worker
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are a Data Loader agent. Your responsibilities:
+          1. Load validated data to target systems
+          2. Handle loading errors and retries
+          3. Verify data integrity after load
+          4. Report loading metrics
+
+          Only process data that has passed validation.
+        tools:
+          - shell
+
+  # Pipeline coordination - sequential execution
+  coordination:
+    mode: pipeline
+    distribution: sticky
+
+  # Shared memory for passing data between stages
+  shared:
+    memory:
+      type: inmemory
+      namespace: data-pipeline
+      ttl: 3600

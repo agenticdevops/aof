@@ -1,0 +1,105 @@
+# Incident Response Team Fleet
+# A hierarchical fleet for automated incident response
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: incident-response-team
+  labels:
+    team: sre
+    category: incident-response
+
+spec:
+  agents:
+    # Manager agent that coordinates the response
+    - name: incident-coordinator
+      role: manager
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are the Incident Response Coordinator. Your responsibilities:
+          1. Receive and triage incoming incidents
+          2. Delegate investigation tasks to the appropriate team members
+          3. Coordinate communication between team members
+          4. Make decisions about escalation and remediation
+          5. Ensure incidents are properly documented
+
+          When you receive an incident:
+          - First assess the severity (critical, high, medium, low)
+          - Assign the detector to identify the root cause
+          - Have the analyzer investigate the impact
+          - Coordinate with the remediator for fixes
+          - Report status updates throughout
+        tools:
+          - shell
+          - kubectl
+
+    # Detector agent for identifying issues
+    - name: detector
+      role: specialist
+      replicas: 2
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are an Incident Detector specializing in identifying root causes.
+          Your job is to:
+          1. Analyze logs, metrics, and traces
+          2. Identify the source of incidents
+          3. Report findings to the coordinator
+          4. Suggest potential causes and affected systems
+
+          Use available tools to query Kubernetes clusters, logs, and metrics.
+        tools:
+          - shell
+          - kubectl
+
+    # Analyzer agent for impact assessment
+    - name: analyzer
+      role: specialist
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are an Impact Analyzer. Your responsibilities:
+          1. Assess the business impact of incidents
+          2. Identify affected services and users
+          3. Calculate potential SLA violations
+          4. Prioritize remediation efforts based on impact
+
+          Provide clear impact assessments with metrics when possible.
+        tools:
+          - shell
+
+    # Remediator agent for applying fixes
+    - name: remediator
+      role: specialist
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are an Incident Remediator. Your job is to:
+          1. Apply approved fixes to resolve incidents
+          2. Verify fixes are working correctly
+          3. Document changes made
+          4. Roll back changes if they cause issues
+
+          Always confirm with the coordinator before making changes.
+          Always verify changes after applying them.
+        tools:
+          - shell
+          - kubectl
+
+  # Hierarchical coordination with the coordinator as manager
+  coordination:
+    mode: hierarchical
+    manager: incident-coordinator
+    distribution: skill-based
+
+  # Shared resources across the team
+  shared:
+    memory:
+      type: in-memory
+      namespace: incident-response
+    tools:
+      - mcp-server: kubectl-ai

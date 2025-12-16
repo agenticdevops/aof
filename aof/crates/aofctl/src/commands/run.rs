@@ -59,6 +59,7 @@ pub async fn execute(
     match rt {
         ResourceType::Agent => run_agent(name_or_config, input, output).await,
         ResourceType::Workflow => run_workflow(name_or_config, input, output).await,
+        ResourceType::Fleet => run_fleet(name_or_config, input, output).await,
         ResourceType::Job => run_job(name_or_config, input, output).await,
         _ => {
             anyhow::bail!("Resource type '{}' cannot be run directly", resource_type)
@@ -841,5 +842,121 @@ async fn run_job(name_or_config: &str, input: Option<&str>, output: &str) -> Res
         println!("Input: {}", inp);
     }
     println!("Output format: {}", output);
+    Ok(())
+}
+
+/// Run a fleet with configuration
+async fn run_fleet(config_path: &str, input: Option<&str>, output: &str) -> Result<()> {
+    use aof_runtime::fleet::{FleetCoordinator, FleetEvent};
+    use tokio::sync::mpsc;
+
+    info!("Loading fleet from: {}", config_path);
+
+    // Create fleet coordinator from file
+    let mut coordinator = FleetCoordinator::from_file(config_path)
+        .await
+        .context("Failed to load fleet")?;
+
+    // Parse input
+    let task_input: serde_json::Value = if let Some(inp) = input {
+        serde_json::from_str(inp).unwrap_or_else(|_| serde_json::json!({ "input": inp }))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Create event channel for monitoring
+    let (event_tx, mut event_rx) = mpsc::channel(100);
+    let coordinator = coordinator.with_event_channel(event_tx);
+
+    // Start the fleet
+    let mut coordinator = coordinator;
+    coordinator.start().await.context("Failed to start fleet")?;
+
+    // Submit task
+    let task_id = coordinator
+        .submit_task(task_input.clone())
+        .await
+        .context("Failed to submit task")?;
+    println!("Task submitted: {}", task_id);
+
+    // Collect events
+    let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+
+    // Spawn event collector
+    let event_collector = tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            events_clone.lock().unwrap().push(event);
+        }
+    });
+
+    // Execute the task (execute_next processes the queued task)
+    let task_result = coordinator
+        .execute_next()
+        .await
+        .context("Failed to execute task")?;
+
+    let result = task_result
+        .map(|t| t.result.unwrap_or_default())
+        .unwrap_or_default();
+
+    // Stop fleet
+    coordinator.stop().await.context("Failed to stop fleet")?;
+
+    // Wait briefly for events to be collected
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    drop(event_collector);
+
+    // Output result
+    match output {
+        "json" => {
+            let output = serde_json::json!({
+                "task_id": task_id,
+                "status": "Completed",
+                "result": result
+            });
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        }
+        "yaml" => {
+            let output = serde_json::json!({
+                "task_id": task_id,
+                "status": "Completed",
+                "result": result
+            });
+            println!("{}", serde_yaml::to_string(&output)?);
+        }
+        "text" | _ => {
+            println!("Task ID: {}", task_id);
+            println!("Status: Completed");
+            println!("Result: {}", serde_json::to_string_pretty(&result)?);
+        }
+    }
+
+    // Print events
+    let collected_events = events.lock().unwrap();
+    for event in collected_events.iter() {
+        match event {
+            FleetEvent::AgentStarted { agent_name, instance_id } => {
+                println!("[AGENT] Started: {} ({})", agent_name, instance_id);
+            }
+            FleetEvent::Started { fleet_name, agent_count } => {
+                println!("[FLEET] Started: {} with {} agents", fleet_name, agent_count);
+            }
+            FleetEvent::TaskSubmitted { task_id } => {
+                println!("[TASK] Submitted: {}", task_id);
+            }
+            FleetEvent::ConsensusReached { task_id, votes, .. } => {
+                println!("[CONSENSUS] Reached for task {} with {} votes", task_id, votes);
+            }
+            FleetEvent::Stopped { fleet_name } => {
+                println!("[FLEET] Stopped: {}", fleet_name);
+            }
+            FleetEvent::Error { message } => {
+                println!("[ERROR] {}", message);
+            }
+            _ => {}
+        }
+    }
+
     Ok(())
 }

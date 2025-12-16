@@ -8,6 +8,7 @@
 //! - Task orchestration
 
 pub mod executor;
+pub mod fleet;
 pub mod orchestrator;
 pub mod task;
 
@@ -15,6 +16,7 @@ pub use executor::{
     AgentExecutor, ApprovalDecision, HumanInput, Runtime, StreamEvent, WorkflowEvent,
     WorkflowExecutor,
 };
+pub use fleet::{FleetCoordinator, FleetEvent};
 pub use orchestrator::RuntimeOrchestrator;
 pub use task::{Task, TaskHandle, TaskStatus};
 

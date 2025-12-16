@@ -1,0 +1,25 @@
+# Simple Test Fleet
+# A minimal fleet for testing the AgentFleet functionality
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: simple-test-fleet
+  labels:
+    purpose: testing
+
+spec:
+  agents:
+    - name: assistant
+      role: worker
+      replicas: 1
+      spec:
+        model: openai:gpt-4o-mini
+        instructions: |
+          You are a helpful assistant. Answer questions concisely and accurately.
+          Keep responses brief - under 100 words.
+        tools: []
+
+  coordination:
+    mode: peer
+    distribution: round-robin
