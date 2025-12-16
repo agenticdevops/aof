@@ -1,0 +1,30 @@
+# From docs/user/CLI_REFERENCE.md - Daemon Configuration
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: production
+
+spec:
+  server:
+    port: 8080
+    host: 0.0.0.0
+    cors: true
+    timeout_secs: 30
+
+  platforms:
+    slack:
+      enabled: true
+      bot_token_env: SLACK_BOT_TOKEN
+      signing_secret_env: SLACK_SIGNING_SECRET
+
+    telegram:
+      enabled: true
+      bot_token_env: TELEGRAM_BOT_TOKEN
+
+  agents:
+    directory: ./agents/
+    watch: true
+
+  runtime:
+    max_concurrent_tasks: 10
+    task_timeout_secs: 300

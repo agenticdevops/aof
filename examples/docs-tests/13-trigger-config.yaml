@@ -1,0 +1,11 @@
+# From docs/user/FEATURES.md - Trigger Example
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: slack-incident
+spec:
+  platform: slack
+  config:
+    token: "${SLACK_BOT_TOKEN}"
+    channels: ["#incidents"]
+  agent: incident-responder

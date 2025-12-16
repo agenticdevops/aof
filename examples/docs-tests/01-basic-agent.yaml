@@ -1,0 +1,16 @@
+# From docs/user/FEATURES.md - Basic Agent Configuration
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: my-agent
+  labels:
+    team: platform
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are a helpful assistant.
+  tools:
+    - shell
+    - read_file
+  max_iterations: 20
+  temperature: 0.3

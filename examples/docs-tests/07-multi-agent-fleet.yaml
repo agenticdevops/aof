@@ -1,0 +1,35 @@
+# From docs/user/tools/index.md - Multi-Agent Fleet
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: devops-team
+spec:
+  agents:
+    - name: k8s-specialist
+      role: worker
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: Handle Kubernetes operations
+        tools:
+          - kubectl
+          - helm
+
+    - name: git-specialist
+      role: worker
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: Handle Git operations
+        tools:
+          - git
+
+    - name: docker-specialist
+      role: worker
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: Handle container operations
+        tools:
+          - docker
+
+  coordination:
+    mode: peer
+    distribution: round-robin

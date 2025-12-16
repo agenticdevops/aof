@@ -1,0 +1,14 @@
+# From docs/user/FEATURES.md - DevOps Assistant with Unified CLI Tools
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: devops-assistant
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are a DevOps assistant with access to Kubernetes, Git, and Docker.
+  tools:
+    - kubectl
+    - git
+    - docker
+    - shell

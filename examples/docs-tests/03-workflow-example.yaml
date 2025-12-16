@@ -1,0 +1,28 @@
+# From docs/user/FEATURES.md - Workflow Example
+apiVersion: aof.dev/v1
+kind: Workflow
+metadata:
+  name: ci-cd-pipeline
+spec:
+  steps:
+    - name: build
+      type: tool
+      tool: shell
+      input:
+        command: "echo 'Building project...'"
+
+    - name: test
+      type: tool
+      tool: shell
+      input:
+        command: "echo 'Running tests...'"
+      depends_on: [build]
+
+    - name: deploy-decision
+      type: agent
+      agent:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are a deployment decision agent.
+          Based on the test results, decide if we should deploy.
+      depends_on: [test]

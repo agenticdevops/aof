@@ -1,0 +1,34 @@
+# Test Agent with Unified CLI Tools
+# Uses the new simplified approach where LLM constructs commands
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: unified-tools-test
+  labels:
+    purpose: testing
+    provider: google
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are a helpful DevOps assistant with access to unified CLI tools.
+
+    You have access to:
+    - git: Run any git command (e.g., git status, git log)
+    - shell: Run shell commands
+    - list_directory: List directory contents
+    - read_file: Read file contents
+
+    When using tools, provide the command without the tool prefix.
+    For example, use {"command": "status"} for git status.
+
+    Keep responses concise and explain what you did.
+
+  tools:
+    - git           # Unified git tool - can run any git command
+    - shell         # Shell commands
+    - list_directory
+    - read_file
+
+  max_iterations: 5
+  temperature: 0.3

@@ -1,0 +1,21 @@
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: gemini-tools-test
+  labels:
+    purpose: testing
+    provider: google
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are a helpful DevOps assistant with access to shell commands and file operations.
+    When asked to do something, use the appropriate tools.
+    Keep responses concise and explain what you did.
+
+  tools:
+    - shell
+    - read_file
+    - list_directory
+
+  max_iterations: 5
+  temperature: 0.3

@@ -1,0 +1,16 @@
+# From docs/user/tools/index.md - Infrastructure Agent
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: infra-agent
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are an infrastructure automation specialist.
+    Help manage cloud resources and Terraform configurations.
+  tools:
+    - terraform
+    - aws
+    - shell
+    - read_file
+    - write_file

@@ -1,0 +1,89 @@
+# Code Review Team Fleet
+# A peer-based fleet for collaborative code review with consensus
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: code-review-team
+  labels:
+    team: engineering
+    category: code-quality
+
+spec:
+  agents:
+    # Security reviewer
+    - name: security-reviewer
+      role: worker
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are a Security Code Reviewer. Focus on:
+          1. Authentication and authorization issues
+          2. Input validation and sanitization
+          3. SQL injection, XSS, and CSRF vulnerabilities
+          4. Secrets and credential handling
+          5. Dependency vulnerabilities
+          6. Security best practices
+
+          Provide specific line references and severity ratings for issues.
+        tools:
+          - git         # Unified git tool for all git operations
+          - read_file
+
+    # Performance reviewer
+    - name: performance-reviewer
+      role: worker
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are a Performance Code Reviewer. Focus on:
+          1. Algorithmic complexity (Big O)
+          2. Memory usage and leaks
+          3. Database query optimization
+          4. Caching opportunities
+          5. Async/concurrent operation handling
+          6. Resource cleanup
+
+          Suggest optimizations with before/after comparisons when possible.
+        tools:
+          - git         # Unified git tool for all git operations
+          - read_file
+
+    # Code quality reviewer
+    - name: quality-reviewer
+      role: worker
+      replicas: 1
+      spec:
+        model: openai:gpt-4o
+        instructions: |
+          You are a Code Quality Reviewer. Focus on:
+          1. Code readability and maintainability
+          2. SOLID principles adherence
+          3. Design patterns usage
+          4. Error handling
+          5. Test coverage
+          6. Documentation quality
+
+          Provide constructive feedback with examples of improvements.
+        tools:
+          - git         # Unified git tool for all git operations
+          - read_file
+
+  # Peer coordination with consensus voting
+  coordination:
+    mode: peer
+    distribution: round-robin
+    consensus:
+      algorithm: majority
+      min_votes: 2
+      timeout_ms: 60000
+      allow_partial: true
+
+  # Communication pattern for collaborative review
+  communication:
+    pattern: broadcast
+    broadcast:
+      channel: code-review
+      include_sender: false

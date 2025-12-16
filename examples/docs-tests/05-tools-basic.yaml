@@ -1,0 +1,18 @@
+# From docs/user/tools/index.md - Basic DevOps Agent
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: devops-assistant
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are a helpful DevOps assistant with access to Kubernetes,
+    Git, Docker, and Terraform. Help users manage their infrastructure.
+  tools:
+    - kubectl    # Any kubectl command
+    - git        # Any git command
+    - docker     # Any docker command
+    - terraform  # Any terraform command
+    - aws        # Any AWS CLI command
+    - helm       # Any helm command
+    - shell      # General shell commands

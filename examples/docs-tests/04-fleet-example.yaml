@@ -1,0 +1,31 @@
+# From docs/user/FEATURES.md - AgentFleet Example
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: incident-response-team
+spec:
+  agents:
+    - name: triage-agent
+      role: manager
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          Coordinate incident response...
+        tools:
+          - kubectl
+          - shell
+
+    - name: log-analyzer
+      role: worker
+      replicas: 2
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          Analyze logs for errors...
+        tools:
+          - kubectl
+          - shell
+
+  coordination:
+    mode: hierarchical
+    manager: triage-agent

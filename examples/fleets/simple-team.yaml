@@ -1,0 +1,42 @@
+# Simple Team Fleet for testing
+# A basic peer fleet with two agents
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: simple-team
+  labels:
+    category: testing
+
+spec:
+  agents:
+    # Researcher agent
+    - name: researcher
+      role: worker
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are a researcher who investigates questions.
+          When given a task, research it and provide findings.
+          Keep responses concise and factual.
+        tools:
+          - shell
+
+    # Summarizer agent
+    - name: summarizer
+      role: worker
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are a summarizer who takes research and creates summaries.
+          When given findings, create a clear and concise summary.
+          Focus on the key points.
+        tools:
+          - shell
+
+  # Peer coordination - agents collaborate
+  coordination:
+    mode: peer
+    distribution: round-robin

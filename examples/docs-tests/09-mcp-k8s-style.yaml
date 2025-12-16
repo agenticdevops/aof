@@ -1,0 +1,21 @@
+# From docs/user/MCP_CONFIGURATION.md - Kubernetes-Style MCP Configuration
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: k8s-ops-agent
+  labels:
+    environment: production
+
+spec:
+  model: google:gemini-2.5-flash
+
+  instructions: |
+    You are a Kubernetes operations assistant.
+
+  mcp_servers:
+    - name: kubectl-ai
+      transport: stdio
+      command: kubectl-ai
+      args:
+        - "--mcp-server"
+        - "--mcp-server-mode=stdio"
