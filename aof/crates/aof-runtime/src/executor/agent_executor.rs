@@ -276,6 +276,7 @@ impl AgentExecutor {
                 role: MessageRole::Assistant,
                 content: iteration_content.clone(),
                 tool_calls: None,
+                tool_call_id: None,
             };
 
             if !tool_calls_buffer.is_empty() {
@@ -367,6 +368,7 @@ impl AgentExecutor {
                             content: serde_json::to_string(&result.data)
                                 .unwrap_or_else(|_| "{}".to_string()),
                             tool_calls: None,
+                            tool_call_id: Some(tool_call.id.clone()),
                         };
                         ctx.messages.push(tool_msg);
                     }
@@ -521,6 +523,7 @@ impl AgentExecutor {
                 role: MessageRole::Assistant,
                 content: response.content.clone(),
                 tool_calls: None,
+                tool_call_id: None,
             };
 
             if !response.tool_calls.is_empty() {
@@ -605,6 +608,7 @@ impl AgentExecutor {
                             content: serde_json::to_string(&result.data)
                                 .unwrap_or_else(|_| "{}".to_string()),
                             tool_calls: None,
+                            tool_call_id: Some(tool_call.id.clone()),
                         };
                         context.messages.push(tool_msg);
                     }
@@ -652,6 +656,7 @@ impl AgentExecutor {
                 },
                 content: m.content.clone(),
                 tool_calls: m.tool_calls.clone(),
+                tool_call_id: m.tool_call_id.clone(),
             })
             .collect();
 

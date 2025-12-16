@@ -59,6 +59,9 @@ pub struct Message {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<crate::ToolCall>>,
+    /// Tool call ID (required for Tool role messages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 /// Message role
@@ -114,6 +117,7 @@ impl AgentContext {
             role,
             content: content.into(),
             tool_calls: None,
+            tool_call_id: None,
         });
     }
 
