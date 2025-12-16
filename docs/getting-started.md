@@ -26,7 +26,7 @@ Choose your preferred method:
 #### Option A: Binary Download (Recommended)
 ```bash
 # Detect your platform and install
-curl -sSL https://aof.dev/install.sh | bash
+curl -sSL https://docs.aof.sh/install.sh | bash
 
 # Verify installation
 aofctl version
@@ -42,7 +42,7 @@ aofctl version
 
 #### Option C: Build from Source
 ```bash
-git clone https://github.com/yourusername/aof.git
+git clone https://github.com/agenticdevops/aof.git
 cd aof
 cargo build --release
 sudo cp target/release/aofctl /usr/local/bin/
@@ -191,10 +191,10 @@ Check your provider:model format:
 
 ## Getting Help
 
-- **Documentation**: Full docs at [https://aof.dev/docs](https://aof.dev/docs)
+- **Documentation**: Full docs at [https://docs.aof.sh](https://docs.aof.sh)
 - **Examples**: Check [docs/examples/](examples/) for copy-paste configs
-- **Issues**: Report bugs at [GitHub Issues](https://github.com/yourusername/aof/issues)
-- **Discussions**: Ask questions in [GitHub Discussions](https://github.com/yourusername/aof/discussions)
+- **Issues**: Report bugs at [GitHub Issues](https://github.com/agenticdevops/aof/issues)
+- **Discussions**: Ask questions in [GitHub Discussions](https://github.com/agenticdevops/aof/discussions)
 
 ---
 

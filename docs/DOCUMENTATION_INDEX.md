@@ -198,8 +198,8 @@ See [Examples README](examples/README.md#contributing-examples) for guidelines.
 1. **Check documentation** - Search this index
 2. **Review examples** - See [examples/](examples/)
 3. **Troubleshooting** - Check each tutorial's troubleshooting section
-4. **GitHub Issues** - [Report bugs or request features](https://github.com/yourusername/aof/issues)
-5. **Discussions** - [Ask questions](https://github.com/yourusername/aof/discussions)
+4. **GitHub Issues** - [Report bugs or request features](https://github.com/agenticdevops/aof/issues)
+5. **Discussions** - [Ask questions](https://github.com/agenticdevops/aof/discussions)
 
 ## 📊 Documentation Coverage
 
