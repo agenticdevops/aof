@@ -93,7 +93,7 @@ impl OpenAIModel {
                         })
                         .collect()
                 }),
-                tool_call_id: None,
+                tool_call_id: m.tool_call_id.clone(),
             }));
             msgs
         } else {
@@ -123,7 +123,7 @@ impl OpenAIModel {
                             })
                             .collect()
                     }),
-                    tool_call_id: None,
+                    tool_call_id: m.tool_call_id.clone(),
                 })
                 .collect()
         };
