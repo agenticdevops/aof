@@ -147,6 +147,99 @@ aofctl flow run weekly-summary-report --daemon
 
 ---
 
+## AgentFleet Examples
+
+AgentFleet enables multi-agent coordination for complex tasks. Here are production-ready fleet configurations:
+
+### 6. Kubernetes RCA Team
+**File:** `examples/fleets/k8s-rca-team.yaml`
+**Use Case:** Root cause analysis for failing Kubernetes pods
+
+**Agents:**
+- **pod-analyzer** - Analyzes pod states and events
+- **log-investigator** - Examines container logs for errors
+- **resource-analyst** - Checks resources and Prometheus metrics
+- **rca-synthesizer** - Combines findings into actionable report
+
+**Features:**
+- kubectl-ai MCP integration for K8s operations
+- Parallel agent execution
+- Consensus-based result aggregation
+- Structured RCA reports
+
+**Quick Start:**
+```bash
+aofctl run fleet examples/fleets/k8s-rca-team.yaml \
+  --input '{"namespace": "production", "issue": "Pods failing with CrashLoopBackOff"}'
+```
+
+---
+
+### 7. Dockerizer Team
+**File:** `examples/fleets/dockerizer-team.yaml`
+**Use Case:** Containerize applications with best practices
+
+**Agents (Pipeline):**
+1. **app-analyzer** - Analyzes app structure, dependencies, runtime
+2. **dockerfile-writer** - Generates optimized multi-stage Dockerfiles
+3. **security-scanner** - Scans for vulnerabilities (8/10 average score)
+4. **dockerfile-reviewer** - Reviews quality and best practices
+5. **compose-writer** - Generates docker-compose for dev/prod
+
+**Features:**
+- Pipeline coordination (sequential stages)
+- Security vulnerability scanning
+- Multi-stage Docker builds
+- Development and production compose files
+
+**Quick Start:**
+```bash
+aofctl run fleet examples/fleets/dockerizer-team.yaml \
+  --input '{"app_name": "my-api", "language": "nodejs", "ports": [3000]}'
+```
+
+**Output includes:**
+- Optimized Dockerfile with security hardening
+- .dockerignore file
+- docker-compose.yml (development)
+- docker-compose.prod.yml (production)
+- .env.example
+
+---
+
+### 8. Code Review Team
+**File:** `examples/fleets/code-review-team.yaml`
+**Use Case:** Comprehensive code review with multiple perspectives
+
+**Agents:**
+- **security-reviewer** - Security vulnerabilities, auth issues
+- **performance-reviewer** - Big O, memory, query optimization
+- **quality-reviewer** - SOLID principles, maintainability
+
+**Features:**
+- Peer coordination with consensus voting
+- Parallel execution for speed
+- Multiple review perspectives
+
+**Quick Start:**
+```bash
+aofctl run fleet examples/fleets/code-review-team.yaml \
+  --input '{"code": "def add(a, b): return a + b", "language": "python"}'
+```
+
+---
+
+### Fleet Coordination Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **peer** | Agents work as equals with consensus | Code review, analysis |
+| **pipeline** | Sequential stages | ETL, containerization |
+| **hierarchical** | Manager coordinates workers | Complex orchestration |
+| **swarm** | Emergent behavior | Exploratory tasks |
+
+---
+
 ## Example Comparison
 
 | Example | Complexity | Best For | Prerequisites |
@@ -156,6 +249,9 @@ aofctl flow run weekly-summary-report --daemon
 | **incident-responder** | ⭐⭐⭐ Advanced | Production ops | PagerDuty, Slack |
 | **slack-bot-flow** | ⭐⭐ Medium | Team automation | Slack app |
 | **daily-report-flow** | ⭐⭐ Medium | Operations reporting | Slack (optional) |
+| **k8s-rca-team** | ⭐⭐⭐ Advanced | K8s troubleshooting | kubectl-ai MCP |
+| **dockerizer-team** | ⭐⭐⭐ Advanced | Containerization | Docker |
+| **code-review-team** | ⭐⭐ Medium | Code reviews | API key |
 
 ---
 
