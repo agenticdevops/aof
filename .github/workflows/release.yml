@@ -60,7 +60,6 @@ jobs:
 
       - name: Build binary
         run: |
-          cd aof
           if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]; then
             cross build --release --target ${{ matrix.target }} --package aofctl
           else
@@ -71,16 +70,16 @@ jobs:
       - name: Calculate SHA256 checksum
         run: |
           if [ "${{ runner.os }}" == "Windows" ]; then
-            certutil -hashfile "aof/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" SHA256 | grep -v "^$" | head -1 > checksum.txt
+            certutil -hashfile "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" SHA256 | grep -v "^$" | head -1 > checksum.txt
           else
-            sha256sum "aof/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" | awk '{print $1}' > checksum.txt
+            sha256sum "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" | awk '{print $1}' > checksum.txt
           fi
         shell: bash
 
       - name: Create release asset directory
         run: |
           mkdir -p release_assets
-          cp "aof/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "release_assets/${{ matrix.asset_name }}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" "release_assets/${{ matrix.asset_name }}"
           cp checksum.txt "release_assets/${{ matrix.asset_name }}.sha256"
         shell: bash
 
