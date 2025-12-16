@@ -1,0 +1,61 @@
+# AOF Daemon Configuration Example
+# This file configures the trigger webhook server for handling
+# messages from Slack, Discord, Telegram, and WhatsApp.
+
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: production
+  labels:
+    environment: production
+
+spec:
+  # Server configuration
+  server:
+    port: 8080
+    host: 0.0.0.0
+    cors: true
+    timeout_secs: 30
+
+  # Platform configurations
+  # Each platform can get credentials from environment variables
+  platforms:
+    slack:
+      enabled: true
+      # Use environment variables for sensitive data
+      bot_token_env: SLACK_BOT_TOKEN
+      signing_secret_env: SLACK_SIGNING_SECRET
+      # Or provide directly (not recommended for production)
+      # bot_token: xoxb-your-token
+      # signing_secret: your-signing-secret
+      app_id: A0123456789
+      bot_user_id: U0123456789
+
+    discord:
+      enabled: false
+      bot_token_env: DISCORD_BOT_TOKEN
+      application_id: "123456789012345678"
+      public_key: "your-public-key"
+
+    telegram:
+      enabled: false
+      bot_token_env: TELEGRAM_BOT_TOKEN
+      webhook_secret: optional-webhook-secret
+
+    whatsapp:
+      enabled: false
+      access_token_env: WHATSAPP_ACCESS_TOKEN
+      verify_token: your-verify-token
+      phone_number_id: "1234567890"
+      app_secret: your-app-secret
+
+  # Agent discovery (load agents from directory)
+  agents:
+    directory: ./agents/
+    watch: true  # Hot reload on changes
+
+  # Runtime configuration
+  runtime:
+    max_concurrent_tasks: 10
+    task_timeout_secs: 300
+    max_tasks_per_user: 3

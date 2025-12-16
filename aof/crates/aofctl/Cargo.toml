@@ -18,6 +18,7 @@ aof-mcp = { workspace = true, features = ["all-transports"] }
 aof-llm = { workspace = true, features = ["all-providers"] }
 aof-runtime = { workspace = true }
 aof-memory = { workspace = true, features = ["all-backends"] }
+aof-triggers = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

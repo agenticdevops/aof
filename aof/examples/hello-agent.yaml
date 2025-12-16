@@ -1,0 +1,9 @@
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: hello-assistant
+spec:
+  model: openai:gpt-4o-mini
+  instructions: |
+    You are a friendly assistant that helps DevOps engineers.
+    Keep responses concise and practical.

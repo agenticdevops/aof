@@ -139,6 +139,25 @@ pub enum Commands {
 
     /// Show version information
     Version,
+
+    /// Start the trigger webhook server (daemon mode)
+    Serve {
+        /// Configuration file (YAML)
+        #[arg(short, long)]
+        config: Option<String>,
+
+        /// Port to listen on (overrides config)
+        #[arg(short, long)]
+        port: Option<u16>,
+
+        /// Host to bind to (overrides config)
+        #[arg(long, default_value = "0.0.0.0")]
+        host: Option<String>,
+
+        /// Directory containing agent YAML files
+        #[arg(long)]
+        agents_dir: Option<String>,
+    },
 }
 
 impl Cli {
@@ -193,6 +212,20 @@ impl Cli {
             Commands::Tools { server, args } => commands::tools::execute(&server, &args).await,
             Commands::Validate { file } => commands::validate::execute(&file).await,
             Commands::Version => commands::version::execute().await,
+            Commands::Serve {
+                config,
+                port,
+                host,
+                agents_dir,
+            } => {
+                commands::serve::execute(
+                    config.as_deref(),
+                    port,
+                    host.as_deref(),
+                    agents_dir.as_deref(),
+                )
+                .await
+            }
         }
     }
 }
