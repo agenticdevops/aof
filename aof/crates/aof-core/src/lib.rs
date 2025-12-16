@@ -6,6 +6,7 @@
 pub mod agent;
 pub mod error;
 pub mod error_tracker;
+pub mod mcp;
 pub mod memory;
 pub mod model;
 pub mod tool;
@@ -17,6 +18,7 @@ pub use agent::{
 };
 pub use error::{AofError, AofResult};
 pub use error_tracker::{ErrorKnowledgeBase, ErrorRecord, ErrorStats};
+pub use mcp::{McpServerConfig, McpTransport};
 pub use memory::{Memory, MemoryBackend, MemoryEntry, MemoryQuery};
 pub use model::{
     Model, ModelConfig, ModelProvider, ModelRequest, ModelResponse, RequestMessage, StopReason,

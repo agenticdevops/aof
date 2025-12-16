@@ -1,0 +1,19 @@
+# Simple kubectl agent for testing MCP integration
+name: kubectl-agent
+model: openai:gpt-4o
+
+instructions: |
+  You are a Kubernetes assistant. Use the kubectl tools to help users.
+  When asked about pods, use the kubectl tool to list them.
+
+mcp_servers:
+  - name: kubectl-ai
+    transport: stdio
+    command: kubectl-ai
+    args:
+      - "--mcp-server"
+      - "--mcp-server-mode=stdio"
+    timeout_secs: 120
+
+max_iterations: 5
+temperature: 0.3

@@ -241,6 +241,7 @@ impl TriggerHandler {
                                 model: "claude-3-5-sonnet-20241022".to_string(),
                                 provider: None,
                                 tools: vec![],
+                                mcp_servers: vec![],
                                 memory: None,
                                 max_iterations: 10,
                                 temperature: 0.7,
