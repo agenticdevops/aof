@@ -124,13 +124,14 @@ kind: Agent
 metadata:
   name: k8s-helper
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
   instructions: |
     You are a Kubernetes expert assistant. Help users run kubectl commands
     and troubleshoot their clusters. Always explain what commands do before running them.
 
   tools:
     - shell
+    - kubectl
 ```
 
 Save this as `k8s-agent.yaml` and run:
