@@ -430,5 +430,5 @@ aofctl serve --config daemon.yaml
 ## See Also
 
 - [MCP Configuration Guide](./MCP_CONFIGURATION.md)
-- [Agent Configuration](./AGENT_CONFIGURATION.md)
-- [Project Status](../PROJECT_STATUS.md)
+- [Features Overview](./FEATURES.md)
+- [Architecture](../dev/ARCHITECTURE.md)

@@ -379,6 +379,6 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 ## See Also
 
-- [Agent Configuration](./AGENT_CONFIGURATION.md)
+- [Features Overview](./FEATURES.md)
 - [CLI Reference](./CLI_REFERENCE.md)
 - [MCP Protocol Specification](https://spec.modelcontextprotocol.io/)

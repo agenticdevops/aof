@@ -560,6 +560,6 @@ spec:
 
 ## See Also
 
-- [CLI Reference](./CLI_REFERENCE.md)
-- [MCP Configuration](./MCP_CONFIGURATION.md)
-- [AgentFleet Design](./AGENTFLEET_DESIGN.md) (coming soon)
+- [CLI Reference](../user/CLI_REFERENCE.md)
+- [MCP Configuration](../user/MCP_CONFIGURATION.md)
+- [Architecture](./ARCHITECTURE.md)

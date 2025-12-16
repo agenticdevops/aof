@@ -321,4 +321,4 @@ cargo test --test integration       # Integration tests
 4. Ensure `cargo test` passes
 5. Submit PR against `dev` branch
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for full guidelines.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for full guidelines.

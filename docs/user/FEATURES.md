@@ -233,7 +233,7 @@ spec:
 - `unanimous` - All agents must agree
 - `weighted` - Weighted by agent role
 
-Full documentation: [docs/AGENTFLOW_DESIGN.md](AGENTFLOW_DESIGN.md)
+Full documentation: [AgentFlow Design](../dev/AGENTFLOW_DESIGN.md)
 
 ---
 
@@ -402,7 +402,7 @@ model: ollama:llama3.2
 model: groq:llama-3.2-90b-text-preview
 ```
 
-Full documentation: [crates/aof-llm/docs/PROVIDERS.md](../crates/aof-llm/docs/PROVIDERS.md)
+See the [Getting Started Guide](../getting-started.md) for provider setup.
 
 ---
 
@@ -518,8 +518,8 @@ See the `examples/` directory for:
 
 ## Contributing
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](../dev/CONTRIBUTING.md) for guidelines.
 
 ## License
 
-Apache 2.0 - See [LICENSE](../LICENSE)
+Apache 2.0 - See the LICENSE file in the repository root.
