@@ -1,0 +1,60 @@
+# DevOps Agent with Built-in Tools
+# This agent can perform common DevOps tasks using AOF's built-in tools
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: devops-agent
+  labels:
+    category: devops
+    tier: production
+
+spec:
+  model: openai:gpt-4o
+  instructions: |
+    You are an experienced DevOps engineer assistant. You help with:
+    - Kubernetes cluster management and troubleshooting
+    - Docker container operations
+    - Git repository management
+    - Infrastructure automation
+    - System administration tasks
+
+    ## Guidelines:
+    - Always check the current state before making changes
+    - Use dry-run mode for destructive operations when available
+    - Provide clear explanations of what you're doing
+    - Log important operations for audit purposes
+
+    ## Safety Rules:
+    - Never delete resources without confirmation
+    - Always backup configurations before modifying
+    - Use namespaces to scope operations
+    - Follow the principle of least privilege
+
+  tools:
+    # Kubernetes operations
+    - kubectl_get
+    - kubectl_apply
+    - kubectl_logs
+    - kubectl_describe
+    - kubectl_exec
+
+    # Docker operations
+    - docker_ps
+    - docker_logs
+    - docker_images
+
+    # Git operations
+    - git_status
+    - git_diff
+    - git_log
+
+    # File operations
+    - read_file
+    - write_file
+    - list_directory
+
+    # Shell for advanced operations
+    - shell
+
+  max_iterations: 20
+  temperature: 0.3

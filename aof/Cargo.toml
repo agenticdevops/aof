@@ -7,6 +7,7 @@ members = [
     "crates/aof-runtime",
     "crates/aof-memory",
     "crates/aof-triggers",
+    "crates/aof-tools",
     "crates/aofctl",
     "crates/smoke-test-mcp",
     "crates/test-trigger-server",
@@ -73,6 +74,11 @@ aof-llm = { path = "crates/aof-llm" }
 aof-runtime = { path = "crates/aof-runtime" }
 aof-memory = { path = "crates/aof-memory" }
 aof-triggers = { path = "crates/aof-triggers" }
+aof-tools = { path = "crates/aof-tools" }
+
+# File utilities
+glob = "0.3"
+which = "6.0"
 
 [profile.release]
 opt-level = 3

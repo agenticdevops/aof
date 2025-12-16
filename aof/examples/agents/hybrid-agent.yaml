@@ -1,0 +1,69 @@
+# Hybrid Agent Example - Using both Built-in and MCP tools
+# Demonstrates the unified ToolSpec format with configuration options
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: hybrid-agent
+  labels:
+    category: devops
+    tier: production
+
+spec:
+  model: openai:gpt-4o
+  instructions: |
+    You are a DevOps engineer with access to both built-in AOF tools
+    and MCP-based tools. Use the appropriate tool for each task.
+
+    ## Available Tool Categories:
+    - Built-in: kubectl, docker, git, shell (fast, low latency)
+    - MCP: GitHub API (advanced features via MCP server)
+
+    ## Guidelines:
+    - Use built-in tools for common operations
+    - Use MCP tools for advanced features not in built-in set
+    - Always verify operations before making changes
+
+  tools:
+    # Simple built-in tools (string format)
+    - kubectl_get
+    - kubectl_logs
+    - docker_ps
+    - git_status
+
+    # Built-in tool with custom configuration
+    - name: shell
+      source: builtin
+      config:
+        blocked_commands:
+          - "rm -rf /"
+          - "mkfs"
+          - "dd if=/dev"
+        timeout_secs: 30
+
+    # Built-in tool with timeout override
+    - name: kubectl_exec
+      source: builtin
+      timeout_secs: 120  # Longer timeout for exec operations
+
+    # MCP tool referencing server below
+    - name: search_code
+      source: mcp
+      server: github
+      config:
+        max_results: 20
+
+    - name: create_issue
+      source: mcp
+      server: github
+
+  # MCP servers for tools that reference them
+  mcp_servers:
+    - name: github
+      transport: stdio
+      command: npx
+      args: ["@modelcontextprotocol/server-github"]
+      env:
+        GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+  max_iterations: 25
+  temperature: 0.3

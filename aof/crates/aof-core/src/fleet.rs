@@ -110,8 +110,9 @@ pub struct FleetAgentSpec {
     pub instructions: Option<String>,
 
     /// Tools available to this agent
+    /// Supports both simple strings and qualified specs
     #[serde(default)]
-    pub tools: Vec<String>,
+    pub tools: Vec<crate::agent::ToolSpec>,
 
     /// MCP servers for this agent
     #[serde(default)]

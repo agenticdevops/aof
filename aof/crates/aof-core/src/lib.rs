@@ -16,7 +16,7 @@ pub mod workflow;
 // Re-export core types
 pub use agent::{
     Agent, AgentConfig, AgentContext, AgentMetadata, ExecutionMetadata, Message, MessageRole,
-    ToolResult as AgentToolResult,
+    QualifiedToolSpec, ToolResult as AgentToolResult, ToolSource, ToolSpec,
 };
 pub use error::{AofError, AofResult};
 pub use error_tracker::{ErrorKnowledgeBase, ErrorRecord, ErrorStats};

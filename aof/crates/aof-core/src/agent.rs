@@ -6,6 +6,109 @@ use std::sync::Arc;
 use crate::mcp::McpServerConfig;
 use crate::AofResult;
 
+/// Tool specification - unified way to configure both built-in and MCP tools
+///
+/// Supports multiple formats:
+/// 1. Simple string: `"shell"` - built-in tool with defaults
+/// 2. Object with source: `{name: "kubectl_get", source: "builtin", config: {...}}`
+/// 3. MCP tool: `{name: "read_file", source: "mcp", server: "filesystem"}`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ToolSpec {
+    /// Simple tool name (for backward compatibility)
+    /// Assumes built-in if the tool exists, otherwise tries MCP
+    Simple(String),
+
+    /// Fully qualified tool specification
+    Qualified(QualifiedToolSpec),
+}
+
+impl ToolSpec {
+    /// Get the tool name
+    pub fn name(&self) -> &str {
+        match self {
+            ToolSpec::Simple(name) => name,
+            ToolSpec::Qualified(spec) => &spec.name,
+        }
+    }
+
+    /// Check if this is explicitly a built-in tool
+    pub fn is_builtin(&self) -> bool {
+        match self {
+            ToolSpec::Simple(_) => true, // default to builtin for simple names
+            ToolSpec::Qualified(spec) => spec.source == ToolSource::Builtin,
+        }
+    }
+
+    /// Check if this is explicitly an MCP tool
+    pub fn is_mcp(&self) -> bool {
+        match self {
+            ToolSpec::Simple(_) => false,
+            ToolSpec::Qualified(spec) => spec.source == ToolSource::Mcp,
+        }
+    }
+
+    /// Get the MCP server name (if this is an MCP tool)
+    pub fn mcp_server(&self) -> Option<&str> {
+        match self {
+            ToolSpec::Simple(_) => None,
+            ToolSpec::Qualified(spec) => spec.server.as_deref(),
+        }
+    }
+
+    /// Get tool configuration
+    pub fn config(&self) -> Option<&serde_json::Value> {
+        match self {
+            ToolSpec::Simple(_) => None,
+            ToolSpec::Qualified(spec) => spec.config.as_ref(),
+        }
+    }
+}
+
+/// Fully qualified tool specification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualifiedToolSpec {
+    /// Tool name
+    pub name: String,
+
+    /// Tool source: builtin or mcp
+    #[serde(default)]
+    pub source: ToolSource,
+
+    /// MCP server name (required if source is "mcp")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+
+    /// Tool-specific configuration/arguments
+    /// For built-in tools: default values, restrictions, etc.
+    /// For MCP tools: tool-specific options
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Value>,
+
+    /// Whether the tool is enabled (default: true)
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+
+    /// Timeout override for this specific tool
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+/// Tool source - where the tool comes from
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolSource {
+    /// Built-in AOF tool (Rust implementation)
+    #[default]
+    Builtin,
+    /// MCP server tool
+    Mcp,
+}
+
 /// Core agent trait - the foundation of AOF
 ///
 /// Agents orchestrate models, tools, and memory to accomplish tasks.
@@ -177,9 +280,12 @@ pub struct AgentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
 
-    /// Tools available to agent (simple tool names for backward compatibility)
+    /// Tools available to agent
+    /// Supports both simple strings (backward compatible) and qualified specs
+    /// Simple string: "shell" - uses built-in tool with defaults
+    /// Qualified: {name: "shell", source: "builtin", config: {...}}
     #[serde(default)]
-    pub tools: Vec<String>,
+    pub tools: Vec<ToolSpec>,
 
     /// MCP servers configuration (flexible MCP tool sources)
     /// Each server can use stdio, sse, or http transport
@@ -205,6 +311,23 @@ pub struct AgentConfig {
     /// Custom configuration
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
+}
+
+impl AgentConfig {
+    /// Get all tool names (for backward compatibility)
+    pub fn tool_names(&self) -> Vec<&str> {
+        self.tools.iter().map(|t| t.name()).collect()
+    }
+
+    /// Get built-in tools only
+    pub fn builtin_tools(&self) -> Vec<&ToolSpec> {
+        self.tools.iter().filter(|t| t.is_builtin()).collect()
+    }
+
+    /// Get MCP tools only
+    pub fn mcp_tools(&self) -> Vec<&ToolSpec> {
+        self.tools.iter().filter(|t| t.is_mcp()).collect()
+    }
 }
 
 /// Internal type for flexible config parsing
@@ -244,7 +367,7 @@ struct AgentSpec {
     #[serde(alias = "system_prompt")]
     instructions: Option<String>,
     #[serde(default)]
-    tools: Vec<String>,
+    tools: Vec<ToolSpec>,
     #[serde(default)]
     mcp_servers: Vec<McpServerConfig>,
     memory: Option<String>,
@@ -265,7 +388,7 @@ struct FlatAgentConfig {
     model: String,
     provider: Option<String>,
     #[serde(default)]
-    tools: Vec<String>,
+    tools: Vec<ToolSpec>,
     #[serde(default)]
     mcp_servers: Vec<McpServerConfig>,
     memory: Option<String>,
@@ -413,10 +536,104 @@ mod tests {
         assert_eq!(config.name, "full-agent");
         assert_eq!(config.model, "gpt-4");
         assert_eq!(config.system_prompt, Some("You are a helpful assistant.".to_string()));
-        assert_eq!(config.tools, vec!["read_file", "write_file"]);
+        assert_eq!(config.tool_names(), vec!["read_file", "write_file"]);
         assert_eq!(config.max_iterations, 20);
         assert_eq!(config.temperature, 0.5);
         assert_eq!(config.max_tokens, Some(4096));
+    }
+
+    #[test]
+    fn test_tool_spec_simple() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - shell
+              - kubectl_get
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 2);
+        assert_eq!(config.tools[0].name(), "shell");
+        assert!(config.tools[0].is_builtin());
+        assert!(!config.tools[0].is_mcp());
+    }
+
+    #[test]
+    fn test_tool_spec_qualified_builtin() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - name: shell
+                source: builtin
+                config:
+                  blocked_commands:
+                    - rm -rf
+                  timeout_secs: 60
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 1);
+        assert_eq!(config.tools[0].name(), "shell");
+        assert!(config.tools[0].is_builtin());
+        assert!(config.tools[0].config().is_some());
+    }
+
+    #[test]
+    fn test_tool_spec_qualified_mcp() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - name: read_file
+                source: mcp
+                server: filesystem
+                config:
+                  allowed_paths:
+                    - /workspace
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 1);
+        assert_eq!(config.tools[0].name(), "read_file");
+        assert!(config.tools[0].is_mcp());
+        assert_eq!(config.tools[0].mcp_server(), Some("filesystem"));
+    }
+
+    #[test]
+    fn test_tool_spec_mixed() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              # Simple builtin
+              - shell
+              # Qualified builtin with config
+              - name: kubectl_get
+                source: builtin
+                timeout_secs: 120
+              # MCP tool
+              - name: github_search
+                source: mcp
+                server: github
+            mcp_servers:
+              - name: github
+                command: npx
+                args: ["@modelcontextprotocol/server-github"]
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 3);
+
+        // Check builtin tools
+        let builtin_tools = config.builtin_tools();
+        assert_eq!(builtin_tools.len(), 2);
+
+        // Check MCP tools
+        let mcp_tools = config.mcp_tools();
+        assert_eq!(mcp_tools.len(), 1);
+        assert_eq!(mcp_tools[0].mcp_server(), Some("github"));
     }
 
     #[test]

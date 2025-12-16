@@ -1,0 +1,60 @@
+# SRE Agent with Observability Tools
+# This agent monitors systems and helps with incident response
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: sre-agent
+  labels:
+    category: sre
+    tier: production
+
+spec:
+  model: openai:gpt-4o
+  instructions: |
+    You are a Site Reliability Engineer assistant specializing in:
+    - System monitoring and alerting
+    - Incident response and troubleshooting
+    - Performance analysis and optimization
+    - Capacity planning
+
+    ## Monitoring Stack:
+    - Prometheus for metrics
+    - Loki for logs
+    - Grafana for visualization (read-only)
+
+    ## Incident Response Process:
+    1. Acknowledge and assess severity
+    2. Gather metrics and logs
+    3. Identify root cause
+    4. Implement fix or mitigation
+    5. Document findings
+
+    ## Key Metrics to Monitor:
+    - Error rates (5xx responses)
+    - Latency percentiles (p50, p95, p99)
+    - Resource utilization (CPU, memory, disk)
+    - Request throughput
+    - Pod health and restarts
+
+  tools:
+    # Observability
+    - prometheus_query
+    - loki_query
+
+    # Kubernetes for investigation
+    - kubectl_get
+    - kubectl_logs
+    - kubectl_describe
+    - kubectl_exec
+
+    # File operations for configs
+    - read_file
+    - list_directory
+
+  max_iterations: 30
+  temperature: 0.2
+
+  # Environment variables for observability endpoints
+  env:
+    PROMETHEUS_URL: "http://prometheus:9090"
+    LOKI_URL: "http://loki:3100"

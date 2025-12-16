@@ -255,9 +255,9 @@ async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &st
         .map(|agent| agent.config().model.clone())
         .unwrap_or_else(|| "unknown".to_string());
 
-    let tools = runtime
+    let tools: Vec<String> = runtime
         .get_agent(agent_name)
-        .map(|agent| agent.config().tools.clone())
+        .map(|agent| agent.config().tool_names().iter().map(|s| s.to_string()).collect())
         .unwrap_or_default();
 
     // Create log channel

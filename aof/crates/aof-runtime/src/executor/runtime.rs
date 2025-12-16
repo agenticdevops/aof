@@ -6,7 +6,7 @@
 use super::{AgentExecutor, agent_executor::StreamEvent};
 use aof_core::{
     AgentConfig, AgentContext, AofError, AofResult, McpServerConfig, McpTransport,
-    ModelConfig, ModelProvider, Tool, ToolDefinition, ToolExecutor, ToolInput,
+    ModelConfig, ModelProvider, Tool, ToolDefinition, ToolExecutor, ToolInput, ToolSpec,
 };
 use aof_llm::create_model;
 use aof_mcp::McpClientBuilder;
@@ -82,16 +82,39 @@ impl Runtime {
             // Use the new flexible MCP configuration
             Some(self.create_mcp_executor_from_config(&config.mcp_servers).await?)
         } else if !config.tools.is_empty() {
-            // Legacy: tools list (backward compatibility)
-            let system_tools = ["shell", "kubectl", "bash", "sh", "python", "node"];
-            let has_system_tools = config.tools.iter().any(|t| system_tools.contains(&t.as_str()));
-            let has_mcp_tools = config.tools.iter().any(|t| !system_tools.contains(&t.as_str()));
+            // Separate built-in tools from MCP tools
+            let builtin_tools: Vec<&str> = config.tools.iter()
+                .filter(|t| t.is_builtin())
+                .map(|t| t.name())
+                .collect();
+            let mcp_tools: Vec<&str> = config.tools.iter()
+                .filter(|t| t.is_mcp())
+                .map(|t| t.name())
+                .collect();
+
+            // Known system/builtin tools
+            let system_tools = ["shell", "kubectl", "bash", "sh", "python", "node",
+                               "read_file", "write_file", "list_directory", "search_files",
+                               "kubectl_get", "kubectl_apply", "kubectl_delete", "kubectl_logs",
+                               "kubectl_exec", "kubectl_describe", "docker_ps", "docker_logs",
+                               "docker_build", "docker_run", "docker_exec", "docker_images",
+                               "git_status", "git_diff", "git_log", "git_commit", "git_branch",
+                               "git_checkout", "git_pull", "git_push", "terraform_init",
+                               "terraform_plan", "terraform_apply", "terraform_destroy",
+                               "terraform_output", "prometheus_query", "loki_query",
+                               "elasticsearch_query", "victoriametrics_query", "aws_s3",
+                               "aws_ec2", "aws_logs", "aws_iam", "aws_lambda", "aws_ecs"];
+
+            let has_system_tools = builtin_tools.iter().any(|t| system_tools.contains(t));
+            let has_mcp_tools = !mcp_tools.is_empty();
 
             if has_system_tools && !has_mcp_tools {
-                debug!("Agent has only system tools, creating system executor");
-                Some(self.create_system_executor(&config.tools)?)
+                debug!("Agent has only built-in tools, creating system executor");
+                let tool_names: Vec<String> = builtin_tools.iter().map(|s| s.to_string()).collect();
+                Some(self.create_system_executor(&tool_names)?)
             } else if has_mcp_tools {
-                Some(self.create_tool_executor(&config.tools).await?)
+                let tool_names: Vec<String> = config.tool_names().iter().map(|s| s.to_string()).collect();
+                Some(self.create_tool_executor(&tool_names).await?)
             } else {
                 None
             }

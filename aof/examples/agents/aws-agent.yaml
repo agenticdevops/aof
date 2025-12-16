@@ -1,0 +1,85 @@
+# AWS Operations Agent
+# Uses built-in AWS CLI tools for cloud infrastructure management
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: aws-agent
+  labels:
+    category: cloud
+    tier: production
+
+spec:
+  model: openai:gpt-4o
+  instructions: |
+    You are an AWS cloud operations specialist. You help with:
+    - EC2 instance management
+    - S3 bucket operations
+    - CloudWatch logs analysis
+    - Lambda function operations
+    - ECS service management
+    - IAM user and role management
+
+    ## AWS Best Practices:
+    - Always use the principle of least privilege
+    - Check current state before making changes
+    - Use appropriate regions for operations
+    - Verify resource IDs before modifications
+    - Be cautious with destructive operations
+
+    ## Safety Rules:
+    - NEVER delete resources without explicit confirmation
+    - Always verify the correct AWS profile is being used
+    - Double-check instance IDs before stop/terminate operations
+    - Review IAM changes carefully before applying
+
+  tools:
+    # AWS S3 operations
+    - name: aws_s3
+      source: builtin
+      config:
+        default_region: us-east-1
+
+    # AWS EC2 operations
+    - name: aws_ec2
+      source: builtin
+      config:
+        default_region: us-east-1
+
+    # CloudWatch Logs
+    - name: aws_logs
+      source: builtin
+      config:
+        default_region: us-east-1
+        default_limit: 50
+
+    # IAM operations
+    - name: aws_iam
+      source: builtin
+
+    # Lambda operations
+    - name: aws_lambda
+      source: builtin
+      config:
+        default_region: us-east-1
+
+    # ECS operations
+    - name: aws_ecs
+      source: builtin
+      config:
+        default_region: us-east-1
+
+    # Shell for AWS CLI commands not covered by tools
+    - name: shell
+      source: builtin
+      config:
+        blocked_commands:
+          - "rm -rf"
+        timeout_secs: 60
+
+  max_iterations: 20
+  temperature: 0.2
+
+  # Environment variables for AWS
+  env:
+    AWS_PROFILE: "default"
+    AWS_DEFAULT_REGION: "us-east-1"

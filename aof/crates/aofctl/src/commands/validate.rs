@@ -45,7 +45,8 @@ pub async fn execute(file: &str) -> Result<()> {
     }
 
     if !agent_config.tools.is_empty() {
-        println!("  Tools: {}", agent_config.tools.join(", "));
+        let tool_names: Vec<&str> = agent_config.tool_names();
+        println!("  Tools: {}", tool_names.join(", "));
     }
 
     if let Some(memory) = &agent_config.memory {
