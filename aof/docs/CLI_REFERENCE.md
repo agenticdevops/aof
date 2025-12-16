@@ -43,14 +43,17 @@ aofctl run agent <config-file> [options]
 
 **Examples:**
 ```bash
-# Run with inline input
+# Run agent with inline input
 aofctl run agent k8s-agent.yaml --input "list all pods"
 
-# Run with JSON output
+# Run agent with JSON output
 aofctl run agent agent.yaml -i "summarize logs" -o json
 
-# Run workflow (when implemented)
-aofctl run workflow incident-response.yaml
+# Run workflow with initial state
+aofctl run workflow incident-response.yaml --input '{"severity": "high", "incidentId": "INC-123"}'
+
+# Run workflow with JSON output
+aofctl run workflow ci-cd-pipeline.yaml -i '{"branch": "main"}' -o json
 ```
 
 ### get

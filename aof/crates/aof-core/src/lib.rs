@@ -10,6 +10,7 @@ pub mod mcp;
 pub mod memory;
 pub mod model;
 pub mod tool;
+pub mod workflow;
 
 // Re-export core types
 pub use agent::{
@@ -26,6 +27,13 @@ pub use model::{
 };
 pub use tool::{
     Tool, ToolCall, ToolConfig, ToolDefinition, ToolExecutor, ToolInput, ToolResult, ToolType,
+};
+pub use workflow::{
+    BackoffStrategy, CheckpointBackend, CheckpointConfig, CheckpointFrequency, ConditionalNext,
+    FlatWorkflowConfig, InterruptConfig, InterruptType, JoinConfig, JoinStrategy, NextStep,
+    ParallelBranch, RecoveryConfig, ReducerType, RetryConfig, StateReducer, StateSchema, StepConfig,
+    StepResult, StepStatus, StepType, TerminalStatus, ValidatorType, Workflow, WorkflowConfigInput,
+    WorkflowError, WorkflowMetadata, WorkflowSpec, WorkflowState, WorkflowStatus, WorkflowStep,
 };
 
 /// Version information

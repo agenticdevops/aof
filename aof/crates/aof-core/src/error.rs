@@ -39,6 +39,9 @@ pub enum AofError {
     #[error("Resource exhausted: {0}")]
     ResourceExhausted(String),
 
+    #[error("Workflow error: {0}")]
+    Workflow(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
@@ -75,6 +78,11 @@ impl AofError {
     /// Create a config error
     pub fn config(msg: impl Into<String>) -> Self {
         Self::Config(msg.into())
+    }
+
+    /// Create a workflow error
+    pub fn workflow(msg: impl Into<String>) -> Self {
+        Self::Workflow(msg.into())
     }
 }
 

@@ -1,0 +1,26 @@
+# Simple workflow example demonstrating basic sequential execution
+apiVersion: aof.dev/v1
+kind: Workflow
+metadata:
+  name: simple-workflow
+  labels:
+    category: example
+
+spec:
+  # Initial state schema
+  state:
+    type: object
+    properties:
+      input:
+        type: string
+      result:
+        type: string
+
+  # Entry point
+  entrypoint: start
+
+  # Workflow steps
+  steps:
+    - name: start
+      type: terminal
+      status: completed
