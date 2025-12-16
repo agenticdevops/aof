@@ -11,7 +11,10 @@ pub mod executor;
 pub mod orchestrator;
 pub mod task;
 
-pub use executor::{AgentExecutor, Runtime, StreamEvent};
+pub use executor::{
+    AgentExecutor, ApprovalDecision, HumanInput, Runtime, StreamEvent, WorkflowEvent,
+    WorkflowExecutor,
+};
 pub use orchestrator::RuntimeOrchestrator;
 pub use task::{Task, TaskHandle, TaskStatus};
 

@@ -1,0 +1,115 @@
+# Incident Response Workflow
+# Demonstrates conditional routing, approval gates, and validation
+apiVersion: aof.dev/v1
+kind: Workflow
+metadata:
+  name: incident-response
+  labels:
+    category: sre
+    type: runbook
+
+spec:
+  # State schema
+  state:
+    type: object
+    properties:
+      incidentId:
+        type: string
+      severity:
+        type: string
+        enum: [low, medium, high, critical]
+      findings:
+        type: array
+        items:
+          type: string
+      resolution:
+        type: string
+      verified:
+        type: boolean
+
+  # Entry point
+  entrypoint: detect
+
+  # State reducers
+  reducers:
+    findings:
+      type: append
+    metrics:
+      type: merge
+
+  # Global error handler
+  errorHandler: error-handler
+
+  # Retry configuration
+  retry:
+    maxAttempts: 3
+    backoff: exponential
+    initialDelay: 1s
+    maxDelay: 30s
+
+  # Workflow steps
+  steps:
+    - name: detect
+      type: agent
+      agent: detector-agent
+      next:
+        - condition: "state.severity == 'critical'"
+          target: escalate
+        - condition: "state.severity == 'high'"
+          target: analyze
+        - target: monitor
+
+    - name: escalate
+      type: approval
+      config:
+        approvers:
+          - role: oncall-team
+        timeout: 5m
+        requiredApprovals: 1
+      next:
+        - condition: approved
+          target: analyze
+        - target: notify-only
+
+    - name: analyze
+      type: agent
+      agent: analyzer-agent
+      parallel: true
+      next: remediate
+
+    - name: remediate
+      type: agent
+      agent: remediation-agent
+      validation:
+        - type: function
+          script: validate_remediation
+        - type: llm
+          prompt: "Verify the remediation is safe and complete"
+      next: verify
+
+    - name: verify
+      type: agent
+      agent: verifier-agent
+      next:
+        - condition: "state.verified == true"
+          target: complete
+        - target: analyze
+
+    - name: complete
+      type: terminal
+      status: completed
+
+    - name: notify-only
+      type: agent
+      agent: notifier-agent
+      next: complete
+
+    - name: monitor
+      type: agent
+      agent: monitor-agent
+      next: complete
+
+    - name: error-handler
+      type: agent
+      agent: error-handler-agent
+      next: complete

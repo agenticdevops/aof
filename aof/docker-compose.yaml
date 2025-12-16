@@ -1,0 +1,94 @@
+# AOF Docker Compose Configuration
+# For local development and testing
+
+version: "3.8"
+
+services:
+  # AOF Daemon - Main webhook server
+  aof-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aof-daemon
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info,aofctl=info,aof_runtime=debug
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      # Slack integration
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET:-}
+      # Telegram integration
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      # Discord integration
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - DISCORD_APPLICATION_ID=${DISCORD_APPLICATION_ID:-}
+    volumes:
+      # Mount agent configurations
+      - ./agents:/app/agents:ro
+      # Mount daemon config
+      - ./config:/app/config:ro
+      # Persist checkpoints
+      - aof-checkpoints:/app/checkpoints
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - aof-network
+
+  # Redis for shared memory/state (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: aof-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - aof-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - aof-network
+    profiles:
+      - with-redis
+
+  # PostgreSQL for persistent storage (optional)
+  postgres:
+    image: postgres:16-alpine
+    container_name: aof-postgres
+    environment:
+      - POSTGRES_USER=aof
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-aofpassword}
+      - POSTGRES_DB=aof
+    ports:
+      - "5432:5432"
+    volumes:
+      - aof-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aof"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - aof-network
+    profiles:
+      - with-postgres
+
+volumes:
+  aof-checkpoints:
+  aof-redis-data:
+  aof-postgres-data:
+
+networks:
+  aof-network:
+    driver: bridge

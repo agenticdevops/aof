@@ -1,0 +1,107 @@
+# CI/CD Pipeline Workflow
+# Demonstrates parallel execution with fork-join pattern
+apiVersion: aof.dev/v1
+kind: Workflow
+metadata:
+  name: ci-cd-pipeline
+  labels:
+    category: devops
+    type: pipeline
+
+spec:
+  # State schema
+  state:
+    type: object
+    properties:
+      repositoryUrl:
+        type: string
+      branch:
+        type: string
+      commitSha:
+        type: string
+      environment:
+        type: string
+        enum: [dev, staging, production]
+      testResults:
+        type: object
+      allPassed:
+        type: boolean
+      deployStatus:
+        type: string
+
+  # Entry point
+  entrypoint: build
+
+  # State reducers
+  reducers:
+    testResults:
+      type: merge
+    logs:
+      type: append
+
+  # Workflow steps
+  steps:
+    - name: build
+      type: agent
+      agent: build-agent
+      next: test
+
+    - name: test
+      type: parallel
+      branches:
+        - name: unit-tests
+          steps:
+            - agent: unit-test-agent
+        - name: integration-tests
+          steps:
+            - agent: integration-test-agent
+        - name: security-scan
+          steps:
+            - agent: security-agent
+      join:
+        strategy: all
+        timeout: 10m
+      next:
+        - condition: "state.allPassed == true"
+          target: staging-deploy
+        - target: notify-failure
+
+    - name: staging-deploy
+      type: agent
+      agent: deploy-agent
+      next: staging-approval
+
+    - name: staging-approval
+      type: approval
+      config:
+        approvers:
+          - role: qa-team
+        timeout: 30m
+        autoApprove:
+          condition: "state.environment == 'dev'"
+      next:
+        - condition: approved
+          target: production-deploy
+        - target: complete
+
+    - name: production-deploy
+      type: agent
+      agent: deploy-agent
+      validation:
+        - type: script
+          command: ./scripts/validate-deployment.sh
+          timeout: 60s
+      next: complete
+
+    - name: notify-failure
+      type: agent
+      agent: notifier-agent
+      next: complete-failed
+
+    - name: complete
+      type: terminal
+      status: completed
+
+    - name: complete-failed
+      type: terminal
+      status: failed

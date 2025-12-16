@@ -1,0 +1,52 @@
+# AOF Daemon Configuration
+# This file configures the AOF webhook server for platform integrations
+
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: production
+
+spec:
+  # Server configuration
+  server:
+    port: 8080
+    host: 0.0.0.0
+    cors: true
+    timeout_secs: 30
+
+  # Platform integrations
+  platforms:
+    # Slack Bot integration
+    slack:
+      enabled: true
+      bot_token_env: SLACK_BOT_TOKEN
+      signing_secret_env: SLACK_SIGNING_SECRET
+
+    # Telegram Bot integration
+    telegram:
+      enabled: true
+      bot_token_env: TELEGRAM_BOT_TOKEN
+
+    # Discord Bot integration
+    discord:
+      enabled: false
+      bot_token_env: DISCORD_BOT_TOKEN
+      application_id_env: DISCORD_APPLICATION_ID
+
+    # WhatsApp integration (Business API)
+    whatsapp:
+      enabled: false
+      phone_number_id_env: WHATSAPP_PHONE_NUMBER_ID
+      access_token_env: WHATSAPP_ACCESS_TOKEN
+      verify_token_env: WHATSAPP_VERIFY_TOKEN
+
+  # Agent configuration
+  agents:
+    directory: /app/agents
+    watch: true  # Hot-reload agents on file changes
+
+  # Runtime configuration
+  runtime:
+    max_concurrent_tasks: 10
+    task_timeout_secs: 300
+    default_model: openai:gpt-4o

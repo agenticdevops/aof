@@ -724,14 +724,112 @@ fn output_result(agent_name: &str, result: &str, output: &str) -> Result<()> {
     Ok(())
 }
 
-/// Run a workflow (placeholder)
-async fn run_workflow(name_or_config: &str, input: Option<&str>, output: &str) -> Result<()> {
-    println!("Run workflow - Not yet implemented");
-    println!("Workflow: {}", name_or_config);
-    if let Some(inp) = input {
-        println!("Input: {}", inp);
+/// Run a workflow with configuration
+async fn run_workflow(config_path: &str, input: Option<&str>, output: &str) -> Result<()> {
+    use aof_runtime::WorkflowExecutor;
+    use tokio::sync::mpsc;
+
+    info!("Loading workflow from: {}", config_path);
+
+    // Create runtime for agent execution within workflow
+    let runtime = std::sync::Arc::new(Runtime::new());
+
+    // Create workflow executor from file
+    let mut executor = WorkflowExecutor::from_file(config_path, runtime.clone())
+        .await
+        .context("Failed to load workflow")?;
+
+    // Parse initial state from input
+    let initial_state: serde_json::Value = if let Some(inp) = input {
+        serde_json::from_str(inp).unwrap_or_else(|_| {
+            // If not valid JSON, wrap as input field
+            serde_json::json!({ "input": inp })
+        })
+    } else {
+        serde_json::json!({})
+    };
+
+    // Create event channel for monitoring
+    let (event_tx, mut event_rx) = mpsc::channel(100);
+    let executor = executor.with_event_channel(event_tx);
+
+    // Spawn task to print events
+    let event_printer = tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            match event {
+                aof_runtime::WorkflowEvent::Started { run_id, workflow_name } => {
+                    eprintln!("[WORKFLOW] Started: {} (run: {})", workflow_name, run_id);
+                }
+                aof_runtime::WorkflowEvent::StepStarted { step_name } => {
+                    eprintln!("[STEP] Starting: {}", step_name);
+                }
+                aof_runtime::WorkflowEvent::StepCompleted { step_name, duration_ms } => {
+                    eprintln!("[STEP] Completed: {} ({}ms)", step_name, duration_ms);
+                }
+                aof_runtime::WorkflowEvent::StepFailed { step_name, error } => {
+                    eprintln!("[STEP] Failed: {} - {}", step_name, error);
+                }
+                aof_runtime::WorkflowEvent::WaitingApproval { step_name, approvers } => {
+                    eprintln!("[APPROVAL] Waiting for approval at step '{}' from: {:?}", step_name, approvers);
+                }
+                aof_runtime::WorkflowEvent::WaitingInput { step_name, prompt } => {
+                    eprintln!("[INPUT] Waiting for input at step '{}': {}", step_name, prompt);
+                }
+                aof_runtime::WorkflowEvent::Completed { run_id, status } => {
+                    eprintln!("[WORKFLOW] Completed: {} with status {:?}", run_id, status);
+                }
+                aof_runtime::WorkflowEvent::Error { message } => {
+                    eprintln!("[ERROR] {}", message);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    // Execute workflow
+    let mut executor = executor;
+    let final_state = executor.execute(initial_state).await
+        .context("Workflow execution failed")?;
+
+    // Wait for event printer to finish
+    drop(executor); // Drop to close event channel
+    let _ = event_printer.await;
+
+    // Output result in requested format
+    match output {
+        "json" => {
+            let json_output = serde_json::json!({
+                "success": true,
+                "workflow": final_state.workflow_name,
+                "run_id": final_state.run_id,
+                "status": format!("{:?}", final_state.status),
+                "state": final_state.data,
+                "completed_steps": final_state.completed_steps,
+            });
+            println!("{}", serde_json::to_string_pretty(&json_output)?);
+        }
+        "yaml" => {
+            let yaml_output = serde_yaml::to_string(&serde_json::json!({
+                "success": true,
+                "workflow": final_state.workflow_name,
+                "run_id": final_state.run_id,
+                "status": format!("{:?}", final_state.status),
+                "state": final_state.data,
+                "completed_steps": final_state.completed_steps,
+            }))?;
+            println!("{}", yaml_output);
+        }
+        "text" | _ => {
+            println!("Workflow: {}", final_state.workflow_name);
+            println!("Run ID: {}", final_state.run_id);
+            println!("Status: {:?}", final_state.status);
+            println!("Completed Steps: {}", final_state.completed_steps.join(" -> "));
+            if let Some(error) = &final_state.error {
+                println!("Error: {}", error.message);
+            }
+        }
     }
-    println!("Output format: {}", output);
+
     Ok(())
 }
 
