@@ -122,7 +122,7 @@ jobs:
           ### Using install script (recommended)
 
           \`\`\`bash
-          curl -sSL https://aof.sh/install.sh | bash
+          curl -sSL https://docs.aof.sh/install.sh | bash
           \`\`\`
 
           ### Manual download
@@ -154,7 +154,7 @@ jobs:
           aofctl api-resources
           \`\`\`
 
-          Check out the [documentation](https://aof.sh) to get started!
+          Check out the [documentation](https://docs.aof.sh) to get started!
           EOF
 
       - name: Create Release
@@ -179,7 +179,7 @@ jobs:
 
       - name: Deploy install script
         run: |
-          echo "Install script would be deployed to: https://aof.sh/install.sh"
+          echo "Install script would be deployed to: https://docs.aof.sh/install.sh"
           echo "Location: scripts/install.sh"
           echo ""
           echo "Steps to configure:"

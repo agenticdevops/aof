@@ -28,7 +28,7 @@ docs/
 
 ### User Documentation (`/docusaurus-site/docs/`)
 
-This is the **production documentation** published at https://aof.sh
+This is the **production documentation** published at https://docs.aof.sh
 
 Contains:
 - **getting-started.md** - Installation and setup
@@ -79,7 +79,7 @@ GitHub Actions workflow (`/.github/workflows/deploy-docs.yml`):
 
 1. **Triggers on:** Push to main/dev branches in docusaurus-site/ or docs/
 2. **Builds:** Docusaurus site from `/docusaurus-site/docs/`
-3. **Deploys:** To GitHub Pages (https://aof.sh when configured)
+3. **Deploys:** To GitHub Pages (https://docs.aof.sh)
 
 ## ✅ Best Practices
 

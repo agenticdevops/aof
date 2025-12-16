@@ -1,12 +1,12 @@
 #!/bin/bash
 # AOF Installation Script
-# Usage: curl -sSL https://aof.sh/install.sh | bash
-# or: curl -sSL https://aof.sh/install.sh | bash -s -- --version v0.1.0
+# Usage: curl -sSL https://docs.aof.sh/install.sh | bash
+# or: curl -sSL https://docs.aof.sh/install.sh | bash -s -- --version v0.1.0
 
 set -e
 
 # Configuration
-REPO="agenticopsorg/aof"
+REPO="agenticdevops/aof"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 GITHUB_RELEASE_API="https://api.github.com/repos/$REPO/releases"
 VERSION="${1:-latest}"
@@ -290,7 +290,7 @@ while [[ $# -gt 0 ]]; do
         --help)
             echo "AOF Installation Script"
             echo ""
-            echo "Usage: curl -sSL https://aof.sh/install.sh | bash [options]"
+            echo "Usage: curl -sSL https://docs.aof.sh/install.sh | bash [options]"
             echo ""
             echo "Options:"
             echo "  --version VERSION      Install specific version (default: latest)"

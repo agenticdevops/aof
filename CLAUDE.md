@@ -32,6 +32,47 @@ aof-core = { path = "../../aof/aof/crates/aof-core" }
 aof-llm = { path = "../../aof/aof/crates/aof-llm" }
 ```
 
+## Release Process
+
+**Documentation**: https://docs.aof.sh
+**Installation**: `curl -sSL https://docs.aof.sh/install.sh | bash`
+
+### Creating a Release (Automated)
+
+The release process is fully automated via GitHub Actions. **DO NOT create releases manually.**
+
+```bash
+# 1. Create and push a version tag (triggers automated build)
+git tag -a v0.1.14 -m "Release v0.1.14: Brief description"
+git push origin v0.1.14
+
+# 2. Monitor: https://github.com/agenticdevops/aof/actions
+# 3. Verify: https://github.com/agenticdevops/aof/releases
+```
+
+The workflow will automatically:
+- Build binaries for Linux, macOS (Intel & Apple Silicon), Windows
+- Calculate SHA256 checksums
+- Create GitHub Release with formatted release notes
+- Include installation instructions
+
+### Release Notes Format (Auto-generated)
+
+The workflow creates consistent release notes with:
+- Installation instructions (curl | bash)
+- Manual download links
+- Checksum verification commands
+- Getting started guide
+
+### Version Numbering
+
+Use semantic versioning: `vMAJOR.MINOR.PATCH`
+- MAJOR: Breaking changes
+- MINOR: New features (backward compatible)
+- PATCH: Bug fixes
+
+**Full details**: See `RELEASE_PROCESS.md`
+
 ---
 
 # Claude Code Configuration - SPARC Development Environment

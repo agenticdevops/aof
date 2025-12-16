@@ -1,6 +1,6 @@
 # AOF Release Process
 
-This document outlines how to build, test, and publish AOF binaries to make them available via the installation script at https://aof.sh/install.sh
+This document outlines how to build, test, and publish AOF binaries to make them available via the installation script at https://docs.aof.sh/install.sh
 
 ## Overview
 
@@ -13,7 +13,7 @@ The release process is fully automated via GitHub Actions. When you create a git
 
 ## Prerequisites
 
-- Git with push access to https://github.com/agenticopsorg/aof
+- Git with push access to https://github.com/agenticdevops/aof
 - Rust toolchain installed locally (for testing builds)
 - GitHub Actions enabled on the repository
 
@@ -54,14 +54,14 @@ This triggers the GitHub Actions workflow automatically.
 
 ### Step 4: Monitor the Build
 
-1. Go to: https://github.com/agenticopsorg/aof/actions
+1. Go to: https://github.com/agenticdevops/aof/actions
 2. Watch the "Build and Release Binaries" workflow
 3. Wait for all platforms to build successfully
 4. The workflow will create a GitHub Release with all binaries
 
 ### Step 5: Verify the Release
 
-Once complete, verify at: https://github.com/agenticopsorg/aof/releases
+Once complete, verify at: https://github.com/agenticdevops/aof/releases
 
 You should see:
 - Binaries for each platform (linux-x86_64, macos-x86_64, etc.)
@@ -70,24 +70,17 @@ You should see:
 
 ### Step 6: Deploy install.sh
 
-The install script needs to be accessible at https://aof.sh/install.sh
+The install script is served from the Docusaurus site at https://docs.aof.sh/install.sh
 
-#### Option A: GitHub Pages (Simple)
+The install script is automatically deployed with the Docusaurus site:
 
-1. Create a `gh-pages` branch
-2. Push the install script there
-3. Configure GitHub Pages to serve from `/scripts/install.sh`
+1. The script lives in `docusaurus-site/static/install.sh`
+2. GitHub Actions deploys it to GitHub Pages (docs.aof.sh)
+3. It's accessible at `https://docs.aof.sh/install.sh`
 
-#### Option B: Dedicated Web Server (Recommended)
-
-1. Copy `scripts/install.sh` to your web server
-2. Make it accessible at `https://aof.sh/install.sh`
-3. Ensure proper HTTPS and CORS headers
-
-#### Option C: GitHub Raw Content
-
+**Alternative (GitHub Raw Content):**
 ```
-https://raw.githubusercontent.com/agenticopsorg/aof/main/scripts/install.sh
+https://raw.githubusercontent.com/agenticdevops/aof/main/scripts/install.sh
 ```
 
 ## Testing the Installation
@@ -96,16 +89,16 @@ After releasing, test the installation script:
 
 ```bash
 # Test with latest version
-curl -sSL https://aof.sh/install.sh | bash
+curl -sSL https://docs.aof.sh/install.sh | bash
 
 # Test with specific version
-curl -sSL https://aof.sh/install.sh | bash -s -- --version v0.2.0
+curl -sSL https://docs.aof.sh/install.sh | bash -s -- --version v0.2.0
 
 # Test with custom install directory
-curl -sSL https://aof.sh/install.sh | bash -s -- --install-dir /usr/local/bin
+curl -sSL https://docs.aof.sh/install.sh | bash -s -- --install-dir /usr/local/bin
 
 # Verbose output for debugging
-curl -sSL https://aof.sh/install.sh | bash -s -- --verbose
+curl -sSL https://docs.aof.sh/install.sh | bash -s -- --verbose
 ```
 
 ## Supported Platforms
@@ -140,7 +133,7 @@ The `install.sh` script:
 
 ### Build fails for a platform
 
-1. Check the Actions log: https://github.com/agenticopsorg/aof/actions
+1. Check the Actions log: https://github.com/agenticdevops/aof/actions
 2. Common issues:
    - Cross-compilation tools missing (automatic via `cross`)
    - Rust target not installed (automatic)
@@ -220,27 +213,26 @@ Examples:
 The installation script always downloads from GitHub Releases. To automatically use the latest version:
 
 ```bash
-curl -sSL https://aof.sh/install.sh | bash
+curl -sSL https://docs.aof.sh/install.sh | bash
 ```
 
 To pin to a specific version:
 
 ```bash
-curl -sSL https://aof.sh/install.sh | bash -s -- --version v0.1.0
+curl -sSL https://docs.aof.sh/install.sh | bash -s -- --version v0.1.0
 ```
 
 ## Next Steps
 
-1. Configure `aof.sh` to serve `scripts/install.sh` at `/install.sh`
-2. Create first release tag: `git tag -a v0.1.0 -m "Initial release"`
-3. Push tag to trigger build: `git push origin v0.1.0`
-4. Monitor build at: https://github.com/agenticopsorg/aof/actions
-5. Verify release: https://github.com/agenticopsorg/aof/releases
-6. Test installation
+1. Create release tag: `git tag -a v0.1.0 -m "Initial release"`
+2. Push tag to trigger build: `git push origin v0.1.0`
+3. Monitor build at: https://github.com/agenticdevops/aof/actions
+4. Verify release: https://github.com/agenticdevops/aof/releases
+5. Test installation: `curl -sSL https://docs.aof.sh/install.sh | bash`
 
 ## Support
 
 For issues with the release process:
 1. Check GitHub Actions logs
 2. Review this document
-3. Open an issue: https://github.com/agenticopsorg/aof/issues
+3. Open an issue: https://github.com/agenticdevops/aof/issues
