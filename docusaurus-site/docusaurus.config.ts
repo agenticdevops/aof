@@ -157,11 +157,11 @@ const config: Config = {
           title: 'Community',
           items: [
             {
-              label: 'GitHub',
+              label: '⭐ Star us on GitHub',
               href: 'https://github.com/agenticdevops/aof',
             },
             {
-              label: 'Issues',
+              label: 'Report Issues',
               href: 'https://github.com/agenticdevops/aof/issues',
             },
             {
