@@ -161,6 +161,10 @@ spec:
       to: human-approval
 ```
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=agenticdevops/aof&type=Date)](https://star-history.com/#agenticdevops/aof&Date)
+
 ## Community & Support
 
 - **Documentation**: [docs.aof.sh](https://docs.aof.sh)
