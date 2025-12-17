@@ -32,6 +32,7 @@ tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
 crossterm = "0.27"
 ratatui = "0.26"
+atty = "0.2"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

@@ -1,0 +1,69 @@
+# Mock Tiered Fleet for Testing
+# Uses mock model to test tiered execution output formatting
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: mock-tiered-rca
+  labels:
+    purpose: testing
+    type: rca
+
+spec:
+  agents:
+    # Tier 1: Initial Analysis
+    - name: quick-analyst
+      tier: 1
+      role: worker
+      replicas: 1
+      weight: 1.0
+      spec:
+        model: mock
+        instructions: |
+          You are a quick analysis agent. Analyze the problem and provide initial findings.
+          Output your response as markdown.
+
+    - name: data-analyst
+      tier: 1
+      role: worker
+      replicas: 1
+      weight: 1.0
+      spec:
+        model: mock
+        instructions: |
+          You are a data analysis agent. Check metrics and logs for anomalies.
+          Output your response as markdown.
+
+    # Tier 2: Deep Analysis
+    - name: deep-analyst
+      tier: 2
+      role: worker
+      replicas: 1
+      weight: 1.5
+      spec:
+        model: mock
+        instructions: |
+          You are a deep analysis agent. Take the initial findings and perform deeper investigation.
+          Output your response as markdown.
+
+    # Tier 3: Synthesis
+    - name: synthesizer
+      tier: 3
+      role: worker
+      replicas: 1
+      weight: 2.0
+      spec:
+        model: mock
+        instructions: |
+          You are a synthesis agent. Take all analyses and create a final RCA report.
+          Output a comprehensive markdown report.
+
+  coordination:
+    mode: tiered
+    distribution: round-robin
+    consensus:
+      algorithm: weighted
+      threshold: 0.5
+    tiered:
+      pass_all_results: true
+      final_aggregation: consensus

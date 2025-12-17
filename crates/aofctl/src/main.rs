@@ -3,6 +3,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod cli;
 mod commands;
+mod output;
 mod resources;
 
 use cli::Cli;

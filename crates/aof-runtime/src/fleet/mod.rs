@@ -45,6 +45,15 @@ pub struct FleetCoordinator {
     rr_counter: Arc<RwLock<usize>>,
 }
 
+/// Agent info for tier display
+#[derive(Debug, Clone)]
+pub struct TierAgentInfo {
+    /// Agent name
+    pub name: String,
+    /// Model used by agent
+    pub model: String,
+}
+
 /// Events emitted by the fleet coordinator
 #[derive(Debug, Clone)]
 pub enum FleetEvent {
@@ -79,6 +88,19 @@ pub enum FleetEvent {
     },
     /// Task has failed
     TaskFailed { task_id: String, error: String },
+    /// Tier execution started (for tiered mode)
+    TierStarted {
+        tier: u32,
+        agents: Vec<TierAgentInfo>,
+        consensus: String,
+    },
+    /// Tier execution completed (for tiered mode)
+    TierCompleted {
+        tier: u32,
+        results: usize,
+        confidence: f64,
+        duration_ms: u64,
+    },
     /// Consensus reached (for peer mode)
     ConsensusReached {
         task_id: String,
@@ -472,6 +494,7 @@ impl FleetCoordinator {
 
         // Execute each tier sequentially, passing results to next tier
         for tier in &tiers {
+            let tier_start = std::time::Instant::now();
             debug!("Executing tier {}", tier);
 
             // Get agents for this tier
@@ -480,6 +503,33 @@ impl FleetCoordinator {
                 warn!("No agents in tier {}, skipping", tier);
                 continue;
             }
+
+            // Get consensus algorithm name for display
+            let consensus_name = self
+                .fleet
+                .spec
+                .coordination
+                .tiered
+                .as_ref()
+                .and_then(|t| t.tier_consensus.get(&tier.to_string()))
+                .map(|c| format!("{:?}", c.algorithm))
+                .unwrap_or_else(|| "Weighted".to_string());
+
+            // Emit tier started event
+            let agent_infos: Vec<TierAgentInfo> = tier_agents
+                .iter()
+                .map(|a| TierAgentInfo {
+                    name: a.name.clone(),
+                    model: a.spec.as_ref().map(|s| s.model.clone()).unwrap_or_else(|| "default".to_string()),
+                })
+                .collect();
+
+            self.emit_event(FleetEvent::TierStarted {
+                tier: *tier,
+                agents: agent_infos,
+                consensus: consensus_name.clone(),
+            })
+            .await;
 
             // Get agent instances for this tier
             let state = self.state.read().await;
@@ -551,6 +601,17 @@ impl FleetCoordinator {
                     "confidence": tier_consensus.confidence,
                 });
             }
+
+            let tier_duration = tier_start.elapsed().as_millis() as u64;
+
+            // Emit tier completed event
+            self.emit_event(FleetEvent::TierCompleted {
+                tier: *tier,
+                results: tier_consensus.all_results.len(),
+                confidence: tier_consensus.confidence as f64,
+                duration_ms: tier_duration,
+            })
+            .await;
 
             info!(
                 "Tier {} completed: {} results, consensus: {}, confidence: {:.2}",
