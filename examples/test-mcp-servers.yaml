@@ -9,7 +9,7 @@ metadata:
     test: mcp-servers
 
 spec:
-  model: openai:gpt-4o
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are a Kubernetes operations assistant with access to kubectl tools.
@@ -38,7 +38,7 @@ metadata:
   name: github-ops-agent
 
 spec:
-  model: openai:gpt-4o
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are a GitHub assistant. Help users manage repositories, issues, and PRs.
@@ -70,7 +70,7 @@ metadata:
   name: sre-agent
 
 spec:
-  model: openai:gpt-4o
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are an SRE assistant with access to Kubernetes and Prometheus monitoring.
@@ -113,7 +113,7 @@ metadata:
   name: filesystem-agent
 
 spec:
-  model: openai:gpt-4o
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are a file system assistant. Help users explore and manage files.

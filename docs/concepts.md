@@ -14,7 +14,7 @@ kind: Agent
 metadata:
   name: my-agent
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
   instructions: "You are a helpful assistant"
   tools:
     - type: Shell
@@ -30,7 +30,7 @@ spec:
 
 | Component | Description | Example |
 |-----------|-------------|---------|
-| `model` | LLM to use | `openai:gpt-4`, `anthropic:claude-3-5-sonnet-20241022` |
+| `model` | LLM to use | `google:gemini-2.5-flash`, `anthropic:claude-3-5-sonnet-20241022` |
 | `instructions` | System prompt | "You are a K8s expert" |
 | `tools` | What the agent can do | Shell, HTTP, MCP servers |
 | `memory` | Conversation persistence | In-memory, file, database |
@@ -49,7 +49,7 @@ metadata:
 spec:
   agents:
     - name: security-reviewer
-      model: openai:gpt-4
+      model: google:gemini-2.5-flash
       instructions: "Focus on security vulnerabilities"
 
     - name: performance-reviewer
@@ -196,11 +196,18 @@ tools:
 
 AOF supports multiple LLM providers. Use the format `provider:model`:
 
+### Google (Recommended)
+```yaml
+model: google:gemini-2.5-flash
+model: google:gemini-2.0-flash
+model: google:gemini-1.5-pro
+```
+
 ### OpenAI
 ```yaml
-model: openai:gpt-4
+model: openai:gpt-4o
+model: openai:gpt-4o-mini
 model: openai:gpt-4-turbo
-model: openai:gpt-3.5-turbo
 ```
 
 ### Anthropic

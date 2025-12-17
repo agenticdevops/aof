@@ -295,7 +295,7 @@ aofctl version
 ```yaml
 # Flat format
 name: my-agent
-model: openai:gpt-4o
+model: google:gemini-2.5-flash
 instructions: You are a helpful assistant.
 mcp_servers:
   - name: tools
@@ -310,7 +310,7 @@ metadata:
   labels:
     environment: production
 spec:
-  model: openai:gpt-4o
+  model: google:gemini-2.5-flash
   instructions: You are a helpful assistant.
   mcp_servers:
     - name: tools
@@ -384,7 +384,7 @@ Just resource names, one per line.
 # 1. Create agent configuration
 cat > k8s-agent.yaml << 'EOF'
 name: k8s-agent
-model: openai:gpt-4o
+model: google:gemini-2.5-flash
 instructions: You help with Kubernetes operations.
 mcp_servers:
   - name: kubectl-ai

@@ -16,7 +16,7 @@ spec:
       role: worker
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are a Security Code Reviewer. Focus on:
           1. Authentication and authorization issues
@@ -36,7 +36,7 @@ spec:
       role: worker
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are a Performance Code Reviewer. Focus on:
           1. Algorithmic complexity (Big O)
@@ -56,7 +56,7 @@ spec:
       role: worker
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are a Code Quality Reviewer. Focus on:
           1. Code readability and maintainability

@@ -6,7 +6,7 @@ metadata:
     purpose: operations
     team: platform
 spec:
-  model: openai:gpt-4o-mini
+  model: google:gemini-2.5-flash
   instructions: |
     You are an expert Kubernetes operations assistant for DevOps engineers.
     Your role:

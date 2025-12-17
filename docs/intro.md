@@ -128,7 +128,7 @@ Essential reading:
 | Provider | Format | Env Variable |
 |----------|--------|--------------|
 | Google | `google:gemini-2.5-flash` | `GOOGLE_API_KEY` |
-| OpenAI | `openai:gpt-4o` | `OPENAI_API_KEY` |
+| OpenAI | `google:gemini-2.5-flash` | `OPENAI_API_KEY` |
 | Anthropic | `anthropic:claude-3-5-sonnet-20241022` | `ANTHROPIC_API_KEY` |
 | Ollama | `ollama:llama3` | None (local) |
 

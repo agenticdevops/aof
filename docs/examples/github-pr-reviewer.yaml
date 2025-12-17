@@ -14,7 +14,7 @@ metadata:
 
 spec:
   # GPT-4 for deep code analysis
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   model_config:
     temperature: 0.4      # Balanced for code review

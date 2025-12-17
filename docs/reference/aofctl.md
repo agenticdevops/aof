@@ -82,9 +82,9 @@ aofctl get agent --all-namespaces
 **Output:**
 ```
 NAME              MODEL           STATUS    AGE
-k8s-helper        openai:gpt-4    Running   5d
+k8s-helper        google:gemini-2.5-flash    Running   5d
 slack-bot         anthropic:claude-3-5-sonnet-20241022   Running   2d
-incident-responder openai:gpt-4   Running   1d
+incident-responder google:gemini-2.5-flash   Running   1d
 ```
 
 ---
@@ -115,7 +115,7 @@ Annotations:  owner=platform@company.com
 Created:      2024-01-15 10:30:00
 
 Spec:
-  Model:              openai:gpt-4
+  Model:              google:gemini-2.5-flash
   Temperature:        0.3
   Max Tokens:         2000
 

@@ -1,0 +1,24 @@
+# Test Agent with Shell Tools
+# Demonstrates tool calling with Gemini 2.5 Flash
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: tools-test-agent
+  labels:
+    purpose: testing
+
+spec:
+  model: google:gemini-2.5-flash
+
+  instructions: |
+    You are a helpful assistant with access to shell commands.
+    When asked to run commands or check system info, use the shell tool.
+    Keep responses concise.
+
+  tools:
+    - shell
+    - read_file
+
+  max_iterations: 5
+  temperature: 0.3

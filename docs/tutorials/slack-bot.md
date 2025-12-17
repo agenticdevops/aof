@@ -70,7 +70,7 @@ metadata:
     purpose: operations
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   model_config:
     temperature: 0.3

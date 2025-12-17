@@ -9,7 +9,7 @@ metadata:
     environment: development
 
 spec:
-  model: openai:gpt-4o
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are a helpful assistant with access to filesystem and other tools.
@@ -70,7 +70,7 @@ metadata:
   name: remote-mcp-agent
 
 spec:
-  model: anthropic:claude-3-5-sonnet-20241022
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are an assistant connected to remote MCP servers.
@@ -92,7 +92,7 @@ spec:
 
 # Flat format example (backward compatible)
 name: flat-mcp-agent
-model: openai:gpt-4o
+model: google:gemini-2.5-flash
 instructions: Agent with MCP tools using flat YAML format
 
 mcp_servers:

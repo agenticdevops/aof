@@ -134,7 +134,7 @@ metadata:
     team: sre
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   model_config:
     temperature: 0.1  # Very low - we want predictable fixes

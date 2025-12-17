@@ -85,7 +85,7 @@ metadata:
 
 | Provider | Models | Example |
 |----------|--------|---------|
-| `openai` | gpt-4, gpt-4-turbo, gpt-3.5-turbo | `openai:gpt-4` |
+| `openai` | gpt-4, gpt-4-turbo, gpt-3.5-turbo | `google:gemini-2.5-flash` |
 | `anthropic` | claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022, claude-3-opus-20240229 | `anthropic:claude-3-5-sonnet-20241022` |
 | `ollama` | llama3, mistral, codellama, etc. | `ollama:llama3` |
 | `groq` | llama-3.1-70b-versatile, mixtral-8x7b-32768 | `groq:llama-3.1-70b-versatile` |
@@ -93,7 +93,7 @@ metadata:
 **Example:**
 ```yaml
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 ```
 
 **Environment Variables:**
@@ -477,7 +477,7 @@ kind: Agent
 metadata:
   name: simple-assistant
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
   instructions: "You are a helpful assistant."
 ```
 
@@ -536,7 +536,7 @@ metadata:
   name: devops-assistant
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are a DevOps automation assistant.

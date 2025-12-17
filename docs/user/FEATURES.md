@@ -26,7 +26,7 @@ AOF supports multiple LLM providers out of the box:
 | Provider | Model Format | Environment Variable |
 |----------|--------------|---------------------|
 | Anthropic | `anthropic:claude-3-5-sonnet-20241022` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai:gpt-4o` | `OPENAI_API_KEY` |
+| OpenAI | `google:gemini-2.5-flash` | `OPENAI_API_KEY` |
 | Google | `google:gemini-2.0-flash` | `GOOGLE_API_KEY` |
 | AWS Bedrock | `bedrock:anthropic.claude-3-5-sonnet` | AWS credentials |
 | Azure OpenAI | `azure:gpt-4` | `AZURE_OPENAI_API_KEY` |
@@ -45,7 +45,7 @@ metadata:
   labels:
     team: platform
 spec:
-  model: openai:gpt-4o
+  model: google:gemini-2.5-flash
   instructions: |
     You are a helpful assistant.
   tools:
@@ -204,7 +204,7 @@ spec:
     - name: triage-agent
       role: manager
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           Coordinate incident response...
         tools:
@@ -215,7 +215,7 @@ spec:
       role: worker
       replicas: 2
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           Analyze logs for errors...
         tools:
@@ -383,7 +383,7 @@ Full documentation: [docs/MCP_CONFIGURATION.md](MCP_CONFIGURATION.md)
 model: anthropic:claude-3-5-sonnet-20241022
 
 # OpenAI
-model: openai:gpt-4o
+model: google:gemini-2.5-flash
 
 # Google
 model: google:gemini-2.0-flash
@@ -496,7 +496,7 @@ aof-tools = { version = "0.1", features = ["all"] }
    metadata:
      name: hello
    spec:
-     model: openai:gpt-4o-mini
+     model: google:gemini-2.5-flash
      instructions: |
        You are a helpful assistant.
    ```

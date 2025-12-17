@@ -70,7 +70,27 @@ aofctl run agent examples/kubectl-agent.yaml --input "Show me all pods"
 
 ---
 
-### 4. MCP Tools Agent
+### 4. Code Review Fleet
+**File:** `examples/fleets/code-review-team.yaml`
+**Use Case:** Multi-agent code review with security, performance, and quality reviewers
+
+**Features:**
+- 3 specialized reviewers running in parallel
+- Peer coordination with consensus voting
+- Git and file reading tools
+
+**Quick Start:**
+```bash
+# Set Gemini API key
+export GOOGLE_API_KEY=AIza...
+
+# Run fleet with code to review
+aofctl run fleet examples/fleets/code-review-team.yaml --input "Review: function add(a, b) { return a + b; }"
+```
+
+---
+
+### 5. MCP Tools Agent
 **File:** `mcp-tools-agent.yaml`
 **Use Case:** Agent with multiple MCP servers
 
@@ -142,13 +162,25 @@ AgentFlow will enable workflow orchestration:
 
 ## Example Comparison
 
+### Agents
+
 | Example | Complexity | Status | Prerequisites |
 |---------|------------|--------|---------------|
 | **hello-agent** | ⭐ Simple | ✅ Working | API key |
 | **test-gemini-with-tools** | ⭐ Simple | ✅ Working | Gemini API key |
-| **test-unified-tools** | ⭐ Simple | ✅ Working | Gemini API key |
+| **test-tools-agent** | ⭐ Simple | ✅ Working | Gemini API key |
 | **kubectl-agent** | ⭐⭐ Medium | ✅ Working | kubectl-ai, API key |
 | **mcp-tools-agent** | ⭐⭐ Medium | ✅ Working | Node.js, API key |
+
+### Fleets
+
+| Example | Complexity | Status | Prerequisites |
+|---------|------------|--------|---------------|
+| **simple-test-fleet** | ⭐ Simple | ✅ Working | Gemini API key |
+| **code-review-team** | ⭐⭐ Medium | ✅ Working | Gemini API key |
+| **incident-response-team** | ⭐⭐ Medium | ✅ Working | Gemini API key |
+| **k8s-rca-team** | ⭐⭐⭐ Advanced | ✅ Working | Gemini API key, kubectl |
+| **dockerizer-team** | ⭐⭐ Medium | ✅ Working | Gemini API key |
 
 ---
 
@@ -161,8 +193,8 @@ spec:
   model: google:gemini-2.5-flash   # Default - fast and capable
 
   # Alternatives:
-  model: openai:gpt-4o             # OpenAI GPT-4o
-  model: openai:gpt-4o-mini        # Cheaper/faster
+  model: google:gemini-2.5-flash             # OpenAI GPT-4o
+  model: google:gemini-2.5-flash        # Cheaper/faster
   model: anthropic:claude-3-5-sonnet-20241022  # Claude Sonnet
   model: ollama:llama3             # Local (free)
 ```

@@ -31,7 +31,7 @@ metadata:
     team: platform
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are an expert Kubernetes operations assistant for DevOps engineers.
@@ -70,7 +70,7 @@ metadata:
     team: platform
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are an expert Kubernetes operations assistant for DevOps engineers.
@@ -119,7 +119,7 @@ metadata:
     team: platform
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are an expert Kubernetes operations assistant for DevOps engineers.
@@ -173,7 +173,7 @@ metadata:
     team: platform
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are an expert Kubernetes operations assistant for DevOps engineers.
@@ -229,7 +229,7 @@ metadata:
     team: platform
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   model_config:
     temperature: 0.3        # Lower = more deterministic
@@ -358,7 +358,7 @@ metadata:
     owner: "platform-team@company.com"
 
 spec:
-  model: openai:gpt-4
+  model: google:gemini-2.5-flash
 
   model_config:
     temperature: 0.3

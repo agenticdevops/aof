@@ -1,6 +1,6 @@
 # Simple kubectl agent for testing MCP integration
 name: kubectl-agent
-model: openai:gpt-4o
+model: google:gemini-2.5-flash
 
 instructions: |
   You are a Kubernetes assistant. Use the kubectl tools to help users.

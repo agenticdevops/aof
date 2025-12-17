@@ -91,7 +91,7 @@ spec:
 
 > **Note**: You can use any supported model:
 > - `google:gemini-2.5-flash` - Google Gemini (requires `GOOGLE_API_KEY`)
-> - `openai:gpt-4` - OpenAI GPT-4 (requires `OPENAI_API_KEY`)
+> - `openai:gpt-4o` - OpenAI GPT-4 (requires `OPENAI_API_KEY`)
 > - `anthropic:claude-3-5-sonnet-20241022` - Anthropic Claude (requires `ANTHROPIC_API_KEY`)
 > - `ollama:llama3` - Local Ollama (no API key needed)
 
@@ -138,6 +138,52 @@ aofctl run agent k8s-agent.yaml --input "Show me all pods in the default namespa
 
 The agent will explain what it's doing and run `kubectl get pods -n default`.
 
+## Create Your First Fleet
+
+**AgentFleet** lets you run multiple agents in parallel for collaborative tasks. Here's a simple code review team:
+
+```yaml
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: code-review-team
+spec:
+  agents:
+    - name: security-reviewer
+      role: worker
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          Focus on security issues: authentication, input validation,
+          SQL injection, XSS, and secrets in code.
+        tools:
+          - read_file
+
+    - name: quality-reviewer
+      role: worker
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          Focus on code quality: readability, error handling,
+          design patterns, and test coverage.
+        tools:
+          - read_file
+
+  coordination:
+    mode: peer
+    distribution: round-robin
+```
+
+Save this as `code-review-fleet.yaml` and run:
+
+```bash
+aofctl run fleet code-review-fleet.yaml --input "Review: function add(a, b) { return a + b; }"
+```
+
+Both agents run in parallel and their responses are aggregated. See [Core Concepts](concepts.md) for more on coordination modes.
+
 ## Next Steps
 
 You now have a working AI agent! Here's where to go next:
@@ -176,7 +222,7 @@ The agent can't use tools you don't have installed. Either:
 ### "Model not supported"
 Check your provider:model format:
 - ✅ `google:gemini-2.5-flash`
-- ✅ `openai:gpt-4`
+- ✅ `openai:gpt-4o`
 - ✅ `anthropic:claude-3-5-sonnet-20241022`
 - ✅ `ollama:llama3`
 - ⚠️ `gpt-4` (defaults to Anthropic - better to specify provider)

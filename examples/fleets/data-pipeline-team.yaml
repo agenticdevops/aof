@@ -16,7 +16,7 @@ spec:
       role: worker
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are a Data Extractor agent. Your job is to:
           1. Extract data from various sources
@@ -33,7 +33,7 @@ spec:
       role: worker
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are a Data Transformer agent. Your responsibilities:
           1. Transform data according to business rules
@@ -49,7 +49,7 @@ spec:
       role: validator
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are a Data Validator agent. Your job is to:
           1. Validate data against schemas
@@ -65,7 +65,7 @@ spec:
       role: worker
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are a Data Loader agent. Your responsibilities:
           1. Load validated data to target systems

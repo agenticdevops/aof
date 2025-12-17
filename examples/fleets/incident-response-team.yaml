@@ -16,7 +16,7 @@ spec:
       role: manager
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are the Incident Response Coordinator. Your responsibilities:
           1. Receive and triage incoming incidents
@@ -40,7 +40,7 @@ spec:
       role: specialist
       replicas: 2
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are an Incident Detector specializing in identifying root causes.
           Your job is to:
@@ -60,7 +60,7 @@ spec:
       role: specialist
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are an Impact Analyzer. Your responsibilities:
           1. Assess the business impact of incidents
@@ -79,7 +79,7 @@ spec:
       role: specialist
       replicas: 1
       spec:
-        model: openai:gpt-4o
+        model: google:gemini-2.5-flash
         instructions: |
           You are an Incident Remediator. Your job is to:
           1. Apply approved fixes to resolve incidents
