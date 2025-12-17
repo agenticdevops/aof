@@ -58,7 +58,7 @@ pub async fn execute(
 
     match rt {
         ResourceType::Agent => run_agent(name_or_config, input, output).await,
-        ResourceType::Workflow => run_workflow(name_or_config, input, output).await,
+        ResourceType::Workflow | ResourceType::Flow => run_workflow(name_or_config, input, output).await,
         ResourceType::Fleet => run_fleet(name_or_config, input, output).await,
         ResourceType::Job => run_job(name_or_config, input, output).await,
         _ => {

@@ -490,14 +490,15 @@ spec:
 #    export SLACK_BOT_TOKEN=...
 #    export SLACK_SIGNING_SECRET=...
 #
-# 2. Apply agents:
-#    aofctl agent apply -f incident-responder.yaml
+# 2. Apply configuration (kubectl-style: aofctl verb noun):
+#    aofctl apply -f incident-responder.yaml
 #
-# 3. Apply flow:
-#    aofctl flow apply -f incident-responder.yaml
+# 3. Start flow:
+#    aofctl run flow incident-responder.yaml --daemon
 #
-# 4. Start flow:
-#    aofctl flow run incident-auto-response --daemon
+# 4. Check status:
+#    aofctl get flows
+#    aofctl describe flow incident-responder.yaml
 #
 # 5. Configure PagerDuty webhook:
 #    URL: https://your-domain.com/pagerduty/incident

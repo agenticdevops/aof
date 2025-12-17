@@ -10,3 +10,6 @@ pub mod tools;
 pub mod validate;
 pub mod version;
 pub mod serve;
+pub mod fleet;
+pub mod flow;
+pub mod completion;

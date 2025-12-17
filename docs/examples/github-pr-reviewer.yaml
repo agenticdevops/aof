@@ -187,14 +187,15 @@ spec:
 #    export GITHUB_TOKEN=ghp_...
 #    export GITHUB_WEBHOOK_SECRET=...
 #
-# 2. Apply the agent:
-#    aofctl agent apply -f github-pr-reviewer.yaml
+# 2. Apply configuration (kubectl-style: aofctl verb noun):
+#    aofctl apply -f github-pr-reviewer.yaml
 #
-# 3. Apply the flow for automation:
-#    aofctl flow apply -f github-pr-reviewer.yaml
+# 3. Start the flow listener:
+#    aofctl run flow github-pr-reviewer.yaml --daemon
 #
-# 4. Start the flow listener:
-#    aofctl flow run auto-pr-review --daemon
+# 4. Check status:
+#    aofctl get flows
+#    aofctl describe flow github-pr-reviewer.yaml
 #
 # 5. Configure GitHub webhook:
 #    URL: https://your-domain.com/github/webhook

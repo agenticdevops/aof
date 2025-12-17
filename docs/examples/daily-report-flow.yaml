@@ -515,18 +515,16 @@ spec:
 #    export SLACK_BOT_TOKEN=xoxb-...
 #    export API_TOKEN=...
 #
-# 2. Apply agent and flows:
-#    aofctl agent apply -f daily-report-flow.yaml
-#    aofctl flow apply -f daily-report-flow.yaml
+# 2. Apply configuration:
+#    aofctl apply -f daily-report-flow.yaml
 #
-# 3. Start flows:
-#    aofctl flow run daily-cluster-report --daemon
-#    aofctl flow run weekly-summary-report --daemon
-#    aofctl flow run custom-report-generator --daemon
+# 3. Start flows (kubectl-style: aofctl verb noun):
+#    aofctl run flow daily-report-flow.yaml --daemon
 #
 # 4. Test:
-#    # Wait for scheduled time or trigger manually
-#    aofctl flow run daily-cluster-report
+#    aofctl run flow daily-report-flow.yaml
+#    aofctl get flows
+#    aofctl describe flow daily-report-flow.yaml
 #
 #    # Custom report via Slack
 #    /report health 24h production
