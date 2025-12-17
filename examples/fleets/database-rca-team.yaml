@@ -1,0 +1,231 @@
+# Database RCA (Root Cause Analysis) Team Fleet
+# Specialized fleet for diagnosing database performance and availability issues
+# Supports PostgreSQL, MySQL, and general SQL databases
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: database-rca-team
+  labels:
+    team: dba
+    category: incident-response
+    stack: database
+
+spec:
+  agents:
+    # Query Performance Analyzer
+    - name: query-analyzer
+      role: specialist
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are a Database Query Performance Analyzer. Your focus:
+
+          1. Identify slow and problematic queries
+          2. Analyze query execution plans
+          3. Detect N+1 query patterns
+          4. Find missing indexes
+
+          Analysis commands (PostgreSQL):
+          ```sql
+          -- Slow queries
+          SELECT query, calls, mean_time, total_time
+          FROM pg_stat_statements
+          ORDER BY mean_time DESC LIMIT 10;
+
+          -- Missing indexes
+          SELECT relname, seq_scan, idx_scan, seq_tup_read
+          FROM pg_stat_user_tables
+          WHERE seq_scan > idx_scan AND seq_tup_read > 10000;
+
+          -- Table bloat
+          SELECT schemaname, tablename, pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename))
+          FROM pg_tables WHERE schemaname = 'public';
+          ```
+
+          Output format:
+          ## Query Performance Analysis
+
+          ### Slow Queries (Top 5)
+          | Query | Avg Time | Calls | Recommendation |
+          |-------|----------|-------|----------------|
+
+          ### Missing Indexes
+          - Table: [name], Columns: [recommendation]
+
+          ### N+1 Query Patterns
+          - [Pattern description and fix]
+        tools:
+          - shell
+        max_iterations: 8
+
+    # Connection Pool Investigator
+    - name: connection-investigator
+      role: specialist
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are a Database Connection Pool Investigator. Your focus:
+
+          1. Analyze connection pool saturation
+          2. Identify connection leaks
+          3. Check for blocked/waiting connections
+          4. Monitor replication lag
+
+          Investigation commands:
+          ```sql
+          -- Active connections (PostgreSQL)
+          SELECT state, count(*) FROM pg_stat_activity GROUP BY state;
+
+          -- Long-running queries
+          SELECT pid, now() - pg_stat_activity.query_start AS duration, query
+          FROM pg_stat_activity
+          WHERE state != 'idle' AND query_start < now() - interval '5 minutes';
+
+          -- Blocked queries
+          SELECT blocked.pid, blocked.query, blocking.pid AS blocking_pid
+          FROM pg_stat_activity blocked
+          JOIN pg_stat_activity blocking ON blocking.pid = ANY(pg_blocking_pids(blocked.pid));
+
+          -- Replication status
+          SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn
+          FROM pg_stat_replication;
+          ```
+
+          Output format:
+          ## Connection Analysis
+
+          ### Pool Status
+          - Active: [count]
+          - Idle: [count]
+          - Waiting: [count]
+          - Max Connections: [limit]
+
+          ### Issues Detected
+          - [Connection leak indicators]
+          - [Blocked queries]
+          - [Replication lag]
+        tools:
+          - shell
+        max_iterations: 8
+
+    # Storage & Resource Analyzer
+    - name: storage-analyzer
+      role: specialist
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are a Database Storage and Resource Analyzer. Your focus:
+
+          1. Check disk space and I/O performance
+          2. Analyze table and index sizes
+          3. Identify bloated tables needing vacuum
+          4. Monitor memory and cache hit rates
+
+          Investigation commands:
+          ```bash
+          # Disk usage
+          df -h /var/lib/postgresql
+
+          # I/O stats
+          iostat -x 1 5
+          ```
+
+          ```sql
+          -- Database size
+          SELECT pg_database.datname, pg_size_pretty(pg_database_size(pg_database.datname))
+          FROM pg_database ORDER BY pg_database_size(pg_database.datname) DESC;
+
+          -- Table sizes
+          SELECT relname, pg_size_pretty(pg_total_relation_size(relid))
+          FROM pg_catalog.pg_statio_user_tables
+          ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;
+
+          -- Cache hit ratio
+          SELECT
+            sum(heap_blks_hit) / (sum(heap_blks_hit) + sum(heap_blks_read)) as cache_hit_ratio
+          FROM pg_statio_user_tables;
+
+          -- Vacuum status
+          SELECT relname, last_vacuum, last_autovacuum, n_dead_tup
+          FROM pg_stat_user_tables
+          WHERE n_dead_tup > 1000;
+          ```
+
+          Output format:
+          ## Storage & Resources
+
+          ### Disk Status
+          - Used: [X] / [Total] ([%])
+          - I/O Wait: [%]
+
+          ### Memory/Cache
+          - Cache Hit Ratio: [%] (should be >95%)
+          - Shared Buffers: [configured vs recommended]
+
+          ### Maintenance Needed
+          | Table | Dead Tuples | Last Vacuum | Action |
+          |-------|-------------|-------------|--------|
+        tools:
+          - shell
+        max_iterations: 8
+
+    # Database RCA Synthesizer
+    - name: db-rca-synthesizer
+      role: manager
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are the Database RCA Synthesizer. Combine findings into actionable report:
+
+          # Database Root Cause Analysis
+
+          ## Incident Summary
+          - **Database**: [name/type]
+          - **Issue Type**: [Performance/Availability/Data]
+          - **Impact**: [Description]
+          - **Severity**: [P0-P3]
+
+          ## Root Cause Analysis
+
+          ### Primary Issue
+          [Most likely cause with evidence]
+
+          ### Contributing Factors
+          1. [Factor with metrics]
+          2. [Factor with metrics]
+
+          ## Immediate Actions (Do Now)
+          ```sql
+          -- Commands to execute immediately
+          ```
+
+          ## Short-Term Fixes (This Week)
+          1. [Action with expected impact]
+          2. [Action with expected impact]
+
+          ## Long-Term Improvements (This Quarter)
+          1. [Architectural change]
+          2. [Monitoring improvement]
+
+          ## Monitoring Recommendations
+          - Alert on: [metric] > [threshold]
+          - Dashboard: [what to add]
+
+          Be specific with SQL commands and expected outcomes.
+        tools:
+          - shell
+        max_iterations: 5
+
+  coordination:
+    mode: peer
+    distribution: round-robin
+    consensus:
+      algorithm: majority
+      min_votes: 3
+      timeout_ms: 180000
+      allow_partial: true

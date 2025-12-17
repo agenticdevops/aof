@@ -23,6 +23,14 @@ Complete documentation for the Agentic Ops Framework (AOF).
   - Models - Multi-provider support
   - Memory - Context persistence
 
+### Advanced Concepts
+- **[AgentFleet: Multi-Agent Coordination](concepts/fleets.md)** - Deep dive into fleets
+  - Why use fleets in DevOps (consensus, parallel execution, specialization)
+  - 4 coordination modes (peer, hierarchical, pipeline, swarm)
+  - 4 consensus algorithms (majority, unanimous, weighted, first_wins)
+  - Fleet vs single agent comparison
+  - Real-world examples (code review, incident response, data pipeline)
+
 ### Tutorials (Step-by-Step)
 1. **[Build Your First Agent](tutorials/first-agent.md)** (15 min)
    - Agent definition and configuration
@@ -41,6 +49,12 @@ Complete documentation for the Agentic Ops Framework (AOF).
    - Auto-diagnostics
    - Conditional remediation
    - Post-incident analysis
+
+4. **[Build an RCA Fleet](tutorials/rca-fleet.md)** (25 min)
+   - Multi-agent root cause analysis
+   - Specialist agents (error analyzer, dependency checker, config auditor)
+   - Consensus-based incident diagnosis
+   - Customization for different tech stacks (K8s, database, AWS)
 
 ### Reference Documentation
 - **[Agent YAML Spec](reference/agent-spec.md)** - Complete Agent specification
@@ -207,14 +221,15 @@ See [Examples README](examples/README.md#contributing-examples) for guidelines.
 - [x] Main README
 - [x] Getting Started guide
 - [x] Core Concepts
-- [x] 3 comprehensive tutorials
+- [x] AgentFleet multi-agent coordination guide
+- [x] 4 comprehensive tutorials (including RCA Fleet)
 - [x] Complete Agent YAML reference
 - [x] Complete AgentFlow YAML reference
 - [x] Complete CLI reference
-- [x] 5 production-ready examples
+- [x] 5+ production-ready examples
+- [x] RCA fleet examples (application, database, Kubernetes)
 
 ### 🚧 Coming Soon
-- [ ] AgentFleet tutorial
 - [ ] Advanced patterns guide
 - [ ] Performance tuning guide
 - [ ] Security best practices
@@ -223,12 +238,15 @@ See [Examples README](examples/README.md#contributing-examples) for guidelines.
 
 ## 🔄 Documentation Updates
 
-Last updated: 2024-01-20
+Last updated: 2024-12-17
 
 ### Recent Changes
+- Added AgentFleet multi-agent coordination guide
+- Added RCA Fleet tutorial with consensus patterns
+- Added application and database RCA fleet examples
 - Added complete reference documentation
-- Added 5 production examples
-- Added 3 step-by-step tutorials
+- Added 5+ production examples
+- Added 4 step-by-step tutorials
 - Added quickstart guide
 
 ---

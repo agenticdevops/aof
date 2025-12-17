@@ -32,6 +32,13 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Advanced Concepts',
+      items: [
+        'concepts/fleets',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Guides',
       items: [
         'guides/deployment',
@@ -59,6 +66,7 @@ const sidebars: SidebarsConfig = {
         'tutorials/first-agent',
         'tutorials/slack-bot',
         'tutorials/incident-response',
+        'tutorials/rca-fleet',
       ],
     },
   ],
