@@ -75,7 +75,7 @@ const config: Config = {
       title: 'AOF',
       logo: {
         alt: 'Agentic Ops Framework Logo',
-        src: 'img/logo.svg',
+        src: 'img/aof.svg',
       },
       items: [
         {
