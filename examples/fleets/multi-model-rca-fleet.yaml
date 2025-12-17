@@ -1,0 +1,224 @@
+# Multi-Model RCA Fleet
+# A tiered fleet that uses multiple LLMs for consensus-based Root Cause Analysis
+#
+# Architecture:
+#   Tier 1 (Data Collectors) - Cheap, fast models (~$0.075/1M tokens)
+#     - Loki log collector
+#     - Prometheus metrics collector
+#     - Kubernetes state collector
+#     - Git change auditor
+#
+#   Tier 2 (Reasoning Agents) - Different LLMs for diverse perspectives
+#     - Claude analyzer (weight: 1.5)
+#     - Gemini analyzer (weight: 1.0)
+#     - GPT-4 analyzer (weight: 1.0)
+#
+#   Tier 3 (Coordinator) - Synthesizes final RCA report
+#     - RCA Coordinator (manager role)
+#
+# Usage:
+#   aofctl run fleet multi-model-rca-fleet.yaml \
+#     --input "Investigate: Users reporting 500 errors on checkout API since 2pm UTC"
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: multi-model-rca
+  labels:
+    purpose: incident-response
+    type: rca
+    multi-model: "true"
+  annotations:
+    description: "Multi-model RCA fleet with tiered execution and consensus"
+    author: "AOF Team"
+
+spec:
+  agents:
+    # ============================================
+    # TIER 1: Data Collectors (cheap, parallel)
+    # ============================================
+
+    - name: loki-collector
+      config: ../agents/observability/loki-collector.yaml
+      tier: 1
+      role: specialist
+      labels:
+        data-source: logs
+
+    - name: prometheus-collector
+      config: ../agents/observability/prometheus-collector.yaml
+      tier: 1
+      role: specialist
+      labels:
+        data-source: metrics
+
+    - name: k8s-collector
+      config: ../agents/observability/k8s-collector.yaml
+      tier: 1
+      role: specialist
+      labels:
+        data-source: kubernetes
+
+    - name: git-collector
+      config: ../agents/observability/git-collector.yaml
+      tier: 1
+      role: specialist
+      labels:
+        data-source: git
+
+    # ============================================
+    # TIER 2: Reasoning Agents (multi-model)
+    # ============================================
+
+    - name: claude-analyzer
+      config: ../agents/reasoning/claude-analyzer.yaml
+      tier: 2
+      role: specialist
+      weight: 1.5  # Slightly higher weight for Claude
+      labels:
+        model-provider: anthropic
+
+    - name: gemini-analyzer
+      config: ../agents/reasoning/gemini-analyzer.yaml
+      tier: 2
+      role: specialist
+      weight: 1.0
+      labels:
+        model-provider: google
+
+    - name: gpt4-analyzer
+      config: ../agents/reasoning/gpt4-analyzer.yaml
+      tier: 2
+      role: specialist
+      weight: 1.0
+      labels:
+        model-provider: openai
+
+    # ============================================
+    # TIER 3: Coordinator (synthesis)
+    # ============================================
+
+    - name: rca-coordinator
+      config: ../agents/reasoning/rca-coordinator.yaml
+      tier: 3
+      role: manager
+      labels:
+        purpose: synthesis
+
+  # Tiered coordination with consensus
+  coordination:
+    mode: tiered
+    distribution: round-robin
+
+    # Global consensus configuration
+    consensus:
+      algorithm: weighted
+      min_votes: 2
+      timeout_ms: 180000  # 3 minutes per tier
+      allow_partial: true
+      min_confidence: 0.6
+
+    # Tiered execution configuration
+    tiered:
+      # Pass all results to next tier (not just consensus winner)
+      pass_all_results: true
+
+      # Use manager to synthesize final output
+      final_aggregation: manager_synthesis
+
+      # Per-tier consensus configuration
+      tier_consensus:
+        # Tier 1: First wins - just collect data fast
+        "1":
+          algorithm: first_wins
+
+        # Tier 2: Weighted consensus - multi-model analysis
+        "2":
+          algorithm: weighted
+          min_votes: 2
+          min_confidence: 0.5
+          allow_partial: true
+
+        # Tier 3: Single coordinator, no consensus needed
+        "3":
+          algorithm: first_wins
+
+  # Shared resources
+  shared:
+    memory:
+      type: inmemory
+      namespace: rca-session
+      ttl: 3600  # 1 hour
+
+---
+# Alternative: Simplified RCA Fleet (inline specs, no external files)
+# Use this if you want a self-contained fleet definition
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: simple-rca
+  labels:
+    purpose: incident-response
+    type: rca
+
+spec:
+  agents:
+    # Tier 1: K8s collector only (simplified)
+    - name: k8s-collector
+      tier: 1
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          Collect Kubernetes state for RCA.
+          Use kubectl to get pods, events, and deployments.
+          Output structured JSON with findings.
+        tools:
+          - shell
+
+    # Tier 2: Two reasoning models
+    - name: analyzer-1
+      tier: 2
+      weight: 1.5
+      spec:
+        model: anthropic:claude-sonnet-4-20250514
+        instructions: |
+          Analyze the collected data and identify the root cause.
+          Consider logs, metrics, K8s state, and recent changes.
+          Provide evidence-based conclusions.
+        tools:
+          - shell
+
+    - name: analyzer-2
+      tier: 2
+      weight: 1.0
+      spec:
+        model: google:gemini-2.5-pro
+        instructions: |
+          Analyze the collected data and identify the root cause.
+          Use systematic analysis to find the most likely cause.
+          Provide clear evidence for your conclusions.
+        tools:
+          - shell
+
+    # Tier 3: Coordinator
+    - name: coordinator
+      tier: 3
+      role: manager
+      spec:
+        model: anthropic:claude-sonnet-4-20250514
+        instructions: |
+          Synthesize analyses from tier 2 agents into a final RCA report.
+          Highlight areas of agreement and disagreement.
+          Produce a clear, actionable report.
+        tools:
+          - shell
+
+  coordination:
+    mode: tiered
+    consensus:
+      algorithm: weighted
+      min_confidence: 0.6
+    tiered:
+      pass_all_results: true
+      final_aggregation: manager_synthesis

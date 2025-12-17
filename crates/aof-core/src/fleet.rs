@@ -5,6 +5,8 @@
 //! - Hierarchical: Manager agent coordinates workers
 //! - Peer: All agents coordinate as equals
 //! - Swarm: Dynamic self-organizing coordination
+//! - Pipeline: Sequential handoff between agents
+//! - Tiered: Tier-based parallel execution with consensus (for multi-model RCA)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -93,6 +95,16 @@ pub struct FleetAgent {
     /// Agent-specific labels
     #[serde(default)]
     pub labels: HashMap<String, String>,
+
+    /// Tier number for tiered coordination mode (1 = first tier, 2 = second, etc.)
+    /// Tier 1 agents run first, their results feed into tier 2, etc.
+    /// If not specified, defaults to 1.
+    #[serde(default)]
+    pub tier: Option<u32>,
+
+    /// Weight for weighted consensus voting (default: 1.0)
+    #[serde(default)]
+    pub weight: Option<f32>,
 }
 
 fn default_replicas() -> u32 {
@@ -157,9 +169,43 @@ pub struct CoordinationConfig {
     #[serde(default)]
     pub distribution: TaskDistribution,
 
-    /// Consensus configuration (for peer mode)
+    /// Consensus configuration (for peer/tiered mode)
     #[serde(default)]
     pub consensus: Option<ConsensusConfig>,
+
+    /// Tiered execution configuration (for tiered mode)
+    #[serde(default)]
+    pub tiered: Option<TieredConfig>,
+}
+
+/// Configuration for tiered coordination mode
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TieredConfig {
+    /// Per-tier consensus configuration
+    /// Key: tier number (as string), Value: consensus config for that tier
+    #[serde(default)]
+    pub tier_consensus: HashMap<String, ConsensusConfig>,
+
+    /// Whether to pass all tier results to next tier or just the consensus result
+    #[serde(default)]
+    pub pass_all_results: bool,
+
+    /// Final tier aggregation strategy
+    #[serde(default)]
+    pub final_aggregation: FinalAggregation,
+}
+
+/// How to aggregate results from the final tier
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FinalAggregation {
+    /// Use consensus algorithm to pick best result
+    #[default]
+    Consensus,
+    /// Merge all results into combined output
+    Merge,
+    /// Use manager agent to synthesize final result
+    ManagerSynthesis,
 }
 
 impl Default for CoordinationConfig {
@@ -169,11 +215,24 @@ impl Default for CoordinationConfig {
             manager: None,
             distribution: TaskDistribution::RoundRobin,
             consensus: None,
+            tiered: None,
         }
     }
 }
 
 /// Coordination mode for the fleet
+///
+/// Choose the mode that best fits your use case:
+/// - **Peer**: All agents work on the same task, results combined via consensus. Best for
+///   diverse perspectives (code review, RCA analysis).
+/// - **Hierarchical**: Manager delegates to workers, aggregates results. Best for
+///   complex multi-step tasks with oversight.
+/// - **Pipeline**: Sequential handoff between agents. Best for workflows where
+///   each stage transforms data for the next.
+/// - **Swarm**: Self-organizing dynamic coordination. Best for large-scale
+///   parallel processing with adaptive load balancing.
+/// - **Tiered**: Tier-based parallel execution with consensus. Best for multi-model
+///   RCA where cheap data-collectors feed reasoning models.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CoordinationMode {
@@ -186,6 +245,10 @@ pub enum CoordinationMode {
     Swarm,
     /// Pipeline: Sequential handoff between agents
     Pipeline,
+    /// Tiered: Tier-based parallel execution with consensus
+    /// Agents are grouped by tier (e.g., tier 1 = data collectors, tier 2 = reasoners)
+    /// Each tier runs in parallel, results flow to next tier
+    Tiered,
 }
 
 /// Task distribution strategy
@@ -205,7 +268,20 @@ pub enum TaskDistribution {
     Sticky,
 }
 
-/// Consensus configuration for peer coordination
+/// Consensus configuration for peer/tiered coordination
+///
+/// # Example
+/// ```yaml
+/// consensus:
+///   algorithm: weighted
+///   min_votes: 2
+///   timeout_ms: 60000
+///   allow_partial: true
+///   weights:
+///     senior-reviewer: 2.0
+///     junior-reviewer: 1.0
+///   min_confidence: 0.7
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsensusConfig {
     /// Consensus algorithm
@@ -216,28 +292,47 @@ pub struct ConsensusConfig {
     #[serde(default)]
     pub min_votes: Option<u32>,
 
-    /// Timeout for reaching consensus
+    /// Timeout for reaching consensus (milliseconds)
     #[serde(default)]
     pub timeout_ms: Option<u64>,
 
-    /// Allow partial consensus
+    /// Allow partial consensus if timeout reached
     #[serde(default)]
     pub allow_partial: bool,
+
+    /// Per-agent weights for weighted voting
+    /// Key: agent name, Value: weight (default 1.0)
+    #[serde(default)]
+    pub weights: HashMap<String, f32>,
+
+    /// Minimum confidence threshold (0.0-1.0)
+    /// Below this threshold, result is flagged for human review
+    #[serde(default)]
+    pub min_confidence: Option<f32>,
 }
 
 /// Consensus algorithm type
+///
+/// Choose based on your requirements:
+/// - **Majority**: >50% agreement wins. Fast, tolerates outliers.
+/// - **Unanimous**: 100% agreement required. High confidence, may timeout.
+/// - **Weighted**: Per-agent weights (senior reviewers count more). Balanced expertise.
+/// - **FirstWins**: First response wins. Fastest, no consensus overhead.
+/// - **HumanReview**: Flags for human operator decision. High-stakes scenarios.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum ConsensusAlgorithm {
-    /// Simple majority voting
+    /// Simple majority voting (>50% agreement)
     #[default]
     Majority,
-    /// Unanimous agreement required
+    /// Unanimous agreement required (100%)
     Unanimous,
-    /// Weighted voting based on agent roles
+    /// Weighted voting based on agent weights
     Weighted,
-    /// First response wins
+    /// First response wins (no consensus)
     FirstWins,
+    /// Flags result for human operator review
+    HumanReview,
 }
 
 /// Shared resources configuration
@@ -649,6 +744,24 @@ impl AgentFleet {
             }
         }
 
+        // Validate tiered mode has agents with tier assignments
+        if self.spec.coordination.mode == CoordinationMode::Tiered {
+            let tiers = self.get_tiers();
+            if tiers.is_empty() {
+                return Err(crate::AofError::config(
+                    "Tiered mode requires at least one agent with a tier assignment".to_string(),
+                ));
+            }
+            // Ensure we have at least 2 tiers for meaningful tiered execution
+            if tiers.len() < 2 {
+                // This is a warning, not an error - single tier still works
+                tracing::warn!(
+                    "Tiered mode with only one tier ({}) - consider using peer mode instead",
+                    tiers[0]
+                );
+            }
+        }
+
         // Validate agent configurations
         for agent in &self.spec.agents {
             if agent.config.is_none() && agent.spec.is_none() {
@@ -660,6 +773,47 @@ impl AgentFleet {
         }
 
         Ok(())
+    }
+
+    /// Get unique tiers in the fleet (sorted ascending)
+    pub fn get_tiers(&self) -> Vec<u32> {
+        let mut tiers: Vec<u32> = self
+            .spec
+            .agents
+            .iter()
+            .map(|a| a.tier.unwrap_or(1))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        tiers.sort();
+        tiers
+    }
+
+    /// Get agents for a specific tier
+    pub fn get_agents_by_tier(&self, tier: u32) -> Vec<&FleetAgent> {
+        self.spec
+            .agents
+            .iter()
+            .filter(|a| a.tier.unwrap_or(1) == tier)
+            .collect()
+    }
+
+    /// Get agent weight (for weighted consensus)
+    pub fn get_agent_weight(&self, agent_name: &str) -> f32 {
+        // First check agent-level weight
+        if let Some(agent) = self.get_agent(agent_name) {
+            if let Some(weight) = agent.weight {
+                return weight;
+            }
+        }
+        // Then check consensus config weights
+        if let Some(ref consensus) = self.spec.coordination.consensus {
+            if let Some(weight) = consensus.weights.get(agent_name) {
+                return *weight;
+            }
+        }
+        // Default weight
+        1.0
     }
 }
 
@@ -783,5 +937,341 @@ spec:
         state.metrics.active_agents = 3;
 
         assert_eq!(state.metrics.total_agents, 3);
+    }
+
+    #[test]
+    fn test_tiered_mode_fleet() {
+        let yaml = r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: rca-team
+spec:
+  agents:
+    # Tier 1: Data collectors (cheap models)
+    - name: loki-collector
+      config: ./agents/loki.yaml
+      tier: 1
+    - name: prometheus-collector
+      config: ./agents/prometheus.yaml
+      tier: 1
+    - name: k8s-collector
+      config: ./agents/k8s.yaml
+      tier: 1
+    # Tier 2: Reasoning models
+    - name: claude-analyzer
+      config: ./agents/claude.yaml
+      tier: 2
+      weight: 2.0
+    - name: gemini-analyzer
+      config: ./agents/gemini.yaml
+      tier: 2
+    # Tier 3: Synthesizer
+    - name: rca-coordinator
+      config: ./agents/coordinator.yaml
+      tier: 3
+      role: manager
+  coordination:
+    mode: tiered
+    consensus:
+      algorithm: weighted
+      min_votes: 2
+      min_confidence: 0.7
+    tiered:
+      pass_all_results: true
+      final_aggregation: manager_synthesis
+"#;
+
+        let fleet = AgentFleet::from_yaml(yaml).unwrap();
+        assert_eq!(fleet.metadata.name, "rca-team");
+        assert_eq!(fleet.spec.coordination.mode, CoordinationMode::Tiered);
+
+        // Test tier detection
+        let tiers = fleet.get_tiers();
+        assert_eq!(tiers, vec![1, 2, 3]);
+
+        // Test agents by tier
+        let tier1_agents = fleet.get_agents_by_tier(1);
+        assert_eq!(tier1_agents.len(), 3);
+
+        let tier2_agents = fleet.get_agents_by_tier(2);
+        assert_eq!(tier2_agents.len(), 2);
+
+        let tier3_agents = fleet.get_agents_by_tier(3);
+        assert_eq!(tier3_agents.len(), 1);
+
+        // Test agent weights
+        assert_eq!(fleet.get_agent_weight("claude-analyzer"), 2.0);
+        assert_eq!(fleet.get_agent_weight("gemini-analyzer"), 1.0); // default
+
+        // Validate configuration
+        assert!(fleet.validate().is_ok());
+    }
+
+    #[test]
+    fn test_consensus_algorithms() {
+        // Test all consensus algorithm variants parse correctly
+        let algorithms = vec![
+            ("majority", ConsensusAlgorithm::Majority),
+            ("unanimous", ConsensusAlgorithm::Unanimous),
+            ("weighted", ConsensusAlgorithm::Weighted),
+            ("first_wins", ConsensusAlgorithm::FirstWins),
+            ("human_review", ConsensusAlgorithm::HumanReview),
+        ];
+
+        for (yaml_value, expected) in algorithms {
+            let yaml = format!(r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: test
+spec:
+  agents:
+    - name: agent-1
+      config: ./agent.yaml
+  coordination:
+    mode: peer
+    consensus:
+      algorithm: {}
+"#, yaml_value);
+
+            let fleet = AgentFleet::from_yaml(&yaml).unwrap();
+            assert_eq!(
+                fleet.spec.coordination.consensus.as_ref().unwrap().algorithm,
+                expected,
+                "Failed for algorithm: {}",
+                yaml_value
+            );
+        }
+    }
+
+    #[test]
+    fn test_weighted_consensus_config() {
+        let yaml = r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: weighted-team
+spec:
+  agents:
+    - name: senior-reviewer
+      config: ./reviewer.yaml
+      weight: 2.0
+    - name: junior-reviewer
+      config: ./reviewer.yaml
+  coordination:
+    mode: peer
+    consensus:
+      algorithm: weighted
+      min_votes: 2
+      min_confidence: 0.8
+      weights:
+        senior-reviewer: 2.0
+        junior-reviewer: 1.0
+"#;
+
+        let fleet = AgentFleet::from_yaml(yaml).unwrap();
+        let consensus = fleet.spec.coordination.consensus.as_ref().unwrap();
+
+        assert_eq!(consensus.algorithm, ConsensusAlgorithm::Weighted);
+        assert_eq!(consensus.min_votes, Some(2));
+        assert_eq!(consensus.min_confidence, Some(0.8));
+        assert_eq!(consensus.weights.get("senior-reviewer"), Some(&2.0));
+        assert_eq!(consensus.weights.get("junior-reviewer"), Some(&1.0));
+
+        // Test weight lookup via fleet method
+        assert_eq!(fleet.get_agent_weight("senior-reviewer"), 2.0);
+    }
+
+    #[test]
+    fn test_human_review_consensus() {
+        let yaml = r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: critical-review
+spec:
+  agents:
+    - name: analyzer-1
+      config: ./analyzer.yaml
+    - name: analyzer-2
+      config: ./analyzer.yaml
+  coordination:
+    mode: peer
+    consensus:
+      algorithm: human_review
+      timeout_ms: 300000
+      min_confidence: 0.9
+"#;
+
+        let fleet = AgentFleet::from_yaml(yaml).unwrap();
+        let consensus = fleet.spec.coordination.consensus.as_ref().unwrap();
+
+        assert_eq!(consensus.algorithm, ConsensusAlgorithm::HumanReview);
+        assert_eq!(consensus.timeout_ms, Some(300000));
+        assert_eq!(consensus.min_confidence, Some(0.9));
+    }
+
+    #[test]
+    fn test_all_coordination_modes() {
+        let modes = vec![
+            ("peer", CoordinationMode::Peer),
+            ("hierarchical", CoordinationMode::Hierarchical),
+            ("pipeline", CoordinationMode::Pipeline),
+            ("swarm", CoordinationMode::Swarm),
+            ("tiered", CoordinationMode::Tiered),
+        ];
+
+        for (yaml_value, expected) in modes {
+            let yaml = format!(r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: test
+spec:
+  agents:
+    - name: agent-1
+      config: ./agent.yaml
+      role: manager
+      tier: 1
+    - name: agent-2
+      config: ./agent.yaml
+      tier: 2
+  coordination:
+    mode: {}
+    manager: agent-1
+"#, yaml_value);
+
+            let fleet = AgentFleet::from_yaml(&yaml).unwrap();
+            assert_eq!(
+                fleet.spec.coordination.mode,
+                expected,
+                "Failed for mode: {}",
+                yaml_value
+            );
+        }
+    }
+
+    #[test]
+    fn test_tiered_config() {
+        let yaml = r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: tiered-team
+spec:
+  agents:
+    - name: collector
+      config: ./collector.yaml
+      tier: 1
+    - name: reasoner
+      config: ./reasoner.yaml
+      tier: 2
+  coordination:
+    mode: tiered
+    tiered:
+      pass_all_results: true
+      final_aggregation: merge
+      tier_consensus:
+        "1":
+          algorithm: first_wins
+        "2":
+          algorithm: majority
+          min_votes: 1
+"#;
+
+        let fleet = AgentFleet::from_yaml(yaml).unwrap();
+        let tiered = fleet.spec.coordination.tiered.as_ref().unwrap();
+
+        assert!(tiered.pass_all_results);
+        assert_eq!(tiered.final_aggregation, FinalAggregation::Merge);
+
+        let tier1_consensus = tiered.tier_consensus.get("1").unwrap();
+        assert_eq!(tier1_consensus.algorithm, ConsensusAlgorithm::FirstWins);
+
+        let tier2_consensus = tiered.tier_consensus.get("2").unwrap();
+        assert_eq!(tier2_consensus.algorithm, ConsensusAlgorithm::Majority);
+    }
+
+    #[test]
+    fn test_final_aggregation_modes() {
+        let modes = vec![
+            ("consensus", FinalAggregation::Consensus),
+            ("merge", FinalAggregation::Merge),
+            ("manager_synthesis", FinalAggregation::ManagerSynthesis),
+        ];
+
+        for (yaml_value, expected) in modes {
+            let yaml = format!(r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: test
+spec:
+  agents:
+    - name: agent-1
+      config: ./agent.yaml
+      tier: 1
+    - name: agent-2
+      config: ./agent.yaml
+      tier: 2
+  coordination:
+    mode: tiered
+    tiered:
+      final_aggregation: {}
+"#, yaml_value);
+
+            let fleet = AgentFleet::from_yaml(&yaml).unwrap();
+            let tiered = fleet.spec.coordination.tiered.as_ref().unwrap();
+            assert_eq!(
+                tiered.final_aggregation,
+                expected,
+                "Failed for aggregation: {}",
+                yaml_value
+            );
+        }
+    }
+
+    #[test]
+    fn test_existing_simple_fleet_unchanged() {
+        // Ensure existing simple fleet configurations still work
+        let yaml = r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: simple-fleet
+spec:
+  agents:
+    - name: worker
+      config: ./worker.yaml
+"#;
+
+        let fleet = AgentFleet::from_yaml(yaml).unwrap();
+        assert_eq!(fleet.spec.coordination.mode, CoordinationMode::Peer); // default
+        assert!(fleet.validate().is_ok());
+    }
+
+    #[test]
+    fn test_pipeline_mode_unchanged() {
+        let yaml = r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: pipeline-fleet
+spec:
+  agents:
+    - name: stage1
+      config: ./stage1.yaml
+    - name: stage2
+      config: ./stage2.yaml
+    - name: stage3
+      config: ./stage3.yaml
+  coordination:
+    mode: pipeline
+"#;
+
+        let fleet = AgentFleet::from_yaml(yaml).unwrap();
+        assert_eq!(fleet.spec.coordination.mode, CoordinationMode::Pipeline);
+        assert!(fleet.validate().is_ok());
     }
 }

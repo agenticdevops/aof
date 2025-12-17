@@ -82,7 +82,7 @@ Fleet of 3 Gemini Flash:
 
 ## Coordination Modes
 
-AOF supports four coordination modes for different use cases:
+AOF supports five coordination modes for different use cases:
 
 ### 1. Peer Mode (Default)
 
@@ -237,9 +237,113 @@ coordination:
 3. Agent processes task
 4. Metrics tracked for future balancing
 
+### 5. Tiered Mode (Multi-Model RCA)
+
+Tier-based parallel execution with consensus at each tier. Designed for multi-model scenarios like Root Cause Analysis where cheap data collectors feed reasoning models.
+
+```yaml
+coordination:
+  mode: tiered
+  consensus:
+    algorithm: weighted
+    min_confidence: 0.6
+  tiered:
+    pass_all_results: true
+    final_aggregation: manager_synthesis
+
+agents:
+  # Tier 1: Data Collectors (cheap models, parallel)
+  - name: loki-collector
+    tier: 1
+    spec:
+      model: google:gemini-2.0-flash  # ~$0.075/1M tokens
+
+  - name: prometheus-collector
+    tier: 1
+    spec:
+      model: google:gemini-2.0-flash
+
+  # Tier 2: Reasoning Models (multi-model consensus)
+  - name: claude-analyzer
+    tier: 2
+    weight: 1.5  # Higher weight for Claude
+    spec:
+      model: anthropic:claude-sonnet-4-20250514
+
+  - name: gemini-analyzer
+    tier: 2
+    weight: 1.0
+    spec:
+      model: google:gemini-2.5-pro
+
+  # Tier 3: Coordinator (synthesis)
+  - name: rca-coordinator
+    tier: 3
+    role: manager
+    spec:
+      model: anthropic:claude-sonnet-4-20250514
+```
+
+**Best for**: Multi-model RCA, complex analysis workflows, cost-optimized multi-perspective analysis
+
+**How it works**:
+1. **Tier 1** agents execute in parallel (cheap data collection)
+2. Results from Tier 1 are passed to **Tier 2** agents
+3. **Tier 2** agents analyze with different LLMs (multi-model consensus)
+4. **Tier 3** manager synthesizes final result
+
+```
+        ┌─────────────────────────────────────────────────┐
+        │              TIERED EXECUTION                    │
+        │                                                  │
+        │  TIER 1: Data Collectors (parallel)             │
+        │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐    │
+        │  │ Loki   │ │ Prom   │ │  K8s   │ │  Git   │    │
+        │  │ Logs   │ │Metrics │ │ State  │ │Changes │    │
+        │  └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘    │
+        │      └──────────┼──────────┼──────────┘         │
+        │                 ▼ (collected data)              │
+        │                                                  │
+        │  TIER 2: Reasoning Models (multi-model)         │
+        │  ┌────────────┐ ┌────────────┐ ┌────────────┐   │
+        │  │  Claude    │ │  Gemini    │ │   GPT-4    │   │
+        │  │ (wt: 1.5)  │ │ (wt: 1.0)  │ │ (wt: 1.0)  │   │
+        │  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘   │
+        │        └──────────────┼──────────────┘          │
+        │                       ▼ (weighted consensus)    │
+        │                                                  │
+        │  TIER 3: Coordinator                            │
+        │  ┌────────────────────────────────────────┐     │
+        │  │           RCA Coordinator              │     │
+        │  │    (synthesize final report)           │     │
+        │  └────────────────────────────────────────┘     │
+        │                       ▼                          │
+        │               Final RCA Report                   │
+        └─────────────────────────────────────────────────┘
+```
+
+**Tiered Configuration Options**:
+
+```yaml
+tiered:
+  # Pass all results to next tier (vs just consensus winner)
+  pass_all_results: true
+
+  # Final tier aggregation strategy
+  final_aggregation: manager_synthesis  # or: consensus, merge
+
+  # Per-tier consensus configuration
+  tier_consensus:
+    "1":
+      algorithm: first_wins  # Fast data collection
+    "2":
+      algorithm: weighted    # Multi-model consensus
+      min_votes: 2
+```
+
 ## Consensus Algorithms
 
-When using **Peer mode**, consensus determines how agent results are aggregated.
+When using **Peer** or **Tiered** modes, consensus determines how agent results are aggregated.
 
 ### Supported Algorithms
 
@@ -249,6 +353,45 @@ When using **Peer mode**, consensus determines how agent results are aggregated.
 | **unanimous** | 100% must agree | Critical deployments, security |
 | **weighted** | Votes weighted by role | Senior > Junior reviewers |
 | **first_wins** | First response wins | Time-critical scenarios |
+| **human_review** | Always flag for human | High-stakes decisions |
+
+### Algorithm Details
+
+#### Majority
+More than 50% of agents must agree on the result. Fast and tolerant of outliers.
+
+#### Unanimous
+100% of agents must agree. Use for critical decisions where false positives are costly.
+
+#### Weighted
+Each agent has a configurable weight. Senior reviewers can count more than juniors.
+
+```yaml
+agents:
+  - name: senior-reviewer
+    weight: 2.0  # Counts as 2 votes
+
+  - name: junior-reviewer
+    weight: 1.0  # Counts as 1 vote
+
+consensus:
+  algorithm: weighted
+  weights:
+    senior-reviewer: 2.0
+    junior-reviewer: 1.0
+```
+
+#### FirstWins
+First agent to respond wins. Use when speed matters more than consensus.
+
+#### HumanReview
+Always flags for human operator decision. Use for high-stakes scenarios.
+
+```yaml
+consensus:
+  algorithm: human_review
+  min_confidence: 0.9  # If confidence below this, definitely needs review
+```
 
 ### Configuration
 
@@ -256,10 +399,14 @@ When using **Peer mode**, consensus determines how agent results are aggregated.
 coordination:
   mode: peer
   consensus:
-    algorithm: majority    # majority, unanimous, weighted, first_wins
-    min_votes: 2           # Minimum responses required
-    timeout_ms: 60000      # Max wait time (60 seconds)
-    allow_partial: true    # Accept result if some agents fail
+    algorithm: majority       # majority, unanimous, weighted, first_wins, human_review
+    min_votes: 2              # Minimum responses required
+    timeout_ms: 60000         # Max wait time (60 seconds)
+    allow_partial: true       # Accept result if some agents fail
+    min_confidence: 0.7       # Below this, flag for human review
+    weights:                  # Per-agent weights (for weighted algorithm)
+      senior-reviewer: 2.0
+      junior-reviewer: 1.0
 ```
 
 ### Example: Code Review Consensus

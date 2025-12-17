@@ -6,11 +6,16 @@
 //! - Peer: Agents coordinate as equals with consensus
 //! - Swarm: Self-organizing dynamic coordination
 //! - Pipeline: Sequential handoff between agents
+//! - Tiered: Tier-based parallel execution with consensus (for multi-model RCA)
+
+pub mod consensus;
+
+pub use consensus::{AgentResult, ConsensusEngine, ConsensusResult};
 
 use aof_core::{
     AgentConfig, AgentFleet, AgentInstanceState, AgentInstanceStatus, AgentRole, AofError,
-    AofResult, CoordinationMode, FleetAgent, FleetMetrics, FleetState, FleetStatus, FleetTask,
-    FleetTaskStatus, TaskDistribution,
+    AofResult, ConsensusAlgorithm, CoordinationMode, FinalAggregation, FleetAgent, FleetMetrics,
+    FleetState, FleetStatus, FleetTask, FleetTaskStatus, TaskDistribution,
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -317,6 +322,9 @@ impl FleetCoordinator {
             CoordinationMode::Pipeline => {
                 self.execute_pipeline(task).await
             }
+            CoordinationMode::Tiered => {
+                self.execute_tiered(task).await
+            }
         }
     }
 
@@ -388,53 +396,45 @@ impl FleetCoordinator {
         task.started_at = Some(chrono::Utc::now());
 
         // Execute on all agents in parallel
-        let mut handles = Vec::new();
-        for agent in &agents {
-            let agent_name = agent.agent_name.clone();
-            let input = task.input.clone();
-            let runtime = self.runtime.clone();
+        let agent_results = self.execute_agents_parallel(&agents, &task.input).await;
 
-            handles.push(tokio::spawn(async move {
-                let rt = runtime.read().await;
-                rt.execute(&agent_name, &serde_json::to_string(&input).unwrap_or_default()).await
-            }));
-        }
+        // Create consensus engine
+        let engine = if let Some(config) = consensus_config {
+            ConsensusEngine::from_config(config)
+        } else {
+            ConsensusEngine::new()
+        };
 
-        // Collect results
-        let mut results = Vec::new();
-        for handle in handles {
-            match handle.await {
-                Ok(Ok(result)) => results.push(result),
-                Ok(Err(e)) => warn!("Agent execution failed: {}", e),
-                Err(e) => warn!("Task panicked: {}", e),
-            }
-        }
+        // Evaluate consensus
+        let consensus = engine.evaluate(agent_results)?;
 
-        // Apply consensus
-        let min_votes = consensus_config
-            .as_ref()
-            .and_then(|c| c.min_votes)
-            .unwrap_or((agents.len() / 2 + 1) as u32);
-
-        if results.len() >= min_votes as usize {
-            // Simple consensus: take first result (TODO: implement voting)
-            let consensus_result = results.first().cloned().unwrap_or_default();
-
+        // Update task based on consensus result
+        if consensus.reached {
             self.emit_event(FleetEvent::ConsensusReached {
                 task_id: task.task_id.clone(),
-                votes: results.len() as u32,
-                result: serde_json::json!({"response": consensus_result}),
+                votes: consensus.votes,
+                result: serde_json::json!({
+                    "response": consensus.result.as_ref().map(|r| &r.response),
+                    "confidence": consensus.confidence,
+                    "algorithm": format!("{:?}", consensus.algorithm),
+                }),
             })
             .await;
 
-            task.result = Some(serde_json::json!({"response": consensus_result}));
+            task.result = Some(serde_json::json!({
+                "response": consensus.result.as_ref().map(|r| &r.response),
+                "confidence": consensus.confidence,
+                "votes": consensus.votes,
+                "requires_review": consensus.requires_human_review,
+            }));
             task.status = FleetTaskStatus::Completed;
         } else {
             task.status = FleetTaskStatus::Failed;
             task.error = Some(format!(
-                "Failed to reach consensus: got {} votes, needed {}",
-                results.len(),
-                min_votes
+                "Failed to reach consensus: {} votes, confidence {:.2}. Review: {}",
+                consensus.votes,
+                consensus.confidence,
+                consensus.review_reason.unwrap_or_default()
             ));
         }
 
@@ -453,6 +453,286 @@ impl FleetCoordinator {
         }
 
         Ok(Some(task))
+    }
+
+    /// Execute task in tiered mode (tier-based parallel execution with consensus)
+    async fn execute_tiered(&self, mut task: FleetTask) -> AofResult<Option<FleetTask>> {
+        task.status = FleetTaskStatus::Running;
+        task.started_at = Some(chrono::Utc::now());
+
+        let tiers = self.fleet.get_tiers();
+        if tiers.is_empty() {
+            return Err(AofError::runtime("No tiers defined for tiered execution".to_string()));
+        }
+
+        info!("Executing tiered fleet with {} tiers: {:?}", tiers.len(), tiers);
+
+        let mut current_input = task.input.clone();
+        let mut all_tier_results: Vec<ConsensusResult> = Vec::new();
+
+        // Execute each tier sequentially, passing results to next tier
+        for tier in &tiers {
+            debug!("Executing tier {}", tier);
+
+            // Get agents for this tier
+            let tier_agents = self.fleet.get_agents_by_tier(*tier);
+            if tier_agents.is_empty() {
+                warn!("No agents in tier {}, skipping", tier);
+                continue;
+            }
+
+            // Get agent instances for this tier
+            let state = self.state.read().await;
+            let agent_instances: Vec<_> = state
+                .agents
+                .values()
+                .filter(|a| {
+                    tier_agents.iter().any(|ta| ta.name == a.agent_name)
+                })
+                .cloned()
+                .collect();
+            drop(state);
+
+            // Execute all agents in this tier in parallel
+            let tier_results = self.execute_agents_parallel(&agent_instances, &current_input).await;
+
+            // Get tier-specific consensus config or use default
+            let tier_consensus_config = self
+                .fleet
+                .spec
+                .coordination
+                .tiered
+                .as_ref()
+                .and_then(|t| t.tier_consensus.get(&tier.to_string()))
+                .cloned()
+                .or_else(|| self.fleet.spec.coordination.consensus.clone());
+
+            // Apply consensus for this tier
+            let engine = if let Some(config) = tier_consensus_config {
+                ConsensusEngine::from_config(config)
+            } else {
+                ConsensusEngine::new()
+            };
+
+            let tier_consensus = engine.evaluate(tier_results)?;
+            all_tier_results.push(tier_consensus.clone());
+
+            // Prepare input for next tier
+            let pass_all = self
+                .fleet
+                .spec
+                .coordination
+                .tiered
+                .as_ref()
+                .map(|t| t.pass_all_results)
+                .unwrap_or(false);
+
+            if pass_all {
+                // Pass all results to next tier
+                current_input = serde_json::json!({
+                    "tier": tier,
+                    "original_input": task.input,
+                    "previous_results": tier_consensus.all_results.iter().map(|r| {
+                        serde_json::json!({
+                            "agent": r.agent_name,
+                            "response": r.response,
+                            "confidence": r.confidence,
+                        })
+                    }).collect::<Vec<_>>(),
+                    "consensus_result": tier_consensus.result.as_ref().map(|r| &r.response),
+                    "consensus_confidence": tier_consensus.confidence,
+                });
+            } else {
+                // Pass only consensus result to next tier
+                current_input = serde_json::json!({
+                    "tier": tier,
+                    "original_input": task.input,
+                    "previous_result": tier_consensus.result.as_ref().map(|r| &r.response),
+                    "confidence": tier_consensus.confidence,
+                });
+            }
+
+            info!(
+                "Tier {} completed: {} results, consensus: {}, confidence: {:.2}",
+                tier,
+                tier_consensus.all_results.len(),
+                tier_consensus.reached,
+                tier_consensus.confidence
+            );
+        }
+
+        // Apply final aggregation
+        let final_result = self.aggregate_tier_results(&task, all_tier_results, &current_input).await?;
+
+        task.result = Some(final_result.clone());
+        task.status = FleetTaskStatus::Completed;
+        task.completed_at = Some(chrono::Utc::now());
+
+        // Update metrics
+        {
+            let mut state = self.state.write().await;
+            state.metrics.completed_tasks += 1;
+            state.metrics.consensus_rounds += tiers.len() as u64;
+            state.completed_tasks.push(task.clone());
+        }
+
+        Ok(Some(task))
+    }
+
+    /// Execute multiple agents in parallel and collect results
+    async fn execute_agents_parallel(
+        &self,
+        agents: &[AgentInstanceState],
+        input: &serde_json::Value,
+    ) -> Vec<AgentResult> {
+        let mut handles = Vec::new();
+
+        for agent in agents {
+            let agent_name = agent.agent_name.clone();
+            let input_str = serde_json::to_string(input).unwrap_or_default();
+            let runtime = self.runtime.clone();
+            let weight = self.fleet.get_agent_weight(&agent_name);
+            let tier = self
+                .fleet
+                .get_agent(&agent_name)
+                .and_then(|a| a.tier);
+
+            handles.push(tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                let rt = runtime.read().await;
+                let result = rt.execute(&agent_name, &input_str).await;
+                let elapsed = start.elapsed().as_millis() as u64;
+
+                (agent_name, tier, weight, elapsed, result)
+            }));
+        }
+
+        let mut results = Vec::new();
+        for handle in handles {
+            match handle.await {
+                Ok((name, tier, weight, elapsed, Ok(response))) => {
+                    let mut result = AgentResult::new(&name, response)
+                        .with_execution_time(elapsed)
+                        .with_weight(weight);
+                    if let Some(t) = tier {
+                        result = result.with_tier(t);
+                    }
+                    results.push(result);
+                }
+                Ok((name, _, _, _, Err(e))) => {
+                    warn!("Agent {} execution failed: {}", name, e);
+                }
+                Err(e) => {
+                    warn!("Task panicked: {}", e);
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Aggregate results from all tiers based on final aggregation strategy
+    async fn aggregate_tier_results(
+        &self,
+        task: &FleetTask,
+        tier_results: Vec<ConsensusResult>,
+        final_input: &serde_json::Value,
+    ) -> AofResult<serde_json::Value> {
+        let aggregation = self
+            .fleet
+            .spec
+            .coordination
+            .tiered
+            .as_ref()
+            .map(|t| t.final_aggregation)
+            .unwrap_or(FinalAggregation::Consensus);
+
+        match aggregation {
+            FinalAggregation::Consensus => {
+                // Use the last tier's consensus result
+                let last_result = tier_results.last();
+                Ok(serde_json::json!({
+                    "aggregation": "consensus",
+                    "result": last_result.and_then(|r| r.result.as_ref()).map(|r| &r.response),
+                    "confidence": last_result.map(|r| r.confidence).unwrap_or(0.0),
+                    "tier_count": tier_results.len(),
+                }))
+            }
+            FinalAggregation::Merge => {
+                // Merge all tier results into a combined output
+                let merged: Vec<_> = tier_results
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        serde_json::json!({
+                            "tier": i + 1,
+                            "result": r.result.as_ref().map(|res| &res.response),
+                            "confidence": r.confidence,
+                            "votes": r.votes,
+                        })
+                    })
+                    .collect();
+
+                Ok(serde_json::json!({
+                    "aggregation": "merge",
+                    "tier_results": merged,
+                    "tier_count": tier_results.len(),
+                }))
+            }
+            FinalAggregation::ManagerSynthesis => {
+                // Use manager agent to synthesize final result
+                let manager = self.fleet.get_manager();
+                if let Some(manager) = manager {
+                    let synthesis_prompt = serde_json::json!({
+                        "task": "synthesize_rca",
+                        "original_input": task.input,
+                        "tier_results": tier_results.iter().enumerate().map(|(i, r)| {
+                            serde_json::json!({
+                                "tier": i + 1,
+                                "result": r.result.as_ref().map(|res| &res.response),
+                                "all_responses": r.all_results.iter().map(|ar| {
+                                    serde_json::json!({
+                                        "agent": ar.agent_name,
+                                        "response": ar.response,
+                                    })
+                                }).collect::<Vec<_>>(),
+                                "confidence": r.confidence,
+                            })
+                        }).collect::<Vec<_>>(),
+                        "instructions": "Synthesize a comprehensive root cause analysis report from all tier results.",
+                    });
+
+                    let synthesis = self.execute_on_agent(&manager.name, &synthesis_prompt).await?;
+
+                    Ok(serde_json::json!({
+                        "aggregation": "manager_synthesis",
+                        "synthesized_by": manager.name,
+                        "result": synthesis,
+                        "tier_count": tier_results.len(),
+                    }))
+                } else {
+                    warn!("No manager agent for synthesis, falling back to merge");
+                    // Fallback to merge if no manager
+                    let merged: Vec<_> = tier_results
+                        .iter()
+                        .enumerate()
+                        .map(|(i, r)| {
+                            serde_json::json!({
+                                "tier": i + 1,
+                                "result": r.result.as_ref().map(|res| &res.response),
+                                "confidence": r.confidence,
+                            })
+                        })
+                        .collect();
+
+                    Ok(serde_json::json!({
+                        "aggregation": "merge_fallback",
+                        "reason": "no_manager_agent",
+                        "tier_results": merged,
+                    }))
+                }
+            }
+        }
     }
 
     /// Execute task in swarm mode (self-organizing)

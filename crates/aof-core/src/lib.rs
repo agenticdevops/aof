@@ -38,10 +38,10 @@ pub use workflow::{
 };
 pub use fleet::{
     AgentFleet, AgentInstanceState, AgentInstanceStatus, AgentRole, CoordinationConfig,
-    CoordinationMode, ConsensusConfig, ConsensusAlgorithm, FleetAgent, FleetAgentSpec,
-    FleetMetadata, FleetMetrics, FleetSpec, FleetState, FleetStatus, FleetTask, FleetTaskStatus,
-    SharedResources, SharedMemoryConfig, SharedMemoryType, CommunicationConfig, MessagePattern,
-    TaskDistribution, ScalingConfig,
+    CoordinationMode, ConsensusConfig, ConsensusAlgorithm, FinalAggregation, FleetAgent,
+    FleetAgentSpec, FleetMetadata, FleetMetrics, FleetSpec, FleetState, FleetStatus, FleetTask,
+    FleetTaskStatus, SharedResources, SharedMemoryConfig, SharedMemoryType, CommunicationConfig,
+    MessagePattern, TaskDistribution, ScalingConfig, TieredConfig,
 };
 
 /// Version information

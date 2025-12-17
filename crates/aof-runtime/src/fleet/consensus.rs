@@ -1,0 +1,628 @@
+//! Consensus algorithms for multi-agent coordination
+//!
+//! This module implements 5 consensus algorithms for fleet coordination:
+//! - **Majority**: >50% agreement wins (fast, tolerates outliers)
+//! - **Unanimous**: 100% agreement required (high confidence)
+//! - **Weighted**: Per-agent weights (senior reviewers count more)
+//! - **FirstWins**: First response wins (fastest, no consensus overhead)
+//! - **HumanReview**: Flags for human operator decision (high-stakes scenarios)
+
+use aof_core::{AofError, AofResult, ConsensusAlgorithm, ConsensusConfig};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tracing::{debug, info, warn};
+
+/// Result of a consensus operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsensusResult {
+    /// Whether consensus was reached
+    pub reached: bool,
+
+    /// The winning result (if consensus reached)
+    pub result: Option<AgentResult>,
+
+    /// All agent results that participated
+    pub all_results: Vec<AgentResult>,
+
+    /// Number of votes for the winning result
+    pub votes: u32,
+
+    /// Total weight for weighted consensus
+    pub total_weight: f32,
+
+    /// Confidence score (0.0-1.0)
+    pub confidence: f32,
+
+    /// Whether human review is required
+    pub requires_human_review: bool,
+
+    /// Reason for requiring human review (if applicable)
+    pub review_reason: Option<String>,
+
+    /// Algorithm used
+    pub algorithm: ConsensusAlgorithm,
+}
+
+/// Result from a single agent
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentResult {
+    /// Agent name
+    pub agent_name: String,
+
+    /// Agent's response/output
+    pub response: String,
+
+    /// Execution time in milliseconds
+    pub execution_time_ms: u64,
+
+    /// Agent's tier (for tiered execution)
+    pub tier: Option<u32>,
+
+    /// Agent's weight (for weighted consensus)
+    pub weight: f32,
+
+    /// Optional confidence score from the agent
+    pub confidence: Option<f32>,
+
+    /// Optional structured data
+    pub metadata: HashMap<String, serde_json::Value>,
+}
+
+impl AgentResult {
+    /// Create a new agent result
+    pub fn new(agent_name: &str, response: String) -> Self {
+        Self {
+            agent_name: agent_name.to_string(),
+            response,
+            execution_time_ms: 0,
+            tier: None,
+            weight: 1.0,
+            confidence: None,
+            metadata: HashMap::new(),
+        }
+    }
+
+    /// Set execution time
+    pub fn with_execution_time(mut self, ms: u64) -> Self {
+        self.execution_time_ms = ms;
+        self
+    }
+
+    /// Set tier
+    pub fn with_tier(mut self, tier: u32) -> Self {
+        self.tier = Some(tier);
+        self
+    }
+
+    /// Set weight
+    pub fn with_weight(mut self, weight: f32) -> Self {
+        self.weight = weight;
+        self
+    }
+
+    /// Set confidence
+    pub fn with_confidence(mut self, confidence: f32) -> Self {
+        self.confidence = Some(confidence);
+        self
+    }
+}
+
+/// Consensus engine for evaluating agent results
+pub struct ConsensusEngine {
+    /// Configuration for consensus
+    config: ConsensusConfig,
+
+    /// Agent weights (can be overridden per-agent)
+    agent_weights: HashMap<String, f32>,
+}
+
+impl ConsensusEngine {
+    /// Create a new consensus engine with default configuration
+    pub fn new() -> Self {
+        Self {
+            config: ConsensusConfig {
+                algorithm: ConsensusAlgorithm::Majority,
+                min_votes: None,
+                timeout_ms: Some(60000),
+                allow_partial: false,
+                weights: HashMap::new(),
+                min_confidence: None,
+            },
+            agent_weights: HashMap::new(),
+        }
+    }
+
+    /// Create a consensus engine from configuration
+    pub fn from_config(config: ConsensusConfig) -> Self {
+        let agent_weights = config.weights.clone();
+        Self {
+            config,
+            agent_weights,
+        }
+    }
+
+    /// Set agent weight
+    pub fn set_weight(&mut self, agent_name: &str, weight: f32) {
+        self.agent_weights.insert(agent_name.to_string(), weight);
+    }
+
+    /// Get agent weight
+    pub fn get_weight(&self, agent_name: &str) -> f32 {
+        self.agent_weights
+            .get(agent_name)
+            .copied()
+            .or_else(|| self.config.weights.get(agent_name).copied())
+            .unwrap_or(1.0)
+    }
+
+    /// Evaluate consensus on agent results
+    pub fn evaluate(&self, results: Vec<AgentResult>) -> AofResult<ConsensusResult> {
+        if results.is_empty() {
+            return Ok(ConsensusResult {
+                reached: false,
+                result: None,
+                all_results: vec![],
+                votes: 0,
+                total_weight: 0.0,
+                confidence: 0.0,
+                requires_human_review: true,
+                review_reason: Some("No agent results to evaluate".to_string()),
+                algorithm: self.config.algorithm,
+            });
+        }
+
+        match self.config.algorithm {
+            ConsensusAlgorithm::Majority => self.evaluate_majority(results),
+            ConsensusAlgorithm::Unanimous => self.evaluate_unanimous(results),
+            ConsensusAlgorithm::Weighted => self.evaluate_weighted(results),
+            ConsensusAlgorithm::FirstWins => self.evaluate_first_wins(results),
+            ConsensusAlgorithm::HumanReview => self.evaluate_human_review(results),
+        }
+    }
+
+    /// Majority voting: >50% agreement wins
+    fn evaluate_majority(&self, results: Vec<AgentResult>) -> AofResult<ConsensusResult> {
+        let total = results.len();
+        let min_votes = self
+            .config
+            .min_votes
+            .unwrap_or((total / 2 + 1) as u32);
+
+        // Group results by similarity (using response hash for now)
+        let mut groups: HashMap<String, Vec<&AgentResult>> = HashMap::new();
+        for result in &results {
+            let key = self.response_key(&result.response);
+            groups.entry(key).or_default().push(result);
+        }
+
+        // Find the group with the most votes
+        let winning_group = groups
+            .iter()
+            .max_by_key(|(_, v)| v.len())
+            .map(|(k, v)| (k.clone(), v.clone()));
+
+        let (votes, winner, confidence) = if let Some((_, group)) = winning_group {
+            let votes = group.len() as u32;
+            let confidence = votes as f32 / total as f32;
+            let winner = group.first().map(|r| (*r).clone());
+            (votes, winner, confidence)
+        } else {
+            (0, None, 0.0)
+        };
+
+        let reached = votes >= min_votes;
+        let requires_review = !reached
+            || self
+                .config
+                .min_confidence
+                .map(|min| confidence < min)
+                .unwrap_or(false);
+
+        info!(
+            "Majority consensus: {} votes out of {} (need {}), confidence: {:.2}",
+            votes, total, min_votes, confidence
+        );
+
+        Ok(ConsensusResult {
+            reached,
+            result: winner,
+            all_results: results,
+            votes,
+            total_weight: votes as f32,
+            confidence,
+            requires_human_review: requires_review,
+            review_reason: if requires_review {
+                Some(format!(
+                    "Consensus confidence {:.2} below threshold",
+                    confidence
+                ))
+            } else {
+                None
+            },
+            algorithm: ConsensusAlgorithm::Majority,
+        })
+    }
+
+    /// Unanimous: 100% agreement required
+    fn evaluate_unanimous(&self, results: Vec<AgentResult>) -> AofResult<ConsensusResult> {
+        let total = results.len();
+
+        // Check if all responses are similar
+        let first_key = results.first().map(|r| self.response_key(&r.response));
+        let all_agree = first_key.as_ref().map_or(false, |key| {
+            results.iter().all(|r| self.response_key(&r.response) == *key)
+        });
+
+        let confidence = if all_agree { 1.0 } else { 0.0 };
+        let winner = if all_agree {
+            results.first().cloned()
+        } else {
+            None
+        };
+
+        info!(
+            "Unanimous consensus: {} agents, all agree: {}",
+            total, all_agree
+        );
+
+        Ok(ConsensusResult {
+            reached: all_agree,
+            result: winner,
+            all_results: results,
+            votes: if all_agree { total as u32 } else { 0 },
+            total_weight: if all_agree { total as f32 } else { 0.0 },
+            confidence,
+            requires_human_review: !all_agree,
+            review_reason: if !all_agree {
+                Some("Not all agents agreed (unanimous consensus required)".to_string())
+            } else {
+                None
+            },
+            algorithm: ConsensusAlgorithm::Unanimous,
+        })
+    }
+
+    /// Weighted voting: per-agent weights count
+    fn evaluate_weighted(&self, results: Vec<AgentResult>) -> AofResult<ConsensusResult> {
+        // Group by response similarity and sum weights
+        let mut groups: HashMap<String, (f32, Vec<&AgentResult>)> = HashMap::new();
+
+        for result in &results {
+            let key = self.response_key(&result.response);
+            let weight = self.get_weight(&result.agent_name);
+            let entry = groups.entry(key).or_insert((0.0, Vec::new()));
+            entry.0 += weight;
+            entry.1.push(result);
+        }
+
+        // Find group with highest total weight
+        let total_weight: f32 = results.iter().map(|r| self.get_weight(&r.agent_name)).sum();
+        let winning = groups
+            .iter()
+            .max_by(|a, b| a.1 .0.partial_cmp(&b.1 .0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let (winning_weight, winner, votes) = if let Some((_, (weight, group))) = winning {
+            (*weight, group.first().map(|r| (*r).clone()), group.len() as u32)
+        } else {
+            (0.0, None, 0)
+        };
+
+        let confidence = if total_weight > 0.0 {
+            winning_weight / total_weight
+        } else {
+            0.0
+        };
+
+        let min_confidence = self.config.min_confidence.unwrap_or(0.5);
+        let reached = confidence >= min_confidence;
+
+        info!(
+            "Weighted consensus: {:.2}/{:.2} weight ({} votes), confidence: {:.2}",
+            winning_weight, total_weight, votes, confidence
+        );
+
+        Ok(ConsensusResult {
+            reached,
+            result: winner,
+            all_results: results,
+            votes,
+            total_weight: winning_weight,
+            confidence,
+            requires_human_review: !reached,
+            review_reason: if !reached {
+                Some(format!(
+                    "Weighted confidence {:.2} below threshold {:.2}",
+                    confidence, min_confidence
+                ))
+            } else {
+                None
+            },
+            algorithm: ConsensusAlgorithm::Weighted,
+        })
+    }
+
+    /// First wins: take the first result
+    fn evaluate_first_wins(&self, results: Vec<AgentResult>) -> AofResult<ConsensusResult> {
+        let winner = results.first().cloned();
+        let reached = winner.is_some();
+
+        debug!("FirstWins consensus: using first result");
+
+        Ok(ConsensusResult {
+            reached,
+            result: winner,
+            all_results: results,
+            votes: 1,
+            total_weight: 1.0,
+            confidence: 1.0, // First wins always has full confidence
+            requires_human_review: false,
+            review_reason: None,
+            algorithm: ConsensusAlgorithm::FirstWins,
+        })
+    }
+
+    /// Human review: always requires human decision
+    fn evaluate_human_review(&self, results: Vec<AgentResult>) -> AofResult<ConsensusResult> {
+        // Find the result with highest confidence as a suggestion
+        let suggested = results
+            .iter()
+            .filter(|r| r.confidence.is_some())
+            .max_by(|a, b| {
+                a.confidence
+                    .unwrap_or(0.0)
+                    .partial_cmp(&b.confidence.unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .or_else(|| results.first())
+            .cloned();
+
+        let avg_confidence = if !results.is_empty() {
+            results
+                .iter()
+                .filter_map(|r| r.confidence)
+                .sum::<f32>()
+                / results.len() as f32
+        } else {
+            0.0
+        };
+
+        info!(
+            "HumanReview consensus: {} results await human decision, avg confidence: {:.2}",
+            results.len(),
+            avg_confidence
+        );
+
+        Ok(ConsensusResult {
+            reached: false, // Never "reached" - always needs human
+            result: suggested,
+            all_results: results,
+            votes: 0,
+            total_weight: 0.0,
+            confidence: avg_confidence,
+            requires_human_review: true,
+            review_reason: Some("Human review required for final decision".to_string()),
+            algorithm: ConsensusAlgorithm::HumanReview,
+        })
+    }
+
+    /// Generate a key for grouping similar responses
+    /// This is a simple implementation - could be enhanced with semantic similarity
+    fn response_key(&self, response: &str) -> String {
+        // For now, use a normalized hash of the response
+        // In production, this could use embeddings for semantic similarity
+        let normalized = response.trim().to_lowercase();
+
+        // Use first 100 chars + length as a simple fingerprint
+        if normalized.len() <= 100 {
+            normalized
+        } else {
+            format!("{}...{}", &normalized[..100], normalized.len())
+        }
+    }
+}
+
+impl Default for ConsensusEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_result(agent: &str, response: &str, weight: f32) -> AgentResult {
+        AgentResult::new(agent, response.to_string()).with_weight(weight)
+    }
+
+    #[test]
+    fn test_majority_consensus_reached() {
+        let engine = ConsensusEngine::new();
+        let results = vec![
+            create_result("agent-1", "The root cause is X", 1.0),
+            create_result("agent-2", "The root cause is X", 1.0),
+            create_result("agent-3", "The root cause is Y", 1.0),
+        ];
+
+        let consensus = engine.evaluate(results).unwrap();
+        assert!(consensus.reached);
+        assert_eq!(consensus.votes, 2);
+        assert!(consensus.confidence > 0.6);
+        assert_eq!(consensus.algorithm, ConsensusAlgorithm::Majority);
+    }
+
+    #[test]
+    fn test_majority_consensus_not_reached() {
+        let engine = ConsensusEngine::new();
+        let results = vec![
+            create_result("agent-1", "Cause A", 1.0),
+            create_result("agent-2", "Cause B", 1.0),
+            create_result("agent-3", "Cause C", 1.0),
+        ];
+
+        let consensus = engine.evaluate(results).unwrap();
+        assert!(!consensus.reached);
+        assert!(consensus.requires_human_review);
+    }
+
+    #[test]
+    fn test_unanimous_consensus_reached() {
+        let config = ConsensusConfig {
+            algorithm: ConsensusAlgorithm::Unanimous,
+            min_votes: None,
+            timeout_ms: None,
+            allow_partial: false,
+            weights: HashMap::new(),
+            min_confidence: None,
+        };
+        let engine = ConsensusEngine::from_config(config);
+
+        let results = vec![
+            create_result("agent-1", "Same answer", 1.0),
+            create_result("agent-2", "Same answer", 1.0),
+            create_result("agent-3", "Same answer", 1.0),
+        ];
+
+        let consensus = engine.evaluate(results).unwrap();
+        assert!(consensus.reached);
+        assert_eq!(consensus.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_unanimous_consensus_not_reached() {
+        let config = ConsensusConfig {
+            algorithm: ConsensusAlgorithm::Unanimous,
+            min_votes: None,
+            timeout_ms: None,
+            allow_partial: false,
+            weights: HashMap::new(),
+            min_confidence: None,
+        };
+        let engine = ConsensusEngine::from_config(config);
+
+        let results = vec![
+            create_result("agent-1", "Answer A", 1.0),
+            create_result("agent-2", "Answer A", 1.0),
+            create_result("agent-3", "Answer B", 1.0),
+        ];
+
+        let consensus = engine.evaluate(results).unwrap();
+        assert!(!consensus.reached);
+        assert!(consensus.requires_human_review);
+    }
+
+    #[test]
+    fn test_weighted_consensus() {
+        let mut weights = HashMap::new();
+        weights.insert("senior".to_string(), 3.0);
+        weights.insert("junior-1".to_string(), 1.0);
+        weights.insert("junior-2".to_string(), 1.0);
+
+        let config = ConsensusConfig {
+            algorithm: ConsensusAlgorithm::Weighted,
+            min_votes: None,
+            timeout_ms: None,
+            allow_partial: false,
+            weights,
+            min_confidence: Some(0.5),
+        };
+        let engine = ConsensusEngine::from_config(config);
+
+        // Senior (weight 3) disagrees with two juniors (weight 1 each)
+        let results = vec![
+            create_result("senior", "Senior's answer", 3.0),
+            create_result("junior-1", "Junior answer", 1.0),
+            create_result("junior-2", "Junior answer", 1.0),
+        ];
+
+        let consensus = engine.evaluate(results).unwrap();
+        // Senior has weight 3, juniors have 2 total - senior wins
+        assert!(consensus.reached);
+        assert!(consensus.result.is_some());
+        assert_eq!(
+            consensus.result.as_ref().unwrap().response,
+            "Senior's answer"
+        );
+    }
+
+    #[test]
+    fn test_first_wins() {
+        let config = ConsensusConfig {
+            algorithm: ConsensusAlgorithm::FirstWins,
+            min_votes: None,
+            timeout_ms: None,
+            allow_partial: false,
+            weights: HashMap::new(),
+            min_confidence: None,
+        };
+        let engine = ConsensusEngine::from_config(config);
+
+        let results = vec![
+            create_result("fast-agent", "First response", 1.0),
+            create_result("slow-agent", "Second response", 1.0),
+        ];
+
+        let consensus = engine.evaluate(results).unwrap();
+        assert!(consensus.reached);
+        assert_eq!(consensus.result.as_ref().unwrap().response, "First response");
+        assert_eq!(consensus.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_human_review() {
+        let config = ConsensusConfig {
+            algorithm: ConsensusAlgorithm::HumanReview,
+            min_votes: None,
+            timeout_ms: None,
+            allow_partial: false,
+            weights: HashMap::new(),
+            min_confidence: None,
+        };
+        let engine = ConsensusEngine::from_config(config);
+
+        let results = vec![
+            create_result("agent-1", "Option A", 1.0).with_confidence(0.8),
+            create_result("agent-2", "Option B", 1.0).with_confidence(0.9),
+        ];
+
+        let consensus = engine.evaluate(results).unwrap();
+        assert!(!consensus.reached); // Never auto-reached
+        assert!(consensus.requires_human_review);
+        // Suggests the highest confidence result
+        assert_eq!(consensus.result.as_ref().unwrap().response, "Option B");
+    }
+
+    #[test]
+    fn test_empty_results() {
+        let engine = ConsensusEngine::new();
+        let results: Vec<AgentResult> = vec![];
+
+        let consensus = engine.evaluate(results).unwrap();
+        assert!(!consensus.reached);
+        assert!(consensus.requires_human_review);
+    }
+
+    #[test]
+    fn test_min_confidence_threshold() {
+        let config = ConsensusConfig {
+            algorithm: ConsensusAlgorithm::Majority,
+            min_votes: Some(2),
+            timeout_ms: None,
+            allow_partial: false,
+            weights: HashMap::new(),
+            min_confidence: Some(0.8), // High threshold
+        };
+        let engine = ConsensusEngine::from_config(config);
+
+        // 2 out of 3 agree (66% confidence) - below 80% threshold
+        let results = vec![
+            create_result("agent-1", "Answer X", 1.0),
+            create_result("agent-2", "Answer X", 1.0),
+            create_result("agent-3", "Answer Y", 1.0),
+        ];
+
+        let consensus = engine.evaluate(results).unwrap();
+        assert!(consensus.reached); // Vote threshold met
+        assert!(consensus.requires_human_review); // But confidence below threshold
+    }
+}
