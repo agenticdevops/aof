@@ -158,6 +158,31 @@ pub enum Commands {
         #[arg(long)]
         agents_dir: Option<String>,
     },
+
+    /// Manage agent fleets (multi-agent coordination)
+    ///
+    /// NOTE: Prefer kubectl-style commands: aofctl get fleets, aofctl run fleet <name>
+    #[command(hide = true)]
+    Fleet {
+        #[command(subcommand)]
+        command: commands::fleet::FleetCommands,
+    },
+
+    /// Manage agent flows (workflow orchestration)
+    ///
+    /// NOTE: Prefer kubectl-style commands: aofctl get flows, aofctl run flow <name>
+    #[command(hide = true)]
+    Flow {
+        #[command(subcommand)]
+        command: commands::flow::FlowCommands,
+    },
+
+    /// Generate shell completion scripts
+    Completion {
+        /// Shell to generate completion for
+        #[arg(value_enum)]
+        shell: commands::completion::Shell,
+    },
 }
 
 impl Cli {
@@ -226,6 +251,9 @@ impl Cli {
                 )
                 .await
             }
+            Commands::Fleet { command } => commands::fleet::execute(command).await,
+            Commands::Flow { command } => commands::flow::execute(command).await,
+            Commands::Completion { shell } => commands::completion::execute(shell),
         }
     }
 }

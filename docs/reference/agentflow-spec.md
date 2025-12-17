@@ -140,7 +140,7 @@ spec:
 
 **Usage:**
 ```bash
-aofctl flow run my-flow
+aofctl run flow my-flow.yaml
 ```
 
 ### Slack
@@ -837,27 +837,28 @@ nodes:
 
 ---
 
-## Debugging
+## CLI Commands
+
+AOF uses kubectl-style verb-noun syntax: `aofctl <verb> <noun> [name]`
 
 ### View Flow Logs
 ```bash
-aofctl flow logs my-flow -f
+aofctl logs flow my-flow.yaml -f
 ```
 
-### Get Flow Status
+### Describe Flow
 ```bash
-aofctl flow describe my-flow
+aofctl describe flow my-flow.yaml
 ```
 
-### Visualize Flow
+### List Flows
 ```bash
-aofctl flow visualize my-flow > flow.dot
-dot -Tpng flow.dot > flow.png
+aofctl get flows
 ```
 
-### Dry Run
+### Run Flow
 ```bash
-aofctl flow run my-flow --dry-run
+aofctl run flow my-flow.yaml -i '{"input": "value"}'
 ```
 
 ---

@@ -63,30 +63,28 @@ The `FleetCoordinator` in `aof-runtime/src/fleet/mod.rs` already implements:
 - Coordination modes (hierarchical, peer, swarm, pipeline)
 - Task distribution strategies
 
-**Add to aofctl:**
+**Add to aofctl (kubectl-style verb-noun syntax):**
 
 ```bash
 # Fleet management
-aofctl fleet apply -f fleet.yaml         # Load fleet config
-aofctl fleet get [name]                  # List/get fleets
-aofctl fleet describe <name>             # Show fleet details
-aofctl fleet delete <name>               # Remove fleet
-aofctl fleet status <name>               # Show runtime status
+aofctl apply -f fleet.yaml               # Apply fleet config
+aofctl get fleets                        # List all fleets
+aofctl get fleet <name>                  # Get specific fleet
+aofctl describe fleet <name>.yaml        # Show fleet details
+aofctl delete fleet <name>               # Remove fleet
 
 # Fleet execution
-aofctl fleet run <name> -i "query"       # Execute task on fleet
-aofctl fleet scale <name> --replicas 5   # Scale agent replicas
-aofctl fleet logs <name>                 # View fleet logs
+aofctl run fleet <name>.yaml -i "query"  # Execute task on fleet
+aofctl logs fleet <name>.yaml            # View fleet logs
 ```
 
 **Implementation tasks:**
 
-- [ ] Create `crates/aofctl/src/commands/fleet.rs`
-- [ ] Add `Fleet` subcommand to CLI parser
-- [ ] Integrate `FleetCoordinator::from_file()`
-- [ ] Implement `fleet run` with task submission
-- [ ] Implement `fleet status` with state display
-- [ ] Add fleet resource type to `api-resources`
+- [x] Create `crates/aofctl/src/commands/fleet.rs`
+- [x] Add `Fleet` resource type to resources.rs
+- [x] Integrate `FleetCoordinator::from_file()`
+- [x] Implement `run fleet` with task submission
+- [x] Add fleet resource type to `api-resources`
 
 ### 1.2 Flow Commands
 
@@ -96,32 +94,26 @@ The `WorkflowExecutor` in `aof-runtime/src/executor/workflow_executor.rs` alread
 - State management
 - Event streaming
 
-**Add to aofctl:**
+**Add to aofctl (kubectl-style verb-noun syntax):**
 
 ```bash
 # Flow management
-aofctl flow apply -f flow.yaml           # Load flow config
-aofctl flow get [name]                   # List/get flows
-aofctl flow describe <name>              # Show flow details
-aofctl flow delete <name>                # Remove flow
+aofctl apply -f flow.yaml                # Apply flow config
+aofctl get flows                         # List all flows
+aofctl get flow <name>                   # Get specific flow
+aofctl describe flow <name>.yaml         # Show flow details
+aofctl delete flow <name>                # Remove flow
 
 # Flow execution
-aofctl flow run <name> [--input json]    # Execute flow
-aofctl flow status <run-id>              # Get execution status
-aofctl flow logs <run-id>                # View execution logs
-aofctl flow pause <run-id>               # Pause execution
-aofctl flow resume <run-id>              # Resume execution
-aofctl flow cancel <run-id>              # Cancel execution
-
-# Flow visualization
-aofctl flow visualize <name>             # ASCII/DOT graph output
+aofctl run flow <name>.yaml -i '{"key":"value"}'  # Execute flow
+aofctl logs flow <name>.yaml             # View execution logs
 ```
 
 **Implementation tasks:**
 
-- [ ] Create `crates/aofctl/src/commands/flow.rs`
-- [ ] Add `Flow` subcommand to CLI parser
-- [ ] Integrate `WorkflowExecutor::from_file()`
+- [x] Create `crates/aofctl/src/commands/flow.rs`
+- [x] Add `Flow` resource type to resources.rs
+- [x] Integrate `WorkflowExecutor::from_file()`
 - [ ] Implement `flow run` with execution
 - [ ] Implement `flow status` with state display
 - [ ] Add approval prompt handling for interactive mode

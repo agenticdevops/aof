@@ -7,6 +7,7 @@ pub enum ResourceType {
     Agent,
     Workflow,
     Fleet,
+    Flow,
     Tool,
     Config,
 
@@ -34,6 +35,7 @@ impl ResourceType {
             ResourceType::Agent,
             ResourceType::Workflow,
             ResourceType::Fleet,
+            ResourceType::Flow,
             ResourceType::Tool,
             ResourceType::Config,
             ResourceType::Deployment,
@@ -53,6 +55,7 @@ impl ResourceType {
             ResourceType::Agent => "agent",
             ResourceType::Workflow => "workflow",
             ResourceType::Fleet => "fleet",
+            ResourceType::Flow => "flow",
             ResourceType::Tool => "tool",
             ResourceType::Config => "config",
             ResourceType::Deployment => "deployment",
@@ -72,6 +75,7 @@ impl ResourceType {
             ResourceType::Agent => "agents",
             ResourceType::Workflow => "workflows",
             ResourceType::Fleet => "fleets",
+            ResourceType::Flow => "flows",
             ResourceType::Tool => "tools",
             ResourceType::Config => "configs",
             ResourceType::Deployment => "deployments",
@@ -89,8 +93,9 @@ impl ResourceType {
     pub fn short_names(&self) -> Vec<&'static str> {
         match self {
             ResourceType::Agent => vec!["ag"],
-            ResourceType::Workflow => vec!["wf", "workflow"],
+            ResourceType::Workflow => vec!["wf"],
             ResourceType::Fleet => vec!["fl"],
+            ResourceType::Flow => vec!["fw"],
             ResourceType::Tool => vec!["t"],
             ResourceType::Config => vec!["cfg"],
             ResourceType::Deployment => vec!["deploy", "dep"],
@@ -107,7 +112,7 @@ impl ResourceType {
     /// Get API version for this resource type
     pub fn api_version(&self) -> &'static str {
         match self {
-            ResourceType::Agent | ResourceType::Workflow | ResourceType::Fleet | ResourceType::Tool => "v1",
+            ResourceType::Agent | ResourceType::Workflow | ResourceType::Fleet | ResourceType::Flow | ResourceType::Tool => "v1",
             ResourceType::Config => "v1",
             ResourceType::Deployment | ResourceType::Template => "apps/v1",
             ResourceType::McpServer | ResourceType::McpTool => "mcp/v1",
@@ -130,6 +135,7 @@ impl ResourceType {
             ResourceType::Agent => "Agent",
             ResourceType::Workflow => "Workflow",
             ResourceType::Fleet => "AgentFleet",
+            ResourceType::Flow => "AgentFlow",
             ResourceType::Tool => "Tool",
             ResourceType::Config => "Config",
             ResourceType::Deployment => "Deployment",

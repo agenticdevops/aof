@@ -293,40 +293,75 @@ MCP version: 2024-11-05
 
 ---
 
-## Planned Features (Not Yet Implemented)
+## Fleet & Flow Commands
 
-The following commands are planned for future releases:
+AOF uses kubectl-style verb-noun syntax for all commands.
 
-### Fleet Commands (Coming Soon)
+### Fleet Commands
 
 AgentFleet enables multi-agent coordination:
 
-- `aofctl fleet create` - Create a new agent fleet
-- `aofctl fleet apply` - Apply fleet configuration
-- `aofctl fleet scale` - Scale fleet size
-- `aofctl fleet exec` - Execute task with fleet
-- `aofctl fleet status` - Get fleet status
+```bash
+# List all fleets
+aofctl get fleets
 
-### Flow Commands (Coming Soon)
+# Get specific fleet
+aofctl get fleet my-fleet
+
+# Describe fleet (from file)
+aofctl describe fleet my-fleet.yaml
+
+# Run a fleet with input
+aofctl run fleet my-fleet.yaml -i '{"query": "analyze data"}'
+
+# Delete a fleet
+aofctl delete fleet my-fleet
+```
+
+### Flow Commands
 
 AgentFlow enables workflow orchestration:
 
-- `aofctl flow apply` - Apply flow configuration
-- `aofctl flow run` - Execute a flow
-- `aofctl flow status` - Get flow execution status
-- `aofctl flow logs` - View flow execution logs
-- `aofctl flow visualize` - Generate flow visualization
-- `aofctl flow pause/resume/cancel` - Control flow execution
+```bash
+# List all flows
+aofctl get flows
+
+# Get specific flow
+aofctl get flow my-flow
+
+# Describe flow (from file)
+aofctl describe flow my-flow.yaml
+
+# Run a flow
+aofctl run flow my-flow.yaml -i '{"input": "value"}'
+
+# Delete a flow
+aofctl delete flow my-flow
+```
+
+### Completion
+
+Generate shell completion scripts:
+
+```bash
+# Bash
+aofctl completion bash > /etc/bash_completion.d/aofctl
+
+# Zsh
+aofctl completion zsh > ~/.zsh/completion/_aofctl
+
+# Fish
+aofctl completion fish > ~/.config/fish/completions/aofctl.fish
+
+# PowerShell
+aofctl completion powershell > aofctl.ps1
+```
 
 ### Config Commands (Coming Soon)
 
 - `aofctl config view` - Display current config
 - `aofctl config set-context` - Set current context
 - `aofctl config get-contexts` - List available contexts
-
-### Completion (Coming Soon)
-
-- `aofctl completion <shell>` - Generate shell completion scripts
 
 ---
 

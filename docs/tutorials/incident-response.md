@@ -505,17 +505,17 @@ Add to your PagerDuty service:
 
 ```bash
 # Deploy agents
-aofctl agent apply -f diagnostic-agent.yaml
-aofctl agent apply -f remediation-agent.yaml
+aofctl apply -f diagnostic-agent.yaml
+aofctl apply -f remediation-agent.yaml
 
 # Deploy flow
-aofctl flow apply -f incident-response-flow.yaml
+aofctl apply -f incident-response-flow.yaml
 
-# Start the flow
-aofctl flow run incident-auto-response --daemon
+# Start the flow in daemon mode
+aofctl run flow incident-response-flow.yaml --daemon
 
-# Verify it's running
-aofctl flow status incident-auto-response
+# Verify flows are running
+aofctl get flows
 ```
 
 ## Step 6: Test the System
@@ -642,20 +642,17 @@ Add to flow:
 ## Step 8: Monitor the System
 
 ```bash
-# View all incident responses
-aofctl flow logs incident-auto-response
+# View flow logs
+aofctl logs flow incident-response-flow.yaml -f
 
-# Get metrics
-aofctl flow metrics incident-auto-response
+# Describe the flow
+aofctl describe flow incident-response-flow.yaml
 
-# Check success rate
-aofctl flow describe incident-auto-response | grep "success_rate"
+# List all flows
+aofctl get flows
 
-# View diagnostic logs
-aofctl agent logs incident-diagnostic -f
-
-# View remediation logs
-aofctl agent logs incident-remediation -f
+# View agent logs
+aofctl logs agent incident-diagnostic.yaml -f
 ```
 
 ## Production Best Practices
@@ -734,8 +731,8 @@ aofctl agent exec incident-remediation "Check pod status in production"
 ### Approval reactions not working
 
 ```bash
-# Check Slack integration
-aofctl flow logs incident-auto-response | grep slack
+# Check Slack integration in flow logs
+aofctl logs flow incident-response-flow.yaml | grep slack
 
 # Verify bot scopes include reactions:read
 ```

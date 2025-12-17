@@ -434,11 +434,14 @@ aofctl workflow --file workflow.yaml --resume
 ### Running Fleets
 
 ```bash
-# Start a fleet
-aofctl fleet --file fleet.yaml
+# List fleets
+aofctl get fleets
 
-# Submit task to fleet
-aofctl fleet --file fleet.yaml --task "Analyze failing pods"
+# Run a fleet with input
+aofctl run fleet fleet.yaml -i '{"task": "Analyze failing pods"}'
+
+# Describe fleet
+aofctl describe fleet fleet.yaml
 ```
 
 ### Validation

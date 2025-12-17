@@ -426,14 +426,15 @@ spec:
 #    export SLACK_SIGNING_SECRET=...
 #    export SLACK_BOT_USER_ID=U...
 #
-# 3. Apply:
-#    aofctl agent apply -f slack-bot-flow.yaml
-#    aofctl flow apply -f slack-bot-flow.yaml
+# 3. Apply configuration (kubectl-style: aofctl verb noun):
+#    aofctl apply -f slack-bot-flow.yaml
 #
-# 4. Start flows:
-#    aofctl flow run slack-k8s-bot --daemon
-#    aofctl flow run daily-cluster-report --daemon
-#    aofctl flow run slack-bot-help --daemon
+# 4. Start flow in daemon mode:
+#    aofctl run flow slack-bot-flow.yaml --daemon
+#
+# 5. Check status:
+#    aofctl get flows
+#    aofctl describe flow slack-bot-flow.yaml
 #
 # 5. Configure Slack:
 #    - Event Subscriptions URL: https://your-domain.com/slack/events
