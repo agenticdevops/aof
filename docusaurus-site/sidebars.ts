@@ -75,6 +75,7 @@ const sidebars: SidebarsConfig = {
         'tutorials/slack-bot',
         'tutorials/incident-response',
         'tutorials/rca-fleet',
+        'tutorials/multi-model-rca-quickstart',
         'tutorials/multi-model-rca',
       ],
     },

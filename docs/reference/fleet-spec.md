@@ -454,4 +454,4 @@ aofctl validate fleet my-fleet.yaml
 
 - [Fleet Concepts](../concepts/fleets.md) - Understanding fleet coordination
 - [Agent Specification](./agent-spec.md) - Agent YAML reference
-- [Tutorials](../tutorials/index.md) - Step-by-step guides
+- [Multi-Model RCA Tutorial](../tutorials/multi-model-rca.md) - Step-by-step guide

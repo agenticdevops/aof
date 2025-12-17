@@ -742,4 +742,4 @@ agents:
 **Next Steps**:
 - [Fleet Examples](../examples/index.md#agentfleet-examples)
 - [AgentFleet YAML Reference](../reference/fleet-spec.md)
-- [Tutorials: Build a Code Review Fleet](../tutorials/code-review-fleet.md)
+- [Multi-Model RCA Quickstart](../tutorials/multi-model-rca-quickstart.md)

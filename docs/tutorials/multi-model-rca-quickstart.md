@@ -229,9 +229,9 @@ aofctl run fleet examples/fleets/real/multi-model-rca-real.yaml \
 
 ### Confidence Scoring
 
-- **HIGH** (>0.8): All models agree strongly
-- **MEDIUM** (0.5-0.8): Majority agrees, some uncertainty
-- **LOW** (<0.5): Models disagree, needs human review
+- **HIGH** (`>0.8`): All models agree strongly
+- **MEDIUM** (`0.5-0.8`): Majority agrees, some uncertainty
+- **LOW** (`<0.5`): Models disagree, needs human review
 
 ### Cost Breakdown
 

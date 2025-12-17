@@ -501,4 +501,3 @@ sum(rate(model_response_total[1h])) by (model)
 - [Fleet Concepts](../concepts/fleets.md) - Overview of fleet coordination
 - [Multi-Model RCA Tutorial](../tutorials/multi-model-rca.md) - Step-by-step guide
 - [Fleet YAML Reference](../reference/fleet-spec.md) - Complete specification
-- [Consensus Algorithms](../reference/consensus-algorithms.md) - Algorithm details

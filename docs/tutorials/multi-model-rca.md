@@ -888,7 +888,7 @@ You've built a production-grade multi-model RCA system that:
 
 - **[Fleet Concepts](../concepts/fleets.md)** - Deep dive into fleet coordination modes
 - **[Fleet YAML Reference](../reference/fleet-spec.md)** - Complete specification
-- **[Example Agents](../../examples/agents/README.md)** - Pre-built agent catalog
+- **[Multi-Model RCA Quickstart](./multi-model-rca-quickstart.md)** - 5-minute test guide
 
 ---
 
