@@ -1,5 +1,5 @@
-# Example: Agent with flexible MCP tool configuration
-# This shows how to configure multiple MCP servers with different transports
+# Example: Agent with MCP filesystem server
+# Demonstrates MCP server configuration for file operations
 
 apiVersion: aof.dev/v1
 kind: Agent
@@ -12,92 +12,20 @@ spec:
   model: google:gemini-2.5-flash
 
   instructions: |
-    You are a helpful assistant with access to filesystem and other tools.
-    Use the available MCP tools to help users with their tasks.
+    You are a helpful assistant with access to filesystem tools.
+    Use the available MCP tools to help users explore and manage files.
+    Keep responses concise.
 
-  # New flexible MCP server configuration
+  # MCP server configuration
   mcp_servers:
-    # Local filesystem MCP server (stdio transport)
     - name: filesystem
       transport: stdio
       command: npx
       args:
         - "-y"
         - "@modelcontextprotocol/server-filesystem"
-        - "/workspace"
-      env:
-        NODE_ENV: production
-      # Optional: only expose specific tools
-      tools:
-        - read_file
-        - write_file
-        - list_directory
-
-    # Local sqlite MCP server
-    - name: sqlite
-      transport: stdio
-      command: npx
-      args:
-        - "-y"
-        - "@modelcontextprotocol/server-sqlite"
-        - "/workspace/data.db"
-
-    # Custom MCP server with initialization options
-    - name: custom-tools
-      transport: stdio
-      command: ./my-mcp-server
-      args:
-        - "--verbose"
-      env:
-        API_KEY_ENV: MY_API_KEY
-      init_options:
-        debug: true
-        workspace: /home/user
-      timeout_secs: 60
-      auto_reconnect: true
-
-  # Runtime settings
-  max_iterations: 20
-  temperature: 0.7
-  max_tokens: 4096
-
----
-
-# Example: Agent with SSE/HTTP MCP servers (requires sse/http features)
-apiVersion: aof.dev/v1
-kind: Agent
-metadata:
-  name: remote-mcp-agent
-
-spec:
-  model: google:gemini-2.5-flash
-
-  instructions: |
-    You are an assistant connected to remote MCP servers.
-
-  mcp_servers:
-    # SSE transport (requires aof-mcp "sse" feature)
-    - name: remote-sse-tools
-      transport: sse
-      endpoint: http://localhost:3000/mcp/sse
+        - "."
       timeout_secs: 30
 
-    # HTTP transport (requires aof-mcp "http" feature)
-    - name: api-tools
-      transport: http
-      endpoint: http://localhost:8080/mcp/v1
-      timeout_secs: 60
-
----
-
-# Flat format example (backward compatible)
-name: flat-mcp-agent
-model: google:gemini-2.5-flash
-instructions: Agent with MCP tools using flat YAML format
-
-mcp_servers:
-  - name: filesystem
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-
-max_iterations: 10
+  max_iterations: 5
+  temperature: 0.3

@@ -2,7 +2,7 @@
 
 Copy-paste ready YAML configurations for common use cases.
 
-> **Note:** Currently, AOF supports running individual agents with `aofctl run agent`. AgentFleet and AgentFlow commands are planned for future releases.
+> **Note:** AOF supports running agents with `aofctl run agent` and fleets with `aofctl run fleet`. AgentFlow support is planned for future releases.
 
 ## Quick Start Examples
 
@@ -92,19 +92,23 @@ aofctl run fleet examples/fleets/code-review-team.yaml --input "Review: function
 
 ### 5. MCP Tools Agent
 **File:** `mcp-tools-agent.yaml`
-**Use Case:** Agent with multiple MCP servers
+**Use Case:** Agent with MCP filesystem server
 
 **Features:**
-- Filesystem MCP server
-- SQLite MCP server
-- Custom MCP server support
-- SSE/HTTP transport options
+- Filesystem MCP server for file operations
+- Read, write, list, search files
+- Directory tree exploration
 
 **Quick Start:**
 ```bash
+# Set Gemini API key
+export GOOGLE_API_KEY=AIza...
+
 # Run with filesystem MCP
-aofctl run agent examples/mcp-tools-agent.yaml --input "List files in /tmp"
+aofctl run agent examples/mcp-tools-agent.yaml --input "List files in the examples directory"
 ```
+
+> **Note:** For advanced MCP configurations (multiple servers, SSE/HTTP transports), see `examples/mcp-advanced-example.yaml`
 
 ---
 
@@ -138,21 +142,23 @@ spec:
 
 ---
 
-## Planned Features (AgentFleet & AgentFlow)
+## AgentFleet Examples
 
-> **Coming Soon:** The following features are planned for future releases.
+AgentFleet enables multi-agent coordination for complex tasks. All fleet examples are tested and working.
 
-### AgentFleet Examples (Planned)
+### Available Fleet Examples
 
-AgentFleet will enable multi-agent coordination for complex tasks:
+| Fleet | Description | Location |
+|-------|-------------|----------|
+| **code-review-team** | Multi-perspective code review with consensus | `examples/fleets/code-review-team.yaml` |
+| **incident-response-team** | Incident triage and response coordination | `examples/fleets/incident-response-team.yaml` |
+| **k8s-rca-team** | Kubernetes root cause analysis | `examples/fleets/k8s-rca-team.yaml` |
+| **dockerizer-team** | Containerize applications | `examples/fleets/dockerizer-team.yaml` |
+| **simple-test-fleet** | Basic fleet for testing | `examples/fleets/simple-test-fleet.yaml` |
 
-- **Kubernetes RCA Team** - Root cause analysis with multiple specialized agents
-- **Dockerizer Team** - Containerize applications with pipeline coordination
-- **Code Review Team** - Multi-perspective code review with consensus
+## Planned Features (AgentFlow)
 
-### AgentFlow Examples (Planned)
-
-AgentFlow will enable workflow orchestration:
+> **Coming Soon:** AgentFlow will enable workflow orchestration:
 
 - **Incident Response System** - Auto-remediation with PagerDuty integration
 - **Slack Bot Flow** - Conversational assistant with approval workflows
@@ -193,10 +199,10 @@ spec:
   model: google:gemini-2.5-flash   # Default - fast and capable
 
   # Alternatives:
-  model: google:gemini-2.5-flash             # OpenAI GPT-4o
-  model: google:gemini-2.5-flash        # Cheaper/faster
-  model: anthropic:claude-3-5-sonnet-20241022  # Claude Sonnet
-  model: ollama:llama3             # Local (free)
+  model: openai:gpt-4o                        # OpenAI GPT-4o
+  model: openai:gpt-4o-mini                   # Cheaper/faster
+  model: anthropic:claude-3-5-sonnet-20241022 # Claude Sonnet
+  model: ollama:llama3                        # Local (free)
 ```
 
 ### Add Built-in Tools

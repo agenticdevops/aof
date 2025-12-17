@@ -1,0 +1,48 @@
+# Advanced MCP Configuration Examples
+# NOTE: These are reference examples - some require additional setup
+
+# Example 1: Multiple MCP servers (filesystem + sqlite)
+# Requires: npm install -g @modelcontextprotocol/server-sqlite
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: multi-mcp-agent
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are a helpful assistant with access to filesystem and database tools.
+  mcp_servers:
+    - name: filesystem
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+      timeout_secs: 30
+    - name: sqlite
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-sqlite", "./data.db"]
+      timeout_secs: 30
+  max_iterations: 10
+
+---
+
+# Example 2: SSE/HTTP MCP servers (requires sse/http features)
+# These require running MCP servers on the specified endpoints
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: remote-mcp-agent
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are an assistant connected to remote MCP servers.
+  mcp_servers:
+    - name: remote-sse-tools
+      transport: sse
+      endpoint: http://localhost:3000/mcp/sse
+      timeout_secs: 30
+    - name: api-tools
+      transport: http
+      endpoint: http://localhost:8080/mcp/v1
+      timeout_secs: 60
+  max_iterations: 10

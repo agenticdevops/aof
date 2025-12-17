@@ -1,19 +1,32 @@
-# Simple kubectl agent for testing MCP integration
-name: kubectl-agent
-model: google:gemini-2.5-flash
+# Kubectl agent using kubectl-ai MCP server
+# Requires: kubectl-ai installed (brew install kubectl-ai or go install)
 
-instructions: |
-  You are a Kubernetes assistant. Use the kubectl tools to help users.
-  When asked about pods, use the kubectl tool to list them.
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: kubectl-agent
+  labels:
+    purpose: kubernetes
+spec:
+  model: google:gemini-2.5-flash
 
-mcp_servers:
-  - name: kubectl-ai
-    transport: stdio
-    command: kubectl-ai
-    args:
-      - "--mcp-server"
-      - "--mcp-server-mode=stdio"
-    timeout_secs: 120
+  instructions: |
+    You are a Kubernetes assistant. Use the kubectl tool to help users manage their cluster.
 
-max_iterations: 5
-temperature: 0.3
+    IMPORTANT: When using the kubectl tool, pass the FULL command including "kubectl" prefix.
+    Example: {"command": "kubectl get pods -A"}
+
+    Do NOT pass just the arguments like {"args": "get pods"}.
+    Always use the "command" parameter with the complete kubectl command.
+
+  mcp_servers:
+    - name: kubectl-ai
+      transport: stdio
+      command: kubectl-ai
+      args:
+        - "--mcp-server"
+        - "--mcp-server-mode=stdio"
+      timeout_secs: 120
+
+  max_iterations: 5
+  temperature: 0.3
