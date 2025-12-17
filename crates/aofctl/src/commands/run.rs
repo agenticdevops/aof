@@ -726,7 +726,174 @@ fn output_result(agent_name: &str, result: &str, output: &str) -> Result<()> {
 }
 
 /// Run a workflow with configuration
+/// Auto-detects between AgentFlow and Workflow based on YAML kind
 async fn run_workflow(config_path: &str, input: Option<&str>, output: &str) -> Result<()> {
+    use tokio::sync::mpsc;
+
+    info!("Loading flow from: {}", config_path);
+
+    // Read the config to detect kind
+    let content = fs::read_to_string(config_path)
+        .with_context(|| format!("Failed to read config: {}", config_path))?;
+
+    // Detect kind from YAML
+    let kind = detect_yaml_kind(&content);
+
+    match kind.as_deref() {
+        Some("AgentFlow") => run_agentflow(config_path, &content, input, output).await,
+        Some("Workflow") | _ => run_workflow_internal(config_path, input, output).await,
+    }
+}
+
+/// Detect the 'kind' field from a YAML document
+fn detect_yaml_kind(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("kind:") {
+            let value = trimmed.strip_prefix("kind:")?.trim();
+            let value = value.trim_matches('"').trim_matches('\'');
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// Run an AgentFlow (trigger-based event-driven flow)
+async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, output: &str) -> Result<()> {
+    use aof_runtime::AgentFlowExecutor;
+    use tokio::sync::mpsc;
+
+    info!("Executing AgentFlow from: {}", config_path);
+
+    // Create runtime for agent execution
+    let runtime = std::sync::Arc::new(Runtime::new());
+
+    // Create AgentFlow executor from file
+    let executor = AgentFlowExecutor::from_file(config_path, runtime.clone())
+        .await
+        .context("Failed to load AgentFlow")?;
+
+    // Parse trigger data from input
+    let trigger_data: serde_json::Value = if let Some(inp) = input {
+        serde_json::from_str(inp).unwrap_or_else(|_| {
+            // If not valid JSON, create a simple event structure
+            serde_json::json!({
+                "event": {
+                    "text": inp,
+                    "user": "cli_user",
+                    "channel": "cli",
+                    "ts": chrono::Utc::now().timestamp().to_string()
+                }
+            })
+        })
+    } else {
+        // Default manual trigger event
+        serde_json::json!({
+            "event": {
+                "type": "manual",
+                "user": "cli_user",
+                "channel": "cli",
+                "ts": chrono::Utc::now().timestamp().to_string()
+            }
+        })
+    };
+
+    // Create event channel for monitoring
+    let (event_tx, mut event_rx) = mpsc::channel(100);
+    let executor = executor.with_event_channel(event_tx);
+
+    // Spawn task to print events
+    let event_printer = tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            use aof_runtime::AgentFlowEvent;
+            match event {
+                AgentFlowEvent::Started { flow_name, run_id } => {
+                    eprintln!("[AGENTFLOW] Started: {} (run: {})", flow_name, run_id);
+                }
+                AgentFlowEvent::NodeStarted { node_id, node_type } => {
+                    eprintln!("[NODE] Starting: {} ({})", node_id, node_type);
+                }
+                AgentFlowEvent::NodeCompleted { node_id, duration_ms, .. } => {
+                    eprintln!("[NODE] Completed: {} ({}ms)", node_id, duration_ms);
+                }
+                AgentFlowEvent::NodeFailed { node_id, error } => {
+                    eprintln!("[NODE] Failed: {} - {}", node_id, error);
+                }
+                AgentFlowEvent::Waiting { node_id, reason } => {
+                    eprintln!("[NODE] Waiting: {} - {}", node_id, reason);
+                }
+                AgentFlowEvent::VariableSet { key, value } => {
+                    eprintln!("[VAR] Set: {} = {}", key, value);
+                }
+                AgentFlowEvent::Completed { run_id, status } => {
+                    eprintln!("[AGENTFLOW] Completed: {} with status {:?}", run_id, status);
+                }
+                AgentFlowEvent::Error { message } => {
+                    eprintln!("[ERROR] {}", message);
+                }
+            }
+        }
+    });
+
+    // Execute the AgentFlow
+    let final_state = executor.execute(trigger_data).await
+        .context("AgentFlow execution failed")?;
+
+    // Wait for event printer to finish
+    drop(executor);
+    let _ = event_printer.await;
+
+    // Get completed node names from node_results
+    let completed_nodes: Vec<String> = final_state
+        .node_results
+        .iter()
+        .filter(|(_, r)| r.status == aof_core::NodeExecutionStatus::Completed)
+        .map(|(id, _)| id.clone())
+        .collect();
+
+    // Output result in requested format
+    match output {
+        "json" => {
+            let json_output = serde_json::json!({
+                "success": true,
+                "flow": final_state.flow_name,
+                "run_id": final_state.run_id,
+                "status": format!("{:?}", final_state.status),
+                "completed_nodes": completed_nodes,
+                "variables": final_state.variables,
+                "node_results": final_state.node_results,
+            });
+            println!("{}", serde_json::to_string_pretty(&json_output)?);
+        }
+        "yaml" => {
+            let yaml_output = serde_yaml::to_string(&serde_json::json!({
+                "success": true,
+                "flow": final_state.flow_name,
+                "run_id": final_state.run_id,
+                "status": format!("{:?}", final_state.status),
+                "completed_nodes": completed_nodes,
+                "variables": final_state.variables,
+            }))?;
+            println!("{}", yaml_output);
+        }
+        "text" | _ => {
+            println!("AgentFlow: {}", final_state.flow_name);
+            println!("Run ID: {}", final_state.run_id);
+            println!("Status: {:?}", final_state.status);
+            if !completed_nodes.is_empty() {
+                println!("Completed Nodes: {}", completed_nodes.join(" -> "));
+            }
+            if let Some(error) = &final_state.error {
+                println!("Error: {}", error.message);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Run a traditional Workflow (step-based sequential flow)
+async fn run_workflow_internal(config_path: &str, input: Option<&str>, output: &str) -> Result<()> {
     use aof_runtime::WorkflowExecutor;
     use tokio::sync::mpsc;
 

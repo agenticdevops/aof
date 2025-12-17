@@ -10,12 +10,30 @@ Build an AI-powered Slack bot that helps your team with Kubernetes operations, a
 
 **Time:** 20 minutes
 
+> **Quick Start**: If you just want to run the example:
+> ```bash
+> # Set up environment
+> export SLACK_BOT_TOKEN=xoxb-xxxxx
+> export SLACK_SIGNING_SECRET=xxxxx
+> export GOOGLE_API_KEY=xxxxx
+>
+> # Apply example configs
+> aofctl apply -f examples/agents/slack-k8s-bot.yaml
+>
+> # Start server
+> aofctl serve --port 3000
+>
+> # Expose with ngrok
+> ngrok http 3000
+> ```
+> See [Slack App Setup Guide](../guides/slack-app-setup.md) for detailed Slack configuration.
+
 ## Prerequisites
 
 - `aofctl` installed
 - Slack workspace (admin access to create apps)
-- Kubernetes cluster (for kubectl commands)
-- OpenAI or Anthropic API key
+- Kubernetes cluster (for kubectl commands) - optional
+- Google, OpenAI, or Anthropic API key
 
 ## Step 1: Create Slack App
 
@@ -71,10 +89,8 @@ metadata:
 
 spec:
   model: google:gemini-2.5-flash
-
-  model_config:
-    temperature: 0.3
-    max_tokens: 1500
+  temperature: 0.3
+  max_tokens: 1500
 
   instructions: |
     You are a helpful Kubernetes assistant in a Slack channel.
@@ -93,31 +109,13 @@ spec:
     - Use Slack's code block formatting: ```text```
 
   tools:
-    - type: Shell
-      config:
-        allowed_commands:
-          - kubectl
-          - helm
-        timeout_seconds: 30
+    # Use unified CLI tools
+    - kubectl
+    - helm
+    - shell
 
-    - type: MCP
-      config:
-        name: kubectl-mcp
-        command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
-        env:
-          KUBECONFIG: "${KUBECONFIG}"
-
-    - type: Slack
-      config:
-        bot_token: ${SLACK_BOT_TOKEN}
-        signing_secret: ${SLACK_SIGNING_SECRET}
-
-  memory:
-    type: SQLite
-    config:
-      path: ./slack-bot-memory.db
-      # Separate memory per Slack channel
-      context_key: "slack_channel_${SLACK_CHANNEL_ID}"
+  # Optional: Memory for conversation context
+  memory: sqlite
 ```
 
 ## Step 3: Create AgentFlow for Event Handling

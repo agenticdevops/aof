@@ -13,8 +13,8 @@ pub mod orchestrator;
 pub mod task;
 
 pub use executor::{
-    AgentExecutor, ApprovalDecision, HumanInput, Runtime, StreamEvent, WorkflowEvent,
-    WorkflowExecutor,
+    AgentExecutor, AgentFlowEvent, AgentFlowExecutor, ApprovalDecision, HumanInput, Runtime,
+    StreamEvent, WorkflowEvent, WorkflowExecutor,
 };
 pub use fleet::{FleetCoordinator, FleetEvent};
 pub use orchestrator::RuntimeOrchestrator;

@@ -4,7 +4,11 @@ Complete reference for AgentFlow workflow specifications.
 
 ## Overview
 
-An AgentFlow is a workflow that orchestrates agents, tools, and integrations in a directed acyclic graph (DAG). Think of it as n8n or Argo Workflows for AI agents.
+An AgentFlow is an **event-driven workflow** that orchestrates agents, tools, and integrations in a directed graph. Unlike sequential Workflows, AgentFlows are trigger-based and designed for real-time event handling (Slack bots, webhooks, scheduled jobs).
+
+**Key Differences from Workflow:**
+- **Workflow** (`kind: Workflow`): Step-based sequential/parallel execution with entrypoint
+- **AgentFlow** (`kind: AgentFlow`): Trigger-based event-driven execution with nodes and connections
 
 ## Basic Structure
 
@@ -13,29 +17,39 @@ apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
   name: string              # Required: Unique identifier
+  namespace: string         # Optional: Namespace for isolation
   labels:                   # Optional: Key-value labels
+    key: value
+  annotations:              # Optional: Additional metadata
     key: value
 
 spec:
   trigger:                  # Required: What starts this flow
-    type: string
-    config: object
+    type: TriggerType
+    config: TriggerConfig
+
+  triggers:                 # Optional: Additional triggers
+    - type: TriggerType
+      config: TriggerConfig
 
   nodes:                    # Required: Flow steps
     - id: string
-      type: string
-      config: object
-      conditions: array
+      type: NodeType
+      config: NodeConfig
+      conditions: []
 
-  connections:              # Optional: Explicit edges
+  connections:              # Required: Node edges
     - from: string
       to: string
-      when: string
+      when: string          # Optional: Condition expression
 
-  variables:                # Optional: Flow-level variables
-    key: value
-
-  timeout_seconds: int      # Optional: Overall timeout
+  config:                   # Optional: Global flow config
+    default_timeout_seconds: int
+    verbose: bool
+    retry:
+      max_attempts: int
+      initial_delay: string
+      backoff_multiplier: float
 ```
 
 ## Metadata
@@ -44,53 +58,127 @@ spec:
 **Type:** `string`
 **Required:** Yes
 
+Unique identifier for the flow. Used in CLI commands and logs.
+
+### `metadata.labels`
+**Type:** `map[string]string`
+**Required:** No
+
+Key-value pairs for categorization and filtering.
+
 **Example:**
 ```yaml
 metadata:
-  name: incident-response
+  name: slack-k8s-bot-flow
   labels:
+    platform: slack
+    purpose: operations
     team: sre
-    env: production
 ```
+
+---
 
 ## Trigger Types
 
-Triggers define what starts the flow execution.
+Triggers define what starts the flow execution. The `trigger` field is required, and additional triggers can be specified in `triggers` array.
 
-### Webhook
+### Slack
 
-HTTP endpoint that receives requests.
+Listen for Slack events (mentions, messages, slash commands).
 
 ```yaml
 spec:
   trigger:
-    type: Webhook
+    type: Slack
     config:
-      path: /my-webhook              # URL path
-      methods: [POST, PUT]            # Allowed HTTP methods
-      auth:                           # Optional authentication
-        type: Bearer
-        token: ${WEBHOOK_TOKEN}
+      events:
+        - app_mention           # @bot-name mentions
+        - message               # Direct messages
+        - slash_command         # /command invocations
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
 ```
 
-**Usage:**
-```bash
-curl -X POST https://your-domain.com/my-webhook \
-  -H "Authorization: Bearer token" \
-  -d '{"data": "value"}'
+**Available Events:**
+- `app_mention` - When someone @mentions your bot
+- `message` - Messages in channels where bot is present
+- `message.im` - Direct messages to bot
+- `slash_command` - Slash command invocations
+
+### Discord
+
+Listen for Discord events.
+
+```yaml
+spec:
+  trigger:
+    type: Discord
+    config:
+      events:
+        - message_create
+        - slash_command
+      bot_token: ${DISCORD_BOT_TOKEN}
 ```
+
+### Telegram
+
+Listen for Telegram bot events.
+
+```yaml
+spec:
+  trigger:
+    type: Telegram
+    config:
+      events:
+        - message
+        - callback_query
+      bot_token: ${TELEGRAM_BOT_TOKEN}
+```
+
+### WhatsApp
+
+Listen for WhatsApp Business API events.
+
+```yaml
+spec:
+  trigger:
+    type: WhatsApp
+    config:
+      events:
+        - message
+      webhook_verify_token: ${WHATSAPP_VERIFY_TOKEN}
+```
+
+### HTTP
+
+Generic HTTP webhook endpoint.
+
+```yaml
+spec:
+  trigger:
+    type: HTTP
+    config:
+      method: POST
+      path: /webhook/alerts
+```
+
+**Trigger data available:**
+- `${event.method}` - HTTP method
+- `${event.path}` - Request path
+- `${event.headers}` - Request headers
+- `${event.body}` - Request body
 
 ### Schedule
 
-Cron-based scheduling.
+Cron-based scheduled execution.
 
 ```yaml
 spec:
   trigger:
     type: Schedule
     config:
-      cron: "0 9 * * *"               # Daily at 9 AM
-      timezone: America/New_York      # Optional timezone
+      cron: "0 9 * * *"           # Daily at 9 AM
+      timezone: America/New_York  # Optional timezone
 ```
 
 **Cron Format:**
@@ -99,32 +187,14 @@ spec:
 │ ┌───────────── hour (0 - 23)
 │ │ ┌───────────── day of month (1 - 31)
 │ │ │ ┌───────────── month (1 - 12)
-│ │ │ │ ┌───────────── day of week (0 - 6) (Sunday=0)
-│ │ │ │ │
+│ │ │ │ ┌───────────── day of week (0 - 6)
 * * * * *
 ```
 
 **Examples:**
 - `0 * * * *` - Every hour
-- `0 0 * * *` - Daily at midnight
 - `0 9 * * 1-5` - Weekdays at 9 AM
 - `*/15 * * * *` - Every 15 minutes
-
-### FileWatch
-
-Monitor file changes.
-
-```yaml
-spec:
-  trigger:
-    type: FileWatch
-    config:
-      paths:
-        - /etc/kubernetes/config.yaml
-        - /tmp/deployments/*.yaml
-      events: [created, modified, deleted]
-      debounce_seconds: 5           # Wait 5s for batch changes
-```
 
 ### Manual
 
@@ -134,250 +204,69 @@ Triggered explicitly via CLI.
 spec:
   trigger:
     type: Manual
-    config:
-      require_approval: true        # Optional approval gate
 ```
 
 **Usage:**
 ```bash
-aofctl run flow my-flow.yaml
-```
-
-### Slack
-
-Slack events trigger the flow.
-
-```yaml
-spec:
-  trigger:
-    type: Slack
-    config:
-      events:
-        - app_mention              # @bot-name
-        - message                  # Direct messages
-        - slash_command            # /command
-      bot_token: ${SLACK_BOT_TOKEN}
-      signing_secret: ${SLACK_SIGNING_SECRET}
-```
-
-### GitHub
-
-GitHub webhook events.
-
-```yaml
-spec:
-  trigger:
-    type: GitHub
-    config:
-      events:
-        - pull_request            # PR events
-        - issues                  # Issue events
-        - push                    # Push events
-      repositories:
-        - owner/repo1
-        - owner/repo2
-      webhook_secret: ${GITHUB_WEBHOOK_SECRET}
-```
-
-### PagerDuty
-
-PagerDuty incident events.
-
-```yaml
-spec:
-  trigger:
-    type: PagerDuty
-    config:
-      events:
-        - incident.triggered
-        - incident.acknowledged
-      webhook_token: ${PAGERDUTY_WEBHOOK_TOKEN}
-```
-
-### Kafka
-
-Kafka message consumption.
-
-```yaml
-spec:
-  trigger:
-    type: Kafka
-    config:
-      brokers:
-        - kafka1.company.com:9092
-        - kafka2.company.com:9092
-      topic: incidents
-      consumer_group: aof-flows
-      auth:
-        type: SASL
-        username: ${KAFKA_USERNAME}
-        password: ${KAFKA_PASSWORD}
+aofctl run flow my-flow.yaml --input '{"key": "value"}'
 ```
 
 ---
 
 ## Node Types
 
-Nodes are the steps in your workflow.
+Nodes are the steps in your workflow graph.
 
-### Agent Node
+### Transform
 
-Run an AI agent.
+Data transformation and variable extraction.
 
 ```yaml
 nodes:
-  - id: diagnose
+  - id: parse-message
+    type: Transform
+    config:
+      script: |
+        # Extract fields from trigger event
+        export MESSAGE_TEXT="${event.text}"
+        export SLACK_USER="${event.user}"
+        export SLACK_CHANNEL="${event.channel}"
+        export SLACK_TIMESTAMP="${event.ts}"
+```
+
+**Outputs:** Variables exported in the script are available as `${node-id.VARIABLE}`.
+
+### Agent
+
+Execute an AI agent.
+
+```yaml
+nodes:
+  - id: process-request
     type: Agent
     config:
-      agent: diagnostic-agent       # Agent name
-      input: ${trigger.data}        # Input data
-      timeout_seconds: 180          # Max execution time
-      context:                      # Additional context
-        namespace: ${trigger.namespace}
+      agent: my-agent-name      # Required: Agent name
+      input: ${MESSAGE_TEXT}    # Input to agent
+      context:                  # Optional: Additional context
+        channel: ${SLACK_CHANNEL}
+        user: ${SLACK_USER}
 ```
 
 **Outputs:**
-- `${diagnose.output}` - Agent response
-- `${diagnose.status}` - success/failed
-- `${diagnose.duration}` - Execution time
+- `${node-id.output}` - Agent response
+- `${node-id.output.requires_approval}` - If agent requests approval
+- `${node-id.output.command}` - Command to execute (if any)
 
-### Fleet Node
+### Conditional
 
-Run an agent fleet (team of agents).
-
-```yaml
-nodes:
-  - id: review-team
-    type: Fleet
-    config:
-      fleet: code-review-team       # Fleet name
-      input: ${code-changes}
-      aggregation: consensus        # How to combine results
-```
-
-**Aggregation Methods:**
-- `all` - Return all responses
-- `consensus` - Majority vote
-- `summary` - Summarized by meta-agent
-- `first` - First successful response
-
-### HTTP Node
-
-Make HTTP requests.
+Evaluate conditions for routing.
 
 ```yaml
 nodes:
-  - id: notify-api
-    type: HTTP
-    config:
-      method: POST
-      url: https://api.company.com/notify
-      headers:
-        Content-Type: application/json
-        Authorization: "Bearer ${API_TOKEN}"
-      body: |
-        {
-          "event": "${event.type}",
-          "data": ${event.data}
-        }
-      timeout_seconds: 30
-```
-
-### Shell Node
-
-Execute commands.
-
-```yaml
-nodes:
-  - id: backup-db
-    type: Shell
-    config:
-      command: kubectl
-      args:
-        - exec
-        - postgres-0
-        - --
-        - pg_dump
-        - mydb
-      working_directory: /tmp
-      timeout_seconds: 300
-      capture_output: true
-```
-
-### Slack Node
-
-Send Slack messages.
-
-```yaml
-nodes:
-  - id: notify-team
-    type: Slack
-    config:
-      channel: "#incidents"
-      thread_ts: ${trigger.ts}      # Reply in thread
-      message: |
-        🚨 **Incident Alert**
-
-        ${diagnose.output}
-      blocks:                       # Rich formatting
-        - type: section
-          text:
-            type: mrkdwn
-            text: "*Status:* ${status}"
-```
-
-**Interactive Elements:**
-```yaml
-- id: request-approval
-  type: Slack
-  config:
-    channel: "#approvals"
-    message: "Approve deployment?"
-    wait_for_reaction: true
-    reactions: [white_check_mark, x]
-    timeout_seconds: 300
-```
-
-### GitHub Node
-
-GitHub operations.
-
-```yaml
-nodes:
-  - id: create-pr
-    type: GitHub
-    config:
-      action: create_pull_request
-      repository: owner/repo
-      base: main
-      head: feature-branch
-      title: ${pr-title}
-      body: ${pr-description}
-```
-
-**Available Actions:**
-- `create_pull_request`
-- `add_comment`
-- `create_issue`
-- `update_status`
-- `merge_pull_request`
-
-### Conditional Node
-
-If/else logic.
-
-```yaml
-nodes:
-  - id: check-severity
+  - id: check-approval
     type: Conditional
     config:
-      conditions:
-        - name: is_critical
-          expression: ${severity} == "critical"
-        - name: is_high
-          expression: ${severity} == "high"
-        - name: is_normal
-          expression: true  # Default case
+      condition: ${agent-process.output.requires_approval} == true
 ```
 
 **Expression Syntax:**
@@ -387,253 +276,394 @@ ${value} == "text"
 ${number} > 100
 ${enabled} == true
 
-# Logical operators
-${a} == true AND ${b} == false
-${x} > 10 OR ${y} < 5
-
-# String operations
-${text} contains "error"
-${name} startsWith "prod-"
+# Available operators
+==, !=, >, <, >=, <=
 ```
 
-### Transform Node
+### Slack
 
-Data transformation.
+Send messages to Slack.
 
 ```yaml
 nodes:
-  - id: parse-data
-    type: Transform
+  - id: send-response
+    type: Slack
     config:
-      script: |
-        # Extract fields
-        export SEVERITY="${event.severity}"
-        export NAMESPACE="${event.namespace}"
-
-        # Transform
-        export PRIORITY=$([[ "$SEVERITY" == "critical" ]] && echo "P1" || echo "P2")
-
-        # Format output
-        cat > output.json <<EOF
-        {
-          "priority": "$PRIORITY",
-          "namespace": "$NAMESPACE"
-        }
-        EOF
+      channel: ${SLACK_CHANNEL}
+      thread_ts: ${SLACK_TIMESTAMP}    # Reply in thread
+      message: ${agent-process.output}
 ```
 
-**Outputs:**
-Variables exported in the script are available as `${transform-node.VARIABLE}`.
+**Interactive Elements (wait for reaction):**
+```yaml
+nodes:
+  - id: request-approval
+    type: Slack
+    config:
+      channel: ${SLACK_CHANNEL}
+      message: |
+        :warning: **Approval Required**
 
-### HumanApproval Node
+        User: <@${SLACK_USER}>
+        Command: `${agent-process.output.command}`
 
-Wait for human approval.
+        React with :white_check_mark: to approve or :x: to deny
+      wait_for_reaction: true
+      timeout_seconds: 300
+```
+
+**Block Kit Support:**
+```yaml
+nodes:
+  - id: rich-message
+    type: Slack
+    config:
+      channel: "#channel"
+      blocks:
+        - type: section
+          text:
+            type: mrkdwn
+            text: "*Status:* ${status}"
+        - type: actions
+          elements:
+            - type: button
+              text: "Approve"
+              action_id: approve
+              value: "${task_id}"
+```
+
+### Discord
+
+Send messages to Discord.
 
 ```yaml
 nodes:
-  - id: await-approval
-    type: HumanApproval
+  - id: discord-notify
+    type: Discord
     config:
-      approvers:
-        - user1@company.com
-        - user2@company.com
-      require_count: 1              # At least 1 approval
-      timeout_seconds: 1800         # 30 minutes
-      notification:
-        type: Slack
-        channel: "#approvals"
-        message: "Please approve: ${action}"
+      channel_id: ${DISCORD_CHANNEL}
+      message: ${output}
 ```
 
-### Parallel Node
+### HTTP
 
-Execute multiple nodes in parallel.
+Make HTTP requests.
+
+```yaml
+nodes:
+  - id: call-api
+    type: HTTP
+    config:
+      method: POST
+      url: https://api.example.com/endpoint
+      headers:
+        Content-Type: application/json
+        Authorization: "Bearer ${API_TOKEN}"
+      body:
+        event: ${event.type}
+        data: ${event.data}
+      timeout_seconds: 30
+```
+
+### Wait
+
+Pause execution for a duration.
+
+```yaml
+nodes:
+  - id: cooldown
+    type: Wait
+    config:
+      duration: "30s"    # Supports: 30s, 5m, 1h
+```
+
+### Parallel
+
+Execute multiple branches in parallel.
 
 ```yaml
 nodes:
   - id: parallel-checks
     type: Parallel
     config:
-      nodes:
-        - id: check-logs
-          type: Agent
-          config:
-            agent: log-analyzer
+      branches:
+        - check-logs
+        - check-metrics
+        - check-events
+```
 
-        - id: check-metrics
-          type: Agent
-          config:
-            agent: metrics-analyzer
+### Join
 
-        - id: check-events
-          type: Shell
-          config:
-            command: kubectl get events
+Wait for parallel branches to complete.
+
+```yaml
+nodes:
+  - id: aggregate
+    type: Join
+    config:
+      strategy: all      # all | any | majority
+```
+
+### Approval
+
+Human approval gate.
+
+```yaml
+nodes:
+  - id: await-approval
+    type: Approval
+    config:
+      approvers:
+        - user@company.com
+        - oncall-team
+      timeout_seconds: 1800
+```
+
+### End
+
+Terminal node (marks flow completion).
+
+```yaml
+nodes:
+  - id: complete
+    type: End
 ```
 
 ---
 
 ## Connections
 
-Define how nodes connect (optional, inferred from conditions if not specified).
+Define how nodes connect (graph edges).
 
 ```yaml
 connections:
-  - from: parse-alert
-    to: diagnose
+  # Simple connection
+  - from: trigger
+    to: parse-message
 
-  - from: diagnose
-    to: remediate
-    when: ${severity} != "critical"
+  # Sequential flow
+  - from: parse-message
+    to: agent-process
 
-  - from: diagnose
+  # Conditional routing
+  - from: check-approval
     to: request-approval
-    when: ${severity} == "critical"
+    when: requires_approval == true
 
+  - from: check-approval
+    to: send-response
+    when: requires_approval == false
+
+  # After approval, execute
   - from: request-approval
-    to: remediate
+    to: execute-command
 ```
+
+**Note:** The special node ID `trigger` represents the flow trigger entry point.
 
 ---
 
-## Conditions
+## Node Conditions
 
-Control when nodes execute.
+Control when nodes execute based on previous node outputs.
 
 ```yaml
 nodes:
-  - id: auto-fix
+  - id: execute-command
     type: Agent
     config:
-      agent: remediation-agent
+      agent: executor
+      input: "Execute: ${command}"
     conditions:
-      - from: check-severity
-        when: severity != "critical"
+      - from: request-approval
+        reaction: white_check_mark    # Wait for this reaction
 ```
 
 **Condition Types:**
 
 ```yaml
-# Simple condition
-conditions:
-  - from: previous-node
-    when: ${output.success} == true
-
-# Multiple conditions (AND)
-conditions:
-  - from: node1
-    when: ${approved} == true
-  - from: node2
-    when: ${validated} == true
-
-# Value matching
+# Wait for specific value
 conditions:
   - from: conditional-node
-    value: is_critical  # Match condition name
-```
+    value: true
 
----
-
-## Variables
-
-Flow-level variables accessible to all nodes.
-
-```yaml
-spec:
-  variables:
-    NAMESPACE: production
-    CLUSTER: us-east-1
-    ALERT_CHANNEL: "#incidents"
-
-  nodes:
-    - id: notify
-      type: Slack
-      config:
-        channel: ${ALERT_CHANNEL}
+# Wait for Slack reaction
+conditions:
+  - from: slack-node
+    reaction: white_check_mark
 ```
 
 ---
 
 ## Variable Interpolation
 
-Access data from triggers, nodes, and variables.
+Access data from triggers, nodes, and environment.
 
 ### Trigger Data
-
 ```yaml
-${trigger.data}               # Full trigger payload
-${trigger.event.type}         # Nested field
-${trigger.user}               # User who triggered
+${event.text}           # Message text
+${event.user}           # User ID
+${event.channel}        # Channel ID
+${event.ts}             # Timestamp
+${event.type}           # Event type
 ```
 
 ### Node Outputs
-
 ```yaml
-${node-id.output}             # Node output
-${node-id.status}             # success/failed
-${node-id.duration}           # Execution time in seconds
-${node-id.custom-field}       # Custom output field
-```
-
-### Flow Metadata
-
-```yaml
-${flow.id}                    # Flow execution ID
-${flow.name}                  # Flow name
-${flow.started_at}            # Start timestamp
-${flow.duration_seconds}      # Current duration
+${node-id.output}                    # Full output
+${node-id.output.field}              # Nested field
+${node-id.EXPORTED_VAR}              # Transform exports
 ```
 
 ### Environment Variables
+```yaml
+${SLACK_BOT_TOKEN}      # Env var (resolved at runtime)
+${env.HOME}             # Explicit env var
+```
+
+---
+
+## Flow Configuration
+
+Global configuration for the flow.
 
 ```yaml
-${NAMESPACE}                  # Flow variable
-${env.HOME}                   # Environment variable
+spec:
+  config:
+    default_timeout_seconds: 60
+    verbose: true
+    retry:
+      max_attempts: 3
+      initial_delay: "1s"
+      backoff_multiplier: 2.0
+    error_handler: error-node    # Node to handle errors
 ```
 
 ---
 
 ## Complete Examples
 
-### Webhook → Agent → Slack
+### Slack Bot with Approval Flow
 
 ```yaml
 apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
-  name: simple-alert
+  name: slack-k8s-bot-flow
+  labels:
+    platform: slack
+    purpose: operations
 
 spec:
   trigger:
-    type: Webhook
+    type: Slack
     config:
-      path: /alerts
+      events:
+        - app_mention
+        - message
+        - slash_command
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
 
   nodes:
-    - id: analyze
+    - id: parse-message
+      type: Transform
+      config:
+        script: |
+          export MESSAGE_TEXT="${event.text}"
+          export SLACK_USER="${event.user}"
+          export SLACK_CHANNEL="${event.channel}"
+          export SLACK_TIMESTAMP="${event.ts}"
+
+    - id: agent-process
       type: Agent
       config:
-        agent: alert-analyzer
-        input: ${trigger.data}
+        agent: slack-k8s-bot
+        input: ${MESSAGE_TEXT}
+        context:
+          slack_channel: ${SLACK_CHANNEL}
+          slack_user: ${SLACK_USER}
 
-    - id: notify
+    - id: check-approval
+      type: Conditional
+      config:
+        condition: ${agent-process.output.requires_approval} == true
+
+    - id: request-approval
       type: Slack
       config:
-        channel: "#alerts"
-        message: ${analyze.output}
+        channel: ${SLACK_CHANNEL}
+        thread_ts: ${SLACK_TIMESTAMP}
+        message: |
+          :warning: **Approval Required**
+
+          User: <@${SLACK_USER}>
+          Command: `${agent-process.output.command}`
+
+          React with :white_check_mark: to approve
+        wait_for_reaction: true
+        timeout_seconds: 300
+
+    - id: send-response
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        thread_ts: ${SLACK_TIMESTAMP}
+        message: ${agent-process.output.output}
+
+    - id: execute-command
+      type: Agent
+      config:
+        agent: slack-k8s-bot
+        input: "Execute: ${agent-process.output.command}"
+      conditions:
+        - from: request-approval
+          reaction: white_check_mark
+
+    - id: send-result
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        thread_ts: ${SLACK_TIMESTAMP}
+        message: |
+          :white_check_mark: **Executed**
+
+          ${execute-command.output.output}
 
   connections:
-    - from: analyze
-      to: notify
+    - from: trigger
+      to: parse-message
+    - from: parse-message
+      to: agent-process
+    - from: agent-process
+      to: check-approval
+    - from: check-approval
+      to: request-approval
+      when: requires_approval == true
+    - from: check-approval
+      to: send-response
+      when: requires_approval == false
+    - from: request-approval
+      to: execute-command
+    - from: execute-command
+      to: send-result
+
+  config:
+    default_timeout_seconds: 60
+    verbose: true
+    retry:
+      max_attempts: 2
+      initial_delay: "1s"
+      backoff_multiplier: 2.0
 ```
 
-### Scheduled Report
+### Scheduled Daily Report
 
 ```yaml
 apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
-  name: daily-report
+  name: daily-cluster-report
 
 spec:
   trigger:
@@ -643,135 +673,108 @@ spec:
       timezone: America/New_York
 
   nodes:
-    - id: gather-metrics
-      type: Shell
-      config:
-        command: kubectl
-        args: [top, pods, --all-namespaces]
-
     - id: generate-report
       type: Agent
       config:
         agent: report-generator
-        input: ${gather-metrics.output}
+        input: |
+          Generate a daily cluster health report:
+          - Total pods and their status
+          - Any failing deployments
+          - Resource usage summary
 
-    - id: send-report
+    - id: send-to-slack
       type: Slack
       config:
-        channel: "#daily-reports"
+        channel: "#platform-daily"
         message: |
-          📊 **Daily Cluster Report**
+          :chart_with_upwards_trend: **Daily Cluster Report**
 
           ${generate-report.output}
+
+  connections:
+    - from: trigger
+      to: generate-report
+    - from: generate-report
+      to: send-to-slack
 ```
 
-### Conditional Remediation
+### HTTP Webhook Handler
 
 ```yaml
 apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
-  name: auto-remediation
+  name: alert-handler
 
 spec:
   trigger:
-    type: PagerDuty
+    type: HTTP
     config:
-      events: [incident.triggered]
+      method: POST
+      path: /alerts
 
   nodes:
-    - id: diagnose
+    - id: parse-alert
+      type: Transform
+      config:
+        script: |
+          export ALERT_NAME="${event.body.alertname}"
+          export SEVERITY="${event.body.severity}"
+          export DESCRIPTION="${event.body.description}"
+
+    - id: analyze
       type: Agent
       config:
-        agent: diagnostic-agent
-        input: ${trigger.incident.title}
+        agent: alert-analyzer
+        input: |
+          Alert: ${ALERT_NAME}
+          Severity: ${SEVERITY}
+          Description: ${DESCRIPTION}
 
-    - id: check-severity
-      type: Conditional
-      config:
-        conditions:
-          - name: critical
-            expression: ${diagnose.output.severity} == "critical"
-          - name: normal
-            expression: true
-
-    - id: request-approval
-      type: HumanApproval
-      config:
-        approvers: [oncall@company.com]
-        timeout_seconds: 600
-      conditions:
-        - from: check-severity
-          value: critical
-
-    - id: remediate
-      type: Agent
-      config:
-        agent: remediation-agent
-        input: ${diagnose.output.recommended_action}
-
-    - id: verify
-      type: Agent
-      config:
-        agent: diagnostic-agent
-        input: "Verify the fix worked"
-
-    - id: notify-success
+    - id: notify
       type: Slack
       config:
-        channel: "#incidents"
-        message: "✅ Auto-resolved: ${diagnose.output.root_cause}"
+        channel: "#alerts"
+        message: |
+          :rotating_light: **Alert: ${ALERT_NAME}**
+
+          ${analyze.output}
+
+  connections:
+    - from: trigger
+      to: parse-alert
+    - from: parse-alert
+      to: analyze
+    - from: analyze
+      to: notify
 ```
 
-### Parallel Processing
+---
 
-```yaml
-apiVersion: aof.dev/v1
-kind: AgentFlow
-metadata:
-  name: parallel-analysis
+## CLI Commands
 
-spec:
-  trigger:
-    type: GitHub
-    config:
-      events: [pull_request]
+### Describe Flow
+```bash
+aofctl describe flow my-flow.yaml
+```
 
-  nodes:
-    - id: parallel-reviews
-      type: Parallel
-      config:
-        nodes:
-          - id: security-scan
-            type: Agent
-            config:
-              agent: security-reviewer
+### Run Flow
+```bash
+# Run with manual trigger
+aofctl run flow my-flow.yaml
 
-          - id: performance-check
-            type: Agent
-            config:
-              agent: performance-reviewer
+# Run with input data
+aofctl run flow my-flow.yaml --input '{"event": {"text": "hello"}}'
 
-          - id: style-check
-            type: Agent
-            config:
-              agent: style-reviewer
+# Run with JSON output
+aofctl run flow my-flow.yaml --output json
+```
 
-    - id: aggregate
-      type: Agent
-      config:
-        agent: summary-agent
-        input: |
-          Security: ${parallel-reviews.security-scan.output}
-          Performance: ${parallel-reviews.performance-check.output}
-          Style: ${parallel-reviews.style-check.output}
-
-    - id: post-comment
-      type: GitHub
-      config:
-        action: add_comment
-        issue_number: ${trigger.pull_request.number}
-        body: ${aggregate.output}
+### Serve Flow (HTTP/Webhook Mode)
+```bash
+# Start server for webhook triggers
+aofctl serve --port 3000 --config my-flow.yaml
 ```
 
 ---
@@ -779,92 +782,41 @@ spec:
 ## Best Practices
 
 ### Flow Design
-- ✅ Keep flows simple and focused
-- ✅ Use meaningful node IDs
-- ✅ Add conditions for error handling
-- ❌ Don't create circular dependencies
-- ❌ Don't make flows too complex (>20 nodes)
+- Keep flows focused on a single purpose
+- Use meaningful node IDs (`parse-message` not `step1`)
+- Add conditions for error handling paths
+- Set appropriate timeouts
 
 ### Error Handling
 ```yaml
 nodes:
-  - id: risky-operation
-    type: Agent
-    config:
-      agent: my-agent
-
-  - id: on-error
+  - id: error-handler
     type: Slack
     config:
       channel: "#errors"
-      message: "Operation failed: ${risky-operation.error}"
-    conditions:
-      - from: risky-operation
-        when: ${status} == "failed"
-```
+      message: "Flow failed: ${error.message}"
 
-### Timeouts
-Always set timeouts to prevent hanging flows:
-
-```yaml
 spec:
-  timeout_seconds: 3600  # Overall flow timeout
-
-  nodes:
-    - id: agent-task
-      config:
-        timeout_seconds: 180  # Per-node timeout
+  config:
+    error_handler: error-handler
 ```
 
-### Idempotency
-Design flows to be safely re-runnable:
+### Security
+- Never hardcode tokens in YAML files
+- Use environment variable references: `${SLACK_BOT_TOKEN}`
+- Set appropriate timeouts to prevent hanging flows
 
-```yaml
-nodes:
-  - id: check-exists
-    type: Shell
-    config:
-      command: kubectl get deployment my-app
-
-  - id: create-only-if-missing
-    type: Shell
-    config:
-      command: kubectl apply -f deployment.yaml
-    conditions:
-      - from: check-exists
-        when: ${status} == "failed"
-```
-
----
-
-## CLI Commands
-
-AOF uses kubectl-style verb-noun syntax: `aofctl <verb> <noun> [name]`
-
-### View Flow Logs
+### Testing
 ```bash
-aofctl logs flow my-flow.yaml -f
-```
-
-### Describe Flow
-```bash
-aofctl describe flow my-flow.yaml
-```
-
-### List Flows
-```bash
-aofctl get flows
-```
-
-### Run Flow
-```bash
-aofctl run flow my-flow.yaml -i '{"input": "value"}'
+# Test with mock input
+aofctl run flow my-flow.yaml --input '{"event": {"text": "test", "user": "U123", "channel": "C123"}}'
 ```
 
 ---
 
 ## See Also
 
-- [Agent Spec](agent-spec.md)
-- [aofctl CLI](aofctl.md)
-- [Examples](../examples/)
+- [Agent Spec](agent-spec.md) - Agent configuration reference
+- [Fleet Spec](fleet-spec.md) - Multi-agent fleet configuration
+- [aofctl CLI](aofctl.md) - CLI command reference
+- [Slack Bot Tutorial](../tutorials/slack-bot.md) - Step-by-step tutorial

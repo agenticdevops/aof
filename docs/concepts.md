@@ -74,69 +74,88 @@ spec:
 
 ## AgentFlow
 
-An **AgentFlow** is a workflow that orchestrates agents, tools, and integrations in a directed acyclic graph (DAG).
+An **AgentFlow** is an event-driven workflow that orchestrates agents, tools, and integrations in a directed graph.
 
-Think of it like an n8n workflow or Argo Workflow - visual automation.
+Think of it like an n8n workflow or Argo Workflow - trigger-based automation. Unlike step-based Workflows, AgentFlows are designed for real-time event handling (Slack bots, webhooks, scheduled jobs).
 
 ```yaml
 apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
-  name: incident-response
+  name: slack-k8s-bot-flow
 spec:
   trigger:
-    type: Webhook
+    type: Slack
     config:
-      path: /pagerduty
+      events:
+        - app_mention
+        - message
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
 
   nodes:
-    - id: diagnose
+    - id: parse-message
+      type: Transform
+      config:
+        script: |
+          export MESSAGE_TEXT="${event.text}"
+          export SLACK_CHANNEL="${event.channel}"
+
+    - id: agent-process
       type: Agent
       config:
-        agent: diagnostic-agent
+        agent: my-assistant
+        input: ${MESSAGE_TEXT}
 
-    - id: notify-slack
+    - id: send-response
       type: Slack
       config:
-        channel: "#incidents"
+        channel: ${SLACK_CHANNEL}
+        message: ${agent-process.output}
 
   connections:
-    - from: diagnose
-      to: notify-slack
+    - from: trigger
+      to: parse-message
+    - from: parse-message
+      to: agent-process
+    - from: agent-process
+      to: send-response
 ```
 
 ### When to Use
-- Event-driven automation (webhooks, schedules, file changes)
-- Multi-step workflows with conditional logic
-- Integration with external systems (Slack, PagerDuty, GitHub)
-- Human-in-the-loop approval flows
+- Chat platform bots (Slack, Discord, Telegram, WhatsApp)
+- Webhook-driven automation
+- Scheduled jobs and reports
+- Human-in-the-loop approval flows with reactions
+- Multi-step workflows with conditional routing
 
 ### Node Types
 
 | Node Type | Description | Example Use Case |
 |-----------|-------------|------------------|
 | `Agent` | Run an AI agent | Diagnose incident, write code |
-| `Fleet` | Run agent fleet | Parallel code review |
-| `HTTP` | Make HTTP request | Call external API |
-| `Shell` | Execute command | Run kubectl, git |
-| `Slack` | Send Slack message | Notify team |
-| `GitHub` | GitHub automation | Create PR, add comment |
-| `Conditional` | If/else logic | Route based on severity |
-| `Transform` | Data transformation | Format output |
-| `HumanApproval` | Wait for approval | Critical actions |
+| `Transform` | Data transformation & variable export | Parse incoming events, format output |
+| `Conditional` | If/else logic with expressions | Route based on approval status |
+| `Slack` | Send Slack messages, wait for reactions | Notify team, request approval |
+| `Discord` | Send Discord messages | Notify Discord channels |
+| `HTTP` | Make HTTP requests | Call external APIs |
+| `Wait` | Pause execution | Cooldown periods |
+| `Parallel` | Fork into multiple branches | Run concurrent checks |
+| `Join` | Wait for parallel branches | Aggregate results |
+| `Approval` | Human approval gate | Critical action confirmation |
+| `End` | Terminal node | Mark flow completion |
 
 ### Trigger Types
 
 | Trigger | Description | Example |
 |---------|-------------|---------|
-| `Webhook` | HTTP endpoint | PagerDuty, GitHub webhooks |
-| `Schedule` | Cron schedule | Daily reports, health checks |
-| `FileWatch` | File changes | Config updates |
-| `Manual` | CLI invocation | Ad-hoc runs |
-| `Slack` | Slack events | Bot mentions |
-| `GitHub` | GitHub events | PR created, issue opened |
-| `PagerDuty` | PagerDuty events | Incidents triggered |
-| `Kafka` | Kafka messages | Event streaming |
+| `Slack` | Slack events (mentions, DMs, slash commands) | Bot interactions |
+| `Discord` | Discord bot events | Message/command handling |
+| `Telegram` | Telegram bot events | Chat messages |
+| `WhatsApp` | WhatsApp Business API | Customer messaging |
+| `HTTP` | Generic webhook endpoint | External integrations |
+| `Schedule` | Cron-based scheduled execution | Daily reports, health checks |
+| `Manual` | CLI invocation | Ad-hoc runs, testing |
 
 ## Tools
 
@@ -327,11 +346,12 @@ Now that you understand the concepts, try building something:
 
 | Feature | Agent | AgentFleet | AgentFlow |
 |---------|-------|------------|-----------|
-| **Use Case** | Single task | Parallel tasks | Complex workflows |
+| **Use Case** | Single task | Parallel tasks | Event-driven workflows |
 | **Complexity** | Simple | Medium | Advanced |
-| **K8s Analog** | Pod | Deployment | Workflow/Pipeline |
-| **Example** | Code review | Multi-reviewer | Incident response |
-| **Triggers** | Manual/CLI | Manual/CLI | Webhooks, schedules |
+| **K8s Analog** | Pod | Deployment | Argo Workflow |
+| **Example** | Code review | Multi-reviewer | Slack bot, incident response |
+| **Triggers** | Manual/CLI | Manual/CLI | Slack, Discord, HTTP, Schedule |
+| **Spec Type** | `kind: Agent` | `kind: AgentFleet` | `kind: AgentFlow` |
 
 ---
 

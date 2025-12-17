@@ -1,6 +1,8 @@
 # AgentFlow Documentation
 
-AgentFlow is a declarative YAML-based DAG workflow system for orchestrating AI agents and automated operations in DevOps/SRE environments. Think of it as "n8n for AI agents" - a visual, declarative way to build complex automation workflows.
+AgentFlow is a declarative YAML-based event-driven workflow system for orchestrating AI agents and automated operations in DevOps/SRE environments. Think of it as "n8n for AI agents" - a trigger-based, declarative way to build complex automation workflows.
+
+**Implementation Status**: Core features implemented in AOF v0.1.x. See [AgentFlow Spec Reference](../reference/agentflow-spec.md) for the complete YAML specification.
 
 ## Overview
 
@@ -254,34 +256,50 @@ context:
 Create a YAML file following the schema:
 
 ```yaml
-apiVersion: aof.agenticops.org/v1alpha1
+apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
   name: my-workflow
 spec:
-  triggers: [...]
-  nodes: [...]
-  connections: [...]
+  trigger:
+    type: Slack
+    config:
+      events:
+        - app_mention
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
+  nodes:
+    - id: process
+      type: Agent
+      config:
+        agent: my-agent
+        input: ${event.text}
+  connections:
+    - from: trigger
+      to: process
 ```
 
-### 2. Deploy
+### 2. Run or Serve
 
 ```bash
-# Deploy to AOF cluster
-kubectl apply -f my-workflow.yaml
+# Run with mock input (for testing)
+aofctl run flow my-workflow.yaml --input '{"event": {"text": "hello"}}'
 
-# Or use AOF CLI
-aof workflow deploy my-workflow.yaml
+# Describe the flow
+aofctl describe flow my-workflow.yaml
+
+# Start webhook server (for Slack/HTTP triggers)
+aofctl serve --port 3000 --config my-workflow.yaml
 ```
 
 ### 3. Monitor
 
 ```bash
-# Watch workflow execution
-aof workflow logs my-workflow
+# View execution logs
+aofctl logs flow my-workflow
 
-# View metrics
-aof workflow metrics my-workflow
+# Check flow status
+aofctl get flows
 ```
 
 ## Best Practices

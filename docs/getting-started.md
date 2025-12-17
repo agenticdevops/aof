@@ -193,7 +193,7 @@ You now have a working AI agent! Here's where to go next:
 
 ### Follow Tutorials
 - **[Build Your First Agent](tutorials/first-agent.md)** - Deeper dive into Agent specs
-- **[Create a Slack Bot](tutorials/slack-bot.md)** - Build a production bot
+- **[Create a Slack Bot](tutorials/slack-bot.md)** - Build a production bot with AgentFlow
 - **[Incident Response Flow](tutorials/incident-response.md)** - Auto-remediation workflow
 
 ### Explore Examples
@@ -201,6 +201,7 @@ You now have a working AI agent! Here's where to go next:
 
 ### Read Reference Docs
 - **[Agent Spec](reference/agent-spec.md)** - Complete YAML reference
+- **[AgentFlow Spec](reference/agentflow-spec.md)** - Event-driven workflow reference
 - **[aofctl CLI](reference/aofctl.md)** - All CLI commands
 
 ## Common Issues

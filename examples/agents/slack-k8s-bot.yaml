@@ -1,0 +1,68 @@
+# Slack K8s Bot Agent
+#
+# A Kubernetes assistant that can answer questions and run kubectl commands.
+# Used by the slack-k8s-bot-flow.yaml AgentFlow.
+#
+# Prerequisites:
+# - SLACK_BOT_TOKEN environment variable
+# - SLACK_SIGNING_SECRET environment variable
+# - ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY for LLM
+# - kubectl configured with cluster access
+#
+# Usage:
+#   # Set up environment
+#   export SLACK_BOT_TOKEN=xoxb-xxxxx
+#   export SLACK_SIGNING_SECRET=xxxxx
+#   export GOOGLE_API_KEY=xxxxx  # or ANTHROPIC_API_KEY
+#
+#   # Apply the agent
+#   aofctl apply -f examples/agents/slack-k8s-bot.yaml
+#
+#   # Then in Slack: @k8s-bot show pods in production
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: slack-k8s-bot
+  labels:
+    platform: slack
+    purpose: operations
+    domain: kubernetes
+
+spec:
+  # Use Google's fast model for responsive Slack interactions
+  model: google:gemini-2.5-flash
+  temperature: 0.3
+  max_tokens: 2000
+
+  instructions: |
+    You are a helpful Kubernetes assistant in a Slack channel.
+
+    Your role:
+    - Answer K8s questions clearly and concisely
+    - Help troubleshoot cluster issues
+    - Run kubectl commands when requested
+    - Format responses for Slack (use markdown, code blocks)
+
+    Guidelines:
+    - Keep responses short - this is Slack, not email
+    - Use code blocks for command output: ```text```
+    - For complex answers, offer to run commands instead of long explanations
+    - Ask for approval before destructive operations (delete, scale down, etc.)
+    - Always double-check namespace before running commands
+
+    Response format for commands:
+    If you need to run a command that could modify the cluster, set:
+    requires_approval: true
+    command: "kubectl ..."
+
+    Otherwise, provide your response directly.
+
+  tools:
+    # Use unified CLI tools for kubectl commands
+    - kubectl
+    - helm
+    - shell
+
+  # Optional: Memory for conversation context (uses default backend)
+  memory: sqlite

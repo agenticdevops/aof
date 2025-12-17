@@ -54,6 +54,12 @@ aofctl run workflow incident-response.yaml --input '{"severity": "high", "incide
 
 # Run workflow with JSON output
 aofctl run workflow ci-cd-pipeline.yaml -i '{"branch": "main"}' -o json
+
+# Run AgentFlow (event-driven flow)
+aofctl run flow slack-bot-flow.yaml
+
+# Run AgentFlow with mock event input
+aofctl run flow slack-bot-flow.yaml --input '{"event": {"text": "show pods", "user": "U123", "channel": "C456"}}'
 ```
 
 ### get
@@ -66,7 +72,8 @@ aofctl get <resource-type> [name] [options]
 
 **Resource Types:**
 - `agents` / `agent`: List configured agents
-- `workflows` / `workflow`: List workflows
+- `workflows` / `workflow`: List step-based workflows
+- `flows` / `flow`: List event-driven AgentFlows
 - `tools` / `tool`: List available tools
 - `mcpservers` / `mcpserver`: List MCP servers
 - `jobs` / `job`: List running jobs
@@ -141,9 +148,20 @@ aofctl describe <resource-type> <name> [options]
 # Describe an agent
 aofctl describe agent my-agent
 
-# Describe a workflow
+# Describe a workflow (step-based)
 aofctl describe workflow incident-response
+
+# Describe an AgentFlow (event-driven)
+aofctl describe flow slack-bot-flow.yaml
 ```
+
+**AgentFlow describe output includes:**
+- Name, API version, and kind
+- Labels and metadata
+- Trigger type and configuration (events, tokens)
+- Nodes with their types and configurations
+- Connections and routing conditions
+- Global flow configuration (timeouts, retries)
 
 ### logs
 

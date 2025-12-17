@@ -1,7 +1,7 @@
 # AgentFlow Design Document
 
-**Last Updated**: December 16, 2025
-**Status**: Implementation Plan
+**Last Updated**: December 17, 2025
+**Status**: Implemented (Core Features)
 
 ## Overview
 
@@ -405,46 +405,52 @@ aofctl logs workflow-run incident-response-abc123
 
 ## Implementation Plan
 
-### Phase 1: Core Workflow Engine
-- [ ] Workflow configuration parsing
-- [ ] Step executor framework
-- [ ] Basic sequential execution
-- [ ] State management
+### Phase 1: Core Workflow Engine ✅ COMPLETED
+- [x] Workflow configuration parsing (`aof-core/src/agentflow.rs`)
+- [x] Step executor framework (`aof-runtime/src/agentflow_executor.rs`)
+- [x] Basic sequential execution
+- [x] State management with `FlowState` and `NodeResult`
 
-### Phase 2: Advanced Execution
-- [ ] Conditional routing
-- [ ] Parallel execution (fork-join)
-- [ ] Error handling and retry
-- [ ] Checkpointing
+### Phase 2: Advanced Execution ✅ COMPLETED
+- [x] Conditional routing with `when` expressions
+- [x] Parallel node support
+- [x] Error handling and retry configuration
+- [x] Variable interpolation (`${event.*}`, `${node-id.*}`)
 
-### Phase 3: Human-in-the-Loop
-- [ ] Approval steps
-- [ ] Input interrupts
-- [ ] Validation gates
-- [ ] CLI integration for approvals
+### Phase 3: Human-in-the-Loop ✅ COMPLETED
+- [x] Approval steps via Slack reactions
+- [x] Waiting states for external input
+- [x] Validation via Conditional nodes
+- [x] CLI integration (`aofctl run flow`, `aofctl describe flow`)
 
-### Phase 4: AgentFleet Integration
+### Phase 4: AgentFleet Integration 🔄 IN PROGRESS
 - [ ] Fleet definition and management
 - [ ] Coordination modes
 - [ ] Shared resources
 - [ ] Fleet-aware workflows
 
+### Phase 5: Production Features 📋 PLANNED
+- [ ] Full checkpointing/recovery
+- [ ] Persistent state backends
+- [ ] Metrics and observability
+- [ ] Multi-instance coordination
+
 ## Feature Parity Matrix
 
 | Feature | CrewAI | LangGraph | Agno | A2A | AOF AgentFlow |
 |---------|--------|-----------|------|-----|---------------|
-| Sequential execution | ✅ | ✅ | ✅ | ✅ | ✅ Planned |
-| Parallel execution | ✅ | ✅ | ✅ | ✅ | ✅ Planned |
-| Conditional routing | ✅ | ✅ | ✅ | ✅ | ✅ Planned |
-| Cycles/loops | ⚠️ | ✅ | ⚠️ | ⚠️ | ✅ Planned |
-| State management | ✅ | ✅ | ✅ | ✅ | ✅ Planned |
-| Checkpointing | ⚠️ | ✅ | ✅ | ⚠️ | ✅ Planned |
-| Human approval | ✅ | ✅ | ✅ | ✅ | ✅ Planned |
-| Input interrupts | ⚠️ | ✅ | ✅ | ✅ | ✅ Planned |
-| Validation gates | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ Planned |
-| Error handling | ✅ | ✅ | ✅ | ✅ | ✅ Planned |
-| Retry policies | ⚠️ | ✅ | ⚠️ | ⚠️ | ✅ Planned |
-| Agent coordination | ✅ | ⚠️ | ✅ | ✅ | ✅ Planned |
+| Sequential execution | ✅ | ✅ | ✅ | ✅ | ✅ Implemented |
+| Parallel execution | ✅ | ✅ | ✅ | ✅ | ✅ Implemented |
+| Conditional routing | ✅ | ✅ | ✅ | ✅ | ✅ Implemented |
+| Cycles/loops | ⚠️ | ✅ | ⚠️ | ⚠️ | ✅ Implemented |
+| State management | ✅ | ✅ | ✅ | ✅ | ✅ Implemented |
+| Checkpointing | ⚠️ | ✅ | ✅ | ⚠️ | ⚠️ Partial |
+| Human approval | ✅ | ✅ | ✅ | ✅ | ✅ Implemented |
+| Input interrupts | ⚠️ | ✅ | ✅ | ✅ | ✅ Implemented |
+| Validation gates | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ Implemented |
+| Error handling | ✅ | ✅ | ✅ | ✅ | ✅ Implemented |
+| Retry policies | ⚠️ | ✅ | ⚠️ | ⚠️ | ✅ Implemented |
+| Agent coordination | ✅ | ⚠️ | ✅ | ✅ | ⚠️ Partial |
 | K8s-native config | ❌ | ❌ | ❌ | ❌ | ✅ Unique |
 | MCP tool integration | ❌ | ❌ | ❌ | ❌ | ✅ Unique |
 

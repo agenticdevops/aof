@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use aof_core::workflow::NextStep;
+use aof_core::AgentFlow;
 use std::fs;
 use std::path::Path;
 
@@ -93,21 +94,129 @@ async fn describe_fleet(name: &str) -> Result<()> {
 }
 
 /// Describe flow/workflow in detail
+/// Auto-detects between AgentFlow (trigger/nodes) and Workflow (entrypoint/steps)
 async fn describe_flow(name: &str) -> Result<()> {
     use aof_core::workflow::Workflow;
 
     // Check if name is a file path
-    let workflow: Workflow = if Path::new(name).exists() {
-        let content = fs::read_to_string(name)
-            .with_context(|| format!("Failed to read flow config: {}", name))?;
-        serde_yaml::from_str(&content)
-            .with_context(|| format!("Failed to parse flow config: {}", name))?
-    } else {
+    if !Path::new(name).exists() {
         anyhow::bail!(
             "Flow '{}' not found. Provide a config file path or use 'aofctl get flows' to list.",
             name
         )
-    };
+    }
+
+    let content = fs::read_to_string(name)
+        .with_context(|| format!("Failed to read flow config: {}", name))?;
+
+    // Try to detect the kind from the YAML content
+    let kind = detect_yaml_kind(&content);
+
+    match kind.as_deref() {
+        Some("AgentFlow") => describe_agentflow(&content, name).await,
+        Some("Workflow") | _ => describe_workflow(&content, name).await,
+    }
+}
+
+/// Detect the 'kind' field from a YAML document
+fn detect_yaml_kind(content: &str) -> Option<String> {
+    // Simple parsing: find 'kind:' line
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("kind:") {
+            let value = trimmed.strip_prefix("kind:")?.trim();
+            // Remove quotes if present
+            let value = value.trim_matches('"').trim_matches('\'');
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+/// Describe AgentFlow resource (trigger-based event-driven flow)
+async fn describe_agentflow(content: &str, name: &str) -> Result<()> {
+    let agentflow: AgentFlow = serde_yaml::from_str(content)
+        .with_context(|| format!("Failed to parse AgentFlow config: {}", name))?;
+
+    println!("Name:         {}", agentflow.metadata.name);
+    println!("API Version:  {}", agentflow.api_version);
+    println!("Kind:         {}", agentflow.kind);
+
+    if let Some(ns) = &agentflow.metadata.namespace {
+        println!("Namespace:    {}", ns);
+    }
+
+    if !agentflow.metadata.labels.is_empty() {
+        println!("Labels:");
+        for (k, v) in &agentflow.metadata.labels {
+            println!("  {}: {}", k, v);
+        }
+    }
+
+    // Trigger info
+    println!("\nTrigger:");
+    println!("  Type:   {:?}", agentflow.spec.trigger.trigger_type);
+    let config = &agentflow.spec.trigger.config;
+    if !config.events.is_empty() {
+        println!("  Events: {}", config.events.join(", "));
+    }
+
+    // Additional triggers
+    if !agentflow.spec.triggers.is_empty() {
+        println!("\nAdditional Triggers ({}):", agentflow.spec.triggers.len());
+        for trigger in &agentflow.spec.triggers {
+            println!("  - {:?}", trigger.trigger_type);
+        }
+    }
+
+    // Nodes
+    println!("\nNodes ({}):", agentflow.spec.nodes.len());
+    for node in &agentflow.spec.nodes {
+        println!("  - {}", node.id);
+        println!("    Type: {:?}", node.node_type);
+        let node_config = &node.config;
+        if let Some(agent) = &node_config.agent {
+            println!("    Agent: {}", agent);
+        }
+        if let Some(channel) = &node_config.channel {
+            println!("    Channel: {}", channel);
+        }
+        if let Some(timeout) = &node_config.timeout_seconds {
+            println!("    Timeout: {}s", timeout);
+        }
+    }
+
+    // Connections
+    println!("\nConnections ({}):", agentflow.spec.connections.len());
+    for conn in &agentflow.spec.connections {
+        let condition = conn.when.as_ref().map(|w| format!(" when '{}'", w)).unwrap_or_default();
+        println!("  {} -> {}{}", conn.from, conn.to, condition);
+    }
+
+    // Config
+    if let Some(flow_config) = &agentflow.spec.config {
+        println!("\nConfig:");
+        if let Some(timeout) = flow_config.default_timeout_seconds {
+            println!("  Default Timeout: {}s", timeout);
+        }
+        if flow_config.verbose {
+            println!("  Verbose: true");
+        }
+        if let Some(retry) = &flow_config.retry {
+            println!("  Retry:");
+            println!("    Max Attempts: {}", retry.max_attempts);
+        }
+    }
+
+    Ok(())
+}
+
+/// Describe Workflow resource (step-based sequential flow)
+async fn describe_workflow(content: &str, name: &str) -> Result<()> {
+    use aof_core::workflow::Workflow;
+
+    let workflow: Workflow = serde_yaml::from_str(content)
+        .with_context(|| format!("Failed to parse Workflow config: {}", name))?;
 
     println!("Name:         {}", workflow.metadata.name);
     println!("API Version:  {}", workflow.api_version);

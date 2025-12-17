@@ -160,21 +160,22 @@ spec:
 - Data processing pipelines
 - Infrastructure provisioning
 
-### 4. AgentFlow (State Machines)
+### 4. AgentFlow (Event-Driven Workflows)
 
 **Key Features:**
-- State machine control flow
-- Dynamic branching
-- Conditional loops
-- Event-driven triggers
-- Human-in-the-loop steps
-- Complex decision logic
+- Trigger-based event-driven execution
+- Directed graph of nodes and connections
+- Multiple trigger types (Slack, Discord, HTTP, Schedule, etc.)
+- Human-in-the-loop approvals with reaction-based confirmation
+- Variable interpolation with `${event.*}` and `${node-id.*}` syntax
+- Conditional routing with `when` expressions
 
 **Use Cases:**
-- Adaptive deployments (canary, progressive rollout)
-- Customer support automation
-- Security incident response
-- Multi-stage approval processes
+- Slack/Discord chatbots with AI agents
+- Webhook-driven automation
+- Scheduled reports and health checks
+- Incident response with approval gates
+- Multi-platform messaging automation
 
 ### 5. ToolServer (MCP Servers)
 

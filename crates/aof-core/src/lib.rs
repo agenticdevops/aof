@@ -4,6 +4,7 @@
 // agentic systems targeting DevOps and SRE workflows.
 
 pub mod agent;
+pub mod agentflow;
 pub mod error;
 pub mod error_tracker;
 pub mod fleet;
@@ -42,6 +43,12 @@ pub use fleet::{
     FleetAgentSpec, FleetMetadata, FleetMetrics, FleetSpec, FleetState, FleetStatus, FleetTask,
     FleetTaskStatus, SharedResources, SharedMemoryConfig, SharedMemoryType, CommunicationConfig,
     MessagePattern, TaskDistribution, ScalingConfig, TieredConfig,
+};
+pub use agentflow::{
+    AgentFlow, AgentFlowMetadata, AgentFlowSpec, AgentFlowState, FlowConfig,
+    FlowConnection, FlowError, FlowExecutionStatus, FlowNode, FlowRetryConfig,
+    FlowTrigger, NodeCondition, NodeConfig, NodeExecutionStatus, NodeResult, NodeType,
+    TriggerConfig, TriggerType,
 };
 
 /// Version information
