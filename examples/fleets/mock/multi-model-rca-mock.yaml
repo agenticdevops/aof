@@ -1,0 +1,358 @@
+# Multi-Model RCA Demo Fleet
+# A self-contained demo that tests tiered execution and multi-model consensus
+# WITHOUT requiring external infrastructure (Loki, Prometheus, K8s)
+#
+# This example simulates an RCA workflow using mock data to demonstrate:
+#   - Tiered execution (Tier 1 → Tier 2 → Tier 3)
+#   - Multi-model consensus (different LLMs analyzing same data)
+#   - Weighted voting and confidence scoring
+#
+# Prerequisites:
+#   - At least ONE of these API keys set:
+#     export GOOGLE_API_KEY=...      (for Gemini - cheapest option)
+#     export ANTHROPIC_API_KEY=...   (for Claude)
+#     export OPENAI_API_KEY=...      (for GPT-4)
+#
+# Usage:
+#   # Run with default (uses available models)
+#   aofctl run fleet examples/fleets/multi-model-rca-demo.yaml \
+#     --input "Investigate: API returning 500 errors since deployment"
+#
+#   # Verbose mode to see tier execution
+#   aofctl run fleet examples/fleets/multi-model-rca-demo.yaml \
+#     --input "Investigate: High latency on user service" \
+#     --verbose
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: multi-model-rca-demo
+  labels:
+    purpose: demo
+    type: rca
+    testable: "true"
+  annotations:
+    description: "Self-contained multi-model RCA demo (no infrastructure required)"
+
+spec:
+  agents:
+    # ============================================
+    # TIER 1: Simulated Data Collectors
+    # These agents simulate collecting observability data
+    # In production, they would query real Loki/Prometheus/K8s
+    # ============================================
+
+    - name: log-simulator
+      tier: 1
+      role: specialist
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are a Log Analysis Simulator for RCA demos.
+
+          Given an incident description, SIMULATE what logs would look like.
+          Generate realistic log entries that would help diagnose the issue.
+
+          Output format (JSON):
+          ```json
+          {
+            "source": "logs",
+            "simulation": true,
+            "timeframe": "last 30 minutes",
+            "findings": {
+              "error_count": <number>,
+              "first_error_time": "<timestamp>",
+              "error_patterns": ["<pattern1>", "<pattern2>"],
+              "affected_services": ["<service1>", "<service2>"],
+              "sample_logs": [
+                {"time": "14:02:33", "level": "ERROR", "service": "api", "message": "..."},
+                {"time": "14:02:35", "level": "ERROR", "service": "api", "message": "..."}
+              ]
+            },
+            "preliminary_hypothesis": "<what the logs suggest>"
+          }
+          ```
+
+          Be realistic - simulate logs that would actually appear for this type of incident.
+        tools:
+          - shell
+        max_iterations: 2
+        temperature: 0.3
+
+    - name: metrics-simulator
+      tier: 1
+      role: specialist
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are a Metrics Analysis Simulator for RCA demos.
+
+          Given an incident description, SIMULATE what Prometheus metrics would show.
+          Generate realistic metric values that correlate with the incident.
+
+          Output format (JSON):
+          ```json
+          {
+            "source": "metrics",
+            "simulation": true,
+            "timeframe": "last 30 minutes",
+            "findings": {
+              "error_rate": {"baseline": 0.01, "current": <number>, "change": "<X>x increase"},
+              "latency_p99": {"baseline": "50ms", "current": "<value>", "change": "<description>"},
+              "cpu_usage": {"baseline": "30%", "current": "<value>", "status": "normal|elevated|critical"},
+              "memory_usage": {"baseline": "60%", "current": "<value>", "status": "normal|elevated|critical"},
+              "connection_pool": {"available": <number>, "in_use": <number>, "status": "healthy|exhausted"}
+            },
+            "anomalies": [
+              {"metric": "<name>", "severity": "high|medium|low", "description": "..."}
+            ],
+            "preliminary_hypothesis": "<what the metrics suggest>"
+          }
+          ```
+
+          Be realistic - simulate metrics that would correlate with this incident type.
+        tools:
+          - shell
+        max_iterations: 2
+        temperature: 0.3
+
+    - name: changes-simulator
+      tier: 1
+      role: specialist
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are a Change Audit Simulator for RCA demos.
+
+          Given an incident description, SIMULATE what recent changes might have caused it.
+          Generate realistic deployment/config change data.
+
+          Output format (JSON):
+          ```json
+          {
+            "source": "changes",
+            "simulation": true,
+            "timeframe": "last 24 hours",
+            "findings": {
+              "recent_deployments": [
+                {"time": "<timestamp>", "service": "<name>", "version": "<from> → <to>", "author": "<name>"}
+              ],
+              "config_changes": [
+                {"time": "<timestamp>", "file": "<path>", "change": "<description>"}
+              ],
+              "infrastructure_changes": [
+                {"time": "<timestamp>", "type": "<type>", "description": "..."}
+              ]
+            },
+            "suspicious_changes": [
+              {"change": "<description>", "correlation": "high|medium|low", "reason": "..."}
+            ],
+            "preliminary_hypothesis": "<what the changes suggest>"
+          }
+          ```
+
+          Be realistic - simulate changes that could plausibly cause this incident.
+        tools:
+          - shell
+        max_iterations: 2
+        temperature: 0.3
+
+    # ============================================
+    # TIER 2: Multi-Model Reasoning
+    # Different LLMs analyze the same simulated data
+    # Each brings different reasoning approaches
+    # ============================================
+
+    - name: reasoning-model-1
+      tier: 2
+      weight: 1.5
+      role: specialist
+      spec:
+        # Uses Gemini Pro for reasoning (change to claude if you prefer)
+        model: google:gemini-2.5-pro
+        instructions: |
+          You are RCA Reasoning Agent #1.
+
+          You receive simulated observability data from Tier 1 agents.
+          Your job: Analyze all the data and identify the ROOT CAUSE.
+
+          ## Your Analysis Approach
+          1. Correlate timestamps across logs, metrics, and changes
+          2. Identify the FIRST anomaly (patient zero)
+          3. Build a causal chain from change → symptom → impact
+          4. Consider both technical and human factors
+
+          ## Output Format (JSON)
+          ```json
+          {
+            "agent": "reasoning-model-1",
+            "analysis_summary": "<1-2 paragraph summary>",
+            "confidence": <0.0-1.0>,
+            "root_cause": {
+              "category": "code|config|infrastructure|dependency|capacity",
+              "description": "<clear description of root cause>",
+              "evidence": ["<evidence 1>", "<evidence 2>", "<evidence 3>"]
+            },
+            "causal_chain": [
+              {"step": 1, "event": "<what happened first>"},
+              {"step": 2, "event": "<what it caused>"},
+              {"step": 3, "event": "<resulting symptom>"}
+            ],
+            "immediate_actions": [
+              {"action": "<what to do>", "priority": "critical|high|medium"}
+            ],
+            "prevention": ["<how to prevent recurrence>"]
+          }
+          ```
+        tools:
+          - shell
+        max_iterations: 3
+        temperature: 0.4
+
+    - name: reasoning-model-2
+      tier: 2
+      weight: 1.0
+      role: specialist
+      spec:
+        # Uses a different model for diverse perspective
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are RCA Reasoning Agent #2.
+
+          You receive simulated observability data from Tier 1 agents.
+          Your job: Analyze all the data and identify the ROOT CAUSE.
+
+          ## Your Analysis Approach (Different from Agent #1)
+          1. Use the "5 Whys" technique
+          2. Look for patterns across multiple signals
+          3. Consider what could have PREVENTED detection earlier
+          4. Think about system design weaknesses
+
+          ## Output Format (JSON)
+          ```json
+          {
+            "agent": "reasoning-model-2",
+            "analysis_summary": "<1-2 paragraph summary>",
+            "confidence": <0.0-1.0>,
+            "root_cause": {
+              "category": "code|config|infrastructure|dependency|capacity",
+              "description": "<clear description of root cause>",
+              "evidence": ["<evidence 1>", "<evidence 2>", "<evidence 3>"]
+            },
+            "five_whys": [
+              {"why": 1, "question": "Why did X happen?", "answer": "..."},
+              {"why": 2, "question": "Why did that happen?", "answer": "..."},
+              {"why": 3, "question": "Why?", "answer": "..."},
+              {"why": 4, "question": "Why?", "answer": "..."},
+              {"why": 5, "question": "Root cause?", "answer": "..."}
+            ],
+            "immediate_actions": [
+              {"action": "<what to do>", "priority": "critical|high|medium"}
+            ],
+            "prevention": ["<how to prevent recurrence>"]
+          }
+          ```
+        tools:
+          - shell
+        max_iterations: 3
+        temperature: 0.4
+
+    # ============================================
+    # TIER 3: Coordinator (Synthesis)
+    # Combines analyses from multiple reasoning models
+    # ============================================
+
+    - name: rca-coordinator
+      tier: 3
+      role: manager
+      spec:
+        model: google:gemini-2.5-pro
+        instructions: |
+          You are the RCA Coordinator.
+
+          You receive analyses from multiple reasoning agents (Tier 2).
+          Your job: Synthesize their findings into a FINAL RCA REPORT.
+
+          ## Your Process
+          1. **Agreement Analysis**: What do the models agree on? (HIGH confidence)
+          2. **Disagreement Analysis**: Where do they differ? (needs human review)
+          3. **Evidence Aggregation**: Combine and deduplicate evidence
+          4. **Final Verdict**: State the consensus root cause
+
+          ## Output: Final RCA Report (Markdown)
+
+          ```markdown
+          # Root Cause Analysis Report
+
+          ## Executive Summary
+          <2-3 sentences summarizing the incident and root cause>
+
+          ## Incident Details
+          - **Reported Issue**: <from input>
+          - **Analysis Time**: <current time>
+          - **Models Consulted**: 2
+
+          ## Root Cause (Consensus)
+          **Category**: <code|config|infrastructure|dependency|capacity>
+          **Description**: <clear description>
+          **Confidence**: <HIGH|MEDIUM|LOW> (<X>/<Y> models agreed)
+
+          ### Evidence
+          1. <evidence point 1>
+          2. <evidence point 2>
+          3. <evidence point 3>
+
+          ## Model Agreement Matrix
+          | Finding | Model 1 | Model 2 | Consensus |
+          |---------|---------|---------|-----------|
+          | <finding> | ✓/✗ | ✓/✗ | HIGH/MED/LOW |
+
+          ## Immediate Actions
+          - [ ] <action 1> (Priority: HIGH)
+          - [ ] <action 2> (Priority: MEDIUM)
+
+          ## Prevention Recommendations
+          1. <recommendation 1>
+          2. <recommendation 2>
+
+          ## Areas Needing Human Review
+          <any disagreements or low-confidence findings>
+
+          ---
+          *Generated by AOF Multi-Model RCA Demo*
+          *This is simulated data for demonstration purposes*
+          ```
+        tools:
+          - shell
+        max_iterations: 3
+        temperature: 0.5
+
+  # Tiered coordination configuration
+  coordination:
+    mode: tiered
+    distribution: round-robin
+
+    consensus:
+      algorithm: weighted
+      min_votes: 2
+      timeout_ms: 120000
+      allow_partial: true
+      min_confidence: 0.5
+
+    tiered:
+      pass_all_results: true
+      final_aggregation: manager_synthesis
+      tier_consensus:
+        "1":
+          algorithm: first_wins
+        "2":
+          algorithm: weighted
+          min_votes: 2
+        "3":
+          algorithm: first_wins
+
+  shared:
+    memory:
+      type: inmemory
+      namespace: rca-demo
+      ttl: 3600

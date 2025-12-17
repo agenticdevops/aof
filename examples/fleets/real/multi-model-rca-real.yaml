@@ -1,0 +1,519 @@
+# Multi-Model RCA Fleet - REAL Environment
+# Uses actual Prometheus, Loki, and Kubernetes to perform Root Cause Analysis
+#
+# Prerequisites:
+#   - Kubernetes cluster with kubectl configured
+#   - Prometheus accessible at localhost:30400 (or configure PROMETHEUS_URL)
+#   - Loki accessible at localhost:30700 (or configure LOKI_URL)
+#   - API keys: GOOGLE_API_KEY and/or ANTHROPIC_API_KEY
+#
+# Usage:
+#   # Run against real infrastructure
+#   aofctl run fleet examples/fleets/multi-model-rca-real.yaml \
+#     --input "Investigate: High memory usage in monitoring namespace"
+#
+#   # With custom endpoints
+#   PROMETHEUS_URL=http://prometheus:9090 LOKI_URL=http://loki:3100 \
+#   aofctl run fleet examples/fleets/multi-model-rca-real.yaml \
+#     --input "Investigate: Pods crashing in production"
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: multi-model-rca-real
+  labels:
+    purpose: incident-response
+    type: rca
+    environment: real
+  annotations:
+    description: "Production multi-model RCA fleet using real Prometheus/Loki/K8s"
+    prometheus_url: "http://localhost:30400"
+    loki_url: "http://localhost:30700"
+
+spec:
+  agents:
+    # ============================================
+    # TIER 1: Real Data Collectors
+    # Query actual Prometheus, Loki, and K8s
+    # ============================================
+
+    - name: prometheus-collector
+      tier: 1
+      role: specialist
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are a Prometheus Metrics Collector for RCA.
+
+          ## Your Task
+          Query REAL Prometheus metrics to gather data about the incident.
+
+          ## Prometheus Endpoint
+          URL: http://localhost:30400
+
+          ## Queries to Run
+          Use curl to query Prometheus. Examples:
+
+          ```bash
+          # Check overall health
+          curl -s "http://localhost:30400/api/v1/query?query=up"
+
+          # Error rates (if http metrics exist)
+          curl -s "http://localhost:30400/api/v1/query?query=rate(http_requests_total{status=~\"5..\"}[5m])"
+
+          # CPU usage by pod
+          curl -s "http://localhost:30400/api/v1/query?query=sum(rate(container_cpu_usage_seconds_total[5m])) by (pod)"
+
+          # Memory usage by pod
+          curl -s "http://localhost:30400/api/v1/query?query=container_memory_working_set_bytes"
+
+          # Pod restarts
+          curl -s "http://localhost:30400/api/v1/query?query=kube_pod_container_status_restarts_total"
+
+          # Container OOMKilled
+          curl -s "http://localhost:30400/api/v1/query?query=kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"}"
+          ```
+
+          ## Output Format (JSON)
+          ```json
+          {
+            "source": "prometheus",
+            "endpoint": "http://localhost:30400",
+            "queries_executed": ["<query1>", "<query2>"],
+            "findings": {
+              "unhealthy_targets": [{"job": "...", "status": "down"}],
+              "resource_anomalies": [
+                {"metric": "cpu|memory", "pod": "...", "value": "...", "status": "normal|high|critical"}
+              ],
+              "error_rates": [{"service": "...", "rate": "..."}],
+              "recent_restarts": [{"pod": "...", "restarts": N, "reason": "..."}]
+            },
+            "raw_data_samples": {},
+            "preliminary_hypothesis": "<what metrics suggest>"
+          }
+          ```
+
+          Run the actual queries and report real data!
+        tools:
+          - shell
+        max_iterations: 5
+        temperature: 0.2
+
+    - name: loki-collector
+      tier: 1
+      role: specialist
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are a Loki Log Collector for RCA.
+
+          ## Your Task
+          Query REAL Loki logs to gather data about the incident.
+
+          ## Loki Endpoint
+          URL: http://localhost:30700
+
+          ## Queries to Run
+          Use curl to query Loki. Examples:
+
+          ```bash
+          # Get available labels
+          curl -s "http://localhost:30700/loki/api/v1/labels"
+
+          # Get label values for namespace
+          curl -s "http://localhost:30700/loki/api/v1/label/namespace/values"
+
+          # Query logs with errors (last 1 hour)
+          curl -s "http://localhost:30700/loki/api/v1/query_range" \
+            --data-urlencode 'query={namespace="monitoring"} |~ "error|Error|ERROR"' \
+            --data-urlencode 'start='$(date -v-1H +%s)'000000000' \
+            --data-urlencode 'end='$(date +%s)'000000000' \
+            --data-urlencode 'limit=100'
+
+          # Query for specific pod logs
+          curl -s "http://localhost:30700/loki/api/v1/query_range" \
+            --data-urlencode 'query={pod=~".*prometheus.*"}' \
+            --data-urlencode 'limit=50'
+
+          # Query for OOM or crash related logs
+          curl -s "http://localhost:30700/loki/api/v1/query_range" \
+            --data-urlencode 'query={namespace!=""} |~ "OOM|crash|failed|killed"' \
+            --data-urlencode 'limit=50'
+          ```
+
+          ## Output Format (JSON)
+          ```json
+          {
+            "source": "loki",
+            "endpoint": "http://localhost:30700",
+            "queries_executed": ["<query1>", "<query2>"],
+            "findings": {
+              "error_count": N,
+              "error_patterns": ["<pattern1>", "<pattern2>"],
+              "affected_pods": ["<pod1>", "<pod2>"],
+              "namespaces_with_errors": ["<ns1>", "<ns2>"],
+              "sample_errors": [
+                {"time": "...", "pod": "...", "message": "..."}
+              ]
+            },
+            "first_error_seen": {"time": "...", "message": "..."},
+            "preliminary_hypothesis": "<what logs suggest>"
+          }
+          ```
+
+          Run the actual queries and report real log data!
+        tools:
+          - shell
+        max_iterations: 5
+        temperature: 0.2
+
+    - name: k8s-collector
+      tier: 1
+      role: specialist
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are a Kubernetes State Collector for RCA.
+
+          ## Your Task
+          Query REAL Kubernetes cluster state using kubectl.
+
+          ## Commands to Run
+
+          ```bash
+          # Get cluster overview
+          kubectl get nodes -o wide
+
+          # Get all pods (focus on non-Running)
+          kubectl get pods -A | grep -v Running
+
+          # Get recent events (sorted by time)
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -30
+
+          # Get pods with restarts
+          kubectl get pods -A -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount | grep -v "^NAMESPACE.*0$"
+
+          # Describe any unhealthy pods (if found)
+          # kubectl describe pod <pod-name> -n <namespace>
+
+          # Get resource usage
+          kubectl top pods -A 2>/dev/null || echo "metrics-server may not be installed"
+
+          # Get recent deployments/changes
+          kubectl get deployments -A -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,UPDATED:.metadata.creationTimestamp | head -20
+          ```
+
+          ## Output Format (JSON)
+          ```json
+          {
+            "source": "kubernetes",
+            "cluster_health": "healthy|degraded|critical",
+            "findings": {
+              "node_status": [{"node": "...", "status": "Ready|NotReady", "conditions": [...]}],
+              "unhealthy_pods": [
+                {"namespace": "...", "pod": "...", "status": "...", "restarts": N, "reason": "..."}
+              ],
+              "recent_events": [
+                {"type": "Warning|Normal", "namespace": "...", "reason": "...", "message": "..."}
+              ],
+              "resource_pressure": {
+                "nodes_with_pressure": [],
+                "pods_near_limits": []
+              }
+            },
+            "preliminary_hypothesis": "<what K8s state suggests>"
+          }
+          ```
+
+          Run the actual kubectl commands and report real cluster state!
+        tools:
+          - shell
+        max_iterations: 5
+        temperature: 0.2
+
+    - name: git-collector
+      tier: 1
+      role: specialist
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are a Git/Deployment Change Auditor for RCA.
+
+          ## Your Task
+          Check for recent changes that might correlate with the incident.
+
+          ## Commands to Run
+
+          ```bash
+          # Check if we're in a git repo with deployment configs
+          ls -la *.yaml 2>/dev/null || ls -la k8s/ 2>/dev/null || ls -la manifests/ 2>/dev/null
+
+          # If in a repo, check recent commits
+          git log --oneline -10 2>/dev/null || echo "Not in a git repo"
+
+          # Check Helm releases (if using Helm)
+          helm list -A 2>/dev/null || echo "Helm not available or no releases"
+
+          # Check recent K8s resource changes via events
+          kubectl get events -A --field-selector reason=ScalingReplicaSet --sort-by='.lastTimestamp' | tail -10
+
+          # Check deployment history
+          kubectl rollout history deployment -A 2>/dev/null | head -30
+
+          # Check ConfigMap changes (via annotations)
+          kubectl get configmaps -A -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,AGE:.metadata.creationTimestamp | head -20
+          ```
+
+          ## Output Format (JSON)
+          ```json
+          {
+            "source": "changes",
+            "findings": {
+              "recent_deployments": [
+                {"time": "...", "namespace": "...", "deployment": "...", "change": "..."}
+              ],
+              "helm_releases": [
+                {"name": "...", "namespace": "...", "revision": N, "updated": "..."}
+              ],
+              "scaling_events": [
+                {"time": "...", "deployment": "...", "from": N, "to": N}
+              ],
+              "config_changes": [
+                {"configmap": "...", "namespace": "...", "age": "..."}
+              ]
+            },
+            "suspicious_changes": [
+              {"change": "...", "correlation": "high|medium|low", "reason": "..."}
+            ],
+            "preliminary_hypothesis": "<what changes suggest>"
+          }
+          ```
+
+          Run the actual commands and report real change data!
+        tools:
+          - shell
+        max_iterations: 5
+        temperature: 0.2
+
+    # ============================================
+    # TIER 2: Multi-Model Reasoning
+    # Analyze real data with different LLMs
+    # ============================================
+
+    - name: claude-analyzer
+      tier: 2
+      weight: 1.5
+      role: specialist
+      spec:
+        model: google:gemini-2.5-pro  # Change to anthropic:claude-sonnet-4-20250514 if preferred
+        instructions: |
+          You are RCA Reasoning Agent #1 (Claude-style analysis).
+
+          You receive REAL observability data from Tier 1 collectors.
+          This is actual Prometheus metrics, Loki logs, and Kubernetes state.
+
+          ## Your Analysis Approach
+          1. **Correlate timestamps** across all data sources
+          2. **Identify the trigger event** - what changed first?
+          3. **Build causal chain** - change → effect → symptom → impact
+          4. **Consider blast radius** - what else might be affected?
+
+          ## Output Format (JSON)
+          ```json
+          {
+            "agent": "claude-analyzer",
+            "analysis_summary": "<2-3 paragraph analysis of what happened>",
+            "confidence": <0.0-1.0>,
+            "root_cause": {
+              "category": "code|config|infrastructure|dependency|capacity|external",
+              "description": "<clear description of the root cause>",
+              "evidence": [
+                "<specific evidence from Tier 1 data>",
+                "<more evidence>"
+              ],
+              "first_signal": "<what was the first indicator>"
+            },
+            "timeline": [
+              {"time": "...", "event": "...", "source": "prometheus|loki|k8s|changes"}
+            ],
+            "blast_radius": {
+              "affected_services": ["..."],
+              "affected_users": "none|some|all",
+              "data_impact": "none|degraded|lost"
+            },
+            "immediate_actions": [
+              {"action": "...", "priority": "critical|high|medium", "command": "kubectl ..."}
+            ],
+            "prevention": ["<how to prevent this>"]
+          }
+          ```
+
+          This is REAL data - your analysis will be used for actual incident response!
+        tools:
+          - shell
+        max_iterations: 3
+        temperature: 0.4
+
+    - name: gemini-analyzer
+      tier: 2
+      weight: 1.0
+      role: specialist
+      spec:
+        model: google:gemini-2.0-flash
+        instructions: |
+          You are RCA Reasoning Agent #2 (Gemini-style analysis).
+
+          You receive REAL observability data from Tier 1 collectors.
+          Use a different analytical approach than Agent #1.
+
+          ## Your Analysis Approach (5 Whys)
+          1. Why did the symptom occur? → Answer
+          2. Why did THAT happen? → Answer
+          3. Why did THAT happen? → Answer
+          4. Why did THAT happen? → Answer
+          5. Why did THAT happen? → ROOT CAUSE
+
+          ## Output Format (JSON)
+          ```json
+          {
+            "agent": "gemini-analyzer",
+            "analysis_summary": "<2-3 paragraph analysis>",
+            "confidence": <0.0-1.0>,
+            "root_cause": {
+              "category": "code|config|infrastructure|dependency|capacity|external",
+              "description": "<clear description>",
+              "evidence": ["<evidence>"]
+            },
+            "five_whys": [
+              {"level": 1, "question": "Why did <symptom> occur?", "answer": "..."},
+              {"level": 2, "question": "Why did that happen?", "answer": "..."},
+              {"level": 3, "question": "Why?", "answer": "..."},
+              {"level": 4, "question": "Why?", "answer": "..."},
+              {"level": 5, "question": "Root cause?", "answer": "..."}
+            ],
+            "alternative_hypotheses": [
+              {"hypothesis": "...", "likelihood": "low|medium", "missing_evidence": "..."}
+            ],
+            "immediate_actions": [
+              {"action": "...", "priority": "critical|high|medium"}
+            ],
+            "prevention": ["..."]
+          }
+          ```
+
+          This is REAL data - provide actionable analysis!
+        tools:
+          - shell
+        max_iterations: 3
+        temperature: 0.4
+
+    # ============================================
+    # TIER 3: Coordinator (Synthesis)
+    # ============================================
+
+    - name: rca-coordinator
+      tier: 3
+      role: manager
+      spec:
+        model: google:gemini-2.5-pro
+        instructions: |
+          You are the RCA Coordinator for a REAL production incident.
+
+          You receive analyses from multiple reasoning agents.
+          Synthesize their findings into an ACTIONABLE RCA report.
+
+          ## Your Process
+          1. **Agreement Analysis**: Where do both agents agree? (HIGH confidence)
+          2. **Disagreement Analysis**: Where do they differ? (flag for review)
+          3. **Evidence Check**: Is there supporting data from Tier 1?
+          4. **Action Prioritization**: What needs to happen NOW vs later?
+
+          ## Final Report (Markdown)
+
+          ```markdown
+          # 🔴 Root Cause Analysis Report
+
+          ## Executive Summary
+          <2-3 sentences: what happened, root cause, current status>
+
+          ## Incident Details
+          | Field | Value |
+          |-------|-------|
+          | **Reported Issue** | <from input> |
+          | **Analysis Time** | <now> |
+          | **Environment** | Real (Prometheus/Loki/K8s) |
+          | **Data Sources** | Prometheus, Loki, kubectl |
+
+          ## 🎯 Root Cause
+          **Category**: <code|config|infrastructure|dependency|capacity>
+          **Description**: <clear, specific description>
+          **Confidence**: <HIGH|MEDIUM|LOW> based on model agreement
+
+          ### Evidence
+          1. **From Prometheus**: <metric evidence>
+          2. **From Loki**: <log evidence>
+          3. **From K8s**: <state evidence>
+
+          ## 📊 Model Agreement
+          | Finding | Agent 1 | Agent 2 | Consensus |
+          |---------|---------|---------|-----------|
+          | <finding> | ✓/✗ | ✓/✗ | HIGH/MED/LOW |
+
+          ## 🚨 Immediate Actions (Do Now)
+          1. [ ] **<action>** (Priority: CRITICAL)
+             ```bash
+             <kubectl command if applicable>
+             ```
+          2. [ ] **<action>** (Priority: HIGH)
+
+          ## 📋 Follow-up Actions
+          - [ ] <action> (Owner: TBD)
+          - [ ] <action>
+
+          ## 🛡️ Prevention
+          - <how to prevent recurrence>
+          - <monitoring/alerting to add>
+
+          ## ⚠️ Areas Needing Human Review
+          <any disagreements or low-confidence findings>
+
+          ---
+          *Generated by AOF Multi-Model RCA*
+          *Environment: Real Kubernetes cluster with Prometheus/Loki*
+          ```
+
+          This is a REAL incident - make the report actionable!
+        tools:
+          - shell
+        max_iterations: 3
+        temperature: 0.5
+
+  # Tiered coordination
+  coordination:
+    mode: tiered
+    distribution: round-robin
+
+    consensus:
+      algorithm: weighted
+      min_votes: 2
+      timeout_ms: 180000  # 3 minutes
+      allow_partial: true
+      min_confidence: 0.5
+
+    tiered:
+      pass_all_results: true
+      final_aggregation: manager_synthesis
+      tier_consensus:
+        "1":
+          algorithm: first_wins  # Collect all data
+        "2":
+          algorithm: weighted
+          min_votes: 2
+        "3":
+          algorithm: first_wins
+
+  shared:
+    memory:
+      type: inmemory
+      namespace: rca-real
+      ttl: 7200  # 2 hours for real incidents
