@@ -282,26 +282,30 @@ spec:                          # Resource specification
 
 ## kubectl-Style CLI
 
-AOF's CLI mirrors kubectl for familiarity:
+AOF's CLI mirrors kubectl for familiarity using verb-noun syntax:
 
 ```bash
 # Apply configuration
-aofctl agent apply -f agent.yaml
+aofctl apply -f agent.yaml
 
 # Get resources
-aofctl agent get my-agent
+aofctl get agents
+aofctl get agent my-agent
 
 # Describe details
-aofctl agent describe my-agent
+aofctl describe agent my-agent
+
+# Run an agent
+aofctl run agent agent.yaml -i "What pods are failing?"
 
 # View logs
-aofctl agent logs my-agent
+aofctl logs agent my-agent
 
 # Delete resource
-aofctl agent delete my-agent
+aofctl delete agent my-agent
 
-# Interactive chat
-aofctl agent chat my-agent
+# List all resource types
+aofctl api-resources
 ```
 
 ## Next Steps

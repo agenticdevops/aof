@@ -89,16 +89,17 @@ spec:
       max_messages: 500
 
 ---
-# Example usage:
+# Example usage (kubectl-style: aofctl verb noun):
 #
 # Apply the agent:
-#   aofctl agent apply -f kubernetes-agent.yaml
+#   aofctl apply -f kubernetes-agent.yaml
 #
-# Interactive chat:
-#   aofctl agent chat kubernetes-agent
+# Run with a query:
+#   aofctl run agent kubernetes-agent.yaml -i "Show me all failing pods"
 #
-# Single query:
-#   aofctl agent exec kubernetes-agent "Show me all failing pods"
+# Check status:
+#   aofctl get agents
+#   aofctl describe agent kubernetes-agent
 #
 # Common queries:
 #   - "What pods are not in Running state?"

@@ -283,11 +283,20 @@ With the new kubectl-compatible structure, you now have access to:
 
 ## Backward Compatibility
 
+### Implementation Status (December 2025)
+
+The kubectl-style verb-noun CLI has been fully implemented:
+
+- ✅ All commands now use `aofctl <verb> <resource>` syntax
+- ✅ Resource types: agents, workflows, fleets, flows, tools
+- ✅ Short names: ag, wf, fw, tl
+- ✅ Legacy subcommands hidden but available for backwards compatibility
+
 ### Deprecation Timeline
 
-- **Phase 1 (Current):** Old commands work with deprecation warnings
-- **Phase 2 (Next Release):** Old commands disabled by default, can be enabled with `--legacy` flag
-- **Phase 3 (Future):** Old commands removed completely
+- **Phase 1 (Complete):** New verb-noun commands implemented
+- **Phase 2 (Current):** Old commands hidden but still work
+- **Phase 3 (Future):** Old commands will be removed
 
 ### Checking Compatibility
 
@@ -297,8 +306,8 @@ To ensure your setup is compatible:
 # List your aofctl version
 aofctl version
 
-# Check for deprecated command usage
-aofctl agent get 2>&1 | grep -i "deprecated"
+# List all available resource types
+aofctl api-resources
 ```
 
 ---

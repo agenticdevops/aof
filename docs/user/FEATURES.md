@@ -425,10 +425,10 @@ aofctl run --file agent.yaml --stream
 
 ```bash
 # Execute a workflow
-aofctl workflow --file workflow.yaml
+aofctl run workflow workflow.yaml
 
 # Resume from checkpoint
-aofctl workflow --file workflow.yaml --resume
+aofctl run workflow workflow.yaml --resume
 ```
 
 ### Running Fleets

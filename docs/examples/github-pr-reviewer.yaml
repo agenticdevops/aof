@@ -203,4 +203,4 @@ spec:
 #    Secret: ${GITHUB_WEBHOOK_SECRET}
 #
 # Manual usage:
-#    aofctl agent exec github-pr-reviewer "Review PR #123 in myorg/myrepo"
+#    aofctl run agent github-pr-reviewer.yaml -i "Review PR #123 in myorg/myrepo"

@@ -1,7 +1,8 @@
 # ADR-001: kubectl-Compatible CLI Structure for aofctl
 
-**Status**: Proposed
+**Status**: Implemented
 **Date**: 2025-12-11
+**Implementation Date**: 2025-12-17
 **Decision Makers**: Architecture Team
 **Related**: [aofctl CLI Refactor Initiative]
 
@@ -533,7 +534,25 @@ aofctl get workflows --field-selector spec.provider=anthropic
 
 **Approved**: Proceed with kubectl-compatible CLI refactor following this architectural design.
 
+## Implementation Status
+
+**Completed (2025-12-17)**:
+- ✅ Verb-noun command structure implemented
+- ✅ Resource-centric API design with ResourceType enum
+- ✅ Resource types: Agent, Workflow, Fleet, Flow, Tool
+- ✅ Commands: get, describe, run, apply, delete, logs, api-resources
+- ✅ Short names support (ag, wf, fw, tl)
+- ✅ Migration guide created
+- ✅ All documentation updated to verb-noun syntax
+
+**Remaining (Future)**:
+- Label selectors (-l flag)
+- Field selectors
+- Watch mode (-w flag)
+- Custom output columns
+- Namespace support
+
 ---
 
 *Architecture by: System Architecture Designer*
-*Review Status: Awaiting Team Review*
+*Implementation: Completed December 2025*
