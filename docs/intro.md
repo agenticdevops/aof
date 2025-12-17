@@ -10,7 +10,7 @@ Complete documentation for the Agentic Ops Framework (AOF).
 ## 📚 Documentation Structure
 
 ### Main README
-- **[Project README](https://github.com/agenticopsorg/aof)** - Project overview, quick install, 30-second example
+- **[Project README](https://github.com/agenticdevops/aof)** - Project overview, quick install, 30-second example
 
 ### Getting Started
 - **[Getting Started](./getting-started)** - 5-minute quickstart guide
@@ -105,7 +105,7 @@ Complete documentation for the Agentic Ops Framework (AOF).
 ## 📖 Recommended Reading Path
 
 ### For First-Time Users:
-1. Start with **[Project README](https://github.com/agenticopsorg/aof)** - Understand what AOF is
+1. Start with **[Project README](https://github.com/agenticdevops/aof)** - Understand what AOF is
 2. Follow **[Getting Started](./getting-started)** - Get up and running
 3. Read **[Core Concepts](./concepts)** - Understand the building blocks
 4. Try **[First Agent Tutorial](./tutorials/first-agent)** - Hands-on practice
@@ -203,8 +203,8 @@ See [Examples README](./examples/) for guidelines.
 1. **Check documentation** - Search this index
 2. **Review examples** - See [examples](./examples/)
 3. **Troubleshooting** - Check each tutorial's troubleshooting section
-4. **GitHub Issues** - [Report bugs or request features](https://github.com/agenticopsorg/aof/issues)
-5. **Discussions** - [Ask questions](https://github.com/agenticopsorg/aof/discussions)
+4. **GitHub Issues** - [Report bugs or request features](https://github.com/agenticdevops/aof/issues)
+5. **Discussions** - [Ask questions](https://github.com/agenticdevops/aof/discussions)
 
 ## 📊 Documentation Coverage
 

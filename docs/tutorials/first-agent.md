@@ -51,12 +51,7 @@ spec:
 
 Test it:
 ```bash
-aofctl agent run k8s-helper.yaml
-```
-
-Try asking:
-```
-> How do I check if my deployment is healthy?
+aofctl run agent k8s-helper.yaml --input "How do I check if my deployment is healthy?"
 ```
 
 The agent will explain but can't actually run kubectl yet. Let's add that.
@@ -105,12 +100,7 @@ spec:
 
 Test it again:
 ```bash
-aofctl agent run k8s-helper.yaml
-```
-
-Now try:
-```
-> Show me all pods in the default namespace
+aofctl run agent k8s-helper.yaml --input "Show me all pods in the default namespace"
 ```
 
 The agent will run `kubectl get pods -n default` and explain the output.
@@ -284,49 +274,41 @@ spec:
       max_messages: 50
 ```
 
-## Step 6: Deploy the Agent
+## Step 6: Run the Agent
 
-Instead of running interactively, deploy it as a persistent agent:
+Run the agent with different queries:
 
 ```bash
-# Apply the configuration
-aofctl agent apply -f k8s-helper.yaml
+# Run with a query
+aofctl run agent k8s-helper.yaml --input "Show me failing pods"
 
-# Verify it's running
-aofctl agent get k8s-helper
-
-# Check status
-aofctl agent describe k8s-helper
+# Run with output format
+aofctl run agent k8s-helper.yaml --input "Scale the nginx deployment to 3 replicas" --output json
 ```
 
-## Step 7: Interact with the Agent
-
-Now you can interact via CLI:
+## Step 7: View Agent Configuration
 
 ```bash
-# Chat interactively
-aofctl agent chat k8s-helper
+# List agents from a directory
+aofctl get agent
 
-# Single query
-aofctl agent chat k8s-helper "Show me failing pods"
+# Describe agent details
+aofctl describe agent k8s-helper
 
-# Or use exec for one-shot commands
-aofctl agent exec k8s-helper "Scale the nginx deployment to 3 replicas"
+# View logs
+aofctl logs agent k8s-helper
 ```
 
 ## Step 8: Monitor and Debug
 
 ```bash
-# View agent logs
-aofctl agent logs k8s-helper
+# View agent logs (if using the daemon serve mode)
+aofctl logs agent k8s-helper
 
 # Follow logs in real-time
-aofctl agent logs k8s-helper -f
+aofctl logs agent k8s-helper -f
 
-# Get detailed status
-aofctl agent describe k8s-helper
-
-# Check memory usage
+# Check memory file (if using file-based memory)
 ls -lh k8s-helper-memory.json
 ```
 
@@ -353,9 +335,9 @@ spec:
         allowed_methods: [GET, POST]
 ```
 
-Now ask:
-```
-> Check if the nginx service on port 8080 is responding
+Now run:
+```bash
+aofctl run agent k8s-helper.yaml --input "Check if the nginx service on port 8080 is responding"
 ```
 
 ## Complete Final Agent
@@ -435,16 +417,16 @@ Create a test script `test-agent.sh`:
 #!/bin/bash
 
 echo "Test 1: List pods"
-aofctl agent exec k8s-helper "Show all pods in kube-system"
+aofctl run agent k8s-helper.yaml --input "Show all pods in kube-system"
 
 echo -e "\nTest 2: Check deployment"
-aofctl agent exec k8s-helper "Is the coredns deployment healthy?"
+aofctl run agent k8s-helper.yaml --input "Is the coredns deployment healthy?"
 
 echo -e "\nTest 3: Troubleshoot"
-aofctl agent exec k8s-helper "Find any pods that are not running"
+aofctl run agent k8s-helper.yaml --input "Find any pods that are not running"
 
 echo -e "\nTest 4: Explain"
-aofctl agent exec k8s-helper "What's the difference between a Service and an Ingress?"
+aofctl run agent k8s-helper.yaml --input "What's the difference between a Service and an Ingress?"
 ```
 
 Run it:
@@ -481,9 +463,11 @@ kubectl cluster-info
 # Check file permissions
 ls -l k8s-helper-memory.json
 
-# Reset memory
+# Reset memory by deleting the file
 rm k8s-helper-memory.json
-aofctl agent apply -f k8s-helper.yaml
+
+# Run agent again - it will create a new memory file
+aofctl run agent k8s-helper.yaml --input "Hello"
 ```
 
 ### MCP server not starting

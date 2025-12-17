@@ -34,7 +34,7 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 3. Add upstream remote:
    ```bash
-   git remote add upstream https://github.com/agenticopsorg/aof.git
+   git remote add upstream https://github.com/agenticdevops/aof.git
    ```
 
 4. Create a development branch:

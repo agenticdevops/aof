@@ -22,7 +22,7 @@ const config: Config = {
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'agenticopsorg', // Usually your GitHub org/user name.
+  organizationName: 'agenticdevops', // Usually your GitHub org/user name.
   projectName: 'aof', // Usually your repo name.
 
   onBrokenLinks: 'throw',
@@ -55,7 +55,7 @@ const config: Config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/agenticopsorg/aof/tree/main/',
+            'https://github.com/agenticdevops/aof/tree/main/',
         },
         blog: false, // Disable blog for now
         theme: {
@@ -97,7 +97,7 @@ const config: Config = {
           label: 'Examples',
         },
         {
-          href: 'https://github.com/agenticopsorg/aof',
+          href: 'https://github.com/agenticdevops/aof',
           label: 'GitHub',
           position: 'right',
         },
@@ -149,15 +149,15 @@ const config: Config = {
           items: [
             {
               label: 'GitHub',
-              href: 'https://github.com/agenticopsorg/aof',
+              href: 'https://github.com/agenticdevops/aof',
             },
             {
               label: 'Issues',
-              href: 'https://github.com/agenticopsorg/aof/issues',
+              href: 'https://github.com/agenticdevops/aof/issues',
             },
             {
               label: 'Discussions',
-              href: 'https://github.com/agenticopsorg/aof/discussions',
+              href: 'https://github.com/agenticdevops/aof/discussions',
             },
           ],
         },

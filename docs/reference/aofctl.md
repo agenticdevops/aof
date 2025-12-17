@@ -12,17 +12,20 @@ aofctl <verb> <resource_type> [name] [flags]
 
 ## Available Commands
 
-| Command | Description |
-|---------|-------------|
-| `run` | Run an agent or workflow |
-| `get` | Get/list resources |
-| `apply` | Apply configuration from file |
-| `delete` | Delete resources |
-| `describe` | Describe resources in detail |
-| `logs` | Get logs from a resource |
-| `exec` | Execute a command in a resource |
-| `api-resources` | List available API resources |
-| `version` | Show version information |
+| Command | Description | Status |
+|---------|-------------|--------|
+| `run` | Run an agent or workflow | ✅ Implemented |
+| `get` | Get/list resources | ✅ Implemented |
+| `apply` | Apply configuration from file | ✅ Implemented |
+| `delete` | Delete resources | ✅ Implemented |
+| `describe` | Describe resources in detail | ✅ Implemented |
+| `logs` | Get logs from a resource | ✅ Implemented |
+| `exec` | Execute a command in a resource | ✅ Implemented |
+| `api-resources` | List available API resources | ✅ Implemented |
+| `version` | Show version information | ✅ Implemented |
+| `serve` | Start the trigger webhook server (daemon mode) | ✅ Implemented |
+
+> **Note**: Fleet, Flow, Config, and Completion commands are planned for future releases.
 
 ---
 
@@ -166,28 +169,18 @@ aofctl run agent my-agent.yaml -i "Show me all pods"
 aofctl run workflow incident-response.yaml
 ```
 
-**Interactive Session:**
+**Example Output:**
 ```bash
-$ aofctl agent run k8s-helper
+$ aofctl run agent k8s-helper.yaml --input "Show me all pods"
 
-Agent 'k8s-helper' is ready. Type your message (or 'exit' to quit):
-
-> Show me all pods in the default namespace
-
-Fetching pods in default namespace...
+Agent: k8s-helper
+Result: Here are the pods in the default namespace:
 
 NAME                        READY   STATUS    RESTARTS   AGE
 nginx-deployment-abc123     2/2     Running   0          5d
 postgres-0                  1/1     Running   0          10d
 
-All pods are healthy! ✅
-
-> exit
-
-Session ended. Summary:
-  Queries: 1
-  Duration: 1m 23s
-  Tokens used: 450
+All pods are healthy!
 ```
 
 ---
@@ -253,342 +246,30 @@ aofctl logs agent my-agent --tail 50
 
 ---
 
-## Fleet Commands
+## serve
 
-Manage agent fleets (teams of agents).
-
-### `aofctl fleet create`
-
-Create a new agent fleet.
+Start the trigger webhook server (daemon mode) for running agents as a service.
 
 ```bash
-aofctl fleet create <name> [flags]
+aofctl serve [flags]
 ```
 
 **Flags:**
-- `-f, --file string` - Fleet YAML file
-- `--agents strings` - Agent names to include
+- `-c, --config string` - Configuration file (YAML)
+- `-p, --port int` - Port to listen on (overrides config)
+- `--host string` - Host to bind to (default: 0.0.0.0)
+- `--agents-dir string` - Directory containing agent YAML files
 
 **Examples:**
 ```bash
-# From file
-aofctl fleet create -f review-team.yaml
+# Start server with default settings
+aofctl serve
 
-# Ad-hoc fleet
-aofctl fleet create code-reviewers --agents security-agent,style-agent,perf-agent
-```
+# Serve with custom port and agents directory
+aofctl serve --port 8080 --agents-dir ./agents
 
----
-
-### `aofctl fleet apply`
-
-Apply fleet configuration.
-
-```bash
-aofctl fleet apply -f <file>
-```
-
----
-
-### `aofctl fleet scale`
-
-Scale fleet size.
-
-```bash
-aofctl fleet scale <name> --replicas <count>
-```
-
-**Examples:**
-```bash
-aofctl fleet scale review-team --replicas 5
-```
-
----
-
-### `aofctl fleet exec`
-
-Execute task with fleet.
-
-```bash
-aofctl fleet exec <name> <message> [flags]
-```
-
-**Flags:**
-- `--aggregation string` - all|consensus|summary|first (default: all)
-
-**Examples:**
-```bash
-# Get all responses
-aofctl fleet exec review-team "Review this code" --aggregation all
-
-# Majority vote
-aofctl fleet exec review-team "Is this secure?" --aggregation consensus
-```
-
----
-
-### `aofctl fleet status`
-
-Get fleet status.
-
-```bash
-aofctl fleet status <name>
-```
-
-**Output:**
-```
-Fleet: code-review-team
-Agents: 3/3 ready
-
-Agents:
-  security-reviewer    openai:gpt-4        Running   2d
-  performance-reviewer anthropic:claude-3-5-sonnet-20241022   Running   2d
-  style-reviewer       ollama:llama3       Running   2d
-
-Recent Tasks:
-  2024-01-20 15:00:00  Code review PR#123   Completed  3.2s
-  2024-01-20 14:30:00  Security audit       Completed  5.1s
-```
-
----
-
-## Flow Commands
-
-Manage AgentFlow workflows.
-
-### `aofctl flow apply`
-
-Apply flow configuration.
-
-```bash
-aofctl flow apply -f <file> [flags]
-```
-
-**Examples:**
-```bash
-aofctl flow apply -f incident-response.yaml
-```
-
----
-
-### `aofctl flow run`
-
-Execute a flow.
-
-```bash
-aofctl flow run <name> [flags]
-```
-
-**Flags:**
-- `--daemon` - Run in background
-- `--input string` - Trigger input data (JSON)
-- `--var strings` - Set variables (key=value)
-
-**Examples:**
-```bash
-# Run once
-aofctl flow run my-flow
-
-# Background daemon
-aofctl flow run webhook-handler --daemon
-
-# With input
-aofctl flow run my-flow --input '{"data": "value"}'
-
-# With variables
-aofctl flow run my-flow --var NAMESPACE=production --var CLUSTER=us-east-1
-```
-
----
-
-### `aofctl flow status`
-
-Get flow execution status.
-
-```bash
-aofctl flow status <name> [flags]
-```
-
-**Flags:**
-- `--execution-id string` - Specific execution
-
-**Examples:**
-```bash
-# Current status
-aofctl flow status my-flow
-
-# Specific execution
-aofctl flow status my-flow --execution-id abc123
-```
-
-**Output:**
-```
-Flow: incident-response
-Status: Running
-Started: 2024-01-20 15:30:00
-Duration: 2m 15s
-
-Nodes:
-  ✓ parse-alert        Transform   Completed  0.1s
-  ✓ diagnose          Agent       Completed  45.2s
-  ⟳ remediate         Agent       Running    1m 30s
-  ⋯ verify            Agent       Pending    -
-  ⋯ notify            Slack       Pending    -
-
-Progress: 2/5 nodes completed (40%)
-```
-
----
-
-### `aofctl flow logs`
-
-View flow execution logs.
-
-```bash
-aofctl flow logs <name> [flags]
-```
-
-**Flags:**
-- `-f, --follow` - Stream logs
-- `--node string` - Filter by node ID
-- `--execution-id string` - Specific execution
-
-**Examples:**
-```bash
-# All logs
-aofctl flow logs my-flow
-
-# Follow
-aofctl flow logs my-flow -f
-
-# Specific node
-aofctl flow logs my-flow --node remediate
-
-# Specific execution
-aofctl flow logs my-flow --execution-id abc123
-```
-
----
-
-### `aofctl flow visualize`
-
-Generate flow visualization.
-
-```bash
-aofctl flow visualize <name> [flags]
-```
-
-**Flags:**
-- `-o, --output string` - Output file (default: stdout)
-- `--format string` - dot|mermaid|svg (default: dot)
-
-**Examples:**
-```bash
-# Generate DOT format
-aofctl flow visualize my-flow > flow.dot
-
-# Convert to PNG
-aofctl flow visualize my-flow | dot -Tpng > flow.png
-
-# Mermaid format
-aofctl flow visualize my-flow --format mermaid
-```
-
----
-
-### `aofctl flow pause`
-
-Pause running flow.
-
-```bash
-aofctl flow pause <name>
-```
-
----
-
-### `aofctl flow resume`
-
-Resume paused flow.
-
-```bash
-aofctl flow resume <name>
-```
-
----
-
-### `aofctl flow cancel`
-
-Cancel running flow.
-
-```bash
-aofctl flow cancel <name> [--execution-id string]
-```
-
----
-
-## Config Commands
-
-Manage aofctl configuration.
-
-### `aofctl config view`
-
-Display current config.
-
-```bash
-aofctl config view
-```
-
-**Output:**
-```yaml
-current-context: production
-contexts:
-  - name: production
-    server: https://aof-prod.company.com
-    namespace: default
-  - name: staging
-    server: https://aof-staging.company.com
-    namespace: default
-```
-
----
-
-### `aofctl config set-context`
-
-Set current context.
-
-```bash
-aofctl config set-context <name> [flags]
-```
-
-**Flags:**
-- `--server string` - Server URL
-- `--namespace string` - Default namespace
-
-**Examples:**
-```bash
-# Switch context
-aofctl config set-context production
-
-# Create new context
-aofctl config set-context staging --server https://aof-staging.company.com
-```
-
----
-
-### `aofctl config get-contexts`
-
-List available contexts.
-
-```bash
-aofctl config get-contexts
-```
-
-**Output:**
-```
-CURRENT   NAME         SERVER                              NAMESPACE
-*         production   https://aof-prod.company.com        default
-          staging      https://aof-staging.company.com     default
-          local        http://localhost:8080               default
+# Use a configuration file
+aofctl serve -c daemon-config.yaml
 ```
 
 ---
@@ -605,38 +286,47 @@ aofctl version
 
 **Output:**
 ```
-aofctl version: v1.0.0
-Rust version: 1.75.0
-Server version: v1.0.0
+aofctl version: 0.1.11
+aof-core version: 0.1.11
+MCP version: 2024-11-05
 ```
 
 ---
 
-### `aofctl completion`
+## Planned Features (Not Yet Implemented)
 
-Generate shell completion scripts.
+The following commands are planned for future releases:
 
-```bash
-aofctl completion <shell>
-```
+### Fleet Commands (Coming Soon)
 
-**Supported Shells:**
-- bash
-- zsh
-- fish
-- powershell
+AgentFleet enables multi-agent coordination:
 
-**Examples:**
-```bash
-# Bash
-aofctl completion bash > /etc/bash_completion.d/aofctl
+- `aofctl fleet create` - Create a new agent fleet
+- `aofctl fleet apply` - Apply fleet configuration
+- `aofctl fleet scale` - Scale fleet size
+- `aofctl fleet exec` - Execute task with fleet
+- `aofctl fleet status` - Get fleet status
 
-# Zsh
-aofctl completion zsh > /usr/local/share/zsh/site-functions/_aofctl
+### Flow Commands (Coming Soon)
 
-# Fish
-aofctl completion fish > ~/.config/fish/completions/aofctl.fish
-```
+AgentFlow enables workflow orchestration:
+
+- `aofctl flow apply` - Apply flow configuration
+- `aofctl flow run` - Execute a flow
+- `aofctl flow status` - Get flow execution status
+- `aofctl flow logs` - View flow execution logs
+- `aofctl flow visualize` - Generate flow visualization
+- `aofctl flow pause/resume/cancel` - Control flow execution
+
+### Config Commands (Coming Soon)
+
+- `aofctl config view` - Display current config
+- `aofctl config set-context` - Set current context
+- `aofctl config get-contexts` - List available contexts
+
+### Completion (Coming Soon)
+
+- `aofctl completion <shell>` - Generate shell completion scripts
 
 ---
 
@@ -644,13 +334,11 @@ aofctl completion fish > ~/.config/fish/completions/aofctl.fish
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AOF_CONFIG` | Config file path | `~/.aof/config.yaml` |
-| `AOF_CONTEXT` | Current context | `default` |
-| `AOF_NAMESPACE` | Default namespace | `default` |
-| `AOF_SERVER` | Server URL | `http://localhost:8080` |
 | `OPENAI_API_KEY` | OpenAI API key | - |
 | `ANTHROPIC_API_KEY` | Anthropic API key | - |
+| `GOOGLE_API_KEY` | Google Gemini API key | - |
 | `GROQ_API_KEY` | Groq API key | - |
+| `KUBECONFIG` | Kubernetes config path | `~/.kube/config` |
 
 ---
 
@@ -666,23 +354,33 @@ kind: Agent
 metadata:
   name: k8s-helper
 spec:
-  model: openai:gpt-4
-  instructions: "You are a K8s expert"
+  model: google:gemini-2.5-flash
+  instructions: "You are a K8s expert. Help users with kubectl commands."
   tools:
     - shell
 EOF
 
-# 2. Apply
-aofctl apply -f my-agent.yaml
+# 2. Run the agent
+aofctl run agent my-agent.yaml --input "Show me all pods"
 
-# 3. Test
-aofctl run agent my-agent.yaml -i "Show me all pods"
+# 3. Run with JSON output
+aofctl run agent my-agent.yaml --input "Check deployment status" --output json
 
-# 4. View logs
-aofctl logs agent k8s-helper --tail 20
+# 4. List available agents
+aofctl get agent
 
-# 5. Get status
+# 5. Describe agent details
 aofctl describe agent k8s-helper
+```
+
+### Start as Daemon Service
+
+```bash
+# Start the server with agents directory
+aofctl serve --agents-dir ./agents --port 8080
+
+# The server will expose agents via HTTP API
+# Agents can be triggered via webhooks
 ```
 
 ---
@@ -690,5 +388,5 @@ aofctl describe agent k8s-helper
 ## See Also
 
 - [Agent Spec](agent-spec.md)
-- [AgentFlow Spec](agentflow-spec.md)
+- [AgentFlow Spec](agentflow-spec.md) (specification for planned features)
 - [Examples](../examples/)

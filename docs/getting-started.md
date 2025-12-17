@@ -98,16 +98,12 @@ spec:
 ### Step 4: Run Your Agent
 
 ```bash
-# Interactive mode
-aofctl run agent hello-agent.yaml
+# Run with a query
+aofctl run agent hello-agent.yaml --input "What's the difference between a Deployment and a StatefulSet?"
 
-# You'll see:
-> Agent 'hello-assistant' is ready. Type your message (or 'exit' to quit):
-```
-
-Try asking:
-```
-> What's the difference between a Deployment and a StatefulSet?
+# You'll see output like:
+# Agent: hello-assistant
+# Result: A Deployment is designed for stateless applications...
 ```
 
 ### Step 5: Verify It Works
@@ -137,12 +133,7 @@ spec:
 Save this as `k8s-agent.yaml` and run:
 
 ```bash
-aofctl run agent k8s-agent.yaml
-```
-
-Now try:
-```
-> Show me all pods in the default namespace
+aofctl run agent k8s-agent.yaml --input "Show me all pods in the default namespace"
 ```
 
 The agent will explain what it's doing and run `kubectl get pods -n default`.
