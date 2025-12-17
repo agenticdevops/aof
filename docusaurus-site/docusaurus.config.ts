@@ -98,10 +98,19 @@ const config: Config = {
         },
         {
           href: 'https://github.com/agenticdevops/aof',
-          label: 'GitHub',
           position: 'right',
+          className: 'header-github-link',
+          'aria-label': 'GitHub repository',
         },
       ],
+    },
+    announcementBar: {
+      id: 'star_us',
+      content:
+        '⭐ If you like AOF, give us a star on <a target="_blank" rel="noopener noreferrer" href="https://github.com/agenticdevops/aof">GitHub</a>! It helps us reach more developers.',
+      backgroundColor: '#1a1a2e',
+      textColor: '#ffffff',
+      isCloseable: true,
     },
     footer: {
       style: 'dark',

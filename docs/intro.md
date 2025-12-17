@@ -7,6 +7,11 @@ title: Documentation Index
 
 Complete documentation for the Agentic Ops Framework (AOF).
 
+[![GitHub stars](https://img.shields.io/github/stars/agenticdevops/aof?style=social)](https://github.com/agenticdevops/aof)
+[![GitHub forks](https://img.shields.io/github/forks/agenticdevops/aof?style=social)](https://github.com/agenticdevops/aof/fork)
+
+> **Love AOF?** Help us grow by [starring us on GitHub](https://github.com/agenticdevops/aof)! Your support helps more DevOps engineers discover AI-powered automation.
+
 ## Documentation Structure
 
 ### Main README
