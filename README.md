@@ -1,8 +1,15 @@
 # AOF - Agentic Ops Framework
 
+[![GitHub stars](https://img.shields.io/github/stars/agenticdevops/aof?style=for-the-badge&logo=github)](https://github.com/agenticdevops/aof)
+[![GitHub forks](https://img.shields.io/github/forks/agenticdevops/aof?style=for-the-badge&logo=github)](https://github.com/agenticdevops/aof/fork)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](https://github.com/agenticdevops/aof/blob/main/LICENSE)
+[![Docs](https://img.shields.io/badge/Docs-docs.aof.sh-green?style=for-the-badge)](https://docs.aof.sh)
+
 > **n8n for Agentic Ops** - Build AI agents with Kubernetes-style YAML. No Python required.
 
 AOF is a Rust-based framework that lets DevOps, SRE, and Platform engineers build and orchestrate AI agents using familiar YAML specifications and kubectl-style CLI commands.
+
+**⭐ If you find AOF useful, please star this repo! It helps us reach more developers.**
 
 ## Why AOF?
 
@@ -31,23 +38,13 @@ AOF is a Rust-based framework that lets DevOps, SRE, and Platform engineers buil
 cargo install aofctl
 ```
 
-### Option 2: Binary Download
+### Option 2: Binary Download (Recommended)
 ```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/yourusername/aof/releases/latest/download/aofctl-aarch64-apple-darwin -o aofctl
-chmod +x aofctl
-sudo mv aofctl /usr/local/bin/
-
-# macOS (Intel)
-curl -L https://github.com/yourusername/aof/releases/latest/download/aofctl-x86_64-apple-darwin -o aofctl
-chmod +x aofctl
-sudo mv aofctl /usr/local/bin/
-
-# Linux
-curl -L https://github.com/yourusername/aof/releases/latest/download/aofctl-x86_64-unknown-linux-gnu -o aofctl
-chmod +x aofctl
-sudo mv aofctl /usr/local/bin/
+# Auto-detect platform and install
+curl -sSL https://docs.aof.sh/install.sh | bash
 ```
+
+Or download manually from [GitHub Releases](https://github.com/agenticdevops/aof/releases).
 
 ## 30-Second Example
 
@@ -115,17 +112,13 @@ aofctl run agent my-agent.yaml -i "How do I check if my pods are running?"
 
 ## Documentation
 
-- **[Getting Started](docs/getting-started.md)** - 5-minute quickstart guide
-- **[Core Concepts](docs/concepts.md)** - Understand Agents, Fleets, and Flows
-- **[Tutorials](docs/tutorials/)** - Step-by-step guides
-  - [Your First Agent](docs/tutorials/first-agent.md)
-  - [Building a Slack Bot](docs/tutorials/slack-bot.md)
-  - [Incident Response Flow](docs/tutorials/incident-response.md)
-- **[Reference](docs/reference/)** - Complete YAML and CLI specs
-  - [Agent Spec](docs/reference/agent-spec.md)
-  - [AgentFlow Spec](docs/reference/agentflow-spec.md)
-  - [aofctl CLI](docs/reference/aofctl.md)
-- **[Examples](docs/examples/)** - Copy-paste ready YAML files
+📚 **Full documentation at [docs.aof.sh](https://docs.aof.sh)**
+
+- **[Getting Started](https://docs.aof.sh/docs/getting-started)** - 5-minute quickstart guide
+- **[Core Concepts](https://docs.aof.sh/docs/concepts)** - Understand Agents, Fleets, and Flows
+- **[Tutorials](https://docs.aof.sh/docs/tutorials/first-agent)** - Step-by-step guides
+- **[CLI Reference](https://docs.aof.sh/docs/reference/aofctl)** - Complete CLI documentation
+- **[Examples](https://docs.aof.sh/docs/examples)** - Copy-paste ready YAML files
 
 ## Example: Incident Response Flow
 
@@ -170,10 +163,12 @@ spec:
 
 ## Community & Support
 
-- **Documentation**: [https://aof.dev/docs](https://aof.dev/docs)
-- **GitHub**: [https://github.com/agenticdevops/aof](https://github.com/agenticdevops/aof)
+- **Documentation**: [docs.aof.sh](https://docs.aof.sh)
+- **GitHub**: [github.com/agenticdevops/aof](https://github.com/agenticdevops/aof)
 - **Issues**: [Report bugs or request features](https://github.com/agenticdevops/aof/issues)
 - **Discussions**: [Join the community](https://github.com/agenticdevops/aof/discussions)
+
+**⭐ Star us on GitHub** - It helps more DevOps engineers discover AOF!
 
 ## Contributing
 
