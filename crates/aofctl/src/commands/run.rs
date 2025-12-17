@@ -846,9 +846,19 @@ async fn run_job(name_or_config: &str, input: Option<&str>, output: &str) -> Res
 }
 
 /// Run a fleet with configuration
-async fn run_fleet(config_path: &str, input: Option<&str>, output: &str) -> Result<()> {
+async fn run_fleet(config_path: &str, input: Option<&str>, output_format: &str) -> Result<()> {
     use aof_runtime::fleet::{FleetCoordinator, FleetEvent};
     use tokio::sync::mpsc;
+    use std::time::Instant;
+    use crate::output::FleetOutput;
+
+    let start_time = Instant::now();
+    let output = FleetOutput::new();
+
+    // Print banner for text output
+    if output_format == "text" {
+        output.print_banner();
+    }
 
     info!("Loading fleet from: {}", config_path);
 
@@ -856,6 +866,12 @@ async fn run_fleet(config_path: &str, input: Option<&str>, output: &str) -> Resu
     let mut coordinator = FleetCoordinator::from_file(config_path)
         .await
         .context("Failed to load fleet")?;
+
+    // Get fleet info for display
+    let fleet_config = coordinator.fleet();
+    let fleet_name = fleet_config.metadata.name.clone();
+    let agent_count = fleet_config.spec.agents.len();
+    let mode = format!("{:?}", fleet_config.spec.coordination.mode);
 
     // Parse input
     let task_input: serde_json::Value = if let Some(inp) = input {
@@ -872,23 +888,70 @@ async fn run_fleet(config_path: &str, input: Option<&str>, output: &str) -> Resu
     let mut coordinator = coordinator;
     coordinator.start().await.context("Failed to start fleet")?;
 
+    // Collect events in background with beautiful output
+    let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+    let use_pretty = output_format == "text";
+    let mode_clone = mode.clone();
+
+    let event_collector = tokio::spawn(async move {
+        let output = FleetOutput::new();
+        let mut tier_start = Instant::now();
+        let mut tier_results = 0;
+
+        while let Some(event) = event_rx.recv().await {
+            if use_pretty {
+                match &event {
+                    FleetEvent::Started { fleet_name, agent_count } => {
+                        output.print_fleet_header(fleet_name, *agent_count, &mode_clone);
+                    }
+                    FleetEvent::AgentStarted { agent_name, .. } => {
+                        output.print_agent_executing(agent_name, "");
+                    }
+                    FleetEvent::TaskSubmitted { task_id } => {
+                        output.print_task_submitted(task_id);
+                    }
+                    FleetEvent::TaskAssigned { agent_name, .. } => {
+                        output.print_info(&format!("Task assigned to {}", agent_name));
+                    }
+                    FleetEvent::TaskCompleted { task_id, duration_ms } => {
+                        output.print_success(&format!("Task {} completed in {}ms", &task_id[..8.min(task_id.len())], duration_ms));
+                        tier_results += 1;
+                    }
+                    FleetEvent::TaskFailed { task_id, error } => {
+                        output.print_error(&format!("Task {} failed: {}", &task_id[..8.min(task_id.len())], error));
+                    }
+                    FleetEvent::TierStarted { tier, agents, consensus } => {
+                        tier_start = Instant::now();
+                        tier_results = 0;
+                        let agent_names: Vec<String> = agents.iter().map(|a| a.name.clone()).collect();
+                        output.print_tier_start(*tier, &agent_names, consensus);
+                    }
+                    FleetEvent::TierCompleted { tier, confidence, .. } => {
+                        let duration = tier_start.elapsed().as_millis() as u64;
+                        output.print_tier_complete(*tier, tier_results, *confidence, duration);
+                    }
+                    FleetEvent::ConsensusReached { votes, .. } => {
+                        output.print_success(&format!("Consensus reached with {} votes", votes));
+                    }
+                    FleetEvent::Stopped { .. } => {
+                        // Will print completion summary separately
+                    }
+                    FleetEvent::Error { message } => {
+                        output.print_error(message);
+                    }
+                    _ => {}
+                }
+            }
+            events_clone.lock().unwrap().push(event);
+        }
+    });
+
     // Submit task
     let task_id = coordinator
         .submit_task(task_input.clone())
         .await
         .context("Failed to submit task")?;
-    println!("Task submitted: {}", task_id);
-
-    // Collect events
-    let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let events_clone = events.clone();
-
-    // Spawn event collector
-    let event_collector = tokio::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
-            events_clone.lock().unwrap().push(event);
-        }
-    });
 
     // Execute the task (execute_next processes the queued task)
     let task_result = coordinator
@@ -907,54 +970,34 @@ async fn run_fleet(config_path: &str, input: Option<&str>, output: &str) -> Resu
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     drop(event_collector);
 
+    let duration_ms = start_time.elapsed().as_millis() as u64;
+
     // Output result
-    match output {
+    match output_format {
         "json" => {
-            let output = serde_json::json!({
+            let output_json = serde_json::json!({
                 "task_id": task_id,
                 "status": "Completed",
-                "result": result
+                "result": result,
+                "duration_ms": duration_ms,
+                "fleet": fleet_name,
             });
-            println!("{}", serde_json::to_string_pretty(&output)?);
+            println!("{}", serde_json::to_string_pretty(&output_json)?);
         }
         "yaml" => {
-            let output = serde_json::json!({
+            let output_yaml = serde_json::json!({
                 "task_id": task_id,
                 "status": "Completed",
-                "result": result
+                "result": result,
+                "duration_ms": duration_ms,
+                "fleet": fleet_name,
             });
-            println!("{}", serde_yaml::to_string(&output)?);
+            println!("{}", serde_yaml::to_string(&output_yaml)?);
         }
         "text" | _ => {
-            println!("Task ID: {}", task_id);
-            println!("Status: Completed");
-            println!("Result: {}", serde_json::to_string_pretty(&result)?);
-        }
-    }
-
-    // Print events
-    let collected_events = events.lock().unwrap();
-    for event in collected_events.iter() {
-        match event {
-            FleetEvent::AgentStarted { agent_name, instance_id } => {
-                println!("[AGENT] Started: {} ({})", agent_name, instance_id);
-            }
-            FleetEvent::Started { fleet_name, agent_count } => {
-                println!("[FLEET] Started: {} with {} agents", fleet_name, agent_count);
-            }
-            FleetEvent::TaskSubmitted { task_id } => {
-                println!("[TASK] Submitted: {}", task_id);
-            }
-            FleetEvent::ConsensusReached { task_id, votes, .. } => {
-                println!("[CONSENSUS] Reached for task {} with {} votes", task_id, votes);
-            }
-            FleetEvent::Stopped { fleet_name } => {
-                println!("[FLEET] Stopped: {}", fleet_name);
-            }
-            FleetEvent::Error { message } => {
-                println!("[ERROR] {}", message);
-            }
-            _ => {}
+            // Print beautiful RCA report
+            output.print_rca_report(&result);
+            output.print_fleet_complete(&fleet_name, duration_ms, None);
         }
     }
 
