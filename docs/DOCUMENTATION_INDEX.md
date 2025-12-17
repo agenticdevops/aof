@@ -26,10 +26,19 @@ Complete documentation for the Agentic Ops Framework (AOF).
 ### Advanced Concepts
 - **[AgentFleet: Multi-Agent Coordination](concepts/fleets.md)** - Deep dive into fleets
   - Why use fleets in DevOps (consensus, parallel execution, specialization)
-  - 4 coordination modes (peer, hierarchical, pipeline, swarm)
-  - 4 consensus algorithms (majority, unanimous, weighted, first_wins)
+  - 5 coordination modes (peer, hierarchical, pipeline, swarm, **tiered**)
+  - 5 consensus algorithms (majority, unanimous, weighted, first_wins, **human_review**)
   - Fleet vs single agent comparison
   - Real-world examples (code review, incident response, data pipeline)
+
+### Architecture
+- **[Multi-Model Consensus Architecture](architecture/multi-model-consensus.md)** - Deep dive into multi-model AI
+  - The problem with single-model analysis
+  - Tiered execution model (data collection → reasoning → synthesis)
+  - Consensus engine implementation (5 algorithms)
+  - Data flow architecture
+  - Cost optimization strategies
+  - Use cases (RCA, code review, performance analysis)
 
 ### Tutorials (Step-by-Step)
 1. **[Build Your First Agent](tutorials/first-agent.md)** (15 min)
@@ -56,6 +65,13 @@ Complete documentation for the Agentic Ops Framework (AOF).
    - Consensus-based incident diagnosis
    - Customization for different tech stacks (K8s, database, AWS)
 
+5. **[Multi-Model RCA with Tiered Execution](tutorials/multi-model-rca.md)** (35 min) ⭐ NEW
+   - Tiered architecture (data collectors → reasoning models → coordinator)
+   - Multi-model consensus (Claude + Gemini + GPT-4)
+   - Cost-optimized data collection (cheap models for Tier 1)
+   - Weighted consensus with confidence scoring
+   - Production-ready RCA report generation
+
 ### Reference Documentation
 - **[Agent YAML Spec](reference/agent-spec.md)** - Complete Agent specification
   - Metadata fields
@@ -71,6 +87,13 @@ Complete documentation for the Agentic Ops Framework (AOF).
   - Connections and conditions
   - Variable interpolation
   - Error handling
+
+- **[AgentFleet YAML Spec](reference/fleet-spec.md)** - Complete Fleet specification
+  - Coordination modes (peer, hierarchical, pipeline, swarm, tiered)
+  - Consensus algorithms (majority, unanimous, weighted, first_wins, human_review)
+  - Tiered configuration (per-tier consensus, final aggregation)
+  - Shared resources and communication patterns
+  - Complete examples
 
 - **[aofctl CLI Reference](reference/aofctl.md)** - Complete CLI command reference
   - Agent commands (apply, get, run, chat, exec, logs, etc.)
@@ -173,7 +196,7 @@ Essential reading:
 | Resource | Spec Doc | Example |
 |----------|----------|---------|
 | Agent | [agent-spec.md](reference/agent-spec.md) | [kubernetes-agent.yaml](examples/kubernetes-agent.yaml) |
-| AgentFleet | [agent-spec.md](reference/agent-spec.md) | Coming soon |
+| AgentFleet | [fleet-spec.md](reference/fleet-spec.md) | [multi-model-rca-fleet.yaml](../examples/fleets/multi-model-rca-fleet.yaml) |
 | AgentFlow | [agentflow-spec.md](reference/agentflow-spec.md) | [slack-bot-flow.yaml](examples/slack-bot-flow.yaml) |
 
 ### Model Providers
@@ -221,13 +244,15 @@ See [Examples README](examples/README.md#contributing-examples) for guidelines.
 - [x] Main README
 - [x] Getting Started guide
 - [x] Core Concepts
-- [x] AgentFleet multi-agent coordination guide
-- [x] 4 comprehensive tutorials (including RCA Fleet)
+- [x] AgentFleet multi-agent coordination guide (5 modes, 5 consensus algorithms)
+- [x] Multi-Model Consensus Architecture guide
+- [x] 5 comprehensive tutorials (including Multi-Model RCA)
 - [x] Complete Agent YAML reference
 - [x] Complete AgentFlow YAML reference
+- [x] Complete AgentFleet YAML reference
 - [x] Complete CLI reference
-- [x] 5+ production-ready examples
-- [x] RCA fleet examples (application, database, Kubernetes)
+- [x] 12+ example agents (observability + reasoning)
+- [x] Multi-model RCA fleet example
 
 ### 🚧 Coming Soon
 - [ ] Advanced patterns guide
@@ -238,16 +263,19 @@ See [Examples README](examples/README.md#contributing-examples) for guidelines.
 
 ## 🔄 Documentation Updates
 
-Last updated: 2024-12-17
+Last updated: 2025-12-17
 
 ### Recent Changes
-- Added AgentFleet multi-agent coordination guide
+- **NEW**: Multi-Model Consensus Architecture guide
+- **NEW**: Multi-Model RCA Tutorial with tiered execution
+- **NEW**: AgentFleet YAML Reference (fleet-spec.md)
+- **NEW**: 8 observability + reasoning example agents
+- **NEW**: Tiered coordination mode (data collectors → reasoning → synthesis)
+- **NEW**: HumanReview consensus algorithm
+- Updated AgentFleet concepts with 5 coordination modes
+- Updated Docusaurus sidebar with Architecture section
 - Added RCA Fleet tutorial with consensus patterns
-- Added application and database RCA fleet examples
 - Added complete reference documentation
-- Added 5+ production examples
-- Added 4 step-by-step tutorials
-- Added quickstart guide
 
 ---
 

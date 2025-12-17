@@ -32,9 +32,16 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Advanced Concepts',
+      label: 'Concepts',
       items: [
         'concepts/fleets',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Architecture',
+      items: [
+        'architecture/multi-model-consensus',
       ],
     },
     {
@@ -52,6 +59,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'reference/agent-spec',
         'reference/agentflow-spec',
+        'reference/fleet-spec',
         'reference/aofctl',
       ],
     },
@@ -67,6 +75,7 @@ const sidebars: SidebarsConfig = {
         'tutorials/slack-bot',
         'tutorials/incident-response',
         'tutorials/rca-fleet',
+        'tutorials/multi-model-rca',
       ],
     },
   ],
