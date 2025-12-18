@@ -499,6 +499,9 @@ pub async fn execute(
         .map(PathBuf::from)
         .or_else(|| config.spec.flows.directory.clone());
 
+    // Track if agents were actually loaded (not just if flows were configured)
+    let mut agents_loaded = false;
+
     if config.spec.flows.enabled {
         if let Some(ref flows_path) = flows_dir_path {
             info!("Loading AgentFlows from: {}", flows_path.display());
@@ -522,9 +525,17 @@ pub async fn execute(
 
                         // Set up handler with FlowRouter
                         handler.set_flow_router(flow_router);
-                        handler.set_runtime(runtime);
+                        handler.set_runtime(runtime.clone());
+
+                        // Pre-load all agents from directory (indexes by kind: Agent & metadata.name)
                         if let Some(ref ap) = agents_path {
-                            handler.set_agents_dir(ap.clone());
+                            match handler.load_agents_from_directory(ap).await {
+                                Ok(count) => {
+                                    info!("  Pre-loaded {} agents from {:?}", count, ap);
+                                    agents_loaded = true;
+                                }
+                                Err(e) => warn!("  Failed to pre-load agents: {}", e),
+                            }
                         }
 
                         info!("  Loaded {} AgentFlows: {:?}", flow_count, flow_names);
@@ -541,6 +552,23 @@ pub async fn execute(
         }
     } else {
         info!("  Flow-based routing disabled");
+    }
+
+    // Pre-load agents from directory if not already done
+    if !agents_loaded {
+        let agents_path = agents_dir
+            .map(PathBuf::from)
+            .or_else(|| config.spec.agents.directory.clone());
+
+        if let Some(ref ap) = agents_path {
+            // Load agents now - create runtime and set it up
+            let runtime = Arc::new(RwLock::new(Runtime::new()));
+            handler.set_runtime(runtime);
+            match handler.load_agents_from_directory(ap).await {
+                Ok(count) => info!("  Pre-loaded {} agents from {:?}", count, ap),
+                Err(e) => warn!("  Failed to pre-load agents: {}", e),
+            }
+        }
     }
 
     // Create server config

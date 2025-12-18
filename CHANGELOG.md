@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent Tool Execution System** - Full tool execution support for agents
+  - Built-in tools: `kubectl`, `docker`, `helm`, `terraform`, `aws`, `git`, `shell`
+  - File tools: `read_file`, `write_file`, `list_directory`, `search_files`
+  - Observability tools: `prometheus_query`, `loki_query`
+  - Tools registered and passed to LLM with definitions
+- **Kubernetes-Style Agent Discovery** - Load agents by `kind: Agent` and `metadata.name`
+  - Agents indexed by `metadata.name`, not filename
+  - Support for both K8s-style and flat YAML formats via `AgentConfigInput` enum
+  - `--agents-dir` flag for pre-loading agents on server startup
 - **Approval User Whitelist** - Configure which users can approve destructive commands
   - New `approval_allowed_users` field in platform config (Slack implemented)
   - Platform-agnostic design: supports `U12345678`, `slack:U12345678`, `email:user@company.com` formats
@@ -15,6 +24,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Planned: Global `spec.approval.allowed_users` for multi-platform deployments
   - If not configured, anyone can approve (backward compatible)
   - Documentation and example config updated
+- **Multi-Tenant AgentFlow Architecture** - Enterprise-ready multi-tenant deployments
+  - Route different channels/users/patterns to different agents
+  - Support for multiple organizations in single daemon
+  - Environment isolation per AgentFlow (kubeconfig, namespace, env vars)
+  - Comprehensive architecture documentation at `docs/architecture/multi-tenant-agentflows.md`
+- **Telegram AgentFlow Example** - Complete Telegram bot setup following Slack pattern
+  - New `examples/configs/telegram-k8s-flow.yaml` example
+  - Same architecture as Slack bot with channel/user/pattern routing
+- **AgentFlow Routing Documentation** - Complete guide on how routing works
+  - Flow scoring algorithm explained
+  - Common routing patterns (pattern-based, channel-based, user-based)
+  - Debugging tips and best practices
+  - New guide at `docs/guides/agentflow-routing.md`
+
+### Changed
+- All example agents updated to use `google:gemini-2.5-flash` as the primary model
+- Improved debug logging for agent parsing and tool registration
+- Documentation updated with correct model names for all providers
+- **`/run agent` command now routes through AgentFlow** - Uses pre-loaded agents with correct model and tools
+  - No longer creates hardcoded Anthropic fallback
+  - Follows same code path as natural language messages
+  - Ensures consistent behavior across commands and chat
+
+### Fixed
+- System prompts from agent YAML files now correctly loaded and used
+- Agent execution error handling with proper response to platforms
+- Bracket structure in `handle_natural_language` function
+- **Agent loading flag logic** - Fixed issue where agents weren't loaded when flows directory didn't exist
+  - Introduced proper `agents_loaded` boolean tracking
+  - Agents now correctly pre-load regardless of flows configuration
+- **`/run agent` using wrong model** - Fixed hardcoded Anthropic model to use pre-loaded agent's configuration
+  - Now uses `google:gemini-2.5-flash` from agent YAML
+  - Tools and system prompts correctly applied
 
 ### Notes
 - Config changes to `approval_allowed_users` require server restart (hot-reload coming in [Issue #22](https://github.com/agenticdevops/aof/issues/22))

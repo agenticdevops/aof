@@ -55,7 +55,7 @@ metadata:
     team: sre
 
 spec:
-  model: anthropic:claude-3-5-sonnet-20241022
+  model: google:gemini-2.5-flash
 
   model_config:
     temperature: 0.2  # Low temperature for deterministic analysis
@@ -602,7 +602,7 @@ metadata:
   name: post-incident-analyzer
 
 spec:
-  model: anthropic:claude-3-5-sonnet-20241022
+  model: google:gemini-2.5-flash
 
   instructions: |
     You are an SRE performing post-incident analysis.

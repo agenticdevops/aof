@@ -1,0 +1,29 @@
+# Default Telegram AgentFlow
+# Routes ALL Telegram messages to the k8s-ops agent
+#
+# This flow is loaded when running:
+#   aofctl serve --config examples/configs/telegram-bot.yaml
+#
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: telegram-default-flow
+  labels:
+    platform: telegram
+
+spec:
+  trigger:
+    type: Telegram
+    config:
+      bot_token: ${TELEGRAM_BOT_TOKEN}
+      # No filters = matches ALL Telegram messages
+
+  # Route to k8s-ops agent (must exist in agents/ directory)
+  agents:
+    - name: k8s-ops
+      description: "Kubernetes operations agent"
+
+  # Context passed to agent
+  context:
+    env:
+      REQUIRE_APPROVAL: "true"

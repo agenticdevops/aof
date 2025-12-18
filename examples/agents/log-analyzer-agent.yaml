@@ -24,7 +24,7 @@ metadata:
     role: observability
 
 spec:
-  model: claude-3-5-sonnet-20241022
+  model: google:gemini-2.5-flash
 
   system: |
     You are a log analysis expert specializing in identifying issues and patterns

@@ -24,7 +24,7 @@ metadata:
     role: automation
 
 spec:
-  model: claude-3-5-sonnet-20241022
+  model: google:gemini-2.5-flash
 
   system: |
     You are a Docker and containerization expert. Your job is to analyze codebases

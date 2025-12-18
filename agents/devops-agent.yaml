@@ -9,9 +9,10 @@ metadata:
     category: devops
 
 spec:
-  model: openai:gpt-4o
+  # IMPORTANT: Use google:gemini-2.5-flash for all agents
+  model: google:gemini-2.5-flash
 
-  instructions: |
+  system_prompt: |
     You are a DevOps assistant helping with various infrastructure and deployment tasks.
 
     Your capabilities:

@@ -1,0 +1,23 @@
+# Status Check Agent
+# Run with: /run agent status
+# Works with: Telegram, Slack, Discord, WhatsApp (any platform)
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: status
+  labels:
+    category: ops
+    platform: all
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 512
+  description: "Returns system status and health information"
+  system_prompt: |
+    You are a status monitoring agent. When asked for status, provide
+    a brief health check summary. Format your response clearly with
+    emoji indicators:
+    - ✅ Green check for healthy components
+    - ⚠️ Yellow warning for degraded
+    - ❌ Red X for issues
+
+    Always be concise and actionable.

@@ -26,7 +26,7 @@ metadata:
 
 spec:
   # Use Claude Sonnet for fast, cost-effective ops
-  model: claude-3-5-sonnet-20241022
+  model: google:gemini-2.5-flash
 
   # System prompt defining agent's role and capabilities
   system: |

@@ -40,6 +40,10 @@ impl Runtime {
 
     /// Load an agent from YAML configuration file
     ///
+    /// Supports both flat and Kubernetes-style YAML formats:
+    /// - Flat: `name:, model:, system_prompt:, tools:, ...`
+    /// - K8s: `apiVersion:, kind: Agent, metadata:, spec:, ...`
+    ///
     /// # Arguments
     /// * `config_path` - Path to the YAML configuration file
     ///
@@ -53,9 +57,15 @@ impl Runtime {
             AofError::config(format!("Failed to read config file {}: {}", config_path, e))
         })?;
 
+        // AgentConfig has #[serde(from = "AgentConfigInput")] which handles both K8s and flat formats
         let config: AgentConfig = serde_yaml::from_str(&config_content).map_err(|e| {
             AofError::config(format!("Failed to parse YAML config: {}", e))
         })?;
+
+        info!("Parsed agent config: name={}, model={}, system_prompt={:?}, tools={:?}",
+            config.name, config.model,
+            config.system_prompt.as_ref().map(|s| format!("{}...", s.chars().take(50).collect::<String>())),
+            config.tool_names());
 
         self.load_agent_from_config(config).await
     }
@@ -78,8 +88,12 @@ impl Runtime {
 
         // Create tool executor
         // Priority: mcp_servers > tools (legacy)
+        info!("Creating tool executor for agent '{}': mcp_servers={}, tools={:?}",
+            agent_name, config.mcp_servers.len(), config.tool_names());
+
         let tool_executor: Option<Arc<dyn ToolExecutor>> = if !config.mcp_servers.is_empty() {
             // Use the new flexible MCP configuration
+            info!("Using MCP servers for tools");
             Some(self.create_mcp_executor_from_config(&config.mcp_servers).await?)
         } else if !config.tools.is_empty() {
             // Separate built-in tools from MCP tools
@@ -91,6 +105,7 @@ impl Runtime {
                 .filter(|t| t.is_mcp())
                 .map(|t| t.name())
                 .collect();
+            info!("Tool separation: builtin={:?}, mcp={:?}", builtin_tools, mcp_tools);
 
             // Known system/builtin tools
             // Unified CLI tools (recommended - simple 'command' argument approach)
@@ -123,9 +138,10 @@ impl Runtime {
 
             let has_system_tools = builtin_tools.iter().any(|t| system_tools.contains(t));
             let has_mcp_tools = !mcp_tools.is_empty();
+            info!("Tool detection: has_system_tools={}, has_mcp_tools={}", has_system_tools, has_mcp_tools);
 
             if has_system_tools && !has_mcp_tools {
-                debug!("Agent has only built-in tools, creating system executor");
+                info!("Creating system tool executor for builtin tools: {:?}", builtin_tools);
                 let tool_names: Vec<String> = builtin_tools.iter().map(|s| s.to_string()).collect();
                 Some(self.create_system_executor(&tool_names)?)
             } else if has_mcp_tools {

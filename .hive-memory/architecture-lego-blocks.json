@@ -1,0 +1,48 @@
+{
+  "philosophy": "Modular, pluggable framework where components are reusable building blocks",
+  "design_principles": [
+    "Pluggable Triggers - Add new event sources without changing core",
+    "Composable Nodes - Chain processing steps in any order",
+    "Swappable Agents - Use any LLM provider with consistent interface",
+    "Extensible Tools - Add custom tools via MCP or built-in",
+    "Flexible Memory - Choose backend based on use case",
+    "YAML-First - Declarative configuration for everything"
+  ],
+  "core_building_blocks": {
+    "triggers_input": [
+      "Slack", "WhatsApp", "Telegram", "GitHub", "HTTP",
+      "Schedule", "PagerDuty", "Kafka", "SQS"
+    ],
+    "nodes_processing": [
+      "Transform", "Agent", "Conditional", "Parallel",
+      "Join", "Wait", "Approval", "Loop", "End"
+    ],
+    "outputs": ["Slack", "Discord", "HTTP", "Email", "File"],
+    "agents": {
+      "components": ["LLM Provider", "Instructions", "Context", "Tools"],
+      "providers": ["OpenAI", "Anthropic", "Google", "Ollama", "Groq"]
+    },
+    "memory": ["InMemory", "File", "SQLite", "Redis (planned)"],
+    "tools": ["Shell", "HTTP", "FileSystem", "MCP", "kubectl"]
+  },
+  "orchestration": {
+    "AgentFlow": {
+      "description": "Workflow orchestration with nodes + connections",
+      "schema": "v1 (current)"
+    },
+    "AgentFleet": {
+      "description": "Multi-agent parallel execution and coordination",
+      "status": "implemented"
+    }
+  },
+  "extension_traits": {
+    "TriggerPlatform": {
+      "methods": ["start()", "handle_event()"],
+      "purpose": "Implement for new event sources"
+    },
+    "NodeExecutor": {
+      "methods": ["execute()"],
+      "purpose": "Implement for new processing steps"
+    }
+  }
+}

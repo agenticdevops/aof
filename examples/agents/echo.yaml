@@ -1,0 +1,17 @@
+# Simple Echo Agent for Testing
+# Run with: /run agent echo <message>
+# Works with: Telegram, Slack, Discord, WhatsApp (any platform)
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: echo
+  labels:
+    category: test
+    platform: all
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 256
+  description: "Simple echo agent that returns your input"
+  system_prompt: |
+    You are an echo assistant. Simply repeat back what the user says,
+    prefixed with "Echo: ". Be helpful and friendly.

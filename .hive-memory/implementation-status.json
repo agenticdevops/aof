@@ -1,0 +1,48 @@
+{
+  "version": "0.1.15",
+  "last_updated": "2025-12-18",
+  "core_engine_status": "~85% complete",
+  "implemented_features": {
+    "triggers": {
+      "complete": ["Slack", "HTTP/Webhook", "Schedule/Cron", "Manual CLI"],
+      "partial": ["Discord"]
+    },
+    "nodes": {
+      "complete": ["Transform", "Agent", "Conditional", "Slack", "Discord", "Wait", "Parallel", "Join", "Approval", "End"],
+      "partial": ["HTTP"]
+    },
+    "platform_features": {
+      "complete": [
+        "Slack reactions approval (✅/❌)",
+        "Approval whitelist (approval_allowed_users)",
+        "Bot self-approval prevention",
+        "Conversation memory (per-channel/thread)",
+        "Multi-tenant routing (FlowRouter)"
+      ]
+    },
+    "llm_providers": ["OpenAI", "Anthropic", "Google", "Ollama", "Groq"],
+    "memory_backends": ["InMemory", "File", "SQLite"]
+  },
+  "planned_triggers": {
+    "P1": [
+      {"name": "WhatsApp", "issue": "#23"},
+      {"name": "Telegram", "issue": "#24"},
+      {"name": "GitHub", "issue": "#25"}
+    ],
+    "P3": [
+      {"name": "PagerDuty", "issue": "#26"},
+      {"name": "Kafka", "issue": "TBD"},
+      {"name": "SQS", "issue": "TBD"}
+    ]
+  },
+  "planned_nodes": ["Loop", "HTTP (full implementation)"],
+  "traits": {
+    "TriggerPlatform": "trait for new event sources - start() and handle_event()",
+    "NodeExecutor": "trait for new processing steps - execute()"
+  },
+  "next_steps": [
+    "Build tutorials for individual users",
+    "Implement P1 triggers (WhatsApp, Telegram, GitHub)",
+    "Convert applicable v1alpha1 examples to v1"
+  ]
+}

@@ -30,7 +30,7 @@ spec:
 
 | Component | Description | Example |
 |-----------|-------------|---------|
-| `model` | LLM to use | `google:gemini-2.5-flash`, `anthropic:claude-3-5-sonnet-20241022` |
+| `model` | LLM to use | `google:gemini-2.5-flash`, `google:gemini-2.5-flash` |
 | `instructions` | System prompt | "You are a K8s expert" |
 | `tools` | What the agent can do | Shell, HTTP, MCP servers |
 | `memory` | Conversation persistence | In-memory, file, database |
@@ -53,7 +53,7 @@ spec:
       instructions: "Focus on security vulnerabilities"
 
     - name: performance-reviewer
-      model: anthropic:claude-3-5-sonnet-20241022
+      model: google:gemini-2.5-flash
       instructions: "Focus on performance issues"
 
     - name: style-reviewer
@@ -261,7 +261,7 @@ model: openai:gpt-4-turbo
 ### Anthropic
 ```yaml
 model: anthropic:claude-3-5-sonnet-20241022
-model: anthropic:claude-3-5-haiku-20241022
+model: anthropic:claude-3-haiku-20240307
 model: anthropic:claude-3-opus-20240229
 ```
 
@@ -282,6 +282,7 @@ model: groq:mixtral-8x7b-32768
 
 | Provider | Environment Variable |
 |----------|---------------------|
+| Google | `GOOGLE_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY` |
 | Groq | `GROQ_API_KEY` |
@@ -369,6 +370,8 @@ Now that you understand the concepts, try building something:
 
 - **[Your First Agent Tutorial](tutorials/first-agent.md)** - Hands-on guide
 - **[Agent YAML Reference](reference/agent-spec.md)** - Complete spec docs
+- **[AgentFlow Routing Guide](guides/agentflow-routing.md)** - How message routing works
+- **[Multi-Tenant Architecture](architecture/multi-tenant-agentflows.md)** - Enterprise deployments
 - **[Example Agents](examples/)** - Copy-paste configurations
 
 ## Quick Comparison

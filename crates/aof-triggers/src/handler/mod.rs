@@ -13,7 +13,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::command::{CommandError, CommandType, TriggerCommand, TriggerTarget};
 use crate::flow::{FlowRegistry, FlowRouter, FlowMatch};
-use crate::platforms::{TriggerMessage, TriggerPlatform};
+use crate::platforms::{TriggerMessage, TriggerPlatform, TriggerUser};
 use crate::response::{TriggerResponse, TriggerResponseBuilder};
 use aof_core::{AgentContext, AofError, AofResult};
 use aof_runtime::{Runtime, RuntimeOrchestrator, Task, TaskStatus, AgentFlowExecutor};
@@ -289,6 +289,63 @@ impl TriggerHandler {
         Ok(count)
     }
 
+    /// Load all agents from directory into the runtime
+    /// Scans all YAML files, identifies `kind: Agent`, and indexes by `metadata.name`
+    /// Returns the number of agents loaded
+    pub async fn load_agents_from_directory(&mut self, dir: impl AsRef<std::path::Path>) -> AofResult<usize> {
+        use std::fs;
+        let dir_path = dir.as_ref();
+
+        if !dir_path.exists() {
+            return Err(AofError::config(format!(
+                "Agents directory does not exist: {:?}", dir_path
+            )));
+        }
+
+        let mut count = 0;
+        let mut runtime = self.runtime.write().await;
+
+        // Scan all YAML files in the directory
+        let entries = fs::read_dir(dir_path).map_err(|e| {
+            AofError::config(format!("Failed to read agents directory: {}", e))
+        })?;
+
+        for entry in entries {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!("Failed to read directory entry: {}", e);
+                    continue;
+                }
+            };
+
+            let path = entry.path();
+
+            // Skip non-YAML files
+            if !path.extension().map(|e| e == "yaml" || e == "yml").unwrap_or(false) {
+                continue;
+            }
+
+            // Try to load as agent
+            match runtime.load_agent_from_file(path.to_str().unwrap()).await {
+                Ok(agent_name) => {
+                    info!("Loaded agent '{}' from {:?}", agent_name, path);
+                    count += 1;
+                }
+                Err(e) => {
+                    // Not all YAML files are agents, this is fine
+                    debug!("Skipping {:?}: {}", path, e);
+                }
+            }
+        }
+
+        // Store the agents directory for dynamic loading
+        self.agents_dir = Some(dir_path.to_path_buf());
+
+        info!("Loaded {} agents from {:?}", count, dir_path);
+        Ok(count)
+    }
+
     /// Register a platform
     pub fn register_platform(&mut self, platform: Arc<dyn TriggerPlatform>) {
         let name = platform.platform_name();
@@ -428,166 +485,54 @@ impl TriggerHandler {
     }
 
     /// Handle run command
+    ///
+    /// Routes `/run agent <name> <input>` through the same path as natural language,
+    /// using pre-loaded agents with their configured model, tools, and system prompt.
     async fn handle_run_command(&self, cmd: TriggerCommand) -> AofResult<TriggerResponse> {
         match cmd.target {
             TriggerTarget::Agent => {
                 let agent_name = cmd.get_arg(0).map_cmd_err()?;
                 let input = cmd.args[1..].join(" ");
 
-                // Create task
-                let task_id = format!("trigger-{}-{}", cmd.context.user_id, uuid::Uuid::new_v4());
-                let task = Task::new(
-                    task_id.clone(),
-                    format!("{} (user: {})", agent_name, cmd.context.user_id),
-                    agent_name.to_string(),
-                    input.clone(),
-                );
+                if input.is_empty() {
+                    return Ok(TriggerResponseBuilder::new()
+                        .text(format!("Usage: `/run agent {} <your message>`", agent_name))
+                        .error()
+                        .build());
+                }
 
-                // Submit to orchestrator
-                let handle = self.orchestrator.submit_task(task);
+                // Get platform for response
+                let platform_impl = self
+                    .platforms
+                    .get(&cmd.context.platform)
+                    .ok_or_else(|| aof_core::AofError::agent(format!("Unknown platform: {}", cmd.context.platform)))?;
 
-                // Track user task
-                self.increment_user_tasks(&cmd.context.user_id);
+                // Create a synthetic message to route through handle_natural_language
+                // This ensures we use the pre-loaded agent with correct model, tools, and system prompt
+                let message = TriggerMessage {
+                    id: format!("run-{}", uuid::Uuid::new_v4()),
+                    platform: cmd.context.platform.clone(),
+                    channel_id: cmd.context.channel_id.clone(),
+                    user: TriggerUser {
+                        id: cmd.context.user_id.clone(),
+                        username: Some(cmd.context.user_id.clone()),
+                        display_name: None,
+                        is_bot: false,
+                    },
+                    text: input,
+                    timestamp: chrono::Utc::now(),
+                    metadata: std::collections::HashMap::new(),
+                    thread_id: cmd.context.thread_id.clone(),
+                    reply_to: None,
+                };
 
-                // Execute task through runtime with AgentExecutor
-                let user_id = cmd.context.user_id.clone();
-                let user_tasks = Arc::clone(&self.user_tasks);
-                let orchestrator = Arc::clone(&self.orchestrator);
-                let task_id_clone = task_id.clone();
-                let agent_name_clone = agent_name.to_string();
-                let platform = cmd.context.platform.clone();
-                let channel_id = cmd.context.channel_id.clone();
-                let platforms = self.platforms.clone();
+                info!("Routing /run agent {} to handle_natural_language", agent_name);
 
-                tokio::spawn(async move {
-                    // Execute task through orchestrator
-                    let result = orchestrator
-                        .execute_task(&task_id_clone, |task| async move {
-                            // Create AgentContext
-                            let mut context = AgentContext::new(&task.input);
+                // Route through handle_natural_language which uses pre-loaded agents
+                self.handle_natural_language(&message, platform_impl, agent_name).await?;
 
-                            // Create a minimal agent configuration for the task
-                            use aof_core::{AgentConfig, ModelConfig, ModelProvider};
-                            use aof_llm::ProviderFactory;
-                            use aof_runtime::AgentExecutor;
-                            use aof_memory::{InMemoryBackend, SimpleMemory};
-                            use std::collections::HashMap;
-
-                            let config = AgentConfig {
-                                name: task.agent_name.clone(),
-                                system_prompt: Some("You are a helpful AI assistant.".to_string()),
-                                model: "claude-3-5-sonnet-20241022".to_string(),
-                                provider: None,
-                                tools: vec![],
-                                mcp_servers: vec![],
-                                memory: None,
-                                max_iterations: 10,
-                                temperature: 0.7,
-                                max_tokens: Some(4096),
-                                extra: HashMap::new(),
-                            };
-
-                            // Create model
-                            let model_config = ModelConfig {
-                                model: "claude-3-5-sonnet-20241022".to_string(),
-                                provider: ModelProvider::Anthropic,
-                                api_key: std::env::var("ANTHROPIC_API_KEY").ok(),
-                                endpoint: None,
-                                temperature: 0.7,
-                                max_tokens: Some(4096),
-                                timeout_secs: 60,
-                                headers: HashMap::new(),
-                                extra: HashMap::new(),
-                            };
-
-                            let model = match ProviderFactory::create(model_config).await {
-                                Ok(m) => m,
-                                Err(e) => {
-                                    return Ok(format!("Failed to create model: {}", e));
-                                }
-                            };
-
-                            // Create memory backend
-                            let memory_backend = InMemoryBackend::new();
-                            let memory = std::sync::Arc::new(SimpleMemory::new(std::sync::Arc::new(memory_backend)));
-
-                            // Create AgentExecutor with model and memory, but no tool executor for now
-                            let executor = AgentExecutor::new(
-                                config,
-                                model,
-                                None, // No tool executor for trigger-based agents
-                                Some(memory),
-                            );
-
-                            // Execute the agent
-                            match executor.execute(&mut context).await {
-                                Ok(response) => Ok(response),
-                                Err(e) => Ok(format!("Agent execution failed: {}", e)),
-                            }
-                        })
-                        .await;
-
-                    // Send completion notification to platform
-                    if let Some(platform_impl) = platforms.get(&platform) {
-                        let response = match result {
-                            Ok(_handle) => {
-                                // Wait for task completion
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-                                if let Some(task_handle) = orchestrator.get_task(&task_id_clone) {
-                                    let status = task_handle.status().await;
-
-                                    match status {
-                                        TaskStatus::Completed => {
-                                            TriggerResponseBuilder::new()
-                                                .text(format!("✅ Task completed: `{}`", task_id_clone))
-                                                .success()
-                                                .build()
-                                        }
-                                        TaskStatus::Failed => {
-                                            TriggerResponseBuilder::new()
-                                                .text(format!("❌ Task failed: `{}`", task_id_clone))
-                                                .error()
-                                                .build()
-                                        }
-                                        _ => {
-                                            TriggerResponseBuilder::new()
-                                                .text(format!("ℹ️ Task status: {:?} - `{}`", status, task_id_clone))
-                                                .build()
-                                        }
-                                    }
-                                } else {
-                                    TriggerResponseBuilder::new()
-                                        .text("Task execution started but handle lost")
-                                        .build()
-                                }
-                            }
-                            Err(e) => TriggerResponseBuilder::new()
-                                .text(format!("Task execution error: {}", e))
-                                .error()
-                                .build(),
-                        };
-
-                        let _ = platform_impl.send_response(&channel_id, response).await;
-                    }
-
-                    // Decrement user task count
-                    if let Some(mut count) = user_tasks.get_mut(&user_id) {
-                        if *count > 0 {
-                            *count -= 1;
-                        }
-                    }
-                });
-
-                Ok(TriggerResponseBuilder::new()
-                    .text(format!(
-                        "✓ Task started: `{}`\nAgent: {}\nInput: {}\nUse `/status task {}` to check progress",
-                        task_id, agent_name,
-                        if input.len() > 50 { format!("{}...", &input[..50]) } else { input },
-                        task_id
-                    ))
-                    .success()
-                    .build())
+                // Return empty since handle_natural_language already sent the response
+                Ok(TriggerResponseBuilder::new().build())
             }
             _ => Ok(TriggerResponseBuilder::new()
                 .text(format!("Run command not supported for {:?}", cmd.target))
@@ -895,128 +840,106 @@ impl TriggerHandler {
             format!("{}\n\nCurrent message: {}", conversation_context, input)
         };
 
-        // Try to load agent from config file first (to get tools, custom prompts, etc.)
-        let agent_config_path = self.agents_dir.as_ref().map(|dir| {
-            dir.join(format!("{}.yaml", agent_name))
-        });
+        // Check if agent is pre-loaded in the runtime (indexed by metadata.name)
+        let runtime = self.runtime.read().await;
+        let agent_exists = runtime.has_agent(agent_name);
+        drop(runtime);
 
-        // Check if agent config file exists
-        let use_runtime = if let Some(ref path) = agent_config_path {
-            path.exists()
-        } else {
-            false
-        };
+        if agent_exists {
+            // Use pre-loaded agent from runtime
+            info!("Using pre-loaded agent: {}", agent_name);
 
-        if use_runtime {
-            // Use Runtime to load agent with full config (including tools)
-            let config_path = agent_config_path.unwrap();
-            info!("Loading agent from config file: {:?}", config_path);
+            let runtime = self.runtime.read().await;
+            match runtime.execute(agent_name, &input_with_context).await {
+                Ok(output) => {
+                    info!("Agent '{}' executed successfully", agent_name);
 
-            let mut runtime = self.runtime.write().await;
+                    // Parse output for approval requirements
+                    let (requires_approval, command, clean_output) = parse_approval_output(&output);
 
-            // Load the agent (this creates the model and tool executor)
-            match runtime.load_agent_from_file(config_path.to_str().unwrap()).await {
-                Ok(loaded_name) => {
-                    info!("Agent '{}' loaded successfully with tools", loaded_name);
+                    if requires_approval {
+                        if let Some(cmd) = command {
+                            info!("Command requires approval: {}", cmd);
 
-                    // Execute using the runtime with conversation context
-                    let mut context = AgentContext::new(&input_with_context);
-                    let result = runtime.execute_with_context(&loaded_name, &mut context).await;
+                            // Send approval request message
+                            let approval_text = format!(
+                                "{}\n\n⚠️ *This action requires approval*\n`{}`\n\nReact with ✅ to approve or ❌ to deny.",
+                                clean_output,
+                                cmd
+                            );
 
-                    // Handle the result
-                    match result {
-                        Ok(output) => {
-                            // Parse output for approval requirements
-                            let (requires_approval, command, clean_output) = parse_approval_output(&output);
+                            // Try to use SlackPlatform directly for approval flow
+                            if let Some(slack) = platform_impl.as_any().downcast_ref::<crate::platforms::SlackPlatform>() {
+                                let thread_ts = message.thread_id.as_deref();
+                                match slack.post_message_with_ts(&message.channel_id, &approval_text, thread_ts).await {
+                                    Ok((channel, msg_ts)) => {
+                                        // Add reactions for approve/deny
+                                        let _ = slack.add_reaction(&channel, &msg_ts, "white_check_mark").await;
+                                        let _ = slack.add_reaction(&channel, &msg_ts, "x").await;
 
-                            if requires_approval {
-                                if let Some(cmd) = command {
-                                    info!("Command requires approval: {}", cmd);
-
-                                    // Send approval request message
-                                    let approval_text = format!(
-                                        "{}\n\n⚠️ *This action requires approval*\n`{}`\n\nReact with ✅ to approve or ❌ to deny.",
-                                        clean_output,
-                                        cmd
-                                    );
-
-                                    // Try to use SlackPlatform directly for approval flow
-                                    if let Some(slack) = platform_impl.as_any().downcast_ref::<crate::platforms::SlackPlatform>() {
-                                        let thread_ts = message.thread_id.as_deref();
-                                        match slack.post_message_with_ts(&message.channel_id, &approval_text, thread_ts).await {
-                                            Ok((channel, msg_ts)) => {
-                                                // Add reactions for approve/deny
-                                                let _ = slack.add_reaction(&channel, &msg_ts, "white_check_mark").await;
-                                                let _ = slack.add_reaction(&channel, &msg_ts, "x").await;
-
-                                                // Store pending approval
-                                                let approval = PendingApproval {
-                                                    command: cmd.clone(),
-                                                    user_id: message.user.id.clone(),
-                                                    channel_id: channel.clone(),
-                                                    message_ts: msg_ts.clone(),
-                                                    requested_at: chrono::Utc::now(),
-                                                    agent_name: agent_name.to_string(),
-                                                    original_message: input.clone(),
-                                                };
-                                                self.pending_approvals.insert(msg_ts.clone(), approval);
-                                                info!("Stored pending approval for message {}", msg_ts);
-                                            }
-                                            Err(e) => {
-                                                error!("Failed to post approval message: {}", e);
-                                                let response = TriggerResponseBuilder::new()
-                                                    .text(format!("❌ Failed to request approval: {}", e))
-                                                    .error()
-                                                    .build();
-                                                let _ = platform_impl.send_response(&message.channel_id, response).await;
-                                            }
-                                        }
-                                    } else {
-                                        // Fallback for non-Slack platforms
+                                        // Store pending approval
+                                        let approval = PendingApproval {
+                                            command: cmd.clone(),
+                                            user_id: message.user.id.clone(),
+                                            channel_id: channel.clone(),
+                                            message_ts: msg_ts.clone(),
+                                            requested_at: chrono::Utc::now(),
+                                            agent_name: agent_name.to_string(),
+                                            original_message: input.clone(),
+                                        };
+                                        self.pending_approvals.insert(msg_ts.clone(), approval);
+                                        info!("Stored pending approval for message {}", msg_ts);
+                                    }
+                                    Err(e) => {
+                                        error!("Failed to post approval message: {}", e);
                                         let response = TriggerResponseBuilder::new()
-                                            .text(approval_text)
+                                            .text(format!("❌ Failed to request approval: {}", e))
+                                            .error()
                                             .build();
                                         let _ = platform_impl.send_response(&message.channel_id, response).await;
                                     }
-                                } else {
-                                    // requires_approval but no command - just send the output
-                                    let response = TriggerResponseBuilder::new()
-                                        .text(clean_output)
-                                        .success()
-                                        .build();
-                                    let _ = platform_impl.send_response(&message.channel_id, response).await;
                                 }
                             } else {
-                                // Normal response without approval
-                                // Store assistant response in conversation memory
-                                self.add_to_conversation(&message.channel_id, thread_id, "assistant", &output);
-
+                                // Fallback for non-Slack platforms
                                 let response = TriggerResponseBuilder::new()
-                                    .text(output)
-                                    .success()
+                                    .text(approval_text)
                                     .build();
                                 let _ = platform_impl.send_response(&message.channel_id, response).await;
                             }
-                        }
-                        Err(e) => {
-                            error!("Agent execution failed: {}", e);
-                            let error_msg = format!("❌ Sorry, I encountered an error: {}", e);
-                            // Store error in conversation memory too
-                            self.add_to_conversation(&message.channel_id, thread_id, "assistant", &error_msg);
-
+                        } else {
+                            // requires_approval but no command - just send the output
                             let response = TriggerResponseBuilder::new()
-                                .text(error_msg)
-                                .error()
+                                .text(clean_output)
+                                .success()
                                 .build();
                             let _ = platform_impl.send_response(&message.channel_id, response).await;
                         }
-                    };
+                    } else {
+                        // Normal response without approval
+                        // Store assistant response in conversation memory
+                        self.add_to_conversation(&message.channel_id, thread_id, "assistant", &output);
+
+                        let response = TriggerResponseBuilder::new()
+                            .text(output)
+                            .success()
+                            .build();
+                        let _ = platform_impl.send_response(&message.channel_id, response).await;
+                    }
 
                     return Ok(());
                 }
                 Err(e) => {
-                    warn!("Failed to load agent from config, falling back to default: {}", e);
-                    // Fall through to default behavior
+                    error!("Agent execution failed: {}", e);
+                    let error_msg = format!("❌ Sorry, I encountered an error: {}", e);
+                    // Store error in conversation memory too
+                    self.add_to_conversation(&message.channel_id, thread_id, "assistant", &error_msg);
+
+                    let response = TriggerResponseBuilder::new()
+                        .text(error_msg)
+                        .error()
+                        .build();
+                    let _ = platform_impl.send_response(&message.channel_id, response).await;
+                    return Ok(());
                 }
             }
         }
