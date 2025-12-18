@@ -1,0 +1,37 @@
+# Staging Slack Trigger
+#
+# Slack event source for staging environment.
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: slack-staging
+  labels:
+    platform: slack
+    environment: staging
+
+spec:
+  type: Slack
+  config:
+    events:
+      - app_mention
+      - message
+
+    channels:
+      - staging
+      - staging-alerts
+      - qa-testing
+
+    # More users allowed in staging
+    users:
+      - U012PLATFORM1
+      - U012PLATFORM2
+      - U012DEV1
+      - U012QA1
+
+    bot_token: ${SLACK_BOT_TOKEN}
+    signing_secret: ${SLACK_SIGNING_SECRET}
+
+    rate_limit:
+      max_requests_per_minute: 40
+      burst: 10

@@ -1,0 +1,42 @@
+# Development Context
+#
+# Environment-specific configuration for development/local cluster.
+
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: dev
+  labels:
+    environment: development
+    criticality: low
+
+spec:
+  # Kubernetes configuration
+  kubeconfig: ${KUBECONFIG_DEV:-~/.kube/config}
+  namespace: default
+  cluster_name: docker-desktop
+
+  # Approval workflow (disabled for dev)
+  approval:
+    enabled: false
+
+  # Audit logging (minimal)
+  audit:
+    enabled: false
+
+  # Resource limits (very relaxed)
+  limits:
+    max_concurrent_operations: 20
+    rate_limit_per_minute: 100
+    timeout_seconds: 60
+
+  # Environment variables
+  env:
+    ENVIRONMENT: development
+    CLUSTER_NAME: local
+    LOG_LEVEL: debug
+    REQUIRE_APPROVAL: "false"
+
+  # Notification channels
+  notifications:
+    slack_channel: "#dev-testing"

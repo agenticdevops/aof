@@ -1,134 +1,40 @@
-# Fleet Examples
+# Fleet Compositions
 
-This directory contains AgentFleet examples for multi-agent coordination.
+Fleets are **compositions of multiple agents** working together on complex tasks. Define fleets once here and reference them in flows or bindings.
 
-## Directory Structure
+## Available Fleets
 
-```
-fleets/
-├── mock/                           # Mock/demo fleets (no infrastructure required)
-│   ├── README.md
-│   └── multi-model-rca-mock.yaml   # Simulated RCA demo
-│
-├── real/                           # Production fleets (real infrastructure)
-│   ├── README.md
-│   └── multi-model-rca-real.yaml   # Real Prometheus/Loki/K8s RCA
-│
-├── code-review-team.yaml           # Code review with consensus
-├── incident-response-team.yaml     # Incident response coordination
-├── data-pipeline-team.yaml         # Data transformation pipeline
-├── k8s-rca-team.yaml               # Kubernetes-specific RCA
-├── application-rca-team.yaml       # Application-level RCA
-├── database-rca-team.yaml          # Database-specific RCA
-└── ...
-```
+- **`code-review-team.yaml`** - Security + K8s Ops
+  - Security scanner reviews code and containers
+  - K8s ops validates deployment manifests
+  - **Use for**: PR reviews, deployment validation
 
-## Quick Start
+- **`incident-team.yaml`** - Incident + K8s Ops + Security
+  - Incident coordinator leads response
+  - K8s ops provides diagnostics
+  - Security checks for breaches
+  - **Use for**: Production incidents, post-mortems
 
-### Option 1: Mock Fleet (No Infrastructure)
+## Usage
 
-Perfect for learning and demos:
+### Reference in Flows
+\`\`\`yaml
+nodes:
+  - id: team-investigation
+    type: Fleet
+    config:
+      fleet: incident-team
+      input: "Investigate outage"
+\`\`\`
 
-```bash
-# Only needs an API key
-export GOOGLE_API_KEY=your-key
+### Direct Execution
+\`\`\`bash
+aofctl run fleet incident-team "investigate API latency spike"
+\`\`\`
 
-aofctl run fleet examples/fleets/mock/multi-model-rca-mock.yaml \
-  --input "Investigate: API returning 500 errors"
-```
+## Best Practices
 
-### Option 2: Real Fleet (With Infrastructure)
-
-For actual incident response:
-
-```bash
-# Needs Prometheus, Loki, Kubernetes
-export GOOGLE_API_KEY=your-key
-
-aofctl run fleet examples/fleets/real/multi-model-rca-real.yaml \
-  --input "Investigate: High memory in monitoring namespace"
-```
-
-## Fleet Categories
-
-### 🔍 Root Cause Analysis (RCA)
-
-| Fleet | Mode | Description |
-|-------|------|-------------|
-| `mock/multi-model-rca-mock.yaml` | Tiered | Multi-model RCA with simulated data |
-| `real/multi-model-rca-real.yaml` | Tiered | Multi-model RCA with real Prometheus/Loki |
-| `k8s-rca-team.yaml` | Hierarchical | Kubernetes-specific RCA |
-| `application-rca-team.yaml` | Hierarchical | Application-level RCA |
-| `database-rca-team.yaml` | Hierarchical | Database-specific RCA |
-
-### 👀 Code Review
-
-| Fleet | Mode | Description |
-|-------|------|-------------|
-| `code-review-team.yaml` | Peer | Multi-perspective code review |
-| `code-review-fleet.yaml` | Peer | Security + performance + quality |
-
-### 🚨 Incident Response
-
-| Fleet | Mode | Description |
-|-------|------|-------------|
-| `incident-response-team.yaml` | Hierarchical | Full incident response workflow |
-| `sre-oncall-fleet.yaml` | Hierarchical | SRE on-call automation |
-
-### 🔧 DevOps
-
-| Fleet | Mode | Description |
-|-------|------|-------------|
-| `dockerizer-team.yaml` | Pipeline | Dockerfile generation pipeline |
-| `data-pipeline-team.yaml` | Pipeline | Data transformation workflow |
-
-## Coordination Modes
-
-| Mode | Best For | Example |
-|------|----------|---------|
-| **Peer** | Consensus, voting | Code review (3 reviewers vote) |
-| **Hierarchical** | Complex orchestration | Incident response (manager delegates) |
-| **Pipeline** | Sequential processing | Data transformation (A→B→C) |
-| **Tiered** | Multi-model consensus | RCA (collectors→reasoning→synthesis) |
-| **Swarm** | High-volume tasks | Log analysis at scale |
-
-## Consensus Algorithms
-
-| Algorithm | Use Case | Configuration |
-|-----------|----------|---------------|
-| `majority` | General consensus | `min_votes: 2` |
-| `unanimous` | Critical decisions | - |
-| `weighted` | Mixed expertise | `weight: 1.5` per agent |
-| `first_wins` | Speed priority | - |
-| `human_review` | High-stakes | `min_confidence: 0.9` |
-
-## Testing Fleets
-
-### Validate Configuration
-
-```bash
-aofctl validate fleet examples/fleets/code-review-team.yaml
-```
-
-### Dry Run
-
-```bash
-aofctl run fleet examples/fleets/mock/multi-model-rca-mock.yaml \
-  --input "Test input" \
-  --dry-run
-```
-
-### Verbose Execution
-
-```bash
-aofctl run fleet examples/fleets/real/multi-model-rca-real.yaml \
-  --input "Investigate: Issue" \
-  --verbose
-```
-
-## See Also
-
-- **Fleet Concepts**: `docs/concepts/fleets.md`
-- **Fleet Spec Reference**: `docs/reference/fleet-spec.md`
-- **Multi-Model RCA Tutorial**: `docs/tutorials/multi-model-rca.md`
-- **Architecture Guide**: `docs/architecture/multi-model-consensus.md`
+1. **Compose, don't duplicate** - Reference agents via `ref:`
+2. **Define coordination** - Specify agent roles and workflow
+3. **Keep focused** - One fleet, one clear purpose
+4. **Document workflows** - Explain agent collaboration patterns

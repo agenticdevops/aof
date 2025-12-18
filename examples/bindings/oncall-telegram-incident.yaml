@@ -1,0 +1,32 @@
+# On-Call Telegram Incident Bot Binding
+#
+# Connects Telegram on-call group to incident response workflow.
+# Uses production context for cluster access.
+
+apiVersion: aof.dev/v1
+kind: Binding
+metadata:
+  name: oncall-telegram-incident
+  labels:
+    environment: production
+    platform: telegram
+    capability: incident-response
+
+spec:
+  trigger:
+    ref: triggers/telegram-oncall.yaml
+
+  flow:
+    ref: flows/incident-flow.yaml
+
+  context:
+    ref: contexts/prod.yaml
+
+  # On-call has streamlined approvals for urgent issues
+  overrides:
+    approval:
+      # P0/P1 incidents bypass approval for speed
+      bypass_for_severity:
+        - P0
+        - P1
+      approval_timeout_seconds: 180

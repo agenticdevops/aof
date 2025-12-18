@@ -1,0 +1,121 @@
+# Incident Response Flow
+#
+# Context-agnostic flow for incident response. Works with any trigger and context.
+# Detects incident/alert/outage keywords and routes to incident response team.
+#
+# Usage in bindings:
+#   trigger: triggers/pagerduty.yaml
+#   flow: flows/incident-flow.yaml
+#   context: contexts/prod.yaml
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: incident-flow
+  labels:
+    category: operations
+    capability: incident-response
+
+spec:
+  # Pattern matching for incident-related events
+  trigger:
+    patterns:
+      - "incident"
+      - "outage"
+      - "alert"
+      - "down"
+      - "critical"
+      - "p0"
+      - "p1"
+
+  # Workflow nodes
+  nodes:
+    # 1. Parse incident details
+    - id: parse-incident
+      type: Transform
+      config:
+        script: |
+          export INCIDENT_TEXT="${event.text}"
+          export SEVERITY="${event.severity:-unknown}"
+          export SOURCE="${event.source}"
+          export TIMESTAMP="${event.ts}"
+
+    # 2. Classify incident
+    - id: classify-incident
+      type: Agent
+      config:
+        agent: incident  # References agents/incident.yaml
+        input: |
+          Classify this incident:
+          ${INCIDENT_TEXT}
+          
+          Source: ${SOURCE}
+          Reported Severity: ${SEVERITY}
+
+    # 3. Start investigation
+    - id: investigate
+      type: Agent
+      config:
+        fleet: incident-team  # Uses entire incident response team
+        input: |
+          Investigate this incident:
+          ${INCIDENT_TEXT}
+          
+          Classification: ${classify-incident.output.classification}
+          Severity: ${classify-incident.output.severity}
+
+    # 4. Send status update
+    - id: send-status
+      type: Response
+      config:
+        message: |
+          🚨 **Incident Response**
+          Severity: ${classify-incident.output.severity}
+          Status: Investigating
+          
+          ${investigate.output.summary}
+          
+          Timeline:
+          ${investigate.output.timeline}
+
+    # 5. Execute remediation (if found)
+    - id: remediate
+      type: Conditional
+      config:
+        condition: ${investigate.output.remediation_available} == true
+
+    - id: execute-remediation
+      type: Agent
+      config:
+        agent: k8s-ops
+        input: "Execute remediation: ${investigate.output.remediation_steps}"
+
+    # 6. Send resolution update
+    - id: send-resolution
+      type: Response
+      config:
+        message: |
+          ✅ **Incident Resolved**
+          ${execute-remediation.output.output}
+          
+          Next Steps:
+          - Monitor for recurrence
+          - Schedule post-incident review
+
+  # Flow connections
+  connections:
+    - from: trigger
+      to: parse-incident
+    - from: parse-incident
+      to: classify-incident
+    - from: classify-incident
+      to: investigate
+    - from: investigate
+      to: send-status
+    - from: send-status
+      to: remediate
+    - from: remediate
+      to: execute-remediation
+      when: remediation_available == true
+    - from: execute-remediation
+      to: send-resolution

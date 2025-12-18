@@ -14,8 +14,26 @@ Complete documentation for the Agentic Ops Framework (AOF).
   - First agent creation and execution
   - Common troubleshooting
 
-### Core Concepts
-- **[Core Concepts](concepts.md)** - Understanding AOF fundamentals
+### Introduction (New!)
+- **[Core Concepts](introduction/concepts.md)** ⭐ Complete composable architecture guide
+  - The 6 resource types: Agent, Fleet, Flow, Context, Trigger, FlowBinding
+  - Resource composition and references (ref: syntax)
+  - When to use each resource type
+  - Current (v1) vs Future (v1alpha2) architecture
+  - Multi-tenant routing and patterns
+- **[Quickstart Guide](introduction/quickstart.md)** - Your first agent in 5 minutes
+  - Installation with curl script
+  - Create a Telegram bot trigger
+  - Connect agent + flow + context
+  - Test end-to-end workflow
+- **[Enterprise Setup](guides/enterprise-setup.md)** - Multi-environment production deployment
+  - Multi-environment (prod/staging/dev)
+  - Multi-cluster Kubernetes
+  - Multi-organization (different Slack workspaces)
+  - Security, audit logging, rate limiting
+
+### Core Concepts (Legacy)
+- **[Core Concepts](concepts.md)** - Quick reference (redirects to introduction/concepts.md)
   - Agents - Single AI assistants
   - AgentFleets - Teams of agents
   - AgentFlows - Workflow automation
@@ -101,6 +119,16 @@ Complete documentation for the Agentic Ops Framework (AOF).
   - Flow commands (apply, run, status, visualize)
   - Config management
   - Examples and troubleshooting
+
+- **[Kubernetes CRDs](reference/kubernetes-crds.md)** ⭐ NEW - Complete CRD definitions for Kubernetes Operator
+  - All 6 resource CRDs (Agent, Fleet, Flow, Context, Trigger, FlowBinding)
+  - Operator architecture overview
+  - Status fields and conditions
+  - Cross-namespace references
+  - RBAC requirements
+  - Multi-tenancy patterns
+  - Installation and deployment
+  - GitOps integration
 
 ### Examples (Copy-Paste Ready)
 - **[Examples README](examples/README.md)** - Overview of all examples
@@ -269,6 +297,18 @@ See [Examples README](examples/README.md#contributing-examples) for guidelines.
 Last updated: 2025-12-18
 
 ### Recent Changes
+- **NEW**: Kubernetes CRD Documentation - Complete CRD definitions for future operator
+  - All 6 resource CRDs with OpenAPI v3 schemas
+  - Status fields and operator-managed conditions
+  - Cross-namespace references and RBAC patterns
+  - Multi-tenancy and namespace isolation
+  - GitOps integration examples
+  - Migration path from CLI to operator
+- **UPDATED**: Context, Trigger, and FlowBinding docs with K8s CRD compatibility sections
+  - Status field specifications
+  - Namespace support details
+  - Cross-namespace reference patterns
+  - kubectl usage examples
 - **NEW**: Conversation Memory System - Context persistence across Slack messages
 - **NEW**: AgentFlow Multi-Tenant Routing - Route messages to different agents based on patterns
 - **NEW**: Bot self-approval prevention - Auto-detects bot_user_id at startup

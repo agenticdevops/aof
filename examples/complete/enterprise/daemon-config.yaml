@@ -1,0 +1,98 @@
+# Enterprise Multi-Tenant AOF Daemon Configuration
+#
+# This configuration demonstrates:
+# - Multiple environments (prod, staging, dev)
+# - Multiple platforms (Slack, Telegram, PagerDuty)
+# - Composable architecture using ref: syntax
+# - No duplication - everything defined once and referenced
+
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: enterprise-multi-tenant
+
+spec:
+  # Server configuration
+  server:
+    host: 0.0.0.0
+    port: 3000
+    tls:
+      enabled: true  # Required for production
+      cert_file: ${TLS_CERT_FILE}
+      key_file: ${TLS_KEY_FILE}
+
+  # Load all agents (defined once, used everywhere)
+  agents:
+    - agents/k8s-ops.yaml
+    - agents/security.yaml
+    - agents/incident.yaml
+    - agents/devops.yaml
+    - agents/general-assistant.yaml
+
+  # Load all fleets (composed from agents)
+  fleets:
+    - fleets/code-review-team.yaml
+    - fleets/incident-team.yaml
+
+  # Load all contexts (environment configurations)
+  contexts:
+    - contexts/prod.yaml
+    - contexts/staging.yaml
+    - contexts/dev.yaml
+
+  # Load all triggers (platform connections)
+  triggers:
+    - triggers/slack-prod.yaml
+    - triggers/slack-staging.yaml
+    - triggers/telegram-oncall.yaml
+    - triggers/pagerduty.yaml
+
+  # Load all flows (orchestration logic)
+  flows:
+    - flows/k8s-ops-flow.yaml
+    - flows/incident-flow.yaml
+    - flows/deploy-flow.yaml
+
+  # Load all bindings (tie everything together)
+  bindings:
+    # Production Slack → K8s Ops
+    - bindings/prod-slack-k8s.yaml
+    
+    # Staging Slack → K8s Ops
+    - bindings/staging-slack-k8s.yaml
+    
+    # On-call Telegram → Incident Response
+    - bindings/oncall-telegram-incident.yaml
+    
+    # PagerDuty → Auto Incident Response
+    - bindings/pagerduty-incident.yaml
+
+  # Global settings
+  settings:
+    # Logging
+    log_level: info
+    log_format: json
+    log_destination: stdout
+
+    # Metrics
+    metrics:
+      enabled: true
+      port: 9090
+      path: /metrics
+
+    # Health checks
+    health:
+      liveness_path: /health
+      readiness_path: /ready
+
+    # Rate limiting (global)
+    rate_limit:
+      enabled: true
+      max_requests_per_minute: 100
+      burst: 20
+
+    # Timeouts
+    timeouts:
+      agent_execution: 300s
+      approval_workflow: 600s
+      webhook_response: 30s

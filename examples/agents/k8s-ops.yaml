@@ -1,7 +1,22 @@
 # Kubernetes Operations Agent
-# Run with: /run agent k8s-ops <question>
-# Or ask naturally when assistant routes to this agent
-# Works with: Telegram, Slack, Discord, WhatsApp (any platform)
+#
+# A comprehensive K8s operations agent for cluster management, troubleshooting,
+# and deployments. This is the SINGLE SOURCE OF TRUTH for k8s-ops agent.
+#
+# Usage:
+#   - Reference in fleets: ref: agents/k8s-ops.yaml
+#   - Reference in flows: agent: k8s-ops
+#   - Direct execution: aofctl run agent k8s-ops "check pod status"
+#
+# Capabilities:
+#   - Cluster health monitoring and diagnostics
+#   - Pod/Deployment/Service troubleshooting
+#   - Resource management (CPU, memory, storage)
+#   - Networking issues (Services, Ingress, NetworkPolicies)
+#   - RBAC and security configurations
+#   - Helm chart deployments
+#   - GitOps workflows (ArgoCD, Flux)
+
 apiVersion: aof.dev/v1alpha1
 kind: Agent
 metadata:
@@ -10,13 +25,22 @@ metadata:
     category: infrastructure
     platform: all
     capability: kubernetes
+    tier: core
+
 spec:
+  # Using Gemini 2.5 Flash for fast, cost-effective operations
   model: google:gemini-2.5-flash
   max_tokens: 4096
+  temperature: 0  # Deterministic for operations
+
   description: "Kubernetes operations expert for cluster management, troubleshooting, and deployments"
+
+  # Available tools
   tools:
     - kubectl
     - helm
+
+  # Agent's system prompt
   system_prompt: |
     You are an expert Kubernetes operations engineer. You help users with:
 

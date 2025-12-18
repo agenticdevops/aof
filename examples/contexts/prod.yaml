@@ -1,0 +1,55 @@
+# Production Context
+#
+# Environment-specific configuration for production cluster.
+# Referenced in bindings to configure runtime environment.
+
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: prod
+  labels:
+    environment: production
+    criticality: high
+
+spec:
+  # Kubernetes configuration
+  kubeconfig: ${KUBECONFIG_PROD:-~/.kube/prod-config}
+  namespace: default
+  cluster_name: prod-cluster
+
+  # Approval workflow
+  approval:
+    enabled: true
+    required_for:
+      - delete
+      - scale_down
+      - rollback
+    allowed_users:
+      - U012PLATFORM1  # Platform lead
+      - U012PLATFORM2  # SRE team
+    timeout_seconds: 300
+
+  # Audit logging
+  audit:
+    enabled: true
+    log_commands: true
+    log_responses: true
+    destination: s3://prod-audit-logs/aof/
+
+  # Resource limits
+  limits:
+    max_concurrent_operations: 5
+    rate_limit_per_minute: 20
+    timeout_seconds: 300
+
+  # Environment variables
+  env:
+    ENVIRONMENT: production
+    CLUSTER_NAME: prod-cluster
+    LOG_LEVEL: info
+    REQUIRE_APPROVAL: "true"
+
+  # Notification channels
+  notifications:
+    slack_channel: "#prod-alerts"
+    pagerduty_service: "platform-oncall"

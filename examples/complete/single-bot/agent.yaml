@@ -1,0 +1,29 @@
+# Simple K8s Bot Agent
+# This is the ONLY file you need to define the agent's behavior
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: k8s-bot
+
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 4096
+  
+  description: "Kubernetes helper bot for Slack"
+  
+  tools:
+    - kubectl
+    - helm
+  
+  system_prompt: |
+    You are a friendly Kubernetes helper bot in Slack. Help users with:
+    
+    - Checking pod status
+    - Viewing logs
+    - Troubleshooting issues
+    - Explaining kubectl commands
+    
+    Keep responses concise for Slack. Use emoji: ✅ 🔴 ⚠️
+    
+    For dangerous commands (delete, scale to 0), warn the user first.

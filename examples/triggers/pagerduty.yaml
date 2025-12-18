@@ -1,0 +1,36 @@
+# PagerDuty Trigger
+#
+# PagerDuty webhook for incident alerts.
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: pagerduty
+  labels:
+    platform: pagerduty
+    purpose: alerts
+
+spec:
+  type: Webhook
+  config:
+    # Webhook endpoint
+    path: /webhook/pagerduty
+
+    # Authentication
+    auth_type: token
+    auth_token: ${PAGERDUTY_WEBHOOK_TOKEN}
+
+    # Event filtering
+    event_types:
+      - incident.triggered
+      - incident.acknowledged
+      - incident.resolved
+
+    # PagerDuty service IDs to monitor
+    services:
+      - PXXXXXX  # Production platform
+      - PYYYYYY  # Production database
+
+    # Headers validation
+    required_headers:
+      - X-PagerDuty-Signature

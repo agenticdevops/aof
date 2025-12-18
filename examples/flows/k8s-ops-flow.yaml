@@ -1,0 +1,112 @@
+# Kubernetes Operations Flow
+#
+# Context-agnostic flow for K8s operations. Works with any trigger (Slack, Telegram, etc.)
+# and any context (prod, staging, dev).
+#
+# This flow detects kubectl/k8s/kubernetes keywords and routes to k8s-ops agent.
+#
+# Usage in bindings:
+#   trigger: triggers/slack-prod.yaml
+#   flow: flows/k8s-ops-flow.yaml
+#   context: contexts/prod.yaml
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: k8s-ops-flow
+  labels:
+    category: operations
+    capability: kubernetes
+
+spec:
+  # Pattern matching for K8s-related queries
+  trigger:
+    patterns:
+      - "kubectl"
+      - "k8s"
+      - "kubernetes"
+      - "pod"
+      - "deploy"
+      - "scale"
+      - "service"
+      - "ingress"
+
+  # Workflow nodes (context-agnostic)
+  nodes:
+    # 1. Parse incoming message
+    - id: parse-message
+      type: Transform
+      config:
+        script: |
+          export MESSAGE_TEXT="${event.text}"
+          export USER_ID="${event.user}"
+          export CHANNEL_ID="${event.channel}"
+          export TIMESTAMP="${event.ts}"
+
+    # 2. Process with K8s agent
+    - id: k8s-process
+      type: Agent
+      config:
+        agent: k8s-ops  # References agents/k8s-ops.yaml
+        input: ${MESSAGE_TEXT}
+        context:
+          user: ${USER_ID}
+          channel: ${CHANNEL_ID}
+
+    # 3. Check if approval needed
+    - id: check-approval
+      type: Conditional
+      config:
+        condition: ${k8s-process.output.requires_approval} == true
+
+    # 4a. Request approval (if needed)
+    - id: request-approval
+      type: Approval
+      config:
+        message: |
+          ⚠️ **Approval Required**
+          User: ${USER_ID}
+          Command: `${k8s-process.output.command}`
+          
+          Approve to execute.
+        timeout_seconds: 300
+
+    # 4b. Send immediate response (no approval)
+    - id: send-response
+      type: Response
+      config:
+        message: ${k8s-process.output.output}
+
+    # 5. Execute approved command
+    - id: execute-command
+      type: Agent
+      config:
+        agent: k8s-ops
+        input: "Execute: ${k8s-process.output.command}"
+
+    # 6. Send execution result
+    - id: send-result
+      type: Response
+      config:
+        message: |
+          ✅ **Executed**
+          ${execute-command.output.output}
+
+  # Flow connections
+  connections:
+    - from: trigger
+      to: parse-message
+    - from: parse-message
+      to: k8s-process
+    - from: k8s-process
+      to: check-approval
+    - from: check-approval
+      to: request-approval
+      when: requires_approval == true
+    - from: check-approval
+      to: send-response
+      when: requires_approval == false
+    - from: request-approval
+      to: execute-command
+    - from: execute-command
+      to: send-result

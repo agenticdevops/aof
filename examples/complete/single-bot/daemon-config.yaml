@@ -1,0 +1,42 @@
+# AOF Daemon Configuration - Single Bot Setup
+
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: single-bot-config
+
+spec:
+  # Server settings
+  server:
+    host: 0.0.0.0
+    port: 3000
+    
+  # Slack trigger
+  triggers:
+    - name: slack-dev
+      type: Slack
+      config:
+        events:
+          - app_mention
+          - message
+        channels:
+          - dev  # Change this to your channel name
+        bot_token: ${SLACK_BOT_TOKEN}
+        signing_secret: ${SLACK_SIGNING_SECRET}
+        
+  # Simple workflow: receive message → process with agent → respond
+  workflows:
+    - name: k8s-help
+      trigger: slack-dev
+      steps:
+        - agent: k8s-bot
+          
+  # Context (development cluster)
+  contexts:
+    - name: dev
+      kubeconfig: ${KUBECONFIG:-~/.kube/config}
+      namespace: default
+      
+  # Load the agent
+  agents:
+    - ./agent.yaml

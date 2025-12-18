@@ -1,0 +1,40 @@
+# Production Slack Trigger
+#
+# Slack event source for production environment.
+# Referenced in bindings to configure message sources.
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: slack-prod
+  labels:
+    platform: slack
+    environment: production
+
+spec:
+  type: Slack
+  config:
+    # Event types to listen for
+    events:
+      - app_mention       # @bot-name mentions
+      - message           # Direct messages
+
+    # Only respond in production channels
+    channels:
+      - production
+      - prod-alerts
+      - sre-oncall
+
+    # Optional: restrict to specific users
+    users:
+      - U012PLATFORM1   # Platform team lead
+      - U012PLATFORM2   # SRE team
+
+    # Authentication
+    bot_token: ${SLACK_BOT_TOKEN}
+    signing_secret: ${SLACK_SIGNING_SECRET}
+
+    # Rate limiting
+    rate_limit:
+      max_requests_per_minute: 20
+      burst: 5

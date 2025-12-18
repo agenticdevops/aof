@@ -1,389 +1,342 @@
 # AOF Examples Library
 
-Welcome to the AOF (Agentic Ops Framework) examples library! This collection demonstrates how to build production-ready AI agents for DevOps and SRE workflows using Kubernetes-style YAML.
+Welcome to the AOF (Agentic Ops Framework) examples library! This collection demonstrates how to build production-ready AI agents for DevOps and SRE workflows using **composable, reusable Kubernetes-style YAML**.
 
-## 📚 Table of Contents
+## 🎯 Architecture Overview
 
-- [Quick Start](#quick-start)
-- [Single Agents](#single-agents)
-- [Agent Fleets](#agent-fleets)
-- [Agent Flows](#agent-flows)
-- [Prerequisites](#prerequisites)
-- [Usage Guide](#usage-guide)
+AOF uses a **composable architecture** where resources are defined once and referenced everywhere:
 
----
+```
+agents/        → Define agents ONCE (k8s-ops, security, incident, etc.)
+fleets/        → Compose agents into teams
+flows/         → Define orchestration logic (context-agnostic)
+contexts/      → Environment configurations (prod, staging, dev)
+triggers/      → Platform connections (Slack, Telegram, PagerDuty)
+bindings/      → Tie everything together
+
+complete/      → Full working examples
+  ├─ single-bot/    → Simplest setup (one agent, one channel)
+  └─ enterprise/    → Multi-tenant production setup
+```
+
+**Key Principle**: Define once, reference everywhere using `ref:` syntax.
 
 ## 🚀 Quick Start
 
-Perfect for learning the basics:
+### Option 1: Simplest Setup (5 minutes)
 
-### [`quickstart/hello-world-agent.yaml`](quickstart/hello-world-agent.yaml)
-**The simplest possible agent** - great for testing your setup.
+**Single Slack bot for Kubernetes operations:**
+
 ```bash
-aof apply -f quickstart/hello-world-agent.yaml
-aof query hello "What's your name?"
+cd examples/complete/single-bot
+
+# Set environment variables
+export SLACK_BOT_TOKEN=xoxb-your-token
+export SLACK_SIGNING_SECRET=your-secret
+export GOOGLE_API_KEY=your-gemini-key
+
+# Start the bot
+aofctl serve --config daemon-config.yaml
+
+# Test in Slack
+# @k8s-bot get pods
 ```
 
-### [`quickstart/hello-world-flow.yaml`](quickstart/hello-world-flow.yaml)
-**The simplest possible flow** - webhook → agent → response.
+See [complete/single-bot/README.md](complete/single-bot/README.md) for details.
+
+### Option 2: Enterprise Multi-Tenant (Production)
+
+**Multiple environments, platforms, and workflows:**
+
 ```bash
-aof apply -f quickstart/hello-world-flow.yaml
-curl -X POST http://localhost:8080/webhook/hello-flow \
-  -d '{"message": "Hello AOF!"}'
+cd examples/complete/enterprise
+
+# Configure environments
+export KUBECONFIG_PROD=~/.kube/prod-config
+export KUBECONFIG_STAGING=~/.kube/staging-config
+
+# Start multi-tenant daemon
+aofctl serve --config daemon-config.yaml
 ```
+
+See [complete/enterprise/README.md](complete/enterprise/README.md) for details.
 
 ---
 
-## 🤖 Single Agents
+## 📦 Core Resources
 
-Individual AI agents for specific tasks:
+### Agents (`agents/`)
 
-### 1. [Kubernetes Operations Agent](agents/kubernetes-ops-agent.yaml)
-**Kubernetes diagnostics and management**
+Individual AI agents defined **once** and referenced everywhere:
 
-**What it does:**
-- Diagnose pod failures and crashes
-- Scale deployments up/down
-- Check resource usage (CPU, memory)
-- Analyze cluster health
+| Agent | Purpose | Tools |
+|-------|---------|-------|
+| `k8s-ops.yaml` | Kubernetes operations | kubectl, helm |
+| `security.yaml` | Security scanning | trivy, semgrep |
+| `incident.yaml` | Incident response | kubectl, prometheus, loki |
+| `devops.yaml` | Full-stack DevOps | kubectl, docker, terraform, git |
+| `general-assistant.yaml` | General purpose helper | None (knowledge-based) |
 
-**Example usage:**
+**Usage**:
 ```bash
-aof query k8s-ops "What pods are failing in the default namespace?"
-aof query k8s-ops "Scale the nginx deployment to 5 replicas"
+# Direct execution
+aofctl run agent k8s-ops "check pod status"
+
+# Reference in fleets
+agents:
+  - ref: agents/k8s-ops.yaml
+
+# Reference in flows
+agent: k8s-ops
 ```
 
-**Prerequisites:** `kubectl` configured with cluster access
+📖 See [agents/README.md](agents/README.md) for details.
 
 ---
 
-### 2. [GitHub Assistant Agent](agents/github-assistant-agent.yaml)
-**GitHub PR and issue management**
-
-**What it does:**
-- Summarize pull requests
-- Review code changes
-- Triage issues
-- Suggest reviewers
-
-**Example usage:**
-```bash
-aof query github-helper "Summarize PR #42 in kubernetes/kubernetes"
-aof query github-helper "What open issues are labeled 'good-first-issue'?"
-```
-
-**Prerequisites:** `GITHUB_TOKEN` environment variable
-
----
-
-### 3. [Dockerfile Generator Agent](agents/dockerfile-generator-agent.yaml)
-**Automated Dockerfile creation**
-
-**What it does:**
-- Analyze repository structure
-- Detect language/framework
-- Generate optimized multi-stage Dockerfiles
-- Suggest .dockerignore patterns
-
-**Example usage:**
-```bash
-aof query dockerfile-gen "Generate a Dockerfile for /workspace/myapp"
-```
-
-**Prerequisites:** Access to repository directory
-
----
-
-### 4. [Terraform Planner Agent](agents/terraform-planner-agent.yaml)
-**Infrastructure code review and security**
-
-**What it does:**
-- Analyze Terraform plans for security risks
-- Identify cost optimization opportunities
-- Check compliance (SOC2, GDPR)
-- Suggest best practices
-
-**Example usage:**
-```bash
-terraform plan -out=plan.tfplan
-terraform show -json plan.tfplan > plan.json
-aof query tf-planner "Review the plan in /workspace/plan.json"
-```
-
-**Prerequisites:** Terraform installed, cloud credentials configured
-
----
-
-### 5. [Log Analyzer Agent](agents/log-analyzer-agent.yaml)
-**Intelligent log parsing and analysis**
-
-**What it does:**
-- Parse and analyze log files
-- Identify error patterns
-- Detect anomalies
-- Provide actionable insights
-
-**Example usage:**
-```bash
-aof query log-analyzer "Analyze /var/log/app/error.log for the last hour"
-aof query log-analyzer "Find all 500 errors in nginx access logs"
-```
-
-**Prerequisites:** Access to log files
-
----
-
-### 6. [Security Scanner Agent](agents/security-scanner-agent.yaml)
-**Comprehensive security scanning**
-
-**What it does:**
-- Scan containers for vulnerabilities (using trivy)
-- Analyze code for security issues (using semgrep)
-- Check dependency CVEs
-- Assess infrastructure security
-
-**Example usage:**
-```bash
-aof query sec-scanner "Scan the Docker image myapp:latest"
-aof query sec-scanner "Check /workspace/app for security issues"
-```
-
-**Prerequisites:** Security tools installed (trivy, semgrep, etc.)
-
----
-
-## 👥 Agent Fleets
+### Fleets (`fleets/`)
 
 Teams of agents working together:
 
-### 7. [Code Review Fleet](fleets/code-review-fleet.yaml)
-**Multi-perspective code review team**
+| Fleet | Agents | Purpose |
+|-------|--------|---------|
+| `code-review-team.yaml` | security + k8s-ops | Code and manifest reviews |
+| `incident-team.yaml` | incident + k8s-ops + security | Incident response |
 
-**Agents:**
-- **Security Reviewer**: Finds vulnerabilities and security issues
-- **Performance Reviewer**: Identifies performance bottlenecks
-- **Quality Reviewer**: Checks code quality and maintainability
-
-**Strategy:** Parallel execution with merged results
-
-**Example usage:**
+**Usage**:
 ```bash
-aof query code-review-team "Review PR #123 in myorg/myrepo"
-aof query code-review-team "Analyze changes in /workspace/app/src"
+# Direct execution
+aofctl run fleet incident-team "investigate outage"
+
+# Reference in flows
+fleet: incident-team
 ```
 
-**Output:** Comprehensive review combining security, performance, and quality insights.
+📖 See [fleets/README.md](fleets/README.md) for details.
 
 ---
 
-### 8. [SRE On-Call Fleet](fleets/sre-oncall-fleet.yaml)
-**Automated incident response team**
+### Flows (`flows/`)
 
-**Agents:**
-1. **Diagnostic Agent**: Identifies root cause
-2. **Remediation Agent**: Executes fixes
-3. **Communication Agent**: Updates stakeholders
+Context-agnostic orchestration logic:
 
-**Strategy:** Sequential execution (diagnose → remediate → communicate)
+| Flow | Triggers On | Features |
+|------|-------------|----------|
+| `k8s-ops-flow.yaml` | kubectl, k8s, pod, deploy | Approval for destructive ops |
+| `incident-flow.yaml` | incident, alert, outage | Auto-investigation, RCA |
+| `deploy-flow.yaml` | deploy, release, rollout | Security scan + validation |
 
-**Example usage:**
-```bash
-aof query sre-oncall "Pod myapp-7d8f9c is CrashLoopBackOff in production"
-aof query sre-oncall "High CPU usage on node ip-10-0-1-42"
-```
+**Key Design**: Flows don't know about Slack/Telegram or prod/staging. That's configured via bindings.
 
-**Output:** Diagnosis, automated fix, and status updates posted to Slack.
+📖 See [flows/README.md](flows/README.md) for details.
 
 ---
 
-## 🔄 Agent Flows
+### Contexts (`contexts/`)
 
-End-to-end automated workflows:
+Environment-specific configuration:
 
-### 9. [Slack Q&A Bot Flow](flows/slack-qa-bot-flow.yaml)
-**Interactive Slack assistant**
+| Context | Approvals | Audit | Rate Limit |
+|---------|-----------|-------|------------|
+| `prod.yaml` | Strict | Full (S3) | 20/min |
+| `staging.yaml` | Relaxed | Basic | 40/min |
+| `dev.yaml` | None | None | 100/min |
 
-**Flow:**
-```
-Slack mention → Q&A Agent → Reply in thread
-```
+**What contexts configure**:
+- Kubernetes cluster (kubeconfig)
+- Approval workflows
+- Audit logging
+- Resource limits
+- Environment variables
 
-**What it does:**
-- Answer questions about codebase and infrastructure
-- Provide deployment instructions
-- Help with debugging
-
-**Setup:**
-```bash
-export SLACK_BOT_TOKEN=xoxb-xxxxx
-aof apply -f slack-qa-bot-flow.yaml
-# In Slack: @qa-bot How do I deploy to production?
-```
-
-**Prerequisites:** Slack bot token, bot invited to channels
+📖 See [contexts/README.md](contexts/README.md) for details.
 
 ---
 
-### 10. [PR Review Flow](flows/pr-review-flow.yaml)
-**Automated pull request review**
+### Triggers (`triggers/`)
 
-**Flow:**
-```
-GitHub PR opened → Code Review Fleet → Post review comment
-```
+Platform-specific message sources:
 
-**What it does:**
-- Parallel security and quality checks
-- Post comprehensive review
-- Add labels based on findings
-- Auto-approve safe changes
+| Trigger | Platform | Channels/Groups |
+|---------|----------|-----------------|
+| `slack-prod.yaml` | Slack | #production, #prod-alerts |
+| `slack-staging.yaml` | Slack | #staging, #qa-testing |
+| `telegram-oncall.yaml` | Telegram | SRE on-call group |
+| `pagerduty.yaml` | Webhook | Incident alerts |
 
-**Setup:**
-```bash
-export GITHUB_TOKEN=ghp_xxxxx
-aof apply -f pr-review-flow.yaml
-# Opens automatically on PRs
-```
-
-**Output:** PR comments with detailed feedback and auto-labels.
+📖 See [triggers/README.md](triggers/README.md) for details.
 
 ---
 
-### 11. [Incident Auto-Remediation Flow](flows/incident-auto-remediation-flow.yaml)
-**Full incident response pipeline**
+### Bindings (`bindings/`)
 
-**Flow:**
+**Tie everything together**: trigger + flow + context = working bot
+
+| Binding | Platform | Environment | Purpose |
+|---------|----------|-------------|---------|
+| `prod-slack-k8s.yaml` | Slack #prod | Production | K8s ops with strict approvals |
+| `staging-slack-k8s.yaml` | Slack #staging | Staging | K8s ops with relaxed approvals |
+| `oncall-telegram-incident.yaml` | Telegram | Production | Fast incident response |
+| `pagerduty-incident.yaml` | Webhook | Production | Auto incident response |
+
+**Example binding**:
+```yaml
+spec:
+  trigger: triggers/slack-prod.yaml      # Where messages come from
+  flow: flows/k8s-ops-flow.yaml          # What workflow to run
+  context: contexts/prod.yaml            # Environment configuration
 ```
-PagerDuty alert → SRE Fleet (diagnose) → Decision tree → Auto-fix or escalate
-```
 
-**Decision Logic:**
-- **P2/P3 + High confidence**: Auto-remediate
-- **P1 + Medium confidence**: Request approval
-- **P0 or Low confidence**: Escalate to human
-
-**Setup:**
-```bash
-export PAGERDUTY_TOKEN=xxxxx
-export SLACK_BOT_TOKEN=xoxb-xxxxx
-aof apply -f incident-auto-remediation-flow.yaml
-```
-
-**Output:** Automated diagnosis, fix attempt, and full audit trail.
+📖 See [bindings/README.md](bindings/README.md) for details.
 
 ---
 
-### 12. [Daily Standup Report Flow](flows/daily-standup-report-flow.yaml)
-**Automated team status report**
+## 🏢 Multi-Tenant Architecture
 
-**Flow:**
+The power of this architecture is **reusability**:
+
 ```
-Cron (9am weekdays) → Multiple analyzers (parallel) → Slack summary
-```
+Same Flow, Different Environments:
+┌──────────────┐
+│ k8s-ops-flow │ (defined once)
+└──────┬───────┘
+       ├─→ prod-slack-k8s (Slack #prod, strict approvals)
+       ├─→ staging-slack-k8s (Slack #staging, relaxed)
+       └─→ dev-slack-k8s (Slack #dev, no approvals)
 
-**Analyzers:**
-- GitHub activity (PRs, commits)
-- Jira tickets (completed, in progress, blocked)
-- CI/CD pipelines (deployments, test results)
-- Team calendar (PTO, meetings)
-- System metrics (errors, performance)
-
-**Setup:**
-```bash
-export GITHUB_TOKEN=ghp_xxxxx
-export JIRA_TOKEN=xxxxx
-export SLACK_BOT_TOKEN=xoxb-xxxxx
-aof apply -f daily-standup-report-flow.yaml
+Same Flow, Different Platforms:
+┌────────────────┐
+│ incident-flow  │ (defined once)
+└────────┬───────┘
+         ├─→ oncall-telegram (Telegram, interactive)
+         └─→ pagerduty-auto (Webhook, automated)
 ```
 
-**Output:** Comprehensive daily standup posted to #daily-standup at 9am.
+**Benefits**:
+- ✅ No duplication
+- ✅ Consistent behavior across environments
+- ✅ Easy to add new environments/platforms
+- ✅ Centralized configuration management
 
 ---
 
-### 13. [Deploy Notification Flow](flows/deploy-notification-flow.yaml)
-**Deployment tracking and communication**
+## 📋 Complete Examples
 
-**Flow:**
-```
-GitHub deployment event → Analyze changes → Slack notification + metrics
-```
+### Single Bot Example
 
-**What it does:**
-- Summarize what's being deployed
-- Identify breaking changes
-- Provide rollback instructions
-- Update status page and metrics
+**What**: Simplest possible setup - one bot, one channel
+**Use for**: Learning, testing, local development
 
-**Setup:**
 ```bash
-export GITHUB_TOKEN=ghp_xxxxx
-export SLACK_BOT_TOKEN=xoxb-xxxxx
-aof apply -f deploy-notification-flow.yaml
+cd examples/complete/single-bot
+aofctl serve --config daemon-config.yaml
 ```
 
-**Output:** Real-time deployment notifications with rollback commands.
+📖 See [complete/single-bot/README.md](complete/single-bot/README.md)
 
 ---
 
-### 14. [Cost Optimization Flow](flows/cost-optimization-flow.yaml)
-**Daily cloud cost analysis**
+### Enterprise Example
 
-**Flow:**
-```
-Cron (8am daily) → Cost analyzer → Anomaly detection → Alerts/optimizations
-```
+**What**: Production-ready multi-tenant setup
+**Includes**:
+- 3 environments (prod, staging, dev)
+- 4 platforms (Slack, Telegram, PagerDuty, WhatsApp)
+- 5 agents + 2 fleets + 3 flows
+- Approval workflows
+- Audit logging
+- Multi-tenant routing
 
-**What it does:**
-- Detect unusual spending spikes
-- Identify unused resources
-- Recommend reserved instances
-- Forecast monthly costs
-- Auto-remediate safe optimizations
-
-**Severity Levels:**
-- 🚨 **Critical**: >50% increase or >1.5x budget
-- ⚠️ **Notable**: >20% increase or >1.2x budget
-- 💡 **Optimization**: $1000+/month savings available
-
-**Setup:**
 ```bash
-export AWS_ACCESS_KEY_ID=xxxxx
-export AWS_SECRET_ACCESS_KEY=xxxxx
-export SLACK_BOT_TOKEN=xoxb-xxxxx
-aof apply -f cost-optimization-flow.yaml
+cd examples/complete/enterprise
+aofctl serve --config daemon-config.yaml
 ```
 
-**Output:** Daily cost reports, anomaly alerts, and optimization recommendations.
+📖 See [complete/enterprise/README.md](complete/enterprise/README.md)
 
 ---
 
-## 📋 Prerequisites
+## 🎯 Usage Patterns
 
-### Required for all examples:
+### Pattern 1: Direct Agent Execution
+
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-xxxxx
+# Run any agent directly
+aofctl run agent k8s-ops "get pods in default namespace"
+aofctl run agent security "scan image nginx:latest"
+aofctl run agent incident "investigate API latency"
 ```
 
-### Optional (depending on example):
+### Pattern 2: Fleet Collaboration
+
 ```bash
-# GitHub integration
-export GITHUB_TOKEN=ghp_xxxxx
-
-# Slack integration
-export SLACK_BOT_TOKEN=xoxb-xxxxx
-
-# AWS (for K8s/cost examples)
-export AWS_ACCESS_KEY_ID=xxxxx
-export AWS_SECRET_ACCESS_KEY=xxxxx
-
-# PagerDuty (for incident flow)
-export PAGERDUTY_TOKEN=xxxxx
-
-# Jira (for standup flow)
-export JIRA_TOKEN=xxxxx
+# Run multiple agents as a team
+aofctl run fleet incident-team "prod outage investigation"
+aofctl run fleet code-review-team "review PR #123"
 ```
 
-### Tools (install as needed):
+### Pattern 3: Event-Driven Workflows
+
+```bash
+# Daemon processes events from platforms
+aofctl serve --config daemon-config.yaml
+
+# Slack message → k8s-ops-flow → Response
+# PagerDuty alert → incident-flow → Auto-remediation
+```
+
+---
+
+## 🛠️ Customization
+
+### Adding a New Environment
+
+1. Create context: `contexts/qa.yaml`
+2. Create trigger: `triggers/slack-qa.yaml` (if needed)
+3. Create binding: `bindings/qa-slack-k8s.yaml`
+4. Add to `daemon-config.yaml`
+
+### Adding a New Platform
+
+1. Create trigger: `triggers/discord-prod.yaml`
+2. Create bindings for each environment
+3. Add to `daemon-config.yaml`
+
+### Adding a New Capability
+
+1. Create flow: `flows/database-ops-flow.yaml`
+2. Create bindings for each environment
+3. Add to `daemon-config.yaml`
+
+---
+
+## 📚 Documentation by Directory
+
+- [agents/README.md](agents/README.md) - Agent definitions
+- [fleets/README.md](fleets/README.md) - Fleet compositions
+- [flows/README.md](flows/README.md) - Orchestration flows
+- [contexts/README.md](contexts/README.md) - Environment contexts
+- [triggers/README.md](triggers/README.md) - Platform triggers
+- [bindings/README.md](bindings/README.md) - Resource bindings
+- [complete/single-bot/README.md](complete/single-bot/README.md) - Simple setup
+- [complete/enterprise/README.md](complete/enterprise/README.md) - Enterprise setup
+
+---
+
+## 🔧 Prerequisites
+
+### Required
+
+```bash
+# AOF installation
+curl -sSL https://docs.aof.sh/install.sh | bash
+
+# LLM API key (Gemini 2.5 Flash recommended)
+export GOOGLE_API_KEY=your-key-here
+```
+
+### Optional (depending on use case)
+
 ```bash
 # Kubernetes
 kubectl
@@ -391,126 +344,14 @@ kubectl
 # Docker
 docker
 
-# Terraform
-terraform
-
-# Security scanning
+# Security tools
 trivy
 semgrep
 
-# Cloud CLIs
-aws-cli
-gcloud
-azure-cli
-```
-
----
-
-## 🎯 Usage Guide
-
-### Basic Commands
-
-**Apply a configuration:**
-```bash
-aof apply -f examples/agents/kubernetes-ops-agent.yaml
-```
-
-**Query an agent:**
-```bash
-aof query <agent-name> "<your question>"
-```
-
-**List active agents/flows:**
-```bash
-aof list agents
-aof list flows
-```
-
-**View agent logs:**
-```bash
-aof logs <agent-name>
-```
-
-**Delete an agent/flow:**
-```bash
-aof delete agent <agent-name>
-aof delete flow <flow-name>
-```
-
----
-
-## 📊 Example Selection Guide
-
-**Choose based on your use case:**
-
-| Use Case | Example | Complexity |
-|----------|---------|------------|
-| Learning AOF basics | Hello World Agent/Flow | ⭐ Beginner |
-| K8s troubleshooting | Kubernetes Ops Agent | ⭐⭐ Intermediate |
-| Code reviews | Code Review Fleet + PR Review Flow | ⭐⭐⭐ Advanced |
-| Incident response | SRE On-Call Fleet + Auto-Remediation Flow | ⭐⭐⭐ Advanced |
-| Team automation | Daily Standup Report Flow | ⭐⭐ Intermediate |
-| Cost management | Cost Optimization Flow | ⭐⭐⭐ Advanced |
-| Security scanning | Security Scanner Agent | ⭐⭐ Intermediate |
-| Infrastructure review | Terraform Planner Agent | ⭐⭐ Intermediate |
-
----
-
-## 🛠️ Customization Tips
-
-### 1. Adjust Model Selection
-```yaml
-spec:
-  model: claude-3-5-sonnet-20241022  # Fast and cost-effective
-  # Or use:
-  # model: claude-3-opus-20240229    # More powerful but slower
-  # model: claude-3-haiku-20240307   # Fastest and cheapest
-```
-
-### 2. Modify System Prompts
-Add your company-specific context:
-```yaml
-spec:
-  system: |
-    You are an SRE at ACME Corp.
-
-    Our stack:
-    - Kubernetes on AWS EKS
-    - PostgreSQL on RDS
-    - Redis for caching
-    - Datadog for monitoring
-
-    [rest of prompt...]
-```
-
-### 3. Add Custom Tools
-```yaml
-spec:
-  tools:
-    - name: shell
-      config:
-        allowed_commands:
-          - your-custom-cli
-          - company-tool
-```
-
-### 4. Adjust Resource Limits
-```yaml
-spec:
-  resources:
-    max_tokens: 8192    # Increase for detailed analysis
-    timeout: 300s       # Increase for long-running tasks
-```
-
-### 5. Enable Guardrails
-```yaml
-spec:
-  guardrails:
-    - type: command_filter
-      config:
-        blocked_patterns:
-          - "rm -rf /"
-          - "kubectl delete ns production"
+# Platform tokens
+export SLACK_BOT_TOKEN=xoxb-xxxxx
+export TELEGRAM_BOT_TOKEN=xxxxx
+export PAGERDUTY_WEBHOOK_TOKEN=xxxxx
 ```
 
 ---
@@ -520,29 +361,20 @@ spec:
 Have a great example? Submit a PR!
 
 **Guidelines:**
-1. Use descriptive names and comments
-2. Include prerequisites and usage instructions
-3. Provide realistic example queries
-4. Follow the existing YAML schema
+1. Follow the composable architecture pattern
+2. Use `ref:` syntax instead of inline definitions
+3. Add README.md in your directory
+4. Include usage examples
 5. Test before submitting
-
----
-
-## 📚 Additional Resources
-
-- [AOF Documentation](../docs/README.md)
-- [YAML Schema Reference](../docs/schema.md)
-- [Best Practices Guide](../docs/best-practices.md)
-- [Troubleshooting](../docs/troubleshooting.md)
 
 ---
 
 ## 📄 License
 
-All examples are provided under the MIT License. Feel free to use and modify for your organization.
+All examples are provided under the Apache 2.0 License.
 
 ---
 
 **Happy automating!** 🚀
 
-If you have questions or need help, open an issue or reach out to the community.
+For help: https://github.com/agenticdevops/aof/issues

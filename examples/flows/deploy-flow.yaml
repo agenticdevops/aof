@@ -1,0 +1,122 @@
+# Deployment Flow
+#
+# Context-agnostic flow for deployment operations. Handles deploy/release keywords.
+#
+# Usage in bindings:
+#   trigger: triggers/slack-staging.yaml
+#   flow: flows/deploy-flow.yaml
+#   context: contexts/staging.yaml
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: deploy-flow
+  labels:
+    category: operations
+    capability: deployment
+
+spec:
+  # Pattern matching for deployment-related queries
+  trigger:
+    patterns:
+      - "deploy"
+      - "release"
+      - "rollout"
+      - "rollback"
+
+  # Workflow nodes
+  nodes:
+    # 1. Parse deployment request
+    - id: parse-request
+      type: Transform
+      config:
+        script: |
+          export DEPLOY_REQUEST="${event.text}"
+          export USER="${event.user}"
+          export TIMESTAMP="${event.ts}"
+
+    # 2. Security scan
+    - id: security-scan
+      type: Agent
+      config:
+        agent: security
+        input: "Scan deployment for security issues: ${DEPLOY_REQUEST}"
+
+    # 3. Validate deployment config
+    - id: validate-config
+      type: Agent
+      config:
+        agent: k8s-ops
+        input: "Validate deployment configuration: ${DEPLOY_REQUEST}"
+
+    # 4. Check if both passed
+    - id: check-validations
+      type: Conditional
+      config:
+        condition: |
+          ${security-scan.output.passed} == true AND 
+          ${validate-config.output.passed} == true
+
+    # 5. Request approval
+    - id: request-approval
+      type: Approval
+      config:
+        message: |
+          🚀 **Deployment Approval Required**
+          
+          User: ${USER}
+          Request: ${DEPLOY_REQUEST}
+          
+          Security Scan: ${security-scan.output.summary}
+          Config Validation: ${validate-config.output.summary}
+          
+          Approve to proceed with deployment.
+        timeout_seconds: 600
+
+    # 6. Execute deployment
+    - id: execute-deployment
+      type: Agent
+      config:
+        agent: devops
+        input: "Execute deployment: ${DEPLOY_REQUEST}"
+
+    # 7. Verify deployment
+    - id: verify-deployment
+      type: Agent
+      config:
+        agent: k8s-ops
+        input: "Verify deployment succeeded: ${execute-deployment.output.deployment_name}"
+
+    # 8. Send success notification
+    - id: send-success
+      type: Response
+      config:
+        message: |
+          ✅ **Deployment Successful**
+          
+          ${verify-deployment.output.summary}
+          
+          Deployment Details:
+          ${execute-deployment.output.details}
+
+  # Flow connections
+  connections:
+    - from: trigger
+      to: parse-request
+    - from: parse-request
+      to: security-scan
+    - from: parse-request
+      to: validate-config
+    - from: security-scan
+      to: check-validations
+    - from: validate-config
+      to: check-validations
+    - from: check-validations
+      to: request-approval
+      when: all_passed == true
+    - from: request-approval
+      to: execute-deployment
+    - from: execute-deployment
+      to: verify-deployment
+    - from: verify-deployment
+      to: send-success

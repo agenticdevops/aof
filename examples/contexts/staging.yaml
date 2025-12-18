@@ -1,0 +1,53 @@
+# Staging Context
+#
+# Environment-specific configuration for staging cluster.
+
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: staging
+  labels:
+    environment: staging
+    criticality: medium
+
+spec:
+  # Kubernetes configuration
+  kubeconfig: ${KUBECONFIG_STAGING:-~/.kube/staging-config}
+  namespace: default
+  cluster_name: staging-cluster
+
+  # Approval workflow (less strict than prod)
+  approval:
+    enabled: true
+    required_for:
+      - delete_namespace
+      - delete_pv
+    allowed_users:
+      - U012PLATFORM1
+      - U012PLATFORM2
+      - U012DEV1  # Dev team can approve in staging
+    timeout_seconds: 180
+
+  # Audit logging
+  audit:
+    enabled: true
+    log_commands: true
+    log_responses: false
+    destination: s3://staging-audit-logs/aof/
+
+  # Resource limits (more relaxed)
+  limits:
+    max_concurrent_operations: 10
+    rate_limit_per_minute: 40
+    timeout_seconds: 180
+
+  # Environment variables
+  env:
+    ENVIRONMENT: staging
+    CLUSTER_NAME: staging-cluster
+    LOG_LEVEL: debug
+    REQUIRE_APPROVAL: "false"
+
+  # Notification channels
+  notifications:
+    slack_channel: "#staging-alerts"

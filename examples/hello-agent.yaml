@@ -1,9 +1,0 @@
-apiVersion: aof.dev/v1
-kind: Agent
-metadata:
-  name: hello-assistant
-spec:
-  model: google:gemini-2.5-flash
-  instructions: |
-    You are a friendly assistant that helps DevOps engineers.
-    Keep responses concise and practical.

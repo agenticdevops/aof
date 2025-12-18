@@ -1,308 +1,102 @@
-# AOF Agent Catalog
+# Agent Definitions
 
-Pre-built agent templates for common DevOps tasks. Use these as starting points for your own agents or reference them directly in fleet configurations.
+This directory contains **single source of truth** agent definitions. Each agent is defined once and referenced elsewhere using `ref:` syntax.
 
-## Directory Structure
+## Available Agents
 
-```
-agents/
-├── observability/          # Data collection agents
-│   ├── loki-collector.yaml
-│   ├── prometheus-collector.yaml
-│   ├── k8s-collector.yaml
-│   └── git-collector.yaml
-├── reasoning/              # Analysis and reasoning agents
-│   ├── claude-analyzer.yaml
-│   ├── gemini-analyzer.yaml
-│   ├── gpt4-analyzer.yaml
-│   └── rca-coordinator.yaml
-└── README.md               # This file
-```
+### Core Infrastructure Agents
 
-## Observability Agents (Tier 1)
+- **`k8s-ops.yaml`** - Kubernetes operations expert
+  - Cluster management and troubleshooting
+  - Pod/Deployment/Service diagnostics
+  - Resource management and scaling
+  - Helm chart deployments
+  - **Tools**: kubectl, helm
 
-Low-cost data collection agents optimized for speed and structured output.
+- **`devops.yaml`** - Full-stack DevOps operations
+  - Kubernetes + Docker + CI/CD
+  - Infrastructure as Code (Terraform)
+  - Cloud platform operations
+  - Monitoring setup
+  - **Tools**: kubectl, docker, helm, terraform, git, shell
 
-### loki-collector
+### Security & Compliance
 
-**Purpose**: Query Loki for relevant logs during incident investigation.
+- **`security.yaml`** - Multi-layer security scanner
+  - Container vulnerability scanning (trivy)
+  - Code security analysis (semgrep)
+  - Dependency checks
+  - Infrastructure misconfigurations
+  - Compliance checks (CIS, PCI DSS, SOC2)
+  - **Tools**: trivy, semgrep, kubectl
 
-| Property | Value |
-|----------|-------|
-| Model | `google:gemini-2.0-flash` |
-| Cost | ~$0.075/1M tokens |
-| Tier | 1 |
-| Tools | `shell` |
+### Operations & Incident Response
 
-**Output**: Structured JSON with error summaries, key logs, and first error identification.
+- **`incident.yaml`** - Incident response coordinator
+  - Incident detection and classification
+  - Root cause analysis (RCA)
+  - Log and metric analysis
+  - Runbook execution
+  - Post-incident reports
+  - **Tools**: kubectl, prometheus, loki, shell
 
-**Usage**:
-```yaml
-agents:
-  - name: loki-collector
-    config: agents/observability/loki-collector.yaml
-    tier: 1
-```
+### General Purpose
 
-### prometheus-collector
+- **`general-assistant.yaml`** - Versatile helper
+  - Answer general questions
+  - Provide documentation
+  - Explain concepts
+  - Route to specialized agents
+  - **Tools**: None (knowledge-based)
 
-**Purpose**: Query Prometheus metrics to identify resource anomalies.
+## Usage Patterns
 
-| Property | Value |
-|----------|-------|
-| Model | `google:gemini-2.0-flash` |
-| Cost | ~$0.075/1M tokens |
-| Tier | 1 |
-| Tools | `shell` |
+### 1. Direct Execution
+\`\`\`bash
+# Run agent directly with aofctl
+aofctl run agent k8s-ops "check pod status in default namespace"
+aofctl run agent security "scan docker image nginx:latest"
+aofctl run agent incident "investigate high latency in prod"
+\`\`\`
 
-**Metrics Collected**:
-- Error rates
-- Latency percentiles
-- Resource usage (CPU, memory, disk)
-- Saturation indicators
-
-**Usage**:
-```yaml
-agents:
-  - name: prometheus-collector
-    config: agents/observability/prometheus-collector.yaml
-    tier: 1
-```
-
-### k8s-collector
-
-**Purpose**: Collect Kubernetes cluster state information.
-
-| Property | Value |
-|----------|-------|
-| Model | `google:gemini-2.0-flash` |
-| Cost | ~$0.075/1M tokens |
-| Tier | 1 |
-| Tools | `shell` |
-
-**Data Collected**:
-- Unhealthy pods
-- Recent events
-- Resource pressure
-- Recent deployments
-
-**Usage**:
-```yaml
-agents:
-  - name: k8s-collector
-    config: agents/observability/k8s-collector.yaml
-    tier: 1
-```
-
-### git-collector
-
-**Purpose**: Audit recent Git changes for potential incident correlation.
-
-| Property | Value |
-|----------|-------|
-| Model | `google:gemini-2.0-flash` |
-| Cost | ~$0.075/1M tokens |
-| Tier | 1 |
-| Tools | `shell`, `git` |
-
-**Data Collected**:
-- Recent commits
-- Changed files
-- Suspicious changes
-- Rollback candidates
-
-**Usage**:
-```yaml
-agents:
-  - name: git-collector
-    config: agents/observability/git-collector.yaml
-    tier: 1
-```
-
-## Reasoning Agents (Tier 2)
-
-Multi-model analysis agents for diverse perspectives on incident root causes.
-
-### claude-analyzer
-
-**Purpose**: Root cause analysis using Claude's reasoning capabilities.
-
-| Property | Value |
-|----------|-------|
-| Model | `anthropic:claude-sonnet-4-20250514` |
-| Cost | ~$3/1M tokens |
-| Tier | 2 |
-| Weight | 1.5 (recommended) |
-| Tools | `shell` |
-
-**Analysis Approach**:
-- Timeline reconstruction
-- Correlation analysis
-- 5 Whys technique
-
-**Usage**:
-```yaml
-agents:
-  - name: claude-analyzer
-    config: agents/reasoning/claude-analyzer.yaml
-    tier: 2
-    weight: 1.5
-```
-
-### gemini-analyzer
-
-**Purpose**: Root cause analysis using Gemini's systematic approach.
-
-| Property | Value |
-|----------|-------|
-| Model | `google:gemini-2.5-pro` |
-| Cost | ~$1.25/1M tokens |
-| Tier | 2 |
-| Weight | 1.0 (default) |
-| Tools | `shell` |
-
-**Analysis Approach**:
-- Data synthesis
-- Hypothesis generation
-- Evidence evaluation with Occam's Razor
-
-**Usage**:
-```yaml
-agents:
-  - name: gemini-analyzer
-    config: agents/reasoning/gemini-analyzer.yaml
-    tier: 2
-    weight: 1.0
-```
-
-### gpt4-analyzer
-
-**Purpose**: Root cause analysis using GPT-4's structured reasoning.
-
-| Property | Value |
-|----------|-------|
-| Model | `openai:gpt-4o` |
-| Cost | ~$5/1M tokens |
-| Tier | 2 |
-| Weight | 1.0 (default) |
-| Tools | `shell` |
-
-**Analysis Approach**:
-- Five Whys Analysis
-- Fault Tree Analysis
-- STAMP (System-Theoretic) Analysis
-
-**Usage**:
-```yaml
-agents:
-  - name: gpt4-analyzer
-    config: agents/reasoning/gpt4-analyzer.yaml
-    tier: 2
-    weight: 1.0
-```
-
-## Coordinator Agents (Tier 3)
-
-Manager agents that synthesize findings into final reports.
-
-### rca-coordinator
-
-**Purpose**: Synthesize multi-model analyses into a final RCA report.
-
-| Property | Value |
-|----------|-------|
-| Model | `anthropic:claude-sonnet-4-20250514` |
-| Cost | ~$3/1M tokens |
-| Tier | 3 |
-| Role | `manager` |
-| Tools | `shell` |
-
-**Capabilities**:
-- Agreement analysis across models
-- Disagreement resolution
-- Evidence aggregation
-- Structured RCA report generation
-
-**Usage**:
-```yaml
-agents:
-  - name: rca-coordinator
-    config: agents/reasoning/rca-coordinator.yaml
-    tier: 3
-    role: manager
-```
-
-## Cost Summary
-
-| Agent | Model | Cost/1M tokens | Typical RCA Usage |
-|-------|-------|----------------|-------------------|
-| loki-collector | Gemini Flash | $0.075 | ~15K tokens |
-| prometheus-collector | Gemini Flash | $0.075 | ~10K tokens |
-| k8s-collector | Gemini Flash | $0.075 | ~15K tokens |
-| git-collector | Gemini Flash | $0.075 | ~10K tokens |
-| claude-analyzer | Claude Sonnet | $3.00 | ~20K tokens |
-| gemini-analyzer | Gemini Pro | $1.25 | ~20K tokens |
-| gpt4-analyzer | GPT-4o | $5.00 | ~20K tokens |
-| rca-coordinator | Claude Sonnet | $3.00 | ~15K tokens |
-
-**Estimated total per RCA**: $0.50-1.00
-
-## Creating Custom Agents
-
-Use these agents as templates for your own:
-
-```yaml
-apiVersion: aof.dev/v1
-kind: Agent
+### 2. Reference in Fleets
+\`\`\`yaml
+apiVersion: aof.dev/v1alpha1
+kind: Fleet
 metadata:
-  name: my-custom-agent
-  labels:
-    tier: "2"
-    category: custom
+  name: my-fleet
 spec:
-  model: anthropic:claude-sonnet-4-20250514
+  agents:
+    - ref: agents/k8s-ops.yaml
+    - ref: agents/security.yaml
+\`\`\`
 
-  instructions: |
-    Your custom instructions here...
-
-    ## Output Format
-    Return structured JSON...
-
-  tools:
-    - shell
-    - read_file
-
-  max_iterations: 5
-  temperature: 0.4
-```
-
-## Using in Fleets
-
-### Reference External Config
-
-```yaml
+### 3. Reference in Flows
+\`\`\`yaml
 apiVersion: aof.dev/v1
-kind: AgentFleet
+kind: AgentFlow
+metadata:
+  name: my-flow
 spec:
-  agents:
-    - name: my-collector
-      config: agents/observability/loki-collector.yaml
-      tier: 1
-```
+  nodes:
+    - id: k8s-check
+      type: Agent
+      config:
+        agent: k8s-ops  # References metadata.name
+\`\`\`
 
-### Override Properties
+## Best Practices
 
-```yaml
-spec:
-  agents:
-    - name: high-priority-analyzer
-      config: agents/reasoning/claude-analyzer.yaml
-      tier: 2
-      weight: 2.0  # Override default weight
-```
+1. **Never duplicate agents** - Always reference the canonical version
+2. **Use descriptive metadata.name** - Short, kebab-case identifiers
+3. **Document tools** - List all tools the agent can use
+4. **Implement safety** - Always warn before destructive operations
+5. **Keep focused** - One agent, one primary responsibility
 
-## See Also
+## Related Directories
 
-- [Multi-Model RCA Tutorial](../docs/tutorials/multi-model-rca.md)
-- [Fleet Concepts](../docs/concepts/fleets.md)
-- [Fleet YAML Reference](../docs/reference/fleet-spec.md)
+- `/fleets` - Compose agents into teams
+- `/flows` - Orchestrate agent workflows
+- `/contexts` - Environment-specific configurations
+- `/triggers` - Message sources (Slack, Telegram, etc.)
+- `/bindings` - Tie everything together

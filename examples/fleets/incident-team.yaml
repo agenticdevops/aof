@@ -1,0 +1,52 @@
+# Incident Response Team Fleet
+#
+# A fleet combining incident response, K8s ops, and security for comprehensive incident handling.
+# Demonstrates multi-agent collaboration using ref: syntax.
+#
+# Usage:
+#   aofctl apply -f fleets/incident-team.yaml
+#   aofctl run fleet incident-team "investigate prod outage"
+
+apiVersion: aof.dev/v1alpha1
+kind: Fleet
+metadata:
+  name: incident-team
+  labels:
+    category: operations
+    purpose: incident-response
+
+spec:
+  description: "Incident coordinator + K8s ops + Security for comprehensive incident response"
+  
+  # Reference agents from agents/ directory
+  agents:
+    - ref: agents/incident.yaml
+    - ref: agents/k8s-ops.yaml
+    - ref: agents/security.yaml
+  
+  # Fleet-level coordination
+  coordination:
+    strategy: collaborative
+    # Incident agent leads, others provide specialized support
+    workflow:
+      - agent: incident
+        role: coordinator
+        tasks:
+          - detect_incident
+          - classify_severity
+          - coordinate_response
+          - create_reports
+      - agent: k8s-ops
+        role: diagnostics
+        tasks:
+          - check_cluster_health
+          - analyze_pod_status
+          - review_resource_usage
+          - collect_logs
+      - agent: security
+        role: validator
+        tasks:
+          - check_security_events
+          - scan_for_vulnerabilities
+          - validate_configs
+          - assess_blast_radius

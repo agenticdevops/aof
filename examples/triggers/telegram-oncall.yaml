@@ -1,0 +1,38 @@
+# On-Call Telegram Trigger
+#
+# Telegram event source for on-call incident response.
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: telegram-oncall
+  labels:
+    platform: telegram
+    purpose: oncall
+
+spec:
+  type: Telegram
+  config:
+    # Event types
+    events:
+      - message
+      - command
+
+    # Specific chat/group IDs
+    chats:
+      - -1001234567890  # SRE on-call group
+
+    # Allowed users (Telegram user IDs)
+    users:
+      - 123456789   # On-call engineer 1
+      - 987654321   # On-call engineer 2
+
+    # Authentication
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+
+    # Commands
+    commands:
+      - /incident
+      - /status
+      - /ack
+      - /resolve

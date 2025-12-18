@@ -1,5 +1,7 @@
 # Core Concepts
 
+> **📚 Complete Guide**: This is a quick reference. For the complete guide with all 6 resource types and composable architecture, see **[Introduction to Core Concepts](introduction/concepts.md)**.
+
 AOF has three main building blocks: **Agents**, **AgentFleets**, and **AgentFlows**. If you know Kubernetes, these will feel familiar.
 
 ## Agent
