@@ -1,6 +1,6 @@
 # AOF CLI Reference (aofctl)
 
-**Last Updated**: December 16, 2025
+**Last Updated**: December 18, 2025
 
 `aofctl` is the command-line interface for AOF, providing kubectl-style commands for agent orchestration.
 
@@ -20,12 +20,51 @@ export PATH="$PATH:$(pwd)/target/release"
 # Run an agent
 aofctl run agent my-agent.yaml --input "Hello, world!"
 
+# Run with a context (environment/tenant configuration)
+aofctl run agent my-agent.yaml --context prod
+
 # List resources
 aofctl get agents
 
 # Start the trigger server
 aofctl serve --config daemon-config.yaml
 ```
+
+## Global Options
+
+These options can be used with any command:
+
+| Option | Env Variable | Description |
+|--------|--------------|-------------|
+| `--context, -C <name>` | `AOFCTL_CONTEXT` | Context to use for operation (specifies environment configuration) |
+| `--contexts-dir <dir>` | `AOFCTL_CONTEXTS_DIR` | Directory containing context YAML files [default: ./contexts] |
+
+### Using Contexts
+
+Contexts define environment-specific settings like credentials, approval requirements, and resource limits:
+
+```bash
+# Run agent with production context
+aofctl run agent k8s-agent.yaml --context prod
+
+# Short form
+aofctl run agent k8s-agent.yaml -C staging
+
+# Via environment variable
+export AOFCTL_CONTEXT=prod
+aofctl run agent k8s-agent.yaml
+
+# Custom contexts directory
+aofctl run agent k8s-agent.yaml --context prod --contexts-dir /etc/aof/contexts
+```
+
+When a context is specified:
+- Environment variables from the context are injected into the runtime
+- Approval requirements are enforced before execution
+- Audit logs include context information
+- Rate limits are applied per context configuration
+
+See [Context Resource](../resources/context.md) for context configuration details.
 
 ## Commands
 

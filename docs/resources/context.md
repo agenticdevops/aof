@@ -140,6 +140,31 @@ spec:
 
 ## CLI Usage
 
+### Using --context Flag
+
+The `--context` (or `-C`) flag specifies which context to use for any operation:
+
+```bash
+# Run an agent with production context
+aofctl run agent my-agent.yaml --context prod
+
+# Run a flow with staging context
+aofctl run flow incident-response.yaml -C staging
+
+# Use context via environment variable
+export AOFCTL_CONTEXT=prod
+aofctl run agent my-agent.yaml  # Uses 'prod' context
+
+# Specify contexts directory (default: ./contexts)
+aofctl run agent my-agent.yaml --context prod --contexts-dir /etc/aof/contexts
+```
+
+When a context is specified:
+- Environment variables from the context are injected into the agent's runtime
+- Approval requirements are enforced before execution
+- Audit logs include context information
+- Rate limits are applied
+
 ### List Contexts
 
 ```bash

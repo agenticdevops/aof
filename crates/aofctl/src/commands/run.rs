@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
-use aof_core::AgentConfig;
+use anyhow::{Context as AnyhowContext, Result};
+use aof_core::{AgentConfig, Context as AofContext};
 use aof_runtime::Runtime;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -51,13 +51,25 @@ pub async fn execute(
     name_or_config: &str,
     input: Option<&str>,
     output: &str,
+    context: Option<&AofContext>,
 ) -> Result<()> {
+    // Log context if provided
+    if let Some(ctx) = context {
+        info!("Using context: {} (cluster: {})", ctx.name(), ctx.spec.cluster.as_deref().unwrap_or("default"));
+
+        // Apply context environment variables to the process
+        for (key, value) in ctx.get_env_vars() {
+            std::env::set_var(&key, &value);
+            tracing::debug!("Set env var from context: {}", key);
+        }
+    }
+
     // Parse resource type
     let rt = ResourceType::from_str(resource_type)
         .ok_or_else(|| anyhow::anyhow!("Unknown resource type: {}", resource_type))?;
 
     match rt {
-        ResourceType::Agent => run_agent(name_or_config, input, output).await,
+        ResourceType::Agent => run_agent(name_or_config, input, output, context).await,
         ResourceType::Workflow | ResourceType::Flow => run_workflow(name_or_config, input, output).await,
         ResourceType::Fleet => run_fleet(name_or_config, input, output).await,
         ResourceType::Job => run_job(name_or_config, input, output).await,
@@ -68,7 +80,7 @@ pub async fn execute(
 }
 
 /// Run an agent with configuration
-async fn run_agent(config: &str, input: Option<&str>, output: &str) -> Result<()> {
+async fn run_agent(config: &str, input: Option<&str>, output: &str, context: Option<&AofContext>) -> Result<()> {
     // Check if interactive mode should be enabled (when no input provided and stdin is a TTY)
     let interactive = input.is_none() && io::stdin().is_terminal();
 
@@ -87,7 +99,7 @@ async fn run_agent(config: &str, input: Option<&str>, output: &str) -> Result<()
         runtime
             .load_agent_from_config(agent_config)
             .await
-            .context("Failed to load agent")?;
+            .with_context(|| "Failed to load agent")?;
 
         // Launch interactive REPL mode with TUI log capture
         run_agent_interactive(&runtime, &agent_name, output).await?;
@@ -96,6 +108,12 @@ async fn run_agent(config: &str, input: Option<&str>, output: &str) -> Result<()
 
     // Non-interactive mode: normal logging to console
     info!("Loading agent config from: {}", config);
+    if let Some(ctx) = context {
+        info!("Context: {} (approval required: {})",
+            ctx.name(),
+            ctx.spec.approval.as_ref().map(|a| a.required).unwrap_or(false)
+        );
+    }
 
     let config_content = fs::read_to_string(config)
         .with_context(|| format!("Failed to read config file: {}", config))?;
@@ -111,14 +129,14 @@ async fn run_agent(config: &str, input: Option<&str>, output: &str) -> Result<()
     runtime
         .load_agent_from_config(agent_config)
         .await
-        .context("Failed to load agent")?;
+        .with_context(|| "Failed to load agent")?;
 
     // Single execution mode
     let input_str = input.unwrap_or("default input");
     let result = runtime
         .execute(&agent_name, input_str)
         .await
-        .context("Failed to execute agent")?;
+        .with_context(|| "Failed to execute agent")?;
 
     // Output result in requested format
     output_result(&agent_name, &result, output)?;

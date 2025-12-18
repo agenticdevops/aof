@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
+use std::path::Path;
 
+use aof_core::Context;
 use crate::commands;
 
 /// AOF CLI - kubectl-style agent orchestration
@@ -7,6 +9,19 @@ use crate::commands;
 #[command(name = "aofctl")]
 #[command(version, about, long_about = None)]
 pub struct Cli {
+    /// Context to use (overrides AOFCTL_CONTEXT env var)
+    ///
+    /// Context determines environment-specific settings like:
+    /// - Environment variables (credentials, endpoints)
+    /// - Approval requirements and allowed approvers
+    /// - Rate limits and resource quotas
+    #[arg(long, short = 'C', global = true, env = "AOFCTL_CONTEXT")]
+    pub context: Option<String>,
+
+    /// Directory containing context definitions
+    #[arg(long, global = true, env = "AOFCTL_CONTEXTS_DIR", default_value = "contexts")]
+    pub contexts_dir: String,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -191,6 +206,13 @@ pub enum Commands {
 
 impl Cli {
     pub async fn execute(self) -> anyhow::Result<()> {
+        // Load context if specified
+        let context = if let Some(ref ctx_name) = self.context {
+            load_context(ctx_name, &self.contexts_dir)?
+        } else {
+            None
+        };
+
         match self.command {
             Commands::Run {
                 resource_type,
@@ -198,8 +220,14 @@ impl Cli {
                 input,
                 output,
             } => {
-                commands::run::execute(&resource_type, &name_or_config, input.as_deref(), &output)
-                    .await
+                commands::run::execute(
+                    &resource_type,
+                    &name_or_config,
+                    input.as_deref(),
+                    &output,
+                    context.as_ref(),
+                )
+                .await
             }
             Commands::Get {
                 resource_type,
@@ -262,4 +290,67 @@ impl Cli {
             Commands::Completion { shell } => commands::completion::execute(shell),
         }
     }
+}
+
+/// Load a Context resource from the contexts directory
+fn load_context(name: &str, contexts_dir: &str) -> anyhow::Result<Option<Context>> {
+    let contexts_path = Path::new(contexts_dir);
+
+    // Try loading from file: <name>.yaml or <name>.yml
+    for ext in &["yaml", "yml"] {
+        let file_path = contexts_path.join(format!("{}.{}", name, ext));
+        if file_path.exists() {
+            let content = std::fs::read_to_string(&file_path)
+                .map_err(|e| anyhow::anyhow!("Failed to read context file {:?}: {}", file_path, e))?;
+
+            let mut context: Context = serde_yaml::from_str(&content)
+                .map_err(|e| anyhow::anyhow!("Failed to parse context file {:?}: {}", file_path, e))?;
+
+            // Expand environment variables
+            context.expand_env_vars();
+
+            // Validate
+            context.validate()
+                .map_err(|e| anyhow::anyhow!("Invalid context '{}': {}", name, e))?;
+
+            tracing::info!("Loaded context '{}' from {:?}", name, file_path);
+            return Ok(Some(context));
+        }
+    }
+
+    // Context file not found - check if contexts dir exists
+    if !contexts_path.exists() {
+        tracing::warn!(
+            "Contexts directory '{}' not found. Create it with context YAML files.",
+            contexts_dir
+        );
+    } else {
+        tracing::warn!(
+            "Context '{}' not found in '{}'. Available contexts: {:?}",
+            name,
+            contexts_dir,
+            list_available_contexts(contexts_path)
+        );
+    }
+
+    Err(anyhow::anyhow!(
+        "Context '{}' not found. Create {}/{}.yaml with your context definition.",
+        name, contexts_dir, name
+    ))
+}
+
+/// List available context names in a directory
+fn list_available_contexts(dir: &Path) -> Vec<String> {
+    let mut contexts = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "yaml" || e == "yml") {
+                if let Some(stem) = path.file_stem() {
+                    contexts.push(stem.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    contexts
 }
