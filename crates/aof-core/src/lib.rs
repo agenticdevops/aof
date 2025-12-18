@@ -5,13 +5,17 @@
 
 pub mod agent;
 pub mod agentflow;
+pub mod binding;
+pub mod context;
 pub mod error;
 pub mod error_tracker;
 pub mod fleet;
 pub mod mcp;
 pub mod memory;
 pub mod model;
+pub mod registry;
 pub mod tool;
+pub mod trigger;
 pub mod workflow;
 
 // Re-export core types
@@ -49,6 +53,20 @@ pub use agentflow::{
     FlowConnection, FlowContext, FlowError, FlowExecutionStatus, FlowNode, FlowRetryConfig,
     FlowTrigger, NodeCondition, NodeConfig, NodeExecutionStatus, NodeResult, NodeType,
     TriggerConfig, TriggerType,
+};
+pub use binding::{
+    BindingMatch, FlowBinding, FlowBindingMetadata, FlowBindingSpec, ResolvedBinding,
+};
+pub use context::{
+    ApprovalConfig, AuditConfig, AuditEvent, Context, ContextMetadata, ContextSpec,
+    LimitsConfig, SecretRef,
+};
+pub use registry::{
+    AgentRegistry, BindingRegistry, ContextRegistry, FlowRegistry, Registry,
+    ResourceManager, TriggerRegistry,
+};
+pub use trigger::{
+    StandaloneTriggerConfig, StandaloneTriggerType, Trigger, TriggerMetadata, TriggerSpec,
 };
 
 /// Version information
