@@ -42,6 +42,19 @@ spec:
       bot_token_env: SLACK_BOT_TOKEN
       signing_secret_env: SLACK_SIGNING_SECRET
 
+      # Approval Whitelist (optional)
+      # Restrict who can approve destructive commands (delete, scale, apply, etc.)
+      # If not set, anyone can approve. Supports:
+      # - Raw Slack user IDs: "U12345678"
+      # - Platform-prefixed: "slack:U12345678" (for future multi-platform support)
+      # - Email format (future): "email:user@company.com"
+      #
+      # Example:
+      # approval_allowed_users:
+      #   - U12345678          # Slack user ID (find in Slack profile)
+      #   - UABCDEFGH          # Another team member
+      #   - slack:U98765432    # Platform-prefixed format
+
   agents:
     directory: ./examples/agents/
     watch: false

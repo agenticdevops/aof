@@ -415,7 +415,7 @@ Approvals are keyed by message timestamp. If the bot restarts, pending approvals
 
 | Feature | Status | Platform |
 |---------|--------|----------|
-| Global `approval.allowed_users` config | 🔄 In Progress | All platforms |
+| Platform-specific `approval_allowed_users` | ✅ Complete | Slack (v0.1.16+) |
 | Discord approval (reactions) | 🔄 Planned | Discord |
 | Teams approval (Adaptive Cards) | 🔄 Planned | Microsoft Teams |
 | Telegram approval (inline buttons) | 🔄 Planned | Telegram |

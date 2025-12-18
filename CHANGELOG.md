@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Approval User Whitelist** - Configure which users can approve destructive commands
+  - New `approval_allowed_users` field in daemon config
+  - Platform-agnostic ID format support: `U12345678`, `slack:U12345678`, `email:user@company.com`
+  - If not configured, anyone can approve (backward compatible)
+  - Documentation and example config updated
+
 ## [0.1.15] - 2025-12-18
 
 ### Added

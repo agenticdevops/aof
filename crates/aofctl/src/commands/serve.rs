@@ -150,6 +150,15 @@ pub struct SlackPlatformConfig {
 
     /// Bot user ID (for mention detection)
     pub bot_user_id: Option<String>,
+
+    /// User IDs allowed to approve destructive commands
+    /// If not specified, anyone can approve
+    /// Supports platform-agnostic IDs with prefixes:
+    /// - Raw Slack user IDs: "U12345678"
+    /// - Prefixed format: "slack:U12345678"
+    /// - Email format (future): "email:user@company.com"
+    #[serde(default)]
+    pub approval_allowed_users: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -367,7 +376,7 @@ pub async fn execute(
                     bot_name: "aofbot".to_string(),
                     allowed_workspaces: None,
                     allowed_channels: None,
-                    approval_allowed_users: None,  // Anyone can approve by default
+                    approval_allowed_users: slack_config.approval_allowed_users.clone(),
                     approval_allowed_roles: None,  // For future RBAC support
                 };
                 // Use async constructor to auto-detect bot_user_id from Slack API
