@@ -32,6 +32,60 @@ To add approval support for a new platform:
 2. Handle approval events (reactions, button clicks, etc.)
 3. Call the shared `handle_approval` method on `TriggerHandler`
 
+### Platform-Specific Approval Methods (Planned)
+
+Each platform uses its native interaction mechanism for approvals:
+
+| Platform | Mechanism | API | Notes |
+|----------|-----------|-----|-------|
+| **Slack** | Reactions | Events API | ✅ Implemented - `reaction_added` events |
+| **Discord** | Reactions | Gateway API | Similar to Slack, use emoji reactions |
+| **Telegram** | Inline Keyboards | Bot API | Interactive buttons below message |
+| **Microsoft Teams** | Adaptive Cards | Bot Framework | Rich card with action buttons |
+| **WhatsApp** | Interactive Buttons | Cloud API | Up to 3 buttons per message |
+
+#### WhatsApp Business API (Planned)
+
+WhatsApp Business API supports [Interactive Messages](https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-messages) with button replies - perfect for approval workflows:
+
+```json
+{
+  "type": "interactive",
+  "interactive": {
+    "type": "button",
+    "header": { "type": "text", "text": "⚠️ Approval Required" },
+    "body": { "text": "kubectl create deployment nginx --image=nginx" },
+    "action": {
+      "buttons": [
+        { "type": "reply", "reply": { "id": "approve", "title": "✅ Approve" } },
+        { "type": "reply", "reply": { "id": "deny", "title": "❌ Deny" } }
+      ]
+    }
+  }
+}
+```
+
+**Requirements:**
+- WhatsApp Business Account
+- Cloud API access (Meta Developer Portal)
+- Verified business phone number
+- Webhook endpoint for button click callbacks
+
+**Planned Config:**
+```yaml
+platforms:
+  whatsapp:
+    enabled: true
+    access_token_env: WHATSAPP_ACCESS_TOKEN
+    verify_token_env: WHATSAPP_VERIFY_TOKEN
+    phone_number_id_env: WHATSAPP_PHONE_NUMBER_ID
+
+    # Approval whitelist (phone numbers)
+    approval_allowed_users:
+      - "+1234567890"
+      - "+0987654321"
+```
+
 ## How It Works
 
 ### 1. Agent Returns Approval Request
@@ -243,7 +297,9 @@ AOF supports two levels of approval configuration:
 1. **Global Configuration** (Platform-Agnostic) - Applies to all platforms
 2. **Platform-Specific Configuration** - Overrides global for a specific platform
 
-#### Global Configuration (Recommended)
+#### Global Configuration (Planned)
+
+> **Status:** 🔄 Coming Soon - This feature is planned for a future release.
 
 ```yaml
 apiVersion: aof.dev/v1
@@ -276,7 +332,6 @@ spec:
       enabled: true
       bot_token_env: SLACK_BOT_TOKEN
       signing_secret_env: SLACK_SIGNING_SECRET
-      bot_user_id: U12345678
 
     discord:
       enabled: true
@@ -288,7 +343,7 @@ spec:
       app_secret_env: TEAMS_APP_SECRET
 ```
 
-#### Platform-Specific Configuration (Overrides Global)
+#### Platform-Specific Configuration (Current Implementation)
 
 For Slack-only deployments or when you need platform-specific overrides:
 
@@ -298,7 +353,6 @@ platforms:
     enabled: true
     bot_token_env: SLACK_BOT_TOKEN
     signing_secret_env: SLACK_SIGNING_SECRET
-    bot_user_id: U12345678  # Your bot's user ID
 
     # Platform-specific: Overrides global approval.allowed_users for Slack
     approval_allowed_users:
@@ -307,23 +361,33 @@ platforms:
       - U33333333  # Team Lead
 ```
 
+> **Important:** After changing `approval_allowed_users`, you must restart the server for changes to take effect. Hot-reload is planned for a future release (see [GitHub Issue #22](https://github.com/agenticdevops/aof/issues/22)).
+
+### Finding Your Slack User ID
+
+1. In Slack, click on a user's profile
+2. Click the "..." (More) button
+3. Select "Copy member ID"
+4. The ID looks like `U015VBH1GTZ`
+
 ### User ID Resolution
 
 The approval system resolves user identities across platforms:
 
-| ID Format | Example | Platforms |
-|-----------|---------|-----------|
-| `email:user@company.com` | Universal | All (requires identity mapping) |
-| `slack:U12345678` | Slack user ID | Slack only |
-| `discord:123456789` | Discord user ID | Discord only |
-| `teams:user@tenant.com` | Teams UPN | Teams only |
-| `telegram:123456789` | Telegram user ID | Telegram only |
-| Raw ID (legacy) | `U12345678` | Platform-specific |
+| ID Format | Example | Status |
+|-----------|---------|--------|
+| Raw ID | `U12345678` | ✅ Implemented (Slack) |
+| `slack:U12345678` | Slack user ID | 🔄 Planned |
+| `discord:123456789` | Discord user ID | 🔄 Planned |
+| `teams:user@tenant.com` | Teams UPN | 🔄 Planned |
+| `telegram:123456789` | Telegram user ID | 🔄 Planned |
+| `whatsapp:+1234567890` | WhatsApp phone number | 🔄 Planned |
+| `email:user@company.com` | Universal | 🔄 Planned (requires identity mapping) |
 
 ### Behavior
 
 - **No whitelist configured**: Anyone can approve (default)
-- **Global whitelist only**: Applies to all platforms
+- **Global whitelist only**: Applies to all platforms (planned)
 - **Platform-specific whitelist**: Overrides global for that platform
 - **Unauthorized approval attempt**: User sees "⚠️ @user is not authorized to approve commands"
 
@@ -415,7 +479,9 @@ Approvals are keyed by message timestamp. If the bot restarts, pending approvals
 
 | Feature | Status | Platform |
 |---------|--------|----------|
-| Platform-specific `approval_allowed_users` | ✅ Complete | Slack (v0.1.16+) |
+| Global `spec.approval.allowed_users` | 🔄 Planned | All platforms |
+| Config hot-reload (`aofctl serve --reload`) | 🔄 [Issue #22](https://github.com/agenticdevops/aof/issues/22) | All |
+| Platform-prefixed IDs (`slack:U123`, `discord:123`) | 🔄 Planned | All platforms |
 | Discord approval (reactions) | 🔄 Planned | Discord |
 | Teams approval (Adaptive Cards) | 🔄 Planned | Microsoft Teams |
 | Telegram approval (inline buttons) | 🔄 Planned | Telegram |
@@ -424,6 +490,7 @@ Approvals are keyed by message timestamp. If the bot restarts, pending approvals
 
 ## Future Enhancements
 
+- [ ] Config hot-reload without server restart ([Issue #22](https://github.com/agenticdevops/aof/issues/22))
 - [ ] Approval timeout/expiration
 - [ ] Multi-party approval (require 2+ approvals)
 - [ ] Global platform-agnostic RBAC (spec.approval.allowed_users)
