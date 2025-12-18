@@ -580,6 +580,10 @@ impl TriggerPlatform for TelegramPlatform {
     fn supports_files(&self) -> bool {
         true
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[cfg(test)]

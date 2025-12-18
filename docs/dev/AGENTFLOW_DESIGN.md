@@ -1,7 +1,7 @@
 # AgentFlow Design Document
 
-**Last Updated**: December 17, 2025
-**Status**: Implemented (Core Features)
+**Last Updated**: December 18, 2025
+**Status**: Implemented (Core Features + Multi-Tenant Routing)
 
 ## Overview
 
@@ -423,13 +423,21 @@ aofctl logs workflow-run incident-response-abc123
 - [x] Validation via Conditional nodes
 - [x] CLI integration (`aofctl run flow`, `aofctl describe flow`)
 
-### Phase 4: AgentFleet Integration 🔄 IN PROGRESS
+### Phase 4: Multi-Tenant Routing ✅ COMPLETED
+- [x] FlowRegistry for loading flows from directory
+- [x] FlowRouter for trigger filtering (channel, user, pattern)
+- [x] FlowContext for execution environment (kubeconfig, namespace, env)
+- [x] Integration with TriggerHandler
+- [x] CLI support (`--flows-dir` argument)
+- [x] DaemonConfig support (`flows:` section)
+
+### Phase 5: AgentFleet Integration 🔄 IN PROGRESS
 - [ ] Fleet definition and management
 - [ ] Coordination modes
 - [ ] Shared resources
 - [ ] Fleet-aware workflows
 
-### Phase 5: Production Features 📋 PLANNED
+### Phase 6: Production Features 📋 PLANNED
 - [ ] Full checkpointing/recovery
 - [ ] Persistent state backends
 - [ ] Metrics and observability
@@ -453,6 +461,72 @@ aofctl logs workflow-run incident-response-abc123
 | Agent coordination | ✅ | ⚠️ | ✅ | ✅ | ⚠️ Partial |
 | K8s-native config | ❌ | ❌ | ❌ | ❌ | ✅ Unique |
 | MCP tool integration | ❌ | ❌ | ❌ | ❌ | ✅ Unique |
+
+## Multi-Tenant Bot Architecture
+
+AgentFlow supports routing messages to different flows based on channel, user, and patterns. This enables **multi-tenant bot deployments** where each context (production, staging, team) gets its own agent configuration.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TriggerHandler                        │
+│                                                          │
+│  Incoming Message (Slack, Discord, WhatsApp, etc.)      │
+│                          │                               │
+│                          ▼                               │
+│                   ┌─────────────┐                        │
+│                   │ FlowRouter  │                        │
+│                   └──────┬──────┘                        │
+│                          │                               │
+│         ┌────────────────┼────────────────┐              │
+│         ▼                ▼                ▼              │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
+│  │ prod-flow   │  │ staging-flow│  │ oncall-flow │      │
+│  │ #production │  │ #staging    │  │ WhatsApp    │      │
+│  │ kubeconfig: │  │ kubeconfig: │  │ PagerDuty   │      │
+│  │   prod      │  │   staging   │  │ integration │      │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘      │
+│         │                │                │              │
+│         ▼                ▼                ▼              │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
+│  │ Agent (prod │  │ Agent (stg  │  │ Agent (oncall│     │
+│  │   cluster)  │  │   cluster)  │  │   alerts)   │      │
+│  └─────────────┘  └─────────────┘  └─────────────┘      │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Trigger Filtering
+
+Flows are matched in priority order based on:
+
+1. **Platform** - Slack, WhatsApp, Discord, etc.
+2. **Channels** - More specific channel matches win
+3. **Users** - User restrictions increase priority
+4. **Patterns** - Message pattern matching (regex)
+
+### Execution Context
+
+Each flow specifies its own execution environment:
+
+```yaml
+context:
+  kubeconfig: ${KUBECONFIG_PROD}    # Kubernetes config path
+  namespace: default                 # Default K8s namespace
+  cluster: prod-cluster              # Cluster identifier
+  env:                               # Environment variables
+    ENVIRONMENT: production
+    REQUIRE_APPROVAL: "true"
+  working_dir: /workspace            # Tool execution directory
+```
+
+### Example Multi-Tenant Setup
+
+See `examples/flows/multi-tenant/` for complete examples:
+- `slack-prod-k8s-bot.yaml` - Production cluster bot
+- `slack-staging-k8s-bot.yaml` - Staging cluster bot
+- `slack-dev-local-bot.yaml` - Local dev cluster bot
+- `whatsapp-oncall-bot.yaml` - WhatsApp on-call bot
 
 ## Example Use Cases
 

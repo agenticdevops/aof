@@ -238,6 +238,66 @@ pub enum CoordinationMode {
 └─────────────────────────────────────────────────────┘
 ```
 
+## AgentFlow Architecture
+
+### Flow Router
+
+The FlowRouter routes incoming events to matching AgentFlows based on:
+
+```rust
+pub struct FlowRouter {
+    registry: Arc<FlowRegistry>,
+}
+
+impl FlowRouter {
+    pub async fn route(&self, platform: &str, channel: Option<&str>,
+                        user: Option<&str>, text: Option<&str>) -> Option<Arc<AgentFlowSpec>> {
+        // Match flows by platform, channel, user, and message pattern
+    }
+}
+```
+
+### Flow Registry
+
+```rust
+pub struct FlowRegistry {
+    flows: HashMap<String, Arc<AgentFlowSpec>>,
+}
+
+impl FlowRegistry {
+    pub async fn from_directory(path: &Path) -> Result<Self> {
+        // Load all AgentFlow YAML files from directory
+    }
+}
+```
+
+### Execution Context
+
+Each AgentFlow can specify its own execution context:
+
+```rust
+pub struct FlowContext {
+    pub kubeconfig: Option<String>,
+    pub namespace: Option<String>,
+    pub cluster: Option<String>,
+    pub env: HashMap<String, String>,
+    pub working_dir: Option<String>,
+}
+```
+
+### Trigger Config Filtering
+
+```rust
+pub struct TriggerConfig {
+    pub events: Vec<String>,
+    pub channels: Option<Vec<String>>,    // Channel filtering
+    pub users: Option<Vec<String>>,       // User filtering
+    pub patterns: Option<Vec<String>>,    // Regex pattern matching
+    pub bot_token: Option<String>,
+    pub signing_secret: Option<String>,
+}
+```
+
 ## Workflow Engine
 
 ### Step Types

@@ -296,7 +296,7 @@ Triggers enable event-driven agent execution:
 
 | Platform | Events |
 |----------|--------|
-| Slack | Messages, slash commands, button clicks |
+| Slack | Messages, slash commands, button clicks, reactions |
 | Discord | Messages, slash commands |
 | Telegram | Messages, commands |
 | WhatsApp | Messages |
@@ -316,6 +316,42 @@ spec:
     channels: ["#incidents"]
   agent: incident-responder
 ```
+
+### Human-in-the-Loop Approval Workflow
+
+AOF supports native human-in-the-loop approval for destructive operations. When an agent returns `requires_approval: true`, the system:
+
+1. **Posts approval request** to Slack with ✅ and ❌ reactions
+2. **Waits for user reaction** - approve or deny
+3. **Executes command** on approval
+4. **Sends result feedback** back to Slack
+
+**Agent Configuration:**
+```yaml
+instructions: |
+  For destructive operations (create, delete, scale), return:
+
+  requires_approval: true
+  command: "kubectl create deployment nginx --image=nginx"
+```
+
+**Example Flow:**
+```
+User: @bot create nginx deployment with 3 replicas
+
+Bot: I'll create an nginx deployment.
+     ⚠️ This action requires approval
+     `kubectl create deployment nginx --replicas=3`
+     React with ✅ to approve or ❌ to deny.
+
+[User reacts with ✅]
+
+Bot: ✅ Command completed successfully
+     deployment.apps/nginx created
+     Approved by: @user
+```
+
+Full documentation: [Approval Workflow Guide](../guides/approval-workflow.md)
 
 ---
 

@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::mpsc as tokio_mpsc;
+use tokio::sync::{mpsc as tokio_mpsc, RwLock};
 use tracing::info;
 use crate::resources::ResourceType;
 use ratatui::{
@@ -765,8 +765,8 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
 
     info!("Executing AgentFlow from: {}", config_path);
 
-    // Create runtime for agent execution
-    let runtime = std::sync::Arc::new(Runtime::new());
+    // Create runtime for agent execution (wrapped in RwLock for mutable access)
+    let runtime = std::sync::Arc::new(RwLock::new(Runtime::new()));
 
     // Create AgentFlow executor from file
     let executor = AgentFlowExecutor::from_file(config_path, runtime.clone())

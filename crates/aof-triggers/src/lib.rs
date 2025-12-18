@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub mod command;
+pub mod flow;
 pub mod handler;
 pub mod platforms;
 pub mod response;
@@ -28,6 +29,9 @@ pub use response::{ResponseFormat, TriggerResponse, TriggerResponseBuilder};
 
 // Re-export main types from server module
 pub use server::{TriggerServer, TriggerServerBuilder, TriggerServerConfig};
+
+// Re-export flow types
+pub use flow::{FlowMatch, FlowRegistry, FlowRouter, MatchReason};
 
 // Re-export error types from aof-core
 pub use aof_core::{AofError, AofResult};

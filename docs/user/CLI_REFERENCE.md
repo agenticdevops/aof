@@ -217,6 +217,7 @@ aofctl serve [options]
 - `-p, --port <port>`: Port to listen on [default: 8080]
 - `--host <host>`: Host to bind to [default: 0.0.0.0]
 - `--agents-dir <dir>`: Directory containing agent YAML files
+- `--flows-dir <dir>`: Directory containing AgentFlow YAML files for event-driven routing
 
 **Examples:**
 ```bash
@@ -226,8 +227,11 @@ aofctl serve
 # Start with configuration file
 aofctl serve --config daemon-config.yaml
 
-# Start on specific port
+# Start on specific port with agents
 aofctl serve --port 9090 --agents-dir ./agents/
+
+# Start with multi-tenant flow routing
+aofctl serve --flows-dir ./flows/ --agents-dir ./agents/ --port 3000
 ```
 
 **Configuration File Format:**
@@ -258,10 +262,30 @@ spec:
     directory: ./agents/
     watch: true
 
+  # AgentFlow-based routing (multi-tenant bot architecture)
+  flows:
+    directory: ./flows/
+    watch: false
+    enabled: true
+
   runtime:
     max_concurrent_tasks: 10
     task_timeout_secs: 300
+    default_agent: fallback-bot  # Used when no flow matches
 ```
+
+**Multi-Tenant Flow Routing:**
+
+When `flows.enabled: true`, incoming messages are matched against AgentFlow files:
+
+1. **Platform** - Match Slack, WhatsApp, etc.
+2. **Channel** - Route `#production` messages to production flows
+3. **User** - Restrict flows to specific users
+4. **Pattern** - Match message patterns (e.g., `kubectl`, `deploy`)
+
+Each flow can specify its own execution context (kubeconfig, namespace, environment variables).
+
+See [AgentFlow Spec](../reference/agentflow-spec.md#trigger-filtering-multi-tenant-routing) for routing configuration.
 
 ### validate
 

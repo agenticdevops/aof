@@ -157,6 +157,10 @@ pub enum Commands {
         /// Directory containing agent YAML files
         #[arg(long)]
         agents_dir: Option<String>,
+
+        /// Directory containing AgentFlow YAML files for event-driven routing
+        #[arg(long)]
+        flows_dir: Option<String>,
     },
 
     /// Manage agent fleets (multi-agent coordination)
@@ -242,12 +246,14 @@ impl Cli {
                 port,
                 host,
                 agents_dir,
+                flows_dir,
             } => {
                 commands::serve::execute(
                     config.as_deref(),
                     port,
                     host.as_deref(),
                     agents_dir.as_deref(),
+                    flows_dir.as_deref(),
                 )
                 .await
             }

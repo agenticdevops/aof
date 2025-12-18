@@ -46,7 +46,7 @@ pub use fleet::{
 };
 pub use agentflow::{
     AgentFlow, AgentFlowMetadata, AgentFlowSpec, AgentFlowState, FlowConfig,
-    FlowConnection, FlowError, FlowExecutionStatus, FlowNode, FlowRetryConfig,
+    FlowConnection, FlowContext, FlowError, FlowExecutionStatus, FlowNode, FlowRetryConfig,
     FlowTrigger, NodeCondition, NodeConfig, NodeExecutionStatus, NodeResult, NodeType,
     TriggerConfig, TriggerType,
 };

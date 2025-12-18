@@ -32,6 +32,14 @@ spec:
     - type: TriggerType
       config: TriggerConfig
 
+  context:                  # Optional: Execution context
+    kubeconfig: string      # Path to kubeconfig
+    namespace: string       # Default K8s namespace
+    cluster: string         # Cluster name
+    env:                    # Environment variables
+      KEY: value
+    working_dir: string
+
   nodes:                    # Required: Flow steps
     - id: string
       type: NodeType
@@ -209,6 +217,236 @@ spec:
 **Usage:**
 ```bash
 aofctl run flow my-flow.yaml --input '{"key": "value"}'
+```
+
+---
+
+## Trigger Filtering (Multi-Tenant Routing)
+
+AgentFlows support filtering triggers by channel, user, and message patterns. This enables **multi-tenant bot architecture** where different flows handle different contexts.
+
+### Channel Filtering
+
+Route to flows based on Slack/Discord channel:
+
+```yaml
+spec:
+  trigger:
+    type: Slack
+    config:
+      events:
+        - app_mention
+      channels:                # Only respond in these channels
+        - production
+        - prod-alerts
+        - sre-oncall
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
+```
+
+### User Filtering
+
+Restrict flows to specific users:
+
+```yaml
+spec:
+  trigger:
+    type: Slack
+    config:
+      events:
+        - app_mention
+      users:                   # Only respond to these users
+        - U012PLATFORM1        # Platform team lead
+        - U012PLATFORM2        # SRE team
+      bot_token: ${SLACK_BOT_TOKEN}
+```
+
+### Pattern Matching
+
+Filter based on message content (regex):
+
+```yaml
+spec:
+  trigger:
+    type: Slack
+    config:
+      events:
+        - app_mention
+      patterns:                # Only match these patterns
+        - "^(kubectl|k8s|kubernetes|pod|deploy)"
+        - "prod(uction)?"
+      bot_token: ${SLACK_BOT_TOKEN}
+```
+
+### Combined Filtering
+
+Combine all filters for precise routing:
+
+```yaml
+spec:
+  trigger:
+    type: Slack
+    config:
+      events:
+        - app_mention
+        - message
+      channels:
+        - production
+        - staging
+      users:
+        - U012PLATFORM1
+      patterns:
+        - "^(kubectl|scale|restart)"
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
+```
+
+---
+
+## Execution Context
+
+The `context` field defines the runtime environment for agent execution. This is crucial for multi-cluster setups where different flows connect to different Kubernetes clusters.
+
+### Context Configuration
+
+```yaml
+spec:
+  context:
+    # Kubernetes cluster connection
+    kubeconfig: ${KUBECONFIG_PROD:-~/.kube/prod-config}
+    namespace: default
+    cluster: prod-cluster
+
+    # Environment variables for agent execution
+    env:
+      ENVIRONMENT: production
+      CLUSTER_NAME: prod-cluster
+      KUBECTL_READONLY: "true"
+      REQUIRE_APPROVAL: "true"
+
+    # Working directory for tool execution
+    working_dir: /workspace
+```
+
+### Multi-Cluster Example
+
+Different flows for different clusters:
+
+**Production Flow:**
+```yaml
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: slack-prod-k8s-bot
+  labels:
+    environment: production
+    cluster: prod-cluster
+
+spec:
+  trigger:
+    type: Slack
+    config:
+      channels:
+        - production
+        - prod-alerts
+
+  context:
+    kubeconfig: ${KUBECONFIG_PROD}
+    namespace: default
+    cluster: prod-cluster
+    env:
+      KUBECTL_READONLY: "false"
+      REQUIRE_APPROVAL: "true"
+
+  nodes:
+    # ... nodes ...
+```
+
+**Staging Flow:**
+```yaml
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: slack-staging-k8s-bot
+  labels:
+    environment: staging
+    cluster: staging-cluster
+
+spec:
+  trigger:
+    type: Slack
+    config:
+      channels:
+        - staging
+        - dev-test
+
+  context:
+    kubeconfig: ${KUBECONFIG_STAGING}
+    namespace: staging
+    cluster: staging-cluster
+    env:
+      KUBECTL_READONLY: "false"
+      REQUIRE_APPROVAL: "false"
+      ALLOW_DELETE: "true"
+
+  nodes:
+    # ... nodes ...
+```
+
+---
+
+## Flow Router
+
+When running with `--flows-dir`, the daemon automatically routes incoming messages to matching flows using the FlowRouter.
+
+### Routing Priority
+
+Messages are matched to flows based on:
+
+1. **Platform** - Slack, WhatsApp, Discord, etc.
+2. **Channels** - More specific channel matches win
+3. **Users** - User restrictions increase priority
+4. **Patterns** - Pattern specificity matters
+
+### Daemon Configuration
+
+```yaml
+# daemon-config.yaml
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: multi-tenant-bot
+
+spec:
+  server:
+    port: 3000
+
+  platforms:
+    slack:
+      enabled: true
+      bot_token_env: SLACK_BOT_TOKEN
+      signing_secret_env: SLACK_SIGNING_SECRET
+
+  agents:
+    directory: ./agents/
+
+  # AgentFlow-based routing
+  flows:
+    directory: ./flows/
+    enabled: true
+
+  runtime:
+    default_agent: default-bot  # Fallback if no flow matches
+```
+
+### CLI Usage
+
+```bash
+# Start server with flows directory
+aofctl serve --flows-dir ./flows --agents-dir ./agents --port 3000
+
+# Or use config file
+aofctl serve --config daemon-config.yaml
 ```
 
 ---

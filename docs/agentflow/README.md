@@ -445,6 +445,85 @@ Combine parallel results:
       }
 ```
 
+## Multi-Tenant Bot Architecture
+
+AgentFlow supports routing messages to different flows based on channel, user, and patterns - enabling **multi-tenant bot deployments** where each context (production, staging, team) gets its own agent configuration.
+
+### Key Features
+
+- **Channel Filtering** - Route messages from `#production` to prod-cluster agent, `#staging` to staging-cluster agent
+- **User Restrictions** - Limit certain flows to specific users (admins, SRE team)
+- **Pattern Matching** - Match commands like `kubectl`, `deploy`, `scale` to Kubernetes agents
+- **Execution Context** - Each flow can specify its own kubeconfig, namespace, and environment variables
+
+### Example: Multi-Cluster Setup
+
+```yaml
+# slack-prod-k8s-bot.yaml - Production cluster bot
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: slack-prod-k8s-bot
+spec:
+  trigger:
+    type: Slack
+    config:
+      channels: [production, prod-alerts]
+      users: [U012ADMIN]
+  context:
+    kubeconfig: ${KUBECONFIG_PROD}
+    namespace: default
+    cluster: prod-cluster
+    env:
+      REQUIRE_APPROVAL: "true"
+  nodes:
+    - id: agent
+      type: Agent
+      config:
+        agent: k8s-bot
+```
+
+```yaml
+# slack-staging-k8s-bot.yaml - Staging cluster bot
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: slack-staging-k8s-bot
+spec:
+  trigger:
+    type: Slack
+    config:
+      channels: [staging, dev-test]
+  context:
+    kubeconfig: ${KUBECONFIG_STAGING}
+    namespace: staging
+    cluster: staging-cluster
+    env:
+      REQUIRE_APPROVAL: "false"
+  nodes:
+    - id: agent
+      type: Agent
+      config:
+        agent: k8s-bot
+```
+
+### Running Multi-Tenant Bots
+
+```bash
+# Start with flows directory
+aofctl serve \
+  --flows-dir ./flows/ \
+  --agents-dir ./agents/ \
+  --port 3000
+
+# Or use daemon config
+aofctl serve --config daemon-config.yaml
+```
+
+See [AgentFlow Spec Reference](../reference/agentflow-spec.md#trigger-filtering-multi-tenant-routing) for complete documentation on trigger filtering and execution context.
+
+---
+
 ## Roadmap
 
 Future enhancements planned:
@@ -453,7 +532,7 @@ Future enhancements planned:
 - A/B testing for agent prompts
 - Workflow versioning and rollbacks
 - Cost tracking and optimization
-- Multi-cluster orchestration
+- ~~Multi-cluster orchestration~~ ✅ Implemented via execution context
 - Integration with more tools (DataDog, Terraform, etc.)
 
 ## Contributing

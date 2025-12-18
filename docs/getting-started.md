@@ -184,6 +184,69 @@ aofctl run fleet code-review-fleet.yaml --input "Review: function add(a, b) { re
 
 Both agents run in parallel and their responses are aggregated. See [Core Concepts](concepts.md) for more on coordination modes.
 
+## Create Your First AgentFlow
+
+**AgentFlow** enables event-driven workflows with multi-tenant routing. Here's a Slack bot that routes to different clusters:
+
+```yaml
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: slack-prod-k8s-bot
+spec:
+  trigger:
+    type: Slack
+    config:
+      events: [app_mention]
+      channels: [production, prod-alerts]  # Only these channels
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
+
+  context:
+    kubeconfig: ${KUBECONFIG_PROD}
+    namespace: default
+    cluster: prod-cluster
+    env:
+      REQUIRE_APPROVAL: "true"
+
+  nodes:
+    - id: process
+      type: Agent
+      config:
+        agent: k8s-helper
+        input: ${event.text}
+
+    - id: respond
+      type: Slack
+      config:
+        channel: ${event.channel}
+        thread_ts: ${event.ts}
+        message: ${process.output}
+
+  connections:
+    - from: trigger
+      to: process
+    - from: process
+      to: respond
+```
+
+Save as `slack-prod-flow.yaml` and start the daemon:
+
+```bash
+# Set environment variables
+export SLACK_BOT_TOKEN="xoxb-your-token"
+export SLACK_SIGNING_SECRET="your-secret"
+export KUBECONFIG_PROD="~/.kube/prod-config"
+
+# Start daemon with flows
+aofctl serve --flows-dir ./flows --agents-dir ./agents --port 3000
+
+# Expose via tunnel (for Slack webhooks)
+cloudflared tunnel --url http://localhost:3000
+```
+
+Now messages in `#production` channel go to your prod-cluster agent! See [AgentFlow Spec](reference/agentflow-spec.md) for multi-tenant routing options.
+
 ## Next Steps
 
 You now have a working AI agent! Here's where to go next:

@@ -150,6 +150,8 @@ Complete documentation for the Agentic Ops Framework (AOF).
 
 ### For Specific Use Cases:
 - **Slack Bot**: [Slack Bot Tutorial](tutorials/slack-bot.md) + [slack-bot-flow.yaml](examples/slack-bot-flow.yaml)
+- **Human-in-the-Loop Approval**: [Approval Workflow Guide](guides/approval-workflow.md) - Reaction-based command approval
+- **Conversation Memory**: [Conversation Memory Guide](guides/conversation-memory.md) - Context persistence across messages
 - **Incident Response**: [Incident Response Tutorial](tutorials/incident-response.md) + [incident-responder.yaml](examples/incident-responder.yaml)
 - **Code Review**: [github-pr-reviewer.yaml](examples/github-pr-reviewer.yaml)
 - **K8s Operations**: [kubernetes-agent.yaml](examples/kubernetes-agent.yaml)
@@ -187,6 +189,7 @@ Essential reading:
 | Create first agent | [First Agent Tutorial](tutorials/first-agent.md) |
 | Add kubectl tools | [Agent Spec - Tools](reference/agent-spec.md#tool-shell) |
 | Build Slack bot | [Slack Bot Tutorial](tutorials/slack-bot.md) |
+| Add approval workflow | [Approval Workflow Guide](guides/approval-workflow.md) |
 | Setup auto-remediation | [Incident Response Tutorial](tutorials/incident-response.md) |
 | Schedule workflows | [AgentFlow Spec - Schedule Trigger](reference/agentflow-spec.md#schedule) |
 | CLI commands | [aofctl Reference](reference/aofctl.md) |
@@ -263,9 +266,14 @@ See [Examples README](examples/README.md#contributing-examples) for guidelines.
 
 ## 🔄 Documentation Updates
 
-Last updated: 2025-12-17
+Last updated: 2025-12-18
 
 ### Recent Changes
+- **NEW**: Conversation Memory System - Context persistence across Slack messages
+- **NEW**: AgentFlow Multi-Tenant Routing - Route messages to different agents based on patterns
+- **NEW**: Bot self-approval prevention - Auto-detects bot_user_id at startup
+- **NEW**: Human-in-the-Loop Approval Workflow Guide - Reaction-based command approval for Slack
+- **NEW**: Conversation Memory Guide - Contextual follow-up conversations
 - **NEW**: Multi-Model Consensus Architecture guide
 - **NEW**: Multi-Model RCA Tutorial with tiered execution
 - **NEW**: AgentFleet YAML Reference (fleet-spec.md)

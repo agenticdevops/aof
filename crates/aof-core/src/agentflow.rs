@@ -92,9 +92,42 @@ pub struct AgentFlowSpec {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<FlowTrigger>,
 
+    /// Execution context (environment, kubeconfig, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<FlowContext>,
+
     /// Global flow configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<FlowConfig>,
+}
+
+/// Flow execution context - environment and runtime configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowContext {
+    /// Kubeconfig file path (for kubectl tools)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kubeconfig: Option<String>,
+
+    /// Kubernetes namespace (default context)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+
+    /// Kubernetes cluster name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<String>,
+
+    /// Environment variables to set for agent execution
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub env: HashMap<String, String>,
+
+    /// Working directory for tool execution
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+
+    /// Additional context variables available in templates
+    #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 /// Flow trigger configuration
@@ -136,6 +169,18 @@ pub struct TriggerConfig {
     /// Events to listen for (Slack: app_mention, message, slash_command)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<String>,
+
+    /// Channels to listen on (Slack/Discord channel names or IDs)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub channels: Vec<String>,
+
+    /// Users to respond to (user IDs or patterns)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub users: Vec<String>,
+
+    /// Message patterns to match (regex)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub patterns: Vec<String>,
 
     /// Bot token (or env var reference ${VAR_NAME})
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -226,6 +271,11 @@ pub struct NodeConfig {
     /// Agent name to execute
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
+
+    /// Inline agent configuration (YAML string)
+    /// Use this to embed agent config directly in the flow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_config: Option<String>,
 
     /// Input to the agent (can contain ${variable} references)
     #[serde(skip_serializing_if = "Option::is_none")]

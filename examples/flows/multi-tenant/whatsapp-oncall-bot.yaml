@@ -1,0 +1,166 @@
+# WhatsApp On-Call Bot
+#
+# A multi-tenant AgentFlow for WhatsApp-based on-call incident response.
+# Allows on-call engineers to check cluster status and run basic diagnostics
+# via WhatsApp messages.
+#
+# Key Features:
+# - WhatsApp platform trigger
+# - Filtered to specific phone numbers (on-call team)
+# - Connected to production cluster for read-only operations
+# - Optimized for mobile-friendly responses
+#
+# Prerequisites:
+# - WhatsApp Business API credentials
+# - WHATSAPP_TOKEN and WHATSAPP_VERIFY_TOKEN environment variables
+# - Production kubeconfig (read-only access)
+# - LLM API key
+#
+# To deploy:
+#   aofctl apply -f examples/flows/multi-tenant/whatsapp-oncall-bot.yaml
+#
+# Configure WhatsApp webhook:
+#   https://your-domain.com/webhook/whatsapp
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: whatsapp-oncall-bot
+  labels:
+    platform: whatsapp
+    environment: production
+    team: sre
+    purpose: oncall
+  annotations:
+    description: "WhatsApp bot for on-call incident response"
+    owner: sre-team@company.com
+    docs: "https://docs.company.com/oncall/whatsapp-bot"
+
+spec:
+  # WhatsApp trigger
+  trigger:
+    type: WhatsApp
+    config:
+      events:
+        - message
+        - button_reply
+      # Restrict to on-call team phone numbers
+      users:
+        - "+1234567890"   # On-call lead
+        - "+1234567891"   # SRE team member
+        - "+1234567892"   # Platform engineer
+      # Pattern matching for incident keywords
+      patterns:
+        - "^(status|health|check|incident|alert)"
+        - "^(pods?|deploy|service|node)"
+        - "^(help|commands)"
+      # WhatsApp API credentials
+      bot_token: ${WHATSAPP_TOKEN}
+      signing_secret: ${WHATSAPP_VERIFY_TOKEN}
+
+  # Production context (read-only for WhatsApp)
+  context:
+    kubeconfig: ${KUBECONFIG_PROD:-~/.kube/prod-config}
+    namespace: default
+    cluster: prod-cluster
+    env:
+      ENVIRONMENT: production
+      CLUSTER_NAME: prod-cluster
+      # WhatsApp bot is read-only for safety
+      KUBECTL_READONLY: "true"
+      REQUIRE_APPROVAL: "true"
+      # Mobile-optimized output
+      OUTPUT_FORMAT: compact
+      MAX_OUTPUT_LINES: "20"
+    working_dir: /workspace
+
+  # Workflow nodes
+  nodes:
+    # 1. Parse WhatsApp message
+    - id: parse-message
+      type: Transform
+      config:
+        script: |
+          export MESSAGE_TEXT="${event.text}"
+          export WHATSAPP_USER="${event.from}"
+          export WHATSAPP_PHONE="${event.phone_number}"
+          export MESSAGE_ID="${event.message_id}"
+          echo "[WHATSAPP] From: ${WHATSAPP_PHONE}"
+
+    # 2. Handle help command separately
+    - id: check-help
+      type: Conditional
+      config:
+        condition: ${MESSAGE_TEXT} =~ "^help|^commands"
+
+    # 3a. Show help message
+    - id: show-help
+      type: End
+      config:
+        output: |
+          *Available Commands:*
+
+          status - Cluster health overview
+          pods [namespace] - List pods
+          deploy [name] - Deployment status
+          logs [pod] - Recent pod logs
+          alerts - Active alerts
+
+          Example: "status prod-namespace"
+
+    # 3b. Process with K8s agent
+    - id: agent-process
+      type: Agent
+      config:
+        agent: kubernetes-ops-agent
+        input: ${MESSAGE_TEXT}
+        context:
+          platform: whatsapp
+          user_phone: ${WHATSAPP_PHONE}
+          environment: production
+          # Read-only mode
+          readonly: "true"
+          # Compact output for mobile
+          output_format: compact
+
+    # 4. Format response for WhatsApp
+    - id: format-response
+      type: Transform
+      config:
+        script: |
+          # Truncate output for WhatsApp character limits
+          OUTPUT="${agent-process.output.output}"
+          if [ ${#OUTPUT} -gt 4000 ]; then
+            OUTPUT="${OUTPUT:0:3900}...\n\n_[truncated]_"
+          fi
+          export WHATSAPP_RESPONSE="$OUTPUT"
+
+    # 5. Send response
+    - id: send-response
+      type: End
+      config:
+        output: ${WHATSAPP_RESPONSE}
+
+  connections:
+    - from: trigger
+      to: parse-message
+    - from: parse-message
+      to: check-help
+    - from: check-help
+      to: show-help
+      when: is_help == true
+    - from: check-help
+      to: agent-process
+      when: is_help == false
+    - from: agent-process
+      to: format-response
+    - from: format-response
+      to: send-response
+
+  config:
+    default_timeout_seconds: 30
+    verbose: true
+    retry:
+      max_attempts: 2
+      initial_delay: "1s"
+      backoff_multiplier: 1.5

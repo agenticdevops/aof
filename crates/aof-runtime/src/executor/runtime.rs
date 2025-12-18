@@ -328,6 +328,11 @@ impl Runtime {
         self.agents.keys().cloned().collect()
     }
 
+    /// Check if an agent is loaded
+    pub fn has_agent(&self, name: &str) -> bool {
+        self.agents.contains_key(name)
+    }
+
     /// Get agent executor by name
     pub fn get_agent(&self, name: &str) -> Option<Arc<AgentExecutor>> {
         self.agents.get(name).cloned()

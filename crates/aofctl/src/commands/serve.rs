@@ -9,15 +9,17 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use aof_runtime::RuntimeOrchestrator;
+use aof_runtime::{Runtime, RuntimeOrchestrator};
 use aof_triggers::{
     TriggerHandler, TriggerHandlerConfig, TriggerServer, TriggerServerConfig,
     SlackPlatform, SlackConfig,
     DiscordPlatform, PlatformConfig,
     TelegramPlatform, TelegramConfig,
     WhatsAppPlatform, WhatsAppConfig,
+    flow::{FlowRegistry, FlowRouter},
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use tracing::{info, warn, error};
 
 /// Server configuration loaded from YAML
@@ -58,6 +60,10 @@ pub struct ServeSpec {
     /// Agent directory (for auto-discovery)
     #[serde(default)]
     pub agents: AgentDiscoveryConfig,
+
+    /// Flows directory (for AgentFlow-based routing)
+    #[serde(default)]
+    pub flows: FlowsConfig,
 
     /// Runtime settings
     #[serde(default)]
@@ -192,6 +198,21 @@ pub struct AgentDiscoveryConfig {
     pub watch: bool,
 }
 
+/// Flows configuration for AgentFlow-based routing
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FlowsConfig {
+    /// Directory containing AgentFlow YAML files
+    pub directory: Option<PathBuf>,
+
+    /// Watch for changes and hot-reload
+    #[serde(default)]
+    pub watch: bool,
+
+    /// Enable flow-based routing (takes priority over default_agent)
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
     /// Maximum concurrent tasks
@@ -205,6 +226,9 @@ pub struct RuntimeConfig {
     /// Max tasks per user
     #[serde(default = "default_max_per_user")]
     pub max_tasks_per_user: usize,
+
+    /// Default agent for natural language messages (non-slash-command)
+    pub default_agent: Option<String>,
 }
 
 impl Default for RuntimeConfig {
@@ -213,6 +237,7 @@ impl Default for RuntimeConfig {
             max_concurrent_tasks: default_max_concurrent(),
             task_timeout_secs: default_task_timeout(),
             max_tasks_per_user: default_max_per_user(),
+            default_agent: None,
         }
     }
 }
@@ -252,6 +277,7 @@ pub async fn execute(
     port: Option<u16>,
     host: Option<&str>,
     agents_dir: Option<&str>,
+    flows_dir: Option<&str>,
 ) -> anyhow::Result<()> {
     // Load configuration
     let config = if let Some(config_path) = config_file {
@@ -274,6 +300,11 @@ pub async fn execute(
                 agents: AgentDiscoveryConfig {
                     directory: agents_dir.map(PathBuf::from),
                     watch: false,
+                },
+                flows: FlowsConfig {
+                    directory: flows_dir.map(PathBuf::from),
+                    watch: false,
+                    enabled: true,
                 },
                 runtime: RuntimeConfig::default(),
             },
@@ -299,10 +330,15 @@ pub async fn execute(
     // Create handler config
     let handler_config = TriggerHandlerConfig {
         verbose: true,
-        auto_ack: true,
+        auto_ack: false, // Don't auto-ack for natural language - we handle it ourselves
         max_tasks_per_user: config.spec.runtime.max_tasks_per_user,
         command_timeout_secs: config.spec.runtime.task_timeout_secs,
+        default_agent: config.spec.runtime.default_agent.clone(),
     };
+
+    if let Some(ref agent) = config.spec.runtime.default_agent {
+        info!("  Default agent for natural language: {}", agent);
+    }
 
     // Create trigger handler
     let mut handler = TriggerHandler::with_config(orchestrator, handler_config);
@@ -331,8 +367,12 @@ pub async fn execute(
                     bot_name: "aofbot".to_string(),
                     allowed_workspaces: None,
                     allowed_channels: None,
+                    approval_allowed_users: None,  // Anyone can approve by default
+                    approval_allowed_roles: None,  // For future RBAC support
                 };
-                match SlackPlatform::new(platform_config) {
+                // Use async constructor to auto-detect bot_user_id from Slack API
+                // This is critical for preventing self-approval of destructive commands
+                match SlackPlatform::new_with_auto_detection(platform_config).await {
                     Ok(platform) => {
                         handler.register_platform(Arc::new(platform));
                         info!("  Registered platform: slack");
@@ -443,6 +483,55 @@ pub async fn execute(
     if platforms_registered == 0 {
         warn!("No platforms registered! Server will start but won't process any webhooks.");
         warn!("Configure platforms in your config file or set environment variables.");
+    }
+
+    // Load AgentFlows and set up FlowRouter
+    let flows_dir_path = flows_dir
+        .map(PathBuf::from)
+        .or_else(|| config.spec.flows.directory.clone());
+
+    if config.spec.flows.enabled {
+        if let Some(ref flows_path) = flows_dir_path {
+            info!("Loading AgentFlows from: {}", flows_path.display());
+
+            match FlowRegistry::from_directory(flows_path).await {
+                Ok(registry) => {
+                    let flow_count = registry.len();
+                    let flow_names = registry.list();
+
+                    if flow_count > 0 {
+                        // Create FlowRouter from registry
+                        let flow_router = Arc::new(FlowRouter::new(Arc::new(registry)));
+
+                        // Create Runtime for agent execution
+                        let runtime = Arc::new(RwLock::new(Runtime::new()));
+
+                        // Get agents directory for flow executor
+                        let agents_path = agents_dir
+                            .map(PathBuf::from)
+                            .or_else(|| config.spec.agents.directory.clone());
+
+                        // Set up handler with FlowRouter
+                        handler.set_flow_router(flow_router);
+                        handler.set_runtime(runtime);
+                        if let Some(ref ap) = agents_path {
+                            handler.set_agents_dir(ap.clone());
+                        }
+
+                        info!("  Loaded {} AgentFlows: {:?}", flow_count, flow_names);
+                    } else {
+                        info!("  No AgentFlow files found in {}", flows_path.display());
+                    }
+                }
+                Err(e) => {
+                    warn!("  Failed to load AgentFlows from {}: {}", flows_path.display(), e);
+                }
+            }
+        } else {
+            info!("  No flows directory configured - using default agent routing");
+        }
+    } else {
+        info!("  Flow-based routing disabled");
     }
 
     // Create server config

@@ -13,6 +13,7 @@ aof-core.workspace = true
 aof-runtime.workspace = true
 aof-llm.workspace = true
 aof-memory.workspace = true
+aof-tools = { workspace = true, features = ["all"] }
 
 # Async runtime
 tokio.workspace = true
@@ -22,6 +23,7 @@ futures.workspace = true
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 
 # Error handling
 thiserror.workspace = true

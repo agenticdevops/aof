@@ -28,8 +28,10 @@ Complete documentation for the Agentic Ops Framework (AOF).
 ### Core Concepts
 - **[Core Concepts](https://docs.aof.sh/docs/concepts)** - Understanding AOF fundamentals
   - Agents - Single AI assistants
-  - AgentFleets - Teams of agents (planned)
-  - AgentFlows - Workflow automation (planned)
+  - AgentFleets - Teams of agents working in parallel
+  - AgentFlows - Event-driven workflow automation
+    - Multi-tenant routing (channel, user, pattern filtering)
+    - Execution context (kubeconfig, namespace, env vars)
   - Tools - MCP, Shell, HTTP, integrations
   - Models - Multi-provider support
   - Memory - Context persistence
@@ -64,6 +66,8 @@ Complete documentation for the Agentic Ops Framework (AOF).
 
 - **[AgentFlow YAML Spec](https://docs.aof.sh/docs/reference/agentflow-spec)** - Complete AgentFlow specification
   - Trigger types (Webhook, Schedule, Slack, GitHub, etc.)
+  - **Trigger filtering** (channels, users, patterns for multi-tenant routing)
+  - **Execution context** (kubeconfig, namespace, cluster, env vars)
   - Node types (Agent, Fleet, HTTP, Shell, Conditional, etc.)
   - Connections and conditions
   - Variable interpolation
@@ -120,6 +124,7 @@ Essential reading:
 | Create first agent | [First Agent Tutorial](https://docs.aof.sh/docs/tutorials/first-agent) |
 | Add kubectl tools | [Agent Spec - Tools](https://docs.aof.sh/docs/reference/agent-spec#tool-shell) |
 | Build Slack bot | [Slack Bot Tutorial](https://docs.aof.sh/docs/tutorials/slack-bot) |
+| Multi-tenant bot routing | [AgentFlow Spec - Trigger Filtering](https://docs.aof.sh/docs/reference/agentflow-spec#trigger-filtering-multi-tenant-routing) |
 | Setup auto-remediation | [Incident Response Tutorial](https://docs.aof.sh/docs/tutorials/incident-response) |
 | CLI commands | [aofctl Reference](https://docs.aof.sh/docs/reference/aofctl) |
 

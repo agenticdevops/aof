@@ -1,0 +1,131 @@
+# Staging Kubernetes Slack Bot
+#
+# A multi-tenant AgentFlow that responds to Slack messages in staging channels
+# and connects to the staging Kubernetes cluster.
+#
+# Key Features:
+# - Filtered to staging channels (#staging, #dev-test)
+# - Uses staging kubeconfig
+# - More permissive - allows experimental commands
+# - Faster iteration for development testing
+#
+# Prerequisites:
+# - Staging kubeconfig at ~/.kube/staging-config or KUBECONFIG_STAGING env var
+# - SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET
+# - LLM API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY)
+#
+# To deploy:
+#   aofctl apply -f examples/flows/multi-tenant/slack-staging-k8s-bot.yaml
+#
+# Start with other flows:
+#   aofctl serve --flows-dir examples/flows/multi-tenant --port 3000
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: slack-staging-k8s-bot
+  labels:
+    platform: slack
+    environment: staging
+    cluster: staging-cluster
+    team: development
+  annotations:
+    description: "Staging K8s bot for #staging channel - more permissive"
+    owner: dev-team@company.com
+
+spec:
+  # Slack trigger with staging channel filtering
+  trigger:
+    type: Slack
+    config:
+      events:
+        - app_mention
+        - message
+      # Staging and development channels
+      channels:
+        - staging
+        - dev-test
+        - qa-testing
+        - sandbox
+      # No user restrictions - open to all developers
+      users: []
+      # Pattern matching for k8s commands
+      patterns:
+        - "^(kubectl|k8s|kubernetes|pod|deploy|scale|delete)"
+        - "stag(ing)?"
+        - "test"
+      bot_token: ${SLACK_BOT_TOKEN}
+      signing_secret: ${SLACK_SIGNING_SECRET}
+
+  # Staging execution context
+  context:
+    # Staging kubeconfig
+    kubeconfig: ${KUBECONFIG_STAGING:-~/.kube/staging-config}
+    # Default namespace for staging
+    namespace: staging
+    # Cluster name
+    cluster: staging-cluster
+    # Environment variables
+    env:
+      ENVIRONMENT: staging
+      CLUSTER_NAME: staging-cluster
+      LOG_LEVEL: debug
+      # Staging is more permissive
+      KUBECTL_READONLY: "false"
+      REQUIRE_APPROVAL: "false"
+      ALLOW_DELETE: "true"
+    working_dir: /workspace
+
+  # Workflow nodes
+  nodes:
+    # 1. Parse incoming message
+    - id: parse-message
+      type: Transform
+      config:
+        script: |
+          export MESSAGE_TEXT="${event.text}"
+          export SLACK_USER="${event.user}"
+          export SLACK_CHANNEL="${event.channel}"
+          export SLACK_TIMESTAMP="${event.ts}"
+          echo "[STAGING] User: ${SLACK_USER}, Channel: ${SLACK_CHANNEL}"
+
+    # 2. Process with staging K8s agent (more permissive tools)
+    - id: agent-process
+      type: Agent
+      config:
+        agent: kubernetes-ops-agent
+        input: ${MESSAGE_TEXT}
+        context:
+          slack_channel: ${SLACK_CHANNEL}
+          slack_user: ${SLACK_USER}
+          environment: staging
+          cluster: staging-cluster
+          # Allow more dangerous operations in staging
+          allow_delete: "true"
+          allow_exec: "true"
+
+    # 3. Send response
+    - id: send-response
+      type: Slack
+      config:
+        channel: ${SLACK_CHANNEL}
+        thread_ts: ${SLACK_TIMESTAMP}
+        message: |
+          :test_tube: **[STAGING]**
+          ${agent-process.output.output}
+
+  connections:
+    - from: trigger
+      to: parse-message
+    - from: parse-message
+      to: agent-process
+    - from: agent-process
+      to: send-response
+
+  config:
+    default_timeout_seconds: 60
+    verbose: true
+    retry:
+      max_attempts: 3
+      initial_delay: "1s"
+      backoff_multiplier: 2.0

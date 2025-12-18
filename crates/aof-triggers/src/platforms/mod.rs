@@ -191,6 +191,9 @@ pub trait TriggerPlatform: Send + Sync {
     fn supports_files(&self) -> bool {
         false
     }
+
+    /// Get as Any for downcasting (for platform-specific features)
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 // Platform-specific implementations

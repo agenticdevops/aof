@@ -48,6 +48,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Guides',
       items: [
+        'guides/slack-app-setup',
         'guides/deployment',
         'guides/local-testing',
         'guides/testing-mcp',

@@ -128,6 +128,7 @@ spec:
 - Scheduled jobs and reports
 - Human-in-the-loop approval flows with reactions
 - Multi-step workflows with conditional routing
+- **Multi-tenant bot deployments** - Route different channels to different agents/clusters
 
 ### Node Types
 
@@ -156,6 +157,34 @@ spec:
 | `HTTP` | Generic webhook endpoint | External integrations |
 | `Schedule` | Cron-based scheduled execution | Daily reports, health checks |
 | `Manual` | CLI invocation | Ad-hoc runs, testing |
+
+### Multi-Tenant Routing
+
+AgentFlows support **trigger filtering** for multi-tenant bot deployments. Route messages to different flows based on:
+
+- **Channel** - Route `#production` to prod-cluster agent, `#staging` to staging-cluster
+- **User** - Restrict flows to specific users (admins, SRE team)
+- **Pattern** - Match commands like `kubectl`, `deploy`, `scale`
+
+```yaml
+spec:
+  trigger:
+    type: Slack
+    config:
+      events: [app_mention]
+      channels: [production, prod-alerts]  # Only these channels
+      users: [U012ADMIN]                   # Only these users
+      patterns: ["^(kubectl|k8s|deploy)"]  # Only matching messages
+
+  context:
+    kubeconfig: ${KUBECONFIG_PROD}
+    namespace: default
+    cluster: prod-cluster
+    env:
+      REQUIRE_APPROVAL: "true"
+```
+
+Each flow can specify its own **execution context** (kubeconfig, namespace, environment variables), enabling a single daemon to serve multiple clusters.
 
 ## Tools
 
@@ -352,6 +381,7 @@ Now that you understand the concepts, try building something:
 | **Example** | Code review | Multi-reviewer | Slack bot, incident response |
 | **Triggers** | Manual/CLI | Manual/CLI | Slack, Discord, HTTP, Schedule |
 | **Spec Type** | `kind: Agent` | `kind: AgentFleet` | `kind: AgentFlow` |
+| **Multi-Tenant** | No | No | Yes (channel/user/pattern routing) |
 
 ---
 

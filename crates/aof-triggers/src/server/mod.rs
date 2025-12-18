@@ -203,13 +203,41 @@ async fn webhook_handler(
     headers: axum::http::HeaderMap,
     body: bytes::Bytes,
 ) -> Result<Response, WebhookError> {
-    debug!("Received webhook for platform: {}", platform);
+    // Log incoming webhook event type for debugging
+    if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body) {
+        let event_type = payload.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+        let inner_event_type = payload.get("event")
+            .and_then(|e| e.get("type"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("none");
+        info!("Received webhook for platform: {} (type: {}, event: {})", platform, event_type, inner_event_type);
+    } else {
+        debug!("Received webhook for platform: {}", platform);
+    }
 
-    // Extract headers
+    // Extract headers (lowercase for consistent access)
     let mut header_map = HashMap::new();
     for (key, value) in headers.iter() {
         if let Ok(value_str) = value.to_str() {
-            header_map.insert(key.to_string(), value_str.to_string());
+            header_map.insert(key.as_str().to_lowercase(), value_str.to_string());
+        }
+    }
+
+    // Handle Slack URL verification challenge specially
+    if platform == "slack" {
+        if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body) {
+            if payload.get("type").and_then(|t| t.as_str()) == Some("url_verification") {
+                if let Some(challenge) = payload.get("challenge").and_then(|c| c.as_str()) {
+                    debug!("Handling Slack URL verification challenge");
+                    // For URL verification, Slack expects just the challenge string back
+                    return Ok((
+                        StatusCode::OK,
+                        [("content-type", "text/plain")],
+                        challenge.to_string(),
+                    )
+                        .into_response());
+                }
+            }
         }
     }
 

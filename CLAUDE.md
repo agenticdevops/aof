@@ -503,3 +503,4 @@ ALWAYS prefer editing an existing file to creating a new one.
 NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 Never save working files, text/mds and tests to the root folder.
 - Strictly follow kubectl style implementation for aofctl. For example use "aofctl run agent" instead of "aofctl agent run". If you find anything non compliant, correct it.
+- for every feature added, add/update  docs/ so that we are keeping track of every single feautre the product has and how it works.

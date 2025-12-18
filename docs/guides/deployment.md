@@ -4,14 +4,14 @@
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Deployment Options](#deployment-options)
-3. [Platform Setup](#platform-setup)
-4. [Configuration](#configuration)
-5. [Security](#security)
-6. [Monitoring](#monitoring)
-7. [Scaling](#scaling)
-8. [Troubleshooting](#troubleshooting)
+1. [Prerequisites](#1-prerequisites)
+2. [Deployment Options](#2-deployment-options)
+3. [Platform Setup](#3-platform-setup)
+4. [Configuration](#4-configuration)
+5. [Security](#5-security)
+6. [Monitoring](#6-monitoring)
+7. [Scaling](#7-scaling)
+8. [Troubleshooting](#8-troubleshooting)
 
 ---
 

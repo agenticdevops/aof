@@ -17,14 +17,15 @@ Build an AI-powered Slack bot that helps your team with Kubernetes operations, a
 > export SLACK_SIGNING_SECRET=xxxxx
 > export GOOGLE_API_KEY=xxxxx
 >
-> # Apply example configs
-> aofctl apply -f examples/agents/slack-k8s-bot.yaml
+> # Start AOF server with Slack support
+> aofctl serve --config examples/config/slack-daemon.yaml
 >
-> # Start server
-> aofctl serve --port 3000
+> # In another terminal, expose with cloudflared (no signup needed)
+> brew install cloudflared
+> cloudflared tunnel --url http://localhost:3000
 >
-> # Expose with ngrok
-> ngrok http 3000
+> # Use the URL from cloudflared output:
+> # https://random-words.trycloudflare.com/webhook/slack
 > ```
 > See [Slack App Setup Guide](../guides/slack-app-setup.md) for detailed Slack configuration.
 
@@ -59,13 +60,13 @@ Build an AI-powered Slack bot that helps your team with Kubernetes operations, a
    - `app_mention` - When bot is mentioned
    - `message.channels` - Channel messages
 
-3. Request URL: `https://your-domain.com/slack/events` (we'll set this up later)
+3. Request URL: `https://your-domain.com/webhook/slack` (we'll set this up in Step 5)
 
 ### Create Slash Command
 
 1. **Slash Commands** → Create New Command
 2. Command: `/k8s`
-3. Request URL: `https://your-domain.com/slack/commands`
+3. Request URL: `https://your-domain.com/webhook/slack`
 4. Description: "Ask the K8s assistant"
 
 Save your tokens:
@@ -251,29 +252,56 @@ aofctl get flows
 
 You need a public HTTPS endpoint for Slack to send events to.
 
-### Option A: Use ngrok (Development)
+### Option A: Use Cloudflare Tunnel (Recommended for Development)
+
+Cloudflare Tunnel is free and **doesn't require signup**:
+
+```bash
+# Install cloudflared
+brew install cloudflared
+
+# Start AOF server
+aofctl serve --config examples/config/slack-daemon.yaml
+
+# In another terminal, start the tunnel
+cloudflared tunnel --url http://localhost:3000
+
+# You'll see output like:
+# Your quick Tunnel has been created! Visit it at:
+# https://random-words-here.trycloudflare.com
+
+# Update Slack Event Subscriptions Request URL to:
+# https://random-words-here.trycloudflare.com/webhook/slack
+```
+
+### Option B: Use ngrok (Requires Free Account)
 
 ```bash
 # Install ngrok
 brew install ngrok
 
+# Sign up at https://dashboard.ngrok.com/signup (free)
+# Configure your authtoken
+ngrok config add-authtoken YOUR_AUTH_TOKEN
+
 # Start ngrok
 ngrok http 3000
 
-# Copy the HTTPS URL (e.g., https://abc123.ngrok.io)
 # Update Slack Event Subscriptions URL to:
-# https://abc123.ngrok.io/slack/events
+# https://abc123.ngrok-free.dev/webhook/slack
 ```
 
-### Option B: Deploy to Production
+### Option C: Deploy to Production
 
 ```bash
-# Deploy AOF server with flow
-aofctl serve --port 3000 --config slack-bot-flow.yaml
+# Deploy AOF server
+aofctl serve --port 3000 --config daemon-config.yaml
 
-# Or use a reverse proxy (nginx, Caddy)
-# Point Slack webhook to: https://your-domain.com/slack/events
+# Use a reverse proxy (nginx, Caddy) with SSL
+# Point Slack webhook to: https://your-domain.com/webhook/slack
 ```
+
+> **Note**: The webhook endpoint pattern is `/webhook/{platform}`, so for Slack use `/webhook/slack`.
 
 ## Step 6: Test the Bot
 
@@ -518,7 +546,7 @@ Before deploying to production:
 ```bash
 # Check Slack event subscriptions
 # Verify Request URL is reachable
-curl https://your-domain.com/slack/events
+curl https://your-domain.com/webhook/slack
 
 # Check flows are running
 aofctl get flows

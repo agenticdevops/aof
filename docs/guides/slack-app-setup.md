@@ -55,8 +55,13 @@ This guide walks you through creating a Slack App for use with AOF's AgentFlow S
    - `app_mention` - When someone @mentions your bot
    - `message.channels` - Messages in public channels
    - `message.im` - Direct messages to bot
+   - `reaction_added` - **Required for approval workflow** - when users react to approve/deny commands
 
 5. Click **Save Changes**
+
+> **Note**: The `reaction_added` event is required for the human-in-the-loop approval workflow.
+> When an agent requests approval for a destructive command, users approve by reacting with ✅ or deny with ❌.
+> See the [Approval Workflow Guide](approval-workflow.md) for details.
 
 ## Step 6: (Optional) Create Slash Command
 
@@ -114,7 +119,7 @@ export KUBECONFIG=~/.kube/config            # For kubectl access
 
 1. Start the AOF server:
    ```bash
-   aofctl serve --port 3000 --config examples/flows/slack-k8s-bot-flow.yaml
+   aofctl serve --port 3000 --config examples/config/slack-daemon.yaml
    ```
 
 2. In Slack, mention your bot:
@@ -123,6 +128,53 @@ export KUBECONFIG=~/.kube/config            # For kubectl access
    ```
 
 3. The bot should respond in a thread!
+
+## Multi-Tenant Bot Setup
+
+For routing different channels to different clusters, use AgentFlows with trigger filtering:
+
+```bash
+# Start with flows directory for multi-tenant routing
+aofctl serve \
+  --flows-dir ./examples/flows/multi-tenant/ \
+  --agents-dir ./examples/agents/ \
+  --port 3000
+
+# Or use a daemon config
+aofctl serve --config examples/config/slack-daemon.yaml
+```
+
+Example daemon config with flows:
+
+```yaml
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: multi-tenant-bot
+
+spec:
+  server:
+    port: 3000
+
+  platforms:
+    slack:
+      enabled: true
+      bot_token_env: SLACK_BOT_TOKEN
+      signing_secret_env: SLACK_SIGNING_SECRET
+
+  agents:
+    directory: ./examples/agents/
+
+  # AgentFlow-based routing
+  flows:
+    directory: ./examples/flows/multi-tenant/
+    enabled: true
+
+  runtime:
+    default_agent: fallback-bot  # Used when no flow matches
+```
+
+See [AgentFlow Spec - Multi-Tenant Routing](../reference/agentflow-spec.md#trigger-filtering-multi-tenant-routing) for configuration options.
 
 ## Troubleshooting
 

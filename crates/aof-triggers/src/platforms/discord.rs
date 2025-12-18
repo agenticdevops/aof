@@ -403,6 +403,10 @@ impl TriggerPlatform for DiscordPlatform {
     fn supports_interactive(&self) -> bool {
         true
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 // Discord API types

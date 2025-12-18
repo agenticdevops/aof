@@ -12,7 +12,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use super::{PlatformError, TriggerMessage, TriggerPlatform, TriggerUser};
 use crate::response::TriggerResponse;
@@ -37,7 +37,7 @@ pub struct SlackConfig {
     /// App ID
     pub app_id: String,
 
-    /// Bot user ID (for mention detection)
+    /// Bot user ID (for mention detection and ignoring bot's own reactions)
     pub bot_user_id: String,
 
     /// Bot name
@@ -51,6 +51,14 @@ pub struct SlackConfig {
     /// Allowed channel IDs (optional)
     #[serde(default)]
     pub allowed_channels: Option<Vec<String>>,
+
+    /// User IDs allowed to approve commands (optional - if empty, anyone can approve)
+    #[serde(default)]
+    pub approval_allowed_users: Option<Vec<String>>,
+
+    /// Role labels that can approve commands (optional - for future RBAC)
+    #[serde(default)]
+    pub approval_allowed_roles: Option<Vec<String>>,
 }
 
 fn default_bot_name() -> String {
@@ -95,6 +103,27 @@ enum SlackEvent {
         channel: String,
         tab: String,
     },
+    /// Reaction added event for approval workflow
+    ReactionAdded {
+        user: String,
+        reaction: String,
+        item: ReactionItem,
+    },
+    /// Reaction removed event
+    ReactionRemoved {
+        user: String,
+        reaction: String,
+        item: ReactionItem,
+    },
+}
+
+/// Item that received a reaction
+#[derive(Debug, Clone, Deserialize)]
+struct ReactionItem {
+    #[serde(rename = "type")]
+    item_type: String,
+    channel: String,
+    ts: String,
 }
 
 /// Slack user info response
@@ -120,6 +149,30 @@ struct SlackApiResponse {
     error: Option<String>,
 }
 
+/// Slack API response with message timestamp
+#[derive(Debug, Deserialize)]
+struct SlackPostMessageResponse {
+    ok: bool,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    ts: Option<String>,
+    #[serde(default)]
+    channel: Option<String>,
+}
+
+/// Response from Slack auth.test API
+#[derive(Debug, Deserialize)]
+struct SlackAuthTestResponse {
+    ok: bool,
+    #[serde(default)]
+    user_id: Option<String>,
+    #[serde(default)]
+    bot_id: Option<String>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
 impl SlackPlatform {
     /// Create new Slack platform adapter
     pub fn new(config: SlackConfig) -> Result<Self, PlatformError> {
@@ -137,10 +190,118 @@ impl SlackPlatform {
         Ok(Self { config, client })
     }
 
+    /// Create new Slack platform adapter with auto-detected bot_user_id
+    ///
+    /// This async constructor calls Slack's auth.test API to automatically
+    /// detect the bot's user ID, which is critical for preventing self-approval.
+    pub async fn new_with_auto_detection(mut config: SlackConfig) -> Result<Self, PlatformError> {
+        if config.bot_token.is_empty() || config.signing_secret.is_empty() {
+            return Err(PlatformError::ParseError(
+                "Bot token and signing secret are required".to_string(),
+            ));
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| PlatformError::ApiError(format!("Failed to create HTTP client: {}", e)))?;
+
+        // Auto-detect bot_user_id if not configured
+        if config.bot_user_id.is_empty() {
+            debug!("bot_user_id not configured, auto-detecting from Slack API...");
+            match Self::fetch_bot_user_id(&client, &config.bot_token).await {
+                Ok(user_id) => {
+                    info!("Auto-detected bot_user_id: {}", user_id);
+                    config.bot_user_id = user_id;
+                }
+                Err(e) => {
+                    error!("Failed to auto-detect bot_user_id: {}. Self-approval prevention may not work!", e);
+                    // Continue anyway, but log the warning
+                }
+            }
+        }
+
+        Ok(Self { config, client })
+    }
+
+    /// Fetch bot user ID from Slack's auth.test API
+    async fn fetch_bot_user_id(client: &reqwest::Client, bot_token: &str) -> Result<String, PlatformError> {
+        let response = client
+            .get("https://slack.com/api/auth.test")
+            .header("Authorization", format!("Bearer {}", bot_token))
+            .send()
+            .await
+            .map_err(|e| PlatformError::ApiError(format!("Failed to call auth.test: {}", e)))?;
+
+        let auth_response: SlackAuthTestResponse = response
+            .json()
+            .await
+            .map_err(|e| PlatformError::ParseError(format!("Failed to parse auth.test response: {}", e)))?;
+
+        if !auth_response.ok {
+            return Err(PlatformError::ApiError(format!(
+                "auth.test failed: {}",
+                auth_response.error.unwrap_or_else(|| "unknown error".to_string())
+            )));
+        }
+
+        auth_response.user_id.ok_or_else(|| {
+            PlatformError::ParseError("auth.test response missing user_id".to_string())
+        })
+    }
+
     /// Handle URL verification challenge
     pub fn handle_url_verification(&self, challenge: &str) -> String {
         debug!("Handling Slack URL verification challenge");
         challenge.to_string()
+    }
+
+    /// Verify Slack request signature using HMAC-SHA256
+    ///
+    /// Slack's signature is computed as:
+    /// v0=HMAC_SHA256(signing_secret, "v0:{timestamp}:{body}")
+    fn verify_slack_signature(&self, payload: &[u8], signature: &str, timestamp: &str) -> bool {
+        // Slack signature format: v0=<hex_signature>
+        if !signature.starts_with("v0=") {
+            debug!("Invalid signature format - must start with v0=");
+            return false;
+        }
+
+        let provided_signature = &signature[3..];
+
+        // Build the base string: v0:{timestamp}:{body}
+        let body_str = match std::str::from_utf8(payload) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Invalid UTF-8 in payload: {}", e);
+                return false;
+            }
+        };
+
+        let base_string = format!("v0:{}:{}", timestamp, body_str);
+        debug!("Verifying signature for base string length: {}", base_string.len());
+
+        let mut mac = match HmacSha256::new_from_slice(self.config.signing_secret.as_bytes()) {
+            Ok(m) => m,
+            Err(e) => {
+                error!("HMAC setup failed: {}", e);
+                return false;
+            }
+        };
+
+        mac.update(base_string.as_bytes());
+
+        let result = mac.finalize();
+        let computed_signature = hex::encode(result.into_bytes());
+
+        if computed_signature == provided_signature {
+            debug!("Slack signature verified successfully");
+            true
+        } else {
+            debug!("Signature mismatch - computed: {}, provided: {}",
+                   &computed_signature[..8], &provided_signature[..8.min(provided_signature.len())]);
+            false
+        }
     }
 
     /// Format task status as Block Kit blocks
@@ -259,6 +420,95 @@ impl SlackPlatform {
         Ok(())
     }
 
+    /// Post message and return the message timestamp
+    /// Returns (channel, timestamp) on success
+    pub async fn post_message_with_ts(
+        &self,
+        channel: &str,
+        text: &str,
+        thread_ts: Option<&str>,
+    ) -> Result<(String, String), PlatformError> {
+        let mut payload = serde_json::json!({
+            "channel": channel,
+            "text": text,
+        });
+
+        if let Some(ts) = thread_ts {
+            payload["thread_ts"] = serde_json::json!(ts);
+        }
+
+        let api_response = self
+            .client
+            .post("https://slack.com/api/chat.postMessage")
+            .header("Authorization", format!("Bearer {}", self.config.bot_token))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| PlatformError::ApiError(format!("HTTP request failed: {}", e)))?
+            .json::<SlackPostMessageResponse>()
+            .await
+            .map_err(|e| PlatformError::ParseError(format!("Failed to parse response: {}", e)))?;
+
+        if !api_response.ok {
+            error!("Slack API error: {:?}", api_response.error);
+            return Err(PlatformError::ApiError(
+                api_response.error.unwrap_or_else(|| "Unknown error".to_string()),
+            ));
+        }
+
+        let ts = api_response.ts.ok_or_else(|| {
+            PlatformError::ApiError("No message timestamp in response".to_string())
+        })?;
+        let channel = api_response.channel.unwrap_or_else(|| channel.to_string());
+
+        debug!("Posted message to {} with ts {}", channel, ts);
+        Ok((channel, ts))
+    }
+
+    /// Add a reaction to a message
+    pub async fn add_reaction(
+        &self,
+        channel: &str,
+        timestamp: &str,
+        emoji: &str,
+    ) -> Result<(), PlatformError> {
+        let payload = serde_json::json!({
+            "channel": channel,
+            "timestamp": timestamp,
+            "name": emoji,
+        });
+
+        let api_response = self
+            .client
+            .post("https://slack.com/api/reactions.add")
+            .header("Authorization", format!("Bearer {}", self.config.bot_token))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| PlatformError::ApiError(format!("HTTP request failed: {}", e)))?
+            .json::<SlackApiResponse>()
+            .await
+            .map_err(|e| PlatformError::ParseError(format!("Failed to parse response: {}", e)))?;
+
+        // Don't fail if already_reacted - that's fine
+        if !api_response.ok && api_response.error.as_deref() != Some("already_reacted") {
+            error!("Slack API error adding reaction: {:?}", api_response.error);
+            return Err(PlatformError::ApiError(
+                api_response.error.unwrap_or_else(|| "Unknown error".to_string()),
+            ));
+        }
+
+        debug!("Added reaction {} to message {}", emoji, timestamp);
+        Ok(())
+    }
+
+    /// Get bot token (for external use)
+    pub fn bot_token(&self) -> &str {
+        &self.config.bot_token
+    }
+
     /// Get user info from Slack API
     async fn get_user_info(&self, user_id: &str) -> Result<TriggerUser, PlatformError> {
         let url = format!("https://slack.com/api/users.info?user={}", user_id);
@@ -317,6 +567,27 @@ impl SlackPlatform {
             true // All channels allowed if not configured
         }
     }
+
+    /// Get bot user ID
+    pub fn bot_user_id(&self) -> &str {
+        &self.config.bot_user_id
+    }
+
+    /// Check if user is the bot itself
+    pub fn is_bot_user(&self, user_id: &str) -> bool {
+        self.config.bot_user_id == user_id
+    }
+
+    /// Check if user is allowed to approve commands
+    /// Returns true if:
+    /// - No approval whitelist is configured (anyone can approve)
+    /// - User is in the approval whitelist
+    pub fn can_approve(&self, user_id: &str) -> bool {
+        match &self.config.approval_allowed_users {
+            Some(allowed) => allowed.contains(&user_id.to_string()),
+            None => true, // Anyone can approve if no whitelist configured
+        }
+    }
 }
 
 #[async_trait]
@@ -326,9 +597,12 @@ impl TriggerPlatform for SlackPlatform {
         raw: &[u8],
         headers: &HashMap<String, String>,
     ) -> Result<TriggerMessage, PlatformError> {
-        // Verify signature first
-        if let Some(signature) = headers.get("x-slack-signature") {
-            if !self.verify_signature(raw, signature).await {
+        // Verify signature first (requires both signature and timestamp headers)
+        if let (Some(signature), Some(timestamp)) = (
+            headers.get("x-slack-signature"),
+            headers.get("x-slack-request-timestamp"),
+        ) {
+            if !self.verify_slack_signature(raw, signature, timestamp) {
                 warn!("Invalid Slack signature");
                 return Err(PlatformError::InvalidSignature(
                     "Signature verification failed".to_string(),
@@ -398,6 +672,54 @@ impl TriggerPlatform for SlackPlatform {
                             reply_to: None,
                         })
                     }
+                    SlackEvent::ReactionAdded { user, reaction, item } => {
+                        info!("Reaction added: {} by {} on message {} in channel {}", reaction, user, item.ts, item.channel);
+
+                        // CRITICAL: Ignore reactions from the bot itself to prevent self-approval
+                        if self.is_bot_user(&user) {
+                            info!("Ignoring reaction from bot itself (user_id: {})", user);
+                            return Err(PlatformError::UnsupportedMessageType);
+                        }
+
+                        info!("Processing user reaction: {} by {} on message {}", reaction, user, item.ts);
+
+                        // Get user info
+                        let trigger_user = self.get_user_info(&user).await.unwrap_or_else(|_| {
+                            TriggerUser {
+                                id: user.clone(),
+                                username: None,
+                                display_name: None,
+                                is_bot: false,
+                            }
+                        });
+
+                        // Check if user is allowed to approve (if whitelist is configured)
+                        let can_approve = self.can_approve(&user);
+
+                        let mut metadata = HashMap::new();
+                        metadata.insert("team_id".to_string(), serde_json::json!(team_id));
+                        metadata.insert("event_type".to_string(), serde_json::json!("reaction_added"));
+                        metadata.insert("reaction".to_string(), serde_json::json!(reaction));
+                        metadata.insert("item_ts".to_string(), serde_json::json!(item.ts));
+                        metadata.insert("can_approve".to_string(), serde_json::json!(can_approve));
+
+                        // Use item.ts as the thread_id so handler can look up pending approval
+                        Ok(TriggerMessage {
+                            id: format!("reaction_{}_{}", item.ts, reaction),
+                            platform: "slack".to_string(),
+                            channel_id: item.channel,
+                            user: trigger_user,
+                            text: format!("reaction:{}", reaction),
+                            timestamp: chrono::Utc::now(),
+                            metadata,
+                            thread_id: Some(item.ts),
+                            reply_to: None,
+                        })
+                    }
+                    SlackEvent::ReactionRemoved { .. } => {
+                        // Ignore reaction removed events for now
+                        Err(PlatformError::UnsupportedMessageType)
+                    }
                     SlackEvent::AppHomeOpened { .. } => Err(PlatformError::UnsupportedMessageType),
                 }
             }
@@ -457,6 +779,10 @@ impl TriggerPlatform for SlackPlatform {
 
     fn supports_files(&self) -> bool {
         true
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

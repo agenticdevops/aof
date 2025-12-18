@@ -8,16 +8,17 @@
 //! - Platform-specific actions (Slack, Discord, etc.)
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::Utc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use aof_core::{
-    AgentFlow, AgentFlowState, AofError, AofResult, FlowError, FlowExecutionStatus, FlowNode,
-    NodeExecutionStatus, NodeResult, NodeType,
+    AgentConfig, AgentFlow, AgentFlowState, AofError, AofResult, FlowError, FlowExecutionStatus,
+    FlowNode, NodeExecutionStatus, NodeResult, NodeType,
 };
 
 use super::Runtime;
@@ -63,23 +64,36 @@ pub enum AgentFlowEvent {
 /// AgentFlow executor
 pub struct AgentFlowExecutor {
     flow: AgentFlow,
-    #[allow(dead_code)]
-    runtime: Arc<Runtime>,
+    runtime: Arc<RwLock<Runtime>>,
     event_tx: Option<mpsc::Sender<AgentFlowEvent>>,
+    /// Directory to search for agent YAML files
+    agents_dir: Option<PathBuf>,
 }
 
 impl AgentFlowExecutor {
     /// Create a new AgentFlow executor
-    pub fn new(flow: AgentFlow, runtime: Arc<Runtime>) -> Self {
+    pub fn new(flow: AgentFlow, runtime: Arc<RwLock<Runtime>>) -> Self {
         Self {
             flow,
             runtime,
             event_tx: None,
+            agents_dir: None,
         }
     }
 
+    /// Create with a non-locked runtime (convenience constructor)
+    pub fn with_runtime(flow: AgentFlow, runtime: Runtime) -> Self {
+        Self::new(flow, Arc::new(RwLock::new(runtime)))
+    }
+
+    /// Set the agents directory for loading agent configs
+    pub fn with_agents_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.agents_dir = Some(dir.into());
+        self
+    }
+
     /// Load AgentFlow from file
-    pub async fn from_file(path: &str, runtime: Arc<Runtime>) -> AofResult<Self> {
+    pub async fn from_file(path: &str, runtime: Arc<RwLock<Runtime>>) -> AofResult<Self> {
         let content = std::fs::read_to_string(path).map_err(|e| {
             AofError::Config(format!("Failed to read AgentFlow config {}: {}", path, e))
         })?;
@@ -388,31 +402,146 @@ impl AgentFlowExecutor {
         Ok(agent_result)
     }
 
-    /// Run an agent (placeholder - needs integration with AgentExecutor)
+    /// Run an agent using the runtime
+    ///
+    /// This method:
+    /// 1. Checks if the agent is already loaded in the runtime
+    /// 2. If not, tries to load it from the agents directory
+    /// 3. Applies flow context (kubeconfig, env vars) to the execution
+    /// 4. Executes the agent and returns the result
     async fn run_agent(
         &self,
         agent_name: &str,
         input: &str,
-        _state: &AgentFlowState,
+        state: &AgentFlowState,
     ) -> AofResult<serde_json::Value> {
-        // This is a simplified implementation
-        // In production, this would:
-        // 1. Load agent config from registry or file
-        // 2. Create AgentExecutor
-        // 3. Run the agent with input
-        // 4. Return the response
+        info!("Executing agent '{}' with input: {}", agent_name, input);
 
-        // For now, try to use the runtime to check if agent exists
-        info!("Agent {} called with input: {}", agent_name, input);
+        // First, try to execute with the agent already loaded
+        {
+            let runtime = self.runtime.read().await;
+            if runtime.has_agent(agent_name) {
+                // Apply flow context if specified
+                self.apply_flow_context().await?;
 
-        // Return a placeholder response
-        // The real implementation would integrate with aof_runtime::AgentExecutor
-        Ok(serde_json::json!({
-            "agent": agent_name,
-            "input": input,
-            "output": format!("Agent {} processed: {}", agent_name, input),
-            "requires_approval": false
-        }))
+                let result = runtime.execute(agent_name, input).await?;
+                return Ok(serde_json::json!({
+                    "agent": agent_name,
+                    "input": input,
+                    "output": result,
+                    "requires_approval": false
+                }));
+            }
+        }
+
+        // Agent not loaded - try to load from agents directory
+        if let Some(ref agents_dir) = self.agents_dir {
+            // Try common naming patterns
+            let possible_paths = vec![
+                agents_dir.join(format!("{}.yaml", agent_name)),
+                agents_dir.join(format!("{}.yml", agent_name)),
+                agents_dir.join(format!("{}-agent.yaml", agent_name)),
+                agents_dir.join(format!("{}-agent.yml", agent_name)),
+            ];
+
+            for path in possible_paths {
+                if path.exists() {
+                    info!("Loading agent '{}' from {}", agent_name, path.display());
+
+                    let mut runtime = self.runtime.write().await;
+                    runtime.load_agent_from_file(path.to_string_lossy().as_ref()).await?;
+
+                    // Apply flow context
+                    drop(runtime); // Release write lock
+                    self.apply_flow_context().await?;
+
+                    let runtime = self.runtime.read().await;
+                    let result = runtime.execute(agent_name, input).await?;
+
+                    return Ok(serde_json::json!({
+                        "agent": agent_name,
+                        "input": input,
+                        "output": result,
+                        "requires_approval": false
+                    }));
+                }
+            }
+        }
+
+        // Agent config might also be embedded in the flow
+        // Check if there's a node config with agent config
+        if let Some(node) = self.flow.spec.nodes.iter().find(|n| {
+            n.config.agent.as_ref() == Some(&agent_name.to_string())
+        }) {
+            if let Some(ref config_yaml) = node.config.agent_config {
+                info!("Loading agent '{}' from inline config", agent_name);
+
+                let agent_config: AgentConfig = serde_yaml::from_str(config_yaml).map_err(|e| {
+                    AofError::Config(format!("Failed to parse inline agent config: {}", e))
+                })?;
+
+                let mut runtime = self.runtime.write().await;
+                runtime.load_agent_from_config(agent_config).await?;
+
+                drop(runtime);
+                self.apply_flow_context().await?;
+
+                let runtime = self.runtime.read().await;
+                let result = runtime.execute(agent_name, input).await?;
+
+                return Ok(serde_json::json!({
+                    "agent": agent_name,
+                    "input": input,
+                    "output": result,
+                    "requires_approval": false
+                }));
+            }
+        }
+
+        // Could not find or load the agent
+        Err(AofError::Config(format!(
+            "Agent '{}' not found. Ensure it's loaded or available in the agents directory.",
+            agent_name
+        )))
+    }
+
+    /// Apply flow context to the environment
+    async fn apply_flow_context(&self) -> AofResult<()> {
+        if let Some(ref context) = self.flow.spec.context {
+            // Set KUBECONFIG if specified
+            if let Some(ref kubeconfig) = context.kubeconfig {
+                std::env::set_var("KUBECONFIG", kubeconfig);
+                info!("Set KUBECONFIG to {}", kubeconfig);
+            }
+
+            // Set namespace as env var if specified
+            if let Some(ref namespace) = context.namespace {
+                std::env::set_var("K8S_NAMESPACE", namespace);
+                info!("Set K8S_NAMESPACE to {}", namespace);
+            }
+
+            // Set cluster name if specified
+            if let Some(ref cluster) = context.cluster {
+                std::env::set_var("K8S_CLUSTER", cluster);
+                info!("Set K8S_CLUSTER to {}", cluster);
+            }
+
+            // Set working directory if specified
+            if let Some(ref working_dir) = context.working_dir {
+                std::env::set_current_dir(working_dir).map_err(|e| {
+                    AofError::Config(format!("Failed to change working directory: {}", e))
+                })?;
+                info!("Changed working directory to {}", working_dir);
+            }
+
+            // Set additional environment variables
+            for (key, value) in &context.env {
+                std::env::set_var(key, value);
+                debug!("Set env var {}={}", key, value);
+            }
+        }
+
+        Ok(())
     }
 
     /// Execute a Conditional node
@@ -874,7 +1003,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_condition() {
-        let runtime = Arc::new(Runtime::new());
+        let runtime = Arc::new(RwLock::new(Runtime::new()));
         let flow: AgentFlow = serde_yaml::from_str(
             r#"
 apiVersion: aof.dev/v1
