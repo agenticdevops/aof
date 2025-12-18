@@ -799,6 +799,8 @@ mod tests {
             bot_name: "testbot".to_string(),
             allowed_workspaces: None,
             allowed_channels: None,
+            approval_allowed_users: None,
+            approval_allowed_roles: None,
         }
     }
 
@@ -819,6 +821,8 @@ mod tests {
             bot_name: "testbot".to_string(),
             allowed_workspaces: None,
             allowed_channels: None,
+            approval_allowed_users: None,
+            approval_allowed_roles: None,
         };
         let platform = SlackPlatform::new(config);
         assert!(platform.is_err());

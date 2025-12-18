@@ -1,0 +1,198 @@
+# Telegram Runbook Executor
+# Execute operational runbooks via Telegram commands
+apiVersion: aof.sh/v1alpha1
+kind: AgentFlow
+metadata:
+  name: runbook-executor
+  description: Execute runbooks on-demand from Telegram
+  labels:
+    platform: telegram
+    category: operations
+    workflow: runbook
+
+triggers:
+  - platform: telegram
+    type: command
+    command: "/runbook"
+
+input:
+  schema:
+    runbook_name:
+      type: string
+      required: true
+      description: "Name of the runbook to execute"
+    args:
+      type: array
+      items:
+        type: string
+      description: "Arguments to pass to the runbook"
+
+variables:
+  runbooks:
+    restart-api:
+      description: "Restart API pods"
+      requires_approval: false
+      timeout: 120
+      commands:
+        - kubectl rollout restart deployment/api -n production
+
+    scale-workers:
+      description: "Scale worker replicas"
+      requires_approval: true
+      timeout: 60
+      args: ["replicas"]
+      commands:
+        - kubectl scale deployment/workers --replicas={{ args.replicas }} -n production
+
+    clear-cache:
+      description: "Clear Redis cache"
+      requires_approval: false
+      timeout: 30
+      commands:
+        - redis-cli -h redis.prod.internal FLUSHDB
+
+    deploy-hotfix:
+      description: "Deploy hotfix to production"
+      requires_approval: true
+      timeout: 300
+      args: ["version"]
+      commands:
+        - kubectl set image deployment/api api=ghcr.io/myorg/api:{{ args.version }} -n production
+        - kubectl rollout status deployment/api -n production --timeout=300s
+
+steps:
+  # Validate runbook exists
+  - name: validate
+    agent: validator
+    action: check
+    input:
+      runbook: "{{ input.runbook_name }}"
+      available: "{{ variables.runbooks | keys }}"
+    on_error:
+      response:
+        text: |
+          ❌ Unknown runbook: {{ input.runbook_name }}
+
+          Available runbooks:
+          {% for name, rb in variables.runbooks.items() %}
+          • /runbook {{ name }} - {{ rb.description }}
+          {% endfor %}
+
+  # Get runbook config
+  - name: get-config
+    agent: resolver
+    action: resolve
+    input:
+      runbook: "{{ variables.runbooks[input.runbook_name] }}"
+      args: "{{ input.args }}"
+
+  # Check if approval needed
+  - name: check-approval
+    condition: "{{ steps.get-config.output.requires_approval }}"
+    agent: approval
+    action: request
+    input:
+      type: runbook
+      runbook: "{{ input.runbook_name }}"
+      requester: "{{ trigger.user.username }}"
+      channel: "{{ trigger.channel_id }}"
+      timeout: 1800
+    response:
+      text: |
+        🔐 *Approval Required*
+
+        Runbook: `{{ input.runbook_name }}`
+        Requested by: @{{ trigger.user.username }}
+
+        Waiting for approval...
+      reply_markup:
+        inline_keyboard:
+          - - text: "✅ Approve"
+              callback_data: "approve:{{ steps.check-approval.output.request_id }}"
+            - text: "❌ Reject"
+              callback_data: "reject:{{ steps.check-approval.output.request_id }}"
+
+  # Wait for approval if needed
+  - name: wait-approval
+    condition: "{{ steps.get-config.output.requires_approval }}"
+    agent: approval
+    action: wait
+    input:
+      request_id: "{{ steps.check-approval.output.request_id }}"
+      timeout: "{{ steps.check-approval.output.timeout }}"
+    on_rejected:
+      response:
+        text: |
+          ❌ *Runbook Rejected*
+
+          {{ input.runbook_name }} was rejected by @{{ steps.wait-approval.output.approver }}
+    on_timeout:
+      response:
+        text: |
+          ⏰ *Request Expired*
+
+          Approval for `{{ input.runbook_name }}` timed out.
+
+  # Send executing message
+  - name: notify-start
+    agent: telegram
+    action: send
+    input:
+      chat_id: "{{ trigger.channel_id }}"
+      text: |
+        ⏳ *Executing Runbook*
+
+        Runbook: `{{ input.runbook_name }}`
+        {% if steps.get-config.output.requires_approval %}
+        Approved by: @{{ steps.wait-approval.output.approver }}
+        {% endif %}
+
+        Please wait...
+
+  # Execute runbook
+  - name: execute
+    agent: shell
+    action: run
+    input:
+      commands: "{{ steps.get-config.output.commands }}"
+      timeout: "{{ steps.get-config.output.timeout }}"
+      env:
+        KUBECONFIG: "/etc/kubernetes/admin.conf"
+    on_progress:
+      interval: 10
+      response:
+        text: |
+          ⏳ Still running...
+          {{ output | last_lines(5) }}
+
+  # Send result
+  - name: respond
+    agent: telegram
+    action: edit
+    input:
+      chat_id: "{{ trigger.channel_id }}"
+      message_id: "{{ steps.notify-start.output.message_id }}"
+      text: |
+        ✅ *Runbook Complete*
+
+        Runbook: `{{ input.runbook_name }}`
+        Duration: {{ steps.execute.duration }}s
+        Exit code: {{ steps.execute.output.exit_code }}
+
+        ```
+        {{ steps.execute.output.stdout | truncate(500) }}
+        ```
+
+on_error:
+  response:
+    text: |
+      ❌ *Runbook Failed*
+
+      Runbook: `{{ input.runbook_name }}`
+      Error: {{ error.message }}
+
+      ```
+      {{ error.details | truncate(300) }}
+      ```
+
+      Contact @sre-team if issue persists.

@@ -1,0 +1,225 @@
+# WhatsApp On-Call Alert Flow
+# Send alerts to on-call engineer via WhatsApp
+apiVersion: aof.sh/v1alpha1
+kind: AgentFlow
+metadata:
+  name: oncall-alert
+  description: Send and manage alerts via WhatsApp
+  labels:
+    platform: whatsapp
+    category: alerting
+    workflow: oncall
+
+triggers:
+  # From alerting systems
+  - type: webhook
+    path: "/alert/oncall"
+    method: POST
+
+  # From Prometheus Alertmanager
+  - type: alertmanager
+    receiver: "whatsapp-oncall"
+
+input:
+  schema:
+    severity:
+      type: string
+      enum: ["critical", "warning", "info"]
+      required: true
+    service:
+      type: string
+      required: true
+    message:
+      type: string
+      required: true
+    runbook_url:
+      type: string
+    labels:
+      type: object
+
+steps:
+  # Get current on-call engineer
+  - name: get-oncall
+    agent: oncall-manager
+    action: get_current
+    input:
+      schedule_id: "${PAGERDUTY_SCHEDULE_ID}"
+    fallback:
+      # Static fallback if PagerDuty unavailable
+      phone: "${FALLBACK_ONCALL_PHONE}"
+      name: "Fallback On-Call"
+
+  # Create alert record
+  - name: create-alert
+    agent: alert-manager
+    action: create
+    input:
+      severity: "{{ input.severity }}"
+      service: "{{ input.service }}"
+      message: "{{ input.message }}"
+      labels: "{{ input.labels }}"
+      oncall_user: "{{ steps.get-oncall.output.phone }}"
+      runbook_url: "{{ input.runbook_url }}"
+
+  # Send WhatsApp message using template
+  - name: send-alert
+    agent: whatsapp
+    action: send_template
+    input:
+      to: "{{ steps.get-oncall.output.phone }}"
+      template: "ops_alert"
+      language: "en"
+      components:
+        - type: body
+          parameters:
+            - type: text
+              text: "{{ input.severity | upper }}"
+            - type: text
+              text: "{{ input.service }}"
+            - type: text
+              text: "{{ input.message }}"
+            - type: text
+              text: "{{ now() | format_time('%H:%M %Z') }}"
+
+  # Set up auto-escalation for critical alerts
+  - name: schedule-escalation
+    condition: "{{ input.severity == 'critical' }}"
+    agent: scheduler
+    action: schedule
+    input:
+      delay: 300  # 5 minutes
+      flow: "auto-escalate"
+      input:
+        alert_id: "{{ steps.create-alert.output.id }}"
+      cancel_on:
+        - event: alert_acknowledged
+          alert_id: "{{ steps.create-alert.output.id }}"
+
+  # Log for audit
+  - name: audit-log
+    agent: logger
+    action: log
+    input:
+      level: "{{ input.severity }}"
+      event: "alert_sent"
+      metadata:
+        alert_id: "{{ steps.create-alert.output.id }}"
+        oncall: "{{ steps.get-oncall.output.name }}"
+        service: "{{ input.service }}"
+        phone: "{{ steps.get-oncall.output.phone | mask }}"
+
+# Handle responses to this alert
+on_response:
+  # ACK - Acknowledge
+  - pattern: "^ACK$"
+    steps:
+      - name: ack-alert
+        agent: alert-manager
+        action: acknowledge
+        input:
+          alert_id: "{{ context.alert_id }}"
+          acknowledged_by: "{{ trigger.user.phone }}"
+
+      - name: cancel-escalation
+        agent: scheduler
+        action: cancel
+        input:
+          flow: "auto-escalate"
+          filter:
+            alert_id: "{{ context.alert_id }}"
+
+      - name: respond-ack
+        agent: whatsapp
+        action: send
+        input:
+          to: "{{ trigger.user.phone }}"
+          text: |
+            ✅ Alert acknowledged
+
+            You are now the incident commander for this alert.
+
+            Reply:
+            • RESOLVE - When fixed
+            • ESC - To escalate
+            • STATUS - For current status
+
+  # ESC - Escalate
+  - pattern: "^ESC$"
+    flow: "escalate-alert"
+    input:
+      alert_id: "{{ context.alert_id }}"
+      escalated_by: "{{ trigger.user.phone }}"
+
+  # INFO - Get more details
+  - pattern: "^INFO$"
+    steps:
+      - name: get-details
+        agent: alert-manager
+        action: get
+        input:
+          alert_id: "{{ context.alert_id }}"
+
+      - name: send-details
+        agent: whatsapp
+        action: send
+        input:
+          to: "{{ trigger.user.phone }}"
+          text: |
+            📋 *Alert Details*
+
+            *ID:* {{ steps.get-details.output.id }}
+            *Service:* {{ steps.get-details.output.service }}
+            *Severity:* {{ steps.get-details.output.severity }}
+            *Status:* {{ steps.get-details.output.status }}
+            *Created:* {{ steps.get-details.output.created_at | format_time }}
+
+            *Message:*
+            {{ steps.get-details.output.message }}
+
+            {% if steps.get-details.output.runbook_url %}
+            *Runbook:* {{ steps.get-details.output.runbook_url }}
+            {% endif %}
+
+            *Labels:*
+            {% for key, value in steps.get-details.output.labels.items() %}
+            • {{ key }}: {{ value }}
+            {% endfor %}
+
+  # RESOLVE - Close alert
+  - pattern: "^RESOLVE$"
+    steps:
+      - name: resolve-alert
+        agent: alert-manager
+        action: resolve
+        input:
+          alert_id: "{{ context.alert_id }}"
+          resolved_by: "{{ trigger.user.phone }}"
+
+      - name: respond-resolve
+        agent: whatsapp
+        action: send
+        input:
+          to: "{{ trigger.user.phone }}"
+          text: |
+            ✅ Alert resolved
+
+            Duration: {{ steps.resolve-alert.output.duration }}
+
+            Great job! 🎉
+
+on_error:
+  steps:
+    - name: notify-failure
+      agent: logger
+      action: error
+      input:
+        message: "Failed to send WhatsApp alert"
+        error: "{{ error }}"
+
+    # Fallback to SMS
+    - name: fallback-sms
+      agent: twilio
+      action: send_sms
+      input:
+        to: "{{ steps.get-oncall.output.phone }}"
+        body: "[{{ input.severity }}] {{ input.service }}: {{ input.message }}"

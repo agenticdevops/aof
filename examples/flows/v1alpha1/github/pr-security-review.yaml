@@ -1,0 +1,168 @@
+# GitHub PR Security Review Flow
+# Automatically scans PRs for security issues
+apiVersion: aof.sh/v1alpha1
+kind: AgentFlow
+metadata:
+  name: pr-security-review
+  description: Automated security scanning for pull requests
+  labels:
+    platform: github
+    category: security
+    workflow: ci
+
+triggers:
+  - platform: github
+    events:
+      - pull_request.opened
+      - pull_request.synchronize
+
+conditions:
+  - "{{ not event.pull_request.draft }}"
+  - "{{ event.pull_request.user.type != 'Bot' }}"
+
+input:
+  from_event:
+    repo: "{{ event.repository.full_name }}"
+    pr_number: "{{ event.pull_request.number }}"
+    head_sha: "{{ event.pull_request.head.sha }}"
+    author: "{{ event.pull_request.user.login }}"
+
+steps:
+  # Create check run to show progress
+  - name: create-check
+    agent: github
+    action: create_check_run
+    input:
+      repo: "{{ input.repo }}"
+      head_sha: "{{ input.head_sha }}"
+      name: "Security Scan"
+      status: "in_progress"
+
+  # Get files changed in PR
+  - name: get-changed-files
+    agent: github
+    action: get_pr_files
+    input:
+      repo: "{{ input.repo }}"
+      pr_number: "{{ input.pr_number }}"
+
+  # Run security scans in parallel
+  - name: security-scans
+    parallel: true
+    steps:
+      # Secret detection
+      - name: secret-scan
+        agent: security-scanner
+        action: detect_secrets
+        input:
+          files: "{{ steps.get-changed-files.output }}"
+        patterns:
+          - type: aws_key
+            pattern: "AKIA[0-9A-Z]{16}"
+            severity: critical
+          - type: github_token
+            pattern: "gh[ps]_[A-Za-z0-9_]{36}"
+            severity: critical
+          - type: generic_api_key
+            pattern: "api[_-]?key['\"]?\\s*[:=]\\s*['\"][a-zA-Z0-9]{20,}"
+            severity: high
+
+      # Dependency vulnerability scan
+      - name: dependency-scan
+        agent: security-scanner
+        action: scan_dependencies
+        input:
+          repo: "{{ input.repo }}"
+          ref: "{{ input.head_sha }}"
+
+      # Code security patterns
+      - name: code-security
+        agent: security-scanner
+        action: scan_code
+        input:
+          files: "{{ steps.get-changed-files.output }}"
+        checks:
+          - type: sql_injection
+          - type: xss
+          - type: command_injection
+          - type: path_traversal
+          - type: insecure_deserialization
+
+  # Aggregate results
+  - name: aggregate
+    agent: aggregator
+    action: combine
+    input:
+      secrets: "{{ steps.security-scans.secret-scan.output }}"
+      dependencies: "{{ steps.security-scans.dependency-scan.output }}"
+      code: "{{ steps.security-scans.code-security.output }}"
+
+  # Determine status
+  - name: determine-result
+    agent: evaluator
+    action: evaluate
+    input:
+      results: "{{ steps.aggregate.output }}"
+    rules:
+      - condition: "{{ results.critical_count > 0 }}"
+        conclusion: "failure"
+      - condition: "{{ results.high_count > 0 }}"
+        conclusion: "failure"
+      - condition: "{{ results.medium_count > 5 }}"
+        conclusion: "failure"
+      - default:
+        conclusion: "success"
+
+  # Post review comment
+  - name: post-review
+    agent: github
+    action: post_review
+    input:
+      repo: "{{ input.repo }}"
+      pr_number: "{{ input.pr_number }}"
+      event: "{{ 'REQUEST_CHANGES' if steps.determine-result.output.conclusion == 'failure' else 'COMMENT' }}"
+      body: |
+        ## 🔒 Security Scan Results
+
+        {{ '❌ **Issues Found**' if steps.determine-result.output.conclusion == 'failure' else '✅ **No Critical Issues**' }}
+
+        | Severity | Count |
+        |----------|-------|
+        | 🔴 Critical | {{ steps.aggregate.output.critical_count }} |
+        | 🟠 High | {{ steps.aggregate.output.high_count }} |
+        | 🟡 Medium | {{ steps.aggregate.output.medium_count }} |
+        | 🟢 Low | {{ steps.aggregate.output.low_count }} |
+
+        {% if steps.aggregate.output.issues | length > 0 %}
+        ### Issues
+
+        {% for issue in steps.aggregate.output.issues %}
+        - **{{ issue.severity }}** - {{ issue.type }}: {{ issue.message }}
+          `{{ issue.file }}:{{ issue.line }}`
+        {% endfor %}
+        {% endif %}
+
+        ---
+        <sub>🤖 [AOF Security Scanner](https://docs.aof.sh)</sub>
+
+  # Update check run
+  - name: complete-check
+    agent: github
+    action: update_check_run
+    input:
+      repo: "{{ input.repo }}"
+      check_run_id: "{{ steps.create-check.output.id }}"
+      conclusion: "{{ steps.determine-result.output.conclusion }}"
+      output:
+        title: "Security Scan {{ 'Failed' if steps.determine-result.output.conclusion == 'failure' else 'Passed' }}"
+        summary: "Found {{ steps.aggregate.output.total_issues }} issues"
+
+  # Block merge if critical issues
+  - name: add-labels
+    condition: "{{ steps.aggregate.output.critical_count > 0 }}"
+    agent: github
+    action: add_labels
+    input:
+      repo: "{{ input.repo }}"
+      issue_number: "{{ input.pr_number }}"
+      labels: ["security-block", "do-not-merge"]

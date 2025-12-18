@@ -1,0 +1,280 @@
+# WhatsApp Deployment Approval Flow
+# Request and process deployment approvals via WhatsApp
+apiVersion: aof.sh/v1alpha1
+kind: AgentFlow
+metadata:
+  name: deployment-approval-whatsapp
+  description: Deployment approval workflow via WhatsApp
+  labels:
+    platform: whatsapp
+    category: deployment
+    workflow: approval
+
+triggers:
+  # From CI/CD pipeline
+  - type: webhook
+    path: "/deploy/request-approval"
+    method: POST
+
+input:
+  schema:
+    service:
+      type: string
+      required: true
+    version:
+      type: string
+      required: true
+    environment:
+      type: string
+      enum: ["staging", "production"]
+      required: true
+    requester:
+      type: string
+      required: true
+    changes_url:
+      type: string
+    tests_passed:
+      type: boolean
+
+conditions:
+  # Only require approval for production
+  - "{{ input.environment == 'production' }}"
+
+steps:
+  # Get list of approvers
+  - name: get-approvers
+    agent: approval-manager
+    action: get_approvers
+    input:
+      environment: "{{ input.environment }}"
+      service: "{{ input.service }}"
+    rules:
+      production:
+        required_approvers: 1
+        allowed_roles: ["sre", "platform-lead", "eng-manager"]
+      staging:
+        required_approvers: 0  # Auto-approve
+
+  # Create approval request
+  - name: create-request
+    agent: approval-manager
+    action: create
+    input:
+      type: deployment
+      service: "{{ input.service }}"
+      version: "{{ input.version }}"
+      environment: "{{ input.environment }}"
+      requester: "{{ input.requester }}"
+      approvers: "{{ steps.get-approvers.output.users }}"
+      expires_at: "{{ now() | add_hours(4) }}"
+      metadata:
+        changes_url: "{{ input.changes_url }}"
+        tests_passed: "{{ input.tests_passed }}"
+
+  # Send approval requests via WhatsApp
+  - name: send-requests
+    agent: whatsapp
+    action: send_template
+    foreach: "{{ steps.get-approvers.output.users }}"
+    input:
+      to: "{{ item.phone }}"
+      template: "deployment_approval"
+      language: "en"
+      components:
+        - type: body
+          parameters:
+            - type: text
+              text: "{{ input.service }}"
+            - type: text
+              text: "{{ input.version }}"
+            - type: text
+              text: "{{ input.environment }}"
+            - type: text
+              text: "{{ input.requester }}"
+
+  # Notify requester
+  - name: notify-requester
+    agent: slack
+    action: send
+    input:
+      user: "{{ input.requester }}"
+      text: |
+        📱 Deployment approval requested via WhatsApp
+
+        Service: {{ input.service }}
+        Version: {{ input.version }}
+        Environment: {{ input.environment }}
+
+        Waiting for approval from: {{ steps.get-approvers.output.users | map(attribute='name') | join(', ') }}
+
+        Request ID: {{ steps.create-request.output.request_id }}
+        Expires: {{ steps.create-request.output.expires_at | format_time }}
+
+  # Return webhook response
+  - name: respond
+    agent: http
+    action: respond
+    input:
+      status: 202
+      body:
+        request_id: "{{ steps.create-request.output.request_id }}"
+        status: "pending"
+        expires_at: "{{ steps.create-request.output.expires_at }}"
+        approvers: "{{ steps.get-approvers.output.users | map(attribute='name') }}"
+
+# Handle approval/rejection responses
+on_response:
+  # APPROVE
+  - pattern: "^APPROVE$"
+    steps:
+      - name: validate-approver
+        agent: approval-manager
+        action: validate_approver
+        input:
+          request_id: "{{ context.request_id }}"
+          approver_phone: "{{ trigger.user.phone }}"
+        on_error:
+          response:
+            text: "❌ You are not authorized to approve this request."
+
+      - name: check-expired
+        agent: approval-manager
+        action: check_expiry
+        input:
+          request_id: "{{ context.request_id }}"
+        on_error:
+          response:
+            text: "❌ This approval request has expired."
+
+      - name: approve
+        agent: approval-manager
+        action: approve
+        input:
+          request_id: "{{ context.request_id }}"
+          approver_phone: "{{ trigger.user.phone }}"
+
+      - name: trigger-deploy
+        agent: deployment-manager
+        action: deploy
+        input:
+          service: "{{ context.service }}"
+          version: "{{ context.version }}"
+          environment: "{{ context.environment }}"
+          approved_by: "{{ steps.validate-approver.output.approver_name }}"
+
+      - name: notify-approved
+        parallel: true
+        steps:
+          - agent: whatsapp
+            action: send
+            input:
+              to: "{{ trigger.user.phone }}"
+              text: |
+                ✅ Deployment approved
+
+                {{ context.service }} v{{ context.version }} is now deploying to {{ context.environment }}.
+
+                You'll be notified when deployment completes.
+
+          - agent: slack
+            action: send
+            input:
+              channel: "#deployments"
+              text: |
+                ✅ Deployment approved via WhatsApp
+
+                Service: {{ context.service }}
+                Version: {{ context.version }}
+                Environment: {{ context.environment }}
+                Approved by: {{ steps.validate-approver.output.approver_name }}
+
+  # REJECT
+  - pattern: "^REJECT$"
+    steps:
+      - name: validate-rejecter
+        agent: approval-manager
+        action: validate_approver
+        input:
+          request_id: "{{ context.request_id }}"
+          approver_phone: "{{ trigger.user.phone }}"
+
+      - name: reject
+        agent: approval-manager
+        action: reject
+        input:
+          request_id: "{{ context.request_id }}"
+          rejected_by: "{{ trigger.user.phone }}"
+
+      - name: notify-rejected
+        parallel: true
+        steps:
+          - agent: whatsapp
+            action: send
+            input:
+              to: "{{ trigger.user.phone }}"
+              text: |
+                ❌ Deployment rejected
+
+                {{ context.service }} v{{ context.version }} will not be deployed to {{ context.environment }}.
+
+          - agent: slack
+            action: send
+            input:
+              user: "{{ context.requester }}"
+              text: |
+                ❌ Deployment rejected
+
+                Service: {{ context.service }}
+                Version: {{ context.version }}
+                Rejected by: {{ steps.validate-rejecter.output.approver_name }}
+
+  # DETAILS - View changes
+  - pattern: "^DETAILS$"
+    steps:
+      - name: get-request
+        agent: approval-manager
+        action: get
+        input:
+          request_id: "{{ context.request_id }}"
+
+      - name: send-details
+        agent: whatsapp
+        action: send
+        input:
+          to: "{{ trigger.user.phone }}"
+          text: |
+            📋 *Deployment Details*
+
+            *Service:* {{ steps.get-request.output.service }}
+            *Version:* {{ steps.get-request.output.version }}
+            *Environment:* {{ steps.get-request.output.environment }}
+            *Requester:* {{ steps.get-request.output.requester }}
+            *Tests:* {{ '✅ Passed' if steps.get-request.output.tests_passed else '⚠️ Unknown' }}
+
+            {% if steps.get-request.output.changes_url %}
+            *View changes:* {{ steps.get-request.output.changes_url }}
+            {% endif %}
+
+            Reply APPROVE or REJECT
+
+on_timeout:
+  steps:
+    - name: expire-request
+      agent: approval-manager
+      action: expire
+      input:
+        request_id: "{{ context.request_id }}"
+
+    - name: notify-expired
+      agent: slack
+      action: send
+      input:
+        user: "{{ context.requester }}"
+        text: |
+          ⏰ Deployment approval expired
+
+          Service: {{ context.service }}
+          Version: {{ context.version }}
+
+          No approver responded within the timeout period.
+          Please resubmit if still needed.

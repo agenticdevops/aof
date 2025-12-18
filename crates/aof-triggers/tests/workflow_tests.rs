@@ -187,6 +187,7 @@ fn test_custom_handler_config() {
         auto_ack: false,
         max_tasks_per_user: 5,
         command_timeout_secs: 600,
+        default_agent: None,
     };
 
     let handler = create_handler_with_config(config.clone());

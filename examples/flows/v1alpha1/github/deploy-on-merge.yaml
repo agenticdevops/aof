@@ -1,0 +1,208 @@
+# Deploy on Merge to Main
+# Automatically deploys to production when PRs are merged
+apiVersion: aof.sh/v1alpha1
+kind: AgentFlow
+metadata:
+  name: deploy-on-merge
+  description: Production deployment triggered by merge to main
+  labels:
+    platform: github
+    category: deployment
+    environment: production
+
+triggers:
+  - platform: github
+    events:
+      - push
+    branches:
+      - main
+
+conditions:
+  # Only on merge commits
+  - "{{ 'Merge pull request' in event.head_commit.message }}"
+
+input:
+  from_event:
+    repo: "{{ event.repository.full_name }}"
+    commit_sha: "{{ event.head_commit.id }}"
+    author: "{{ event.head_commit.author.username }}"
+    message: "{{ event.head_commit.message }}"
+
+variables:
+  service_name: "{{ event.repository.name }}"
+  image_tag: "{{ event.head_commit.id | truncate(7, '') }}"
+  registry: "ghcr.io"
+
+steps:
+  # Extract PR number
+  - name: get-pr-number
+    agent: parser
+    action: extract
+    input:
+      text: "{{ input.message }}"
+      pattern: "#(\\d+)"
+
+  # Check deployment gate
+  - name: check-gate
+    agent: deployment-gate
+    action: check
+    input:
+      repo: "{{ input.repo }}"
+      sha: "{{ input.commit_sha }}"
+    rules:
+      - type: all_checks_passed
+      - type: deployment_window
+        schedule:
+          weekdays: [1, 2, 3, 4]  # Mon-Thu
+          hours: "09:00-16:00"
+          timezone: "America/New_York"
+    on_blocked:
+      response:
+        channel: slack
+        target: "#deployments"
+        text: |
+          ⏸️ Deployment blocked for {{ input.repo }}
+          Reason: {{ error.reason }}
+          Commit: {{ input.commit_sha | truncate(7, '') }}
+
+  # Create GitHub deployment
+  - name: create-deployment
+    agent: github
+    action: create_deployment
+    input:
+      repo: "{{ input.repo }}"
+      ref: "{{ input.commit_sha }}"
+      environment: "production"
+      description: "Deploying {{ variables.service_name }} from PR #{{ steps.get-pr-number.output.match }}"
+
+  # Update status to pending
+  - name: status-pending
+    agent: github
+    action: create_deployment_status
+    input:
+      repo: "{{ input.repo }}"
+      deployment_id: "{{ steps.create-deployment.output.id }}"
+      state: "in_progress"
+      description: "Deployment starting..."
+
+  # Notify Slack
+  - name: notify-start
+    agent: slack
+    action: send
+    input:
+      channel: "#deployments"
+      blocks:
+        - type: header
+          text: "🚀 Deploying {{ variables.service_name }}"
+        - type: section
+          fields:
+            - type: mrkdwn
+              text: "*Commit:* {{ input.commit_sha | truncate(7, '') }}"
+            - type: mrkdwn
+              text: "*Author:* {{ input.author }}"
+        - type: context
+          elements:
+            - type: mrkdwn
+              text: "PR #{{ steps.get-pr-number.output.match }} merged to main"
+
+  # Deploy to Kubernetes
+  - name: deploy
+    agent: kubernetes
+    action: deploy
+    input:
+      cluster: "production"
+      namespace: "{{ variables.service_name }}"
+      manifests:
+        deployment:
+          image: "{{ variables.registry }}/{{ input.repo }}:{{ variables.image_tag }}"
+          replicas: 3
+          strategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 1
+              maxSurge: 1
+      wait:
+        timeout: 300
+        conditions:
+          - type: Available
+            status: "True"
+
+  # Run smoke tests
+  - name: smoke-tests
+    agent: test-runner
+    action: run
+    input:
+      type: smoke
+      endpoint: "https://{{ variables.service_name }}.example.com"
+      tests:
+        - name: health-check
+          path: /health
+          expected_status: 200
+        - name: readiness
+          path: /ready
+          expected_status: 200
+
+  # Update deployment status
+  - name: status-success
+    agent: github
+    action: create_deployment_status
+    input:
+      repo: "{{ input.repo }}"
+      deployment_id: "{{ steps.create-deployment.output.id }}"
+      state: "success"
+      environment_url: "https://{{ variables.service_name }}.example.com"
+      description: "Deployed successfully"
+
+  # Notify success
+  - name: notify-success
+    agent: slack
+    action: update
+    input:
+      channel: "#deployments"
+      ts: "{{ steps.notify-start.output.ts }}"
+      blocks:
+        - type: header
+          text: "✅ Deployed {{ variables.service_name }}"
+        - type: section
+          fields:
+            - type: mrkdwn
+              text: "*Commit:* {{ input.commit_sha | truncate(7, '') }}"
+            - type: mrkdwn
+              text: "*Duration:* {{ elapsed() }}s"
+        - type: actions
+          elements:
+            - type: button
+              text: "View App"
+              url: "https://{{ variables.service_name }}.example.com"
+            - type: button
+              text: "View Logs"
+              url: "https://logs.example.com/{{ variables.service_name }}"
+
+on_error:
+  steps:
+    - name: status-failure
+      agent: github
+      action: create_deployment_status
+      input:
+        repo: "{{ input.repo }}"
+        deployment_id: "{{ steps.create-deployment.output.id }}"
+        state: "failure"
+        description: "{{ error.message }}"
+
+    - name: notify-failure
+      agent: slack
+      action: send
+      input:
+        channel: "#deployments"
+        text: |
+          ❌ Deployment failed for {{ variables.service_name }}
+          Error: {{ error.message }}
+          Commit: {{ input.commit_sha | truncate(7, '') }}
+
+    - name: auto-rollback
+      agent: kubernetes
+      action: rollback
+      input:
+        cluster: "production"
+        namespace: "{{ variables.service_name }}"
+        revision: "previous"

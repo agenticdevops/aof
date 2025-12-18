@@ -201,12 +201,14 @@ pub mod slack;
 pub mod discord;
 pub mod telegram;
 pub mod whatsapp;
+pub mod github;
 
 // Re-export platform types
 pub use slack::{SlackConfig, SlackPlatform};
 pub use discord::{DiscordConfig, DiscordPlatform};
 pub use telegram::{TelegramConfig, TelegramPlatform};
 pub use whatsapp::{WhatsAppConfig, WhatsAppPlatform};
+pub use github::{GitHubConfig, GitHubPlatform};
 
 // Type aliases for easier use
 pub type Platform = Box<dyn TriggerPlatform>;
@@ -231,6 +233,12 @@ pub struct PlatformConfig {
 }
 
 /// Typed platform configuration enum
+///
+/// This enum provides strongly-typed configuration for each supported platform.
+/// To add a new platform:
+/// 1. Create the platform module (e.g., `platforms/myplatform.rs`)
+/// 2. Add it to this enum
+/// 3. Register it in the PlatformRegistry
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum TypedPlatformConfig {
@@ -238,6 +246,223 @@ pub enum TypedPlatformConfig {
     Discord(DiscordConfig),
     Telegram(TelegramConfig),
     WhatsApp(WhatsAppConfig),
+    GitHub(GitHubConfig),
+}
+
+// ============================================================================
+// PLATFORM REGISTRY - Plugin System for Dynamic Platform Loading
+// ============================================================================
+
+/// Platform factory function type
+///
+/// Used by the registry to create platform instances from configuration.
+pub type PlatformFactory = Box<dyn Fn(serde_json::Value) -> Result<Platform, PlatformError> + Send + Sync>;
+
+/// Platform Registry for dynamic platform loading
+///
+/// The registry provides a pluggable architecture where new platforms can be
+/// registered at runtime. This is the foundation for the extensibility system.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use aof_triggers::platforms::{PlatformRegistry, TriggerPlatform};
+///
+/// let mut registry = PlatformRegistry::new();
+///
+/// // Built-in platforms are auto-registered
+/// registry.register_defaults();
+///
+/// // Create platform from typed config
+/// let platform = registry.create("slack", config_json)?;
+///
+/// // Register a custom platform
+/// registry.register("myplatform", Box::new(|config| {
+///     let cfg: MyConfig = serde_json::from_value(config)?;
+///     Ok(Box::new(MyPlatform::new(cfg)?))
+/// }));
+/// ```
+#[derive(Default)]
+pub struct PlatformRegistry {
+    factories: HashMap<String, PlatformFactory>,
+}
+
+impl PlatformRegistry {
+    /// Create a new empty registry
+    pub fn new() -> Self {
+        Self {
+            factories: HashMap::new(),
+        }
+    }
+
+    /// Create a registry with all built-in platforms registered
+    pub fn with_defaults() -> Self {
+        let mut registry = Self::new();
+        registry.register_defaults();
+        registry
+    }
+
+    /// Register all built-in platforms
+    pub fn register_defaults(&mut self) {
+        // Slack
+        self.register("slack", Box::new(|config| {
+            let cfg: SlackConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid Slack config: {}", e)))?;
+            Ok(Box::new(SlackPlatform::new(cfg)?))
+        }));
+
+        // Telegram
+        self.register("telegram", Box::new(|config| {
+            let cfg: TelegramConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid Telegram config: {}", e)))?;
+            Ok(Box::new(TelegramPlatform::new(cfg)?))
+        }));
+
+        // WhatsApp
+        self.register("whatsapp", Box::new(|config| {
+            let cfg: WhatsAppConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid WhatsApp config: {}", e)))?;
+            Ok(Box::new(WhatsAppPlatform::new(cfg)?))
+        }));
+
+        // GitHub
+        self.register("github", Box::new(|config| {
+            let cfg: GitHubConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid GitHub config: {}", e)))?;
+            Ok(Box::new(GitHubPlatform::new(cfg)?))
+        }));
+
+        // Discord
+        self.register("discord", Box::new(|config| {
+            let cfg: DiscordConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid Discord config: {}", e)))?;
+            Ok(Box::new(DiscordPlatform::from_discord_config(cfg)?))
+        }));
+    }
+
+    /// Register a new platform factory
+    ///
+    /// # Arguments
+    /// * `name` - Platform identifier (lowercase, e.g., "slack", "github")
+    /// * `factory` - Function that creates the platform from JSON config
+    pub fn register(&mut self, name: &str, factory: PlatformFactory) {
+        self.factories.insert(name.to_lowercase(), factory);
+    }
+
+    /// Create a platform instance from configuration
+    ///
+    /// # Arguments
+    /// * `name` - Platform identifier
+    /// * `config` - JSON configuration for the platform
+    ///
+    /// # Returns
+    /// The created platform instance
+    pub fn create(&self, name: &str, config: serde_json::Value) -> Result<Platform, PlatformError> {
+        let factory = self.factories
+            .get(&name.to_lowercase())
+            .ok_or_else(|| PlatformError::ParseError(format!(
+                "Unknown platform: {}. Available: {:?}",
+                name,
+                self.list_platforms()
+            )))?;
+
+        factory(config)
+    }
+
+    /// Check if a platform is registered
+    pub fn has_platform(&self, name: &str) -> bool {
+        self.factories.contains_key(&name.to_lowercase())
+    }
+
+    /// List all registered platform names
+    pub fn list_platforms(&self) -> Vec<String> {
+        self.factories.keys().cloned().collect()
+    }
+
+    /// Unregister a platform
+    pub fn unregister(&mut self, name: &str) -> bool {
+        self.factories.remove(&name.to_lowercase()).is_some()
+    }
+}
+
+/// Platform capability flags
+///
+/// These flags indicate what features a platform supports.
+/// Used for capability-based routing and validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlatformCapabilities {
+    /// Supports threaded conversations
+    pub threading: bool,
+    /// Supports interactive elements (buttons, menus)
+    pub interactive: bool,
+    /// Supports file uploads/attachments
+    pub files: bool,
+    /// Supports reactions/emojis
+    pub reactions: bool,
+    /// Supports rich text/markdown
+    pub rich_text: bool,
+    /// Supports approval workflows
+    pub approvals: bool,
+}
+
+impl Default for PlatformCapabilities {
+    fn default() -> Self {
+        Self {
+            threading: false,
+            interactive: false,
+            files: false,
+            reactions: false,
+            rich_text: true,
+            approvals: false,
+        }
+    }
+}
+
+/// Get capabilities for a known platform
+pub fn get_platform_capabilities(platform: &str) -> PlatformCapabilities {
+    match platform.to_lowercase().as_str() {
+        "slack" => PlatformCapabilities {
+            threading: true,
+            interactive: true,
+            files: true,
+            reactions: true,
+            rich_text: true,
+            approvals: true,
+        },
+        "telegram" => PlatformCapabilities {
+            threading: true, // reply chains
+            interactive: true, // inline keyboards
+            files: true,
+            reactions: false,
+            rich_text: true,
+            approvals: true,
+        },
+        "whatsapp" => PlatformCapabilities {
+            threading: false,
+            interactive: true, // buttons, lists
+            files: true,
+            reactions: false,
+            rich_text: false, // limited formatting
+            approvals: true,
+        },
+        "github" => PlatformCapabilities {
+            threading: true, // conversation threads
+            interactive: true, // workflows, reactions
+            files: true, // artifacts
+            reactions: true,
+            rich_text: true, // markdown
+            approvals: true, // PR reviews
+        },
+        "discord" => PlatformCapabilities {
+            threading: true,
+            interactive: true, // buttons, selects
+            files: true,
+            reactions: true,
+            rich_text: true,
+            approvals: false,
+        },
+        _ => PlatformCapabilities::default(),
+    }
 }
 
 #[cfg(test)]

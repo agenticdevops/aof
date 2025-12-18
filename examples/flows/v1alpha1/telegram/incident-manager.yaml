@@ -1,0 +1,215 @@
+# Telegram Incident Manager
+# Create and manage incidents via Telegram
+apiVersion: aof.sh/v1alpha1
+kind: AgentFlow
+metadata:
+  name: incident-manager
+  description: Incident management via Telegram commands
+  labels:
+    platform: telegram
+    category: incident-response
+    workflow: ops
+
+triggers:
+  - platform: telegram
+    type: command
+    command: "/incident"
+
+input:
+  schema:
+    action:
+      type: string
+      enum: ["create", "update", "resolve", "list", "assign"]
+      required: true
+    severity:
+      type: string
+      enum: ["P1", "P2", "P3", "P4"]
+    title:
+      type: string
+    description:
+      type: string
+    incident_id:
+      type: string
+
+steps:
+  # Route by action
+  - name: route
+    agent: router
+    action: switch
+    input:
+      value: "{{ input.action }}"
+    routes:
+      create: create-incident
+      update: update-incident
+      resolve: resolve-incident
+      list: list-incidents
+      assign: assign-incident
+
+  # CREATE INCIDENT
+  - name: create-incident
+    condition: "{{ input.action == 'create' }}"
+    agent: incident-manager
+    action: create
+    input:
+      severity: "{{ input.severity | default('P3') }}"
+      title: "{{ input.title }}"
+      description: "{{ input.description }}"
+      reporter: "{{ trigger.user.username }}"
+      source: telegram
+      channel_id: "{{ trigger.channel_id }}"
+    post_steps:
+      # Page on-call for P1/P2
+      - name: page-oncall
+        condition: "{{ input.severity in ['P1', 'P2'] }}"
+        agent: pagerduty
+        action: trigger
+        input:
+          routing_key: "${PAGERDUTY_ROUTING_KEY}"
+          summary: "[{{ input.severity }}] {{ input.title }}"
+          severity: "{{ 'critical' if input.severity == 'P1' else 'error' }}"
+          source: "telegram"
+          custom_details:
+            incident_id: "{{ steps.create-incident.output.id }}"
+            reporter: "{{ trigger.user.username }}"
+
+      # Create war room for P1
+      - name: create-warroom
+        condition: "{{ input.severity == 'P1' }}"
+        agent: telegram
+        action: create_group
+        input:
+          title: "🚨 INC-{{ steps.create-incident.output.id }}"
+          description: "War room for {{ input.title }}"
+    response:
+      text: |
+        🚨 *Incident Created*
+
+        *ID:* `INC-{{ steps.create-incident.output.id }}`
+        *Severity:* {{ input.severity }}
+        *Title:* {{ input.title }}
+        *Reporter:* @{{ trigger.user.username }}
+        *Status:* Open
+
+        {% if input.severity in ['P1', 'P2'] %}
+        📟 On-call team has been paged
+        {% endif %}
+
+        {% if input.severity == 'P1' %}
+        🏠 War room created - check your groups
+        {% endif %}
+
+        Commands:
+        • `/incident update INC-{{ steps.create-incident.output.id }} <message>`
+        • `/incident resolve INC-{{ steps.create-incident.output.id }}`
+      reply_markup:
+        inline_keyboard:
+          - - text: "📋 View Details"
+              callback_data: "incident:view:{{ steps.create-incident.output.id }}"
+            - text: "👤 Assign"
+              callback_data: "incident:assign:{{ steps.create-incident.output.id }}"
+          - - text: "⬆️ Escalate"
+              callback_data: "incident:escalate:{{ steps.create-incident.output.id }}"
+            - text: "✅ Resolve"
+              callback_data: "incident:resolve:{{ steps.create-incident.output.id }}"
+
+  # LIST INCIDENTS
+  - name: list-incidents
+    condition: "{{ input.action == 'list' }}"
+    agent: incident-manager
+    action: list
+    input:
+      status: "open"
+      limit: 10
+      sort: "severity,created_at"
+    response:
+      text: |
+        📋 *Open Incidents*
+
+        {% if steps.list-incidents.output.incidents | length == 0 %}
+        ✨ No open incidents
+        {% else %}
+        {% for inc in steps.list-incidents.output.incidents %}
+        {{ '🔴' if inc.severity == 'P1' else '🟠' if inc.severity == 'P2' else '🟡' if inc.severity == 'P3' else '🟢' }} *{{ inc.id }}* [{{ inc.severity }}]
+        {{ inc.title }}
+        Status: {{ inc.status }} | Age: {{ inc.age }}
+        {% if inc.assignee %}Assigned: @{{ inc.assignee }}{% endif %}
+
+        {% endfor %}
+        {% endif %}
+
+        {% if steps.list-incidents.output.total > 10 %}
+        _Showing 10 of {{ steps.list-incidents.output.total }} incidents_
+        {% endif %}
+
+  # RESOLVE INCIDENT
+  - name: resolve-incident
+    condition: "{{ input.action == 'resolve' }}"
+    agent: incident-manager
+    action: resolve
+    input:
+      incident_id: "{{ input.incident_id }}"
+      resolution: "{{ input.description | default('Resolved via Telegram') }}"
+      resolved_by: "{{ trigger.user.username }}"
+    post_steps:
+      - name: resolve-pagerduty
+        agent: pagerduty
+        action: resolve
+        input:
+          incident_key: "{{ input.incident_id }}"
+    response:
+      text: |
+        ✅ *Incident Resolved*
+
+        *ID:* `{{ input.incident_id }}`
+        *Resolution:* {{ input.description | default('Resolved via Telegram') }}
+        *Resolved by:* @{{ trigger.user.username }}
+        *Duration:* {{ steps.resolve-incident.output.duration }}
+
+        📊 Metrics will be available in the postmortem report.
+
+  # UPDATE INCIDENT
+  - name: update-incident
+    condition: "{{ input.action == 'update' }}"
+    agent: incident-manager
+    action: add_update
+    input:
+      incident_id: "{{ input.incident_id }}"
+      message: "{{ input.description }}"
+      author: "{{ trigger.user.username }}"
+    response:
+      text: |
+        📝 *Update Added*
+
+        *Incident:* `{{ input.incident_id }}`
+        *Update:* {{ input.description }}
+        *By:* @{{ trigger.user.username }}
+
+  # ASSIGN INCIDENT
+  - name: assign-incident
+    condition: "{{ input.action == 'assign' }}"
+    agent: incident-manager
+    action: assign
+    input:
+      incident_id: "{{ input.incident_id }}"
+      assignee: "{{ input.assignee }}"
+      assigned_by: "{{ trigger.user.username }}"
+    response:
+      text: |
+        👤 *Incident Assigned*
+
+        *Incident:* `{{ input.incident_id }}`
+        *Assigned to:* @{{ input.assignee }}
+        *By:* @{{ trigger.user.username }}
+
+on_error:
+  response:
+    text: |
+      ❌ *Error*
+
+      {{ error.message }}
+
+      Usage:
+      • `/incident create P2 "API down" "Users reporting 500 errors"`
+      • `/incident list`
+      • `/incident update INC-123 "Identified root cause"`
+      • `/incident resolve INC-123 "Fixed by restarting pods"`

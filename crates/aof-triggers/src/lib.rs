@@ -45,7 +45,11 @@ pub use platforms::{
     DiscordConfig, DiscordPlatform,
     TelegramConfig, TelegramPlatform,
     WhatsAppConfig, WhatsAppPlatform,
+    GitHubConfig, GitHubPlatform,
     TypedPlatformConfig,
+    // Platform registry for extensibility
+    PlatformRegistry, PlatformFactory,
+    PlatformCapabilities, get_platform_capabilities,
 };
 
 /// Core trait for trigger platforms

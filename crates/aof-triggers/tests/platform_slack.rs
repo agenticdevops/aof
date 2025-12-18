@@ -13,6 +13,8 @@ fn test_config() -> SlackConfig {
         bot_name: "aofbot".to_string(),
         allowed_workspaces: None,
         allowed_channels: None,
+        approval_allowed_users: None,
+        approval_allowed_roles: None,
     }
 }
 
