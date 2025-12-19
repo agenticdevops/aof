@@ -1,587 +1,388 @@
-# Tutorial: Build a Slack Bot Agent
+# Tutorial: Build a Slack Bot with AOF
 
-Build an AI-powered Slack bot that helps your team with Kubernetes operations, answers questions, and can execute commands on approval.
+Build an AI-powered Slack bot that helps your team with Kubernetes operations, answers questions, and executes commands with human approval.
 
 **What you'll learn:**
-- Create a Slack-integrated agent
-- Handle Slack events and commands
-- Implement human-in-the-loop approvals
-- Deploy as an AgentFlow
+- Set up AOF with Slack integration
+- Create agents with tools (kubectl, helm, etc.)
+- Implement human-in-the-loop approval workflow
+- Use conversation memory for context
 
-**Time:** 20 minutes
+**Time:** 15 minutes
 
-> **Quick Start**: If you just want to run the example:
-> ```bash
-> # Set up environment
-> export SLACK_BOT_TOKEN=xoxb-xxxxx
-> export SLACK_SIGNING_SECRET=xxxxx
-> export GOOGLE_API_KEY=xxxxx
->
-> # Start AOF server with Slack support
-> aofctl serve --config examples/config/slack-daemon.yaml
->
-> # In another terminal, expose with cloudflared (no signup needed)
-> brew install cloudflared
-> cloudflared tunnel --url http://localhost:3000
->
-> # Use the URL from cloudflared output:
-> # https://random-words.trycloudflare.com/webhook/slack
-> ```
-> See [Slack App Setup Guide](../guides/slack-app-setup.md) for detailed Slack configuration.
+## Quick Start
+
+```bash
+# Set up environment
+export SLACK_BOT_TOKEN=xoxb-xxxxx
+export SLACK_SIGNING_SECRET=xxxxx
+export GOOGLE_API_KEY=xxxxx
+
+# Start AOF server
+aofctl serve --config examples/config/slack-daemon.yaml
+
+# In another terminal, expose with cloudflared (free, no signup)
+brew install cloudflared
+cloudflared tunnel --url http://localhost:3000
+
+# Use the URL from cloudflared output for Slack webhook:
+# https://random-words.trycloudflare.com/webhook/slack
+```
+
+See [Slack App Setup Guide](../guides/slack-app-setup.md) for detailed Slack configuration.
 
 ## Prerequisites
 
-- `aofctl` installed
-- Slack workspace (admin access to create apps)
-- Kubernetes cluster (for kubectl commands) - optional
-- Google, OpenAI, or Anthropic API key
+- AOF installed (`curl -sSL https://docs.aof.sh/install.sh | bash`)
+- Slack workspace with admin access
+- Google AI API key (or Anthropic/OpenAI)
+- Optional: Kubernetes cluster for kubectl commands
 
 ## Step 1: Create Slack App
 
-1. Go to [https://api.slack.com/apps](https://api.slack.com/apps)
-2. Click **Create New App** → **From scratch**
-3. Name: `K8s Assistant Bot`
-4. Select your workspace
+1. Go to [api.slack.com/apps](https://api.slack.com/apps)
+2. Click **Create New App** > **From scratch**
+3. Name: `K8s Ops Bot`, select your workspace
 
-### Configure Bot
+### Configure OAuth Scopes
 
-1. **OAuth & Permissions** → Add scopes:
-   - `chat:write` - Send messages
-   - `app_mentions:read` - Receive mentions
-   - `commands` - Slash commands
+Go to **OAuth & Permissions** and add these Bot Token Scopes:
 
-2. **Install App** → Install to workspace
-3. Copy **Bot User OAuth Token** (starts with `xoxb-`)
+| Scope | Purpose |
+|-------|---------|
+| `chat:write` | Send messages |
+| `app_mentions:read` | Respond to @mentions |
+| `reactions:read` | Read approval reactions |
+| `reactions:write` | Add approval buttons |
 
-### Configure Event Subscriptions
+### Install and Get Tokens
 
-1. **Event Subscriptions** → Enable Events
-2. Subscribe to bot events:
-   - `app_mention` - When bot is mentioned
-   - `message.channels` - Channel messages
+1. Click **Install to Workspace**
+2. Copy **Bot User OAuth Token** (`xoxb-...`)
+3. Go to **Basic Information** > copy **Signing Secret**
 
-3. Request URL: `https://your-domain.com/webhook/slack` (we'll set this up in Step 5)
-
-### Create Slash Command
-
-1. **Slash Commands** → Create New Command
-2. Command: `/k8s`
-3. Request URL: `https://your-domain.com/webhook/slack`
-4. Description: "Ask the K8s assistant"
-
-Save your tokens:
 ```bash
 export SLACK_BOT_TOKEN=xoxb-your-token
 export SLACK_SIGNING_SECRET=your-signing-secret
 ```
 
-## Step 2: Create the Base Agent
+### Enable Event Subscriptions
 
-Create `slack-k8s-agent.yaml`:
+1. Go to **Event Subscriptions** > Enable Events
+2. Request URL: `https://your-url/webhook/slack` (set up in Step 4)
+3. Subscribe to bot events:
+   - `app_mention` - Bot mentions
+   - `message.channels` - Channel messages
+   - `message.im` - Direct messages
+   - `reaction_added` - **Required for approval workflow**
+
+## Step 2: Create Agent Configuration
+
+Create `agents/k8s-ops.yaml`:
 
 ```yaml
-apiVersion: aof.dev/v1
+apiVersion: aof.dev/v1alpha1
 kind: Agent
 metadata:
-  name: slack-k8s-bot
+  name: k8s-ops
   labels:
     platform: slack
-    purpose: operations
+    capability: kubernetes
 
 spec:
   model: google:gemini-2.5-flash
-  temperature: 0.3
-  max_tokens: 1500
+  temperature: 0
+  max_tokens: 2048
 
-  instructions: |
-    You are a helpful Kubernetes assistant in a Slack channel.
-
-    Your role:
-    - Answer K8s questions clearly and concisely
-    - Help troubleshoot cluster issues
-    - Run kubectl commands when requested (with approval for destructive ops)
-    - Format responses for Slack (use markdown, code blocks)
-
-    Guidelines:
-    - Keep responses short - this is Slack, not email
-    - Use emoji occasionally for readability 🚀
-    - For complex answers, offer to run commands instead
-    - Always ask for approval before destructive operations (delete, scale down, etc.)
-    - Use Slack's code block formatting: ```text```
+  description: "Kubernetes operations assistant"
 
   tools:
-    # Use unified CLI tools
     - kubectl
     - helm
-    - shell
 
-  # Optional: Memory for conversation context
-  memory: sqlite
+  system_prompt: |
+    You are a Kubernetes operations assistant in Slack.
+
+    ## Your Role
+    - Answer K8s questions clearly and concisely
+    - Run kubectl/helm commands when requested
+    - Troubleshoot cluster issues
+    - Format responses for Slack (use code blocks)
+
+    ## Safety Rules
+    For destructive operations (delete, scale to 0, rollout restart):
+
+    1. Warn the user about the impact
+    2. Return this format to trigger approval:
+
+    requires_approval: true
+    command: "kubectl delete pod nginx-xyz -n production"
+
+    The system will then ask for human approval before executing.
+
+    ## Response Format
+    - Keep responses concise (this is chat, not email)
+    - Use code blocks for command output
+    - Use emoji for status: ✅ success, ⚠️ warning, ❌ error
 ```
 
-## Step 3: Create AgentFlow for Event Handling
+## Step 3: Create Daemon Configuration
 
-The agent handles logic, but we need a flow to route Slack events:
-
-Create `slack-bot-flow.yaml`:
+Create `config/slack-daemon.yaml`:
 
 ```yaml
 apiVersion: aof.dev/v1
-kind: AgentFlow
+kind: DaemonConfig
 metadata:
-  name: slack-k8s-bot-flow
+  name: slack-k8s-bot
 
 spec:
-  # Listen for Slack events
-  trigger:
-    type: Slack
-    config:
-      events:
-        - app_mention          # @bot-name
-        - message             # Direct messages
-        - slash_command       # /k8s command
-      bot_token: ${SLACK_BOT_TOKEN}
-      signing_secret: ${SLACK_SIGNING_SECRET}
+  server:
+    port: 3000
+    host: "0.0.0.0"
 
-  # Define the workflow
-  nodes:
-    # Extract and parse the message
-    - id: parse-message
-      type: Transform
-      config:
-        script: |
-          # Extract text, user, channel
-          export MESSAGE_TEXT="${event.text}"
-          export SLACK_USER="${event.user}"
-          export SLACK_CHANNEL="${event.channel}"
-          export SLACK_TIMESTAMP="${event.ts}"
+  platforms:
+    slack:
+      enabled: true
+      bot_token_env: SLACK_BOT_TOKEN
+      signing_secret_env: SLACK_SIGNING_SECRET
 
-    # Route to agent
-    - id: agent-process
-      type: Agent
-      config:
-        agent: slack-k8s-bot
-        input: ${MESSAGE_TEXT}
-        context:
-          slack_channel: ${SLACK_CHANNEL}
-          slack_user: ${SLACK_USER}
+      # Optional: Restrict who can approve commands
+      # approval_allowed_users:
+      #   - U12345678  # Slack user IDs
 
-    # Check if approval needed
-    - id: check-approval
-      type: Conditional
-      config:
-        condition: |
-          # If agent wants to run destructive command
-          ${agent-process.requires_approval} == true
+  agents:
+    directory: "./agents"
 
-    # Request approval via Slack
-    - id: request-approval
-      type: Slack
-      config:
-        channel: ${SLACK_CHANNEL}
-        message: |
-          :warning: **Approval Required**
-
-          User: <@${SLACK_USER}>
-          Command: `${agent-process.command}`
-
-          React with :white_check_mark: to approve or :x: to deny
-        wait_for_reaction: true
-        timeout_seconds: 300  # 5 minutes
-
-    # Execute approved command
-    - id: execute-command
-      type: Agent
-      config:
-        agent: slack-k8s-bot
-        input: "Execute the approved command: ${agent-process.command}"
-      conditions:
-        - from: check-approval
-          value: true
-        - from: request-approval
-          reaction: white_check_mark
-
-    # Send response back to Slack
-    - id: send-response
-      type: Slack
-      config:
-        channel: ${SLACK_CHANNEL}
-        thread_ts: ${SLACK_TIMESTAMP}  # Reply in thread
-        message: ${agent-process.output}
-
-  # Define connections
-  connections:
-    - from: parse-message
-      to: agent-process
-
-    - from: agent-process
-      to: check-approval
-
-    - from: check-approval
-      to: request-approval
-      when: requires_approval == true
-
-    - from: check-approval
-      to: send-response
-      when: requires_approval == false
-
-    - from: request-approval
-      to: execute-command
-
-    - from: execute-command
-      to: send-response
+  runtime:
+    default_agent: k8s-ops
+    max_concurrent_tasks: 10
+    task_timeout_secs: 300
 ```
 
-## Step 4: Deploy the Bot
+## Step 4: Start the Server
 
 ```bash
-# Deploy the agent
-aofctl apply -f slack-k8s-agent.yaml
-
-# Deploy the flow
-aofctl apply -f slack-bot-flow.yaml
-
-# Start the flow (listens for Slack events)
-aofctl run flow slack-bot-flow.yaml --daemon
-
-# Check status
-aofctl get flows
-```
-
-## Step 5: Set Up Webhook Endpoint
-
-You need a public HTTPS endpoint for Slack to send events to.
-
-### Option A: Use Cloudflare Tunnel (Recommended for Development)
-
-Cloudflare Tunnel is free and **doesn't require signup**:
-
-```bash
-# Install cloudflared
-brew install cloudflared
-
 # Start AOF server
-aofctl serve --config examples/config/slack-daemon.yaml
+aofctl serve --config config/slack-daemon.yaml --agents-dir agents/
 
-# In another terminal, start the tunnel
+# In another terminal, expose with cloudflared
 cloudflared tunnel --url http://localhost:3000
+# Output: https://random-words.trycloudflare.com
 
-# You'll see output like:
-# Your quick Tunnel has been created! Visit it at:
-# https://random-words-here.trycloudflare.com
-
-# Update Slack Event Subscriptions Request URL to:
-# https://random-words-here.trycloudflare.com/webhook/slack
+# Set the Slack webhook URL to:
+# https://random-words.trycloudflare.com/webhook/slack
 ```
 
-### Option B: Use ngrok (Requires Free Account)
-
-```bash
-# Install ngrok
-brew install ngrok
-
-# Sign up at https://dashboard.ngrok.com/signup (free)
-# Configure your authtoken
-ngrok config add-authtoken YOUR_AUTH_TOKEN
-
-# Start ngrok
-ngrok http 3000
-
-# Update Slack Event Subscriptions URL to:
-# https://abc123.ngrok-free.dev/webhook/slack
-```
-
-### Option C: Deploy to Production
-
-```bash
-# Deploy AOF server
-aofctl serve --port 3000 --config daemon-config.yaml
-
-# Use a reverse proxy (nginx, Caddy) with SSL
-# Point Slack webhook to: https://your-domain.com/webhook/slack
-```
-
-> **Note**: The webhook endpoint pattern is `/webhook/{platform}`, so for Slack use `/webhook/slack`.
-
-## Step 6: Test the Bot
+## Step 5: Test the Bot
 
 ### Test 1: Simple Question
 
-In Slack:
+In Slack, mention your bot:
+
 ```
-@K8s Assistant What's the difference between a Deployment and a StatefulSet?
+@K8s Ops Bot what's the difference between a Deployment and StatefulSet?
 ```
 
-Expected response:
+Response:
 ```
-🤖 Great question!
-
-**Deployment**: Best for stateless apps
+**Deployment** - For stateless apps:
 - Pods are interchangeable
-- Can scale up/down easily
-- No stable network identity
+- Easy horizontal scaling
 - Examples: web servers, APIs
 
-**StatefulSet**: For stateful apps
-- Pods have stable identities (pod-0, pod-1...)
+**StatefulSet** - For stateful apps:
+- Stable pod identities (pod-0, pod-1)
 - Persistent storage per pod
-- Ordered deployment/scaling
 - Examples: databases, message queues
-
-Need help choosing which to use? 🚀
 ```
 
-### Test 2: Command Execution
-
-In Slack:
-```
-@K8s Assistant Show me all pods in the production namespace
-```
-
-Expected response:
-```
-🔍 Fetching pods in production namespace...
+### Test 2: Run a Command
 
 ```
-NAME                        READY   STATUS    RESTARTS   AGE
-nginx-deployment-abc123     2/2     Running   0          5d
-postgres-statefulset-0      1/1     Running   0          10d
-redis-deployment-xyz789     1/1     Running   1          3d
+@K8s Ops Bot show me pods in the default namespace
 ```
 
-All pods look healthy! ✅
+Response:
+```
+🔍 Checking pods in default namespace...
+
+NAME                        READY   STATUS    AGE
+nginx-7d5b4c8b9-abc12       1/1     Running   5d
+redis-master-0              1/1     Running   10d
 ```
 
-### Test 3: Approval Flow
+### Test 3: Approval Workflow
 
-In Slack:
+Ask for a destructive operation:
+
 ```
-@K8s Assistant Scale the nginx deployment to 0 replicas
-```
-
-Expected response:
-```
-⚠️ **Approval Required**
-
-User: @yourname
-Command: `kubectl scale deployment nginx-deployment --replicas=0 -n production`
-
-React with ✅ to approve or ❌ to deny
+@K8s Ops Bot delete the nginx pod
 ```
 
-After you react with ✅:
+The bot responds with an approval request:
+
 ```
-✅ Approved and executed!
+⚠️ This action requires approval
+`kubectl delete pod nginx-7d5b4c8b9-abc12 -n default`
 
-deployment.apps/nginx-deployment scaled to 0 replicas
-
-Note: This will cause downtime. Monitor in #production-alerts
-```
-
-### Test 4: Slash Command
-
-In Slack:
-```
-/k8s show failing pods
+React with ✅ to approve or ❌ to deny.
 ```
 
-Expected response:
+The bot adds ✅ and ❌ reactions. Click ✅ to approve:
+
 ```
-🔍 Checking for failing pods...
+⚡ Executing approved command...
+`kubectl delete pod nginx-7d5b4c8b9-abc12 -n default`
 
-Found 2 pods with issues:
-
-1. **api-deployment-abc123** (default)
-   Status: CrashLoopBackOff
-   Restarts: 5
-   Error: Error: ECONNREFUSED connecting to database
-
-2. **worker-xyz789** (production)
-   Status: ImagePullBackOff
-   Error: Failed to pull image "myregistry/worker:v2.0.0"
-
-Want me to investigate further? 🔧
+✅ Command completed successfully
+pod "nginx-7d5b4c8b9-abc12" deleted
+Approved by: @yourname
 ```
 
-## Step 7: Add Advanced Features
+Or click ❌ to deny:
 
-### Feature 1: Daily Cluster Report
+```
+❌ Action denied by @yourname
+`kubectl delete pod nginx-7d5b4c8b9-abc12 -n default`
+```
 
-Add to `slack-bot-flow.yaml`:
+## How Approval Works
+
+1. **Agent detects destructive command** - Based on system prompt guidelines
+2. **Agent outputs approval request**:
+   ```
+   requires_approval: true
+   command: "kubectl delete pod nginx-xyz"
+   ```
+3. **Handler parses output** - Detects `requires_approval: true`
+4. **Approval message sent** - With ✅/❌ reactions
+5. **User reacts** - ✅ approves, ❌ denies
+6. **Command executes** - Only on approval
+
+### Configure Approvers
+
+Restrict who can approve commands:
 
 ```yaml
-spec:
-  # Add schedule trigger
-  triggers:
-    - type: Schedule
-      config:
-        cron: "0 9 * * *"  # 9 AM daily
-        timezone: America/New_York
+platforms:
+  slack:
+    enabled: true
+    bot_token_env: SLACK_BOT_TOKEN
+    signing_secret_env: SLACK_SIGNING_SECRET
 
-  nodes:
-    - id: daily-report
-      type: Agent
-      config:
-        agent: slack-k8s-bot
-        input: |
-          Generate a daily cluster health report:
-          - Total pods and their status
-          - Any failing deployments
-          - Resource usage summary
-          - Top 5 pods by CPU/memory
-
-    - id: send-report
-      type: Slack
-      config:
-        channel: "#platform-daily"
-        message: |
-          📊 **Daily K8s Cluster Report**
-
-          ${daily-report.output}
+    # Only these users can approve
+    approval_allowed_users:
+      - U12345678  # SRE Lead
+      - U87654321  # Platform Lead
 ```
 
-### Feature 2: Auto-Remediation
+Find Slack User IDs: Click user profile > More (...) > Copy member ID
 
-Add incident detection and auto-fix:
+## Conversation Memory
 
-```yaml
-nodes:
-  - id: detect-incident
-    type: Agent
-    config:
-      agent: slack-k8s-bot
-      input: "Check for any failing pods or deployments"
+AOF maintains conversation context per channel/thread. The bot remembers previous messages:
 
-  - id: auto-fix
-    type: Conditional
-    config:
-      condition: ${detect-incident.has_issues} == true
+```
+You: @bot show pods in production
+Bot: [shows pods including nginx-abc123]
 
-  - id: attempt-remediation
-    type: Agent
-    config:
-      agent: slack-k8s-bot
-      input: "Try to auto-remediate: ${detect-incident.issues}"
-
-  - id: notify-team
-    type: Slack
-    config:
-      channel: "#incidents"
-      message: |
-        🚨 **Auto-Remediation Attempt**
-
-        Issue: ${detect-incident.issues}
-        Action: ${attempt-remediation.action}
-        Result: ${attempt-remediation.result}
-
-        cc: @oncall
+You: @bot describe the nginx one
+Bot: [describes nginx-abc123 - knows which pod you mean from context]
 ```
 
-### Feature 3: Interactive Buttons
+## Production Setup
 
-Add Slack interactive components:
+### 1. Use HTTPS Endpoint
 
-```yaml
-nodes:
-  - id: send-interactive
-    type: Slack
-    config:
-      channel: ${SLACK_CHANNEL}
-      blocks:
-        - type: section
-          text:
-            type: mrkdwn
-            text: "Found failing pod: `nginx-abc123`"
-
-        - type: actions
-          elements:
-            - type: button
-              text: "Restart Pod"
-              action_id: restart_pod
-              value: "nginx-abc123"
-
-            - type: button
-              text: "View Logs"
-              action_id: view_logs
-              value: "nginx-abc123"
-
-            - type: button
-              text: "Describe Pod"
-              action_id: describe_pod
-              value: "nginx-abc123"
-```
-
-## Step 8: Monitor and Debug
+Replace cloudflared/ngrok with a proper deployment:
 
 ```bash
-# View logs for flow execution
-aofctl logs flow slack-bot-flow.yaml -f
+# Deploy behind nginx/Caddy with SSL
+aofctl serve --config config/slack-daemon.yaml --port 3000
 
-# Describe flow configuration
-aofctl describe flow slack-bot-flow.yaml
-
-# List running flows
-aofctl get flows
+# Configure reverse proxy to https://your-domain.com/webhook/slack
 ```
 
-## Production Checklist
+### 2. Configure Logging
 
-Before deploying to production:
+```bash
+RUST_LOG=info aofctl serve --config config/slack-daemon.yaml
+```
 
-- [ ] Set up HTTPS endpoint (not ngrok)
-- [ ] Configure proper Slack scopes
-- [ ] Set up rate limiting (Slack has API limits)
-- [ ] Add error handling and retries
-- [ ] Configure persistent memory (SQLite → PostgreSQL)
-- [ ] Set up monitoring and alerts
-- [ ] Document available commands for team
-- [ ] Test approval flows thoroughly
-- [ ] Set up log retention
-- [ ] Configure backup for memory database
+### 3. Add More Agents
+
+Create specialized agents in `agents/`:
+
+```
+agents/
+├── k8s-ops.yaml      # Kubernetes
+├── docker-ops.yaml   # Docker
+├── aws-agent.yaml    # AWS CLI
+└── devops.yaml       # Full-stack
+```
+
+### 4. Systemd Service
+
+```ini
+# /etc/systemd/system/aof-slack.service
+[Unit]
+Description=AOF Slack Bot
+After=network.target
+
+[Service]
+Type=simple
+User=aof
+Environment=SLACK_BOT_TOKEN=xoxb-xxx
+Environment=SLACK_SIGNING_SECRET=xxx
+Environment=GOOGLE_API_KEY=xxx
+ExecStart=/usr/local/bin/aofctl serve --config /etc/aof/slack-daemon.yaml
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## Troubleshooting
 
-### Bot doesn't respond to mentions
+### Bot doesn't respond
 
 ```bash
-# Check Slack event subscriptions
-# Verify Request URL is reachable
-curl https://your-domain.com/webhook/slack
+# Check webhook is set
+curl "https://api.slack.com/api/apps.connections.open" # Should return ok
 
-# Check flows are running
-aofctl get flows
+# Check server logs
+RUST_LOG=debug aofctl serve --config config/slack-daemon.yaml
 
-# View flow logs
-aofctl logs flow slack-bot-flow.yaml -f
+# Verify webhook URL ends with /webhook/slack
 ```
 
 ### Approval reactions not working
 
-```bash
-# Verify Slack scopes include reactions
-# Check reaction timeout (default 5 minutes)
-# Test with simple emoji reactions first
+1. Ensure `reaction_added` event is subscribed in Slack app
+2. Check `reactions:read` and `reactions:write` scopes are added
+3. Verify bot was invited to the channel
+
+### "Unauthorized to approve"
+
+Add the user's Slack ID to `approval_allowed_users` in config, then restart:
+
+```yaml
+approval_allowed_users:
+  - U12345678
 ```
 
 ### Commands timing out
 
-```bash
-# Increase timeout in flow config
-timeout_seconds: 60  # Increase from 30
+Increase timeout in config:
 
-# Check kubectl is working
-kubectl get pods
-
-# Test agent directly
-aofctl agent exec slack-k8s-bot "show pods"
+```yaml
+runtime:
+  task_timeout_secs: 600  # 10 minutes
 ```
 
 ## Next Steps
 
-- **[Incident Response Tutorial](incident-response.md)** - Auto-remediation flows
-- **[AgentFlow Reference](../reference/agentflow-spec.md)** - Advanced flow patterns
-- **[Example Flows](../examples/)** - More Slack bot examples
-
----
-
-**🎉 Your Slack bot is live!** Your team can now get K8s help without leaving Slack.
+- [Approval Workflow Guide](../guides/approval-workflow.md) - Advanced approval configuration
+- [Telegram Bot Tutorial](./telegram-ops-bot.md) - Mobile-friendly read-only bot
+- [Multi-Model RCA](./multi-model-rca.md) - Root cause analysis with multiple AI models

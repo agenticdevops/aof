@@ -1,851 +1,438 @@
-# Building a Telegram Ops Bot with AOF
+# Tutorial: Build a Telegram Ops Bot with AOF
 
-This tutorial walks you through building a Telegram bot for DevOps and SRE workflows using AOF's trigger system and AgentFlow.
+Build a mobile-friendly Telegram bot for DevOps operations using AOF. Perfect for on-call engineers who need quick access to cluster status from their phone.
 
-## What You'll Build
+**What you'll learn:**
+- Set up AOF with Telegram integration
+- Create agents and fleets for different use cases
+- Use inline keyboards for agent/fleet switching
+- Understand read-only safety for mobile platforms
 
-By the end of this tutorial, you'll have a Telegram bot that can:
-- Execute runbooks on-demand (`/runbook deploy-api`)
-- Trigger incident response workflows (`/incident create P1`)
-- Query infrastructure status (`/status api-cluster`)
-- Approve/reject deployment requests with inline buttons
-- Route alerts to on-call engineers
+**Time:** 10 minutes
+
+## Quick Start
+
+```bash
+# Set up environment
+export TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
+export GOOGLE_API_KEY=xxxxx
+
+# Start AOF server
+aofctl serve \
+  --config examples/configs/telegram-bot.yaml \
+  --agents-dir examples/agents \
+  --fleets-dir examples/fleets
+
+# In another terminal, expose with ngrok
+ngrok http 8080
+
+# Set webhook with Telegram
+curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  -d "url=https://your-ngrok-url.ngrok.io/webhook/telegram"
+```
 
 ## Prerequisites
 
 - AOF installed (`curl -sSL https://docs.aof.sh/install.sh | bash`)
-- A Telegram account
-- A server with public HTTPS endpoint (or ngrok for testing)
-- Basic familiarity with YAML
+- Telegram account
+- Google AI API key (or Anthropic/OpenAI)
+- Optional: Kubernetes cluster for kubectl commands
 
-## Step 1: Create Your Telegram Bot
+## Step 1: Create Telegram Bot
 
-### 1.1 Talk to BotFather
+### Talk to BotFather
 
 1. Open Telegram and search for `@BotFather`
 2. Send `/newbot`
 3. Follow the prompts:
    - Bot name: `My Ops Bot` (display name)
    - Bot username: `my_ops_bot` (must end in `bot`)
-4. Save the **HTTP API token** - you'll need this
+4. Copy the **HTTP API token**:
 
 ```
-Done! Congratulations on your new bot. You will find it at t.me/my_ops_bot.
+Done! Your new bot is created.
 Use this token to access the HTTP API:
-6123456789:ABCdefGHIjklMNOpqrSTUvwxYZ123456789
+123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 ```
 
-### 1.2 Configure Bot Settings
+### Set Bot Commands (Optional)
 
-Send these commands to @BotFather:
+Send to @BotFather:
 
 ```
 /setcommands
 ```
 
-Then select your bot and paste:
+Select your bot and paste:
 
 ```
-runbook - Execute a runbook
-incident - Create or manage incidents
-status - Check infrastructure status
-deploy - Trigger deployment
-rollback - Rollback deployment
-approve - Approve pending request
-reject - Reject pending request
 help - Show available commands
+agent - Switch agent
+fleet - Switch fleet
 ```
 
-## Step 2: Configure AOF Trigger Server
+## Step 2: Create Agent Configuration
 
-### 2.1 Create Configuration File
+Create `agents/k8s-ops.yaml`:
+
+```yaml
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: k8s-ops
+  labels:
+    platform: telegram
+    capability: kubernetes
+
+spec:
+  model: google:gemini-2.5-flash
+  temperature: 0
+  max_tokens: 2048
+
+  description: "Kubernetes operations assistant"
+
+  tools:
+    - kubectl
+    - helm
+
+  system_prompt: |
+    You are a Kubernetes operations assistant on Telegram mobile.
+
+    ## Your Role
+    - Answer K8s questions clearly and concisely
+    - Run kubectl/helm commands when requested
+    - Troubleshoot cluster issues
+    - Keep responses SHORT - this is mobile chat
+
+    ## Response Format
+    - Be extremely concise (mobile screens are small)
+    - Use code blocks for command output
+    - Use emoji for status: ✅ ⚠️ ❌
+    - Truncate long outputs, offer to show more
+
+    ## Safety
+    This is a READ-ONLY platform. If user requests write operations,
+    explain they should use Slack or CLI instead.
+```
+
+## Step 3: Create Daemon Configuration
 
 Create `config/telegram-bot.yaml`:
 
 ```yaml
-# AOF Trigger Server Configuration
-version: v1
-kind: TriggerConfig
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: telegram-ops-bot
 
-server:
-  host: "0.0.0.0"
-  port: 8080
-  base_path: "/webhooks"
+spec:
+  server:
+    port: 8080
+    host: "0.0.0.0"
 
-platforms:
-  telegram:
-    type: telegram
-    bot_token: "${TELEGRAM_BOT_TOKEN}"
-    webhook_secret: "${TELEGRAM_WEBHOOK_SECRET}"
-    bot_name: "my_ops_bot"
+  platforms:
+    telegram:
+      enabled: true
+      bot_token_env: TELEGRAM_BOT_TOKEN
 
-    # Only respond to specific groups/users
-    allowed_chats:
-      - "-1001234567890"  # Your ops channel
-      - "123456789"       # Your user ID
+      # Optional: Restrict to specific users/groups
+      # allowed_users:
+      #   - 123456789  # Telegram user IDs
+      # allowed_groups:
+      #   - -1001234567890  # Telegram group IDs
 
-    # Require users to be in allowed list for sensitive commands
-    allowed_users:
-      - "123456789"       # Admin user
-      - "987654321"       # On-call engineer
+  agents:
+    directory: "./agents"
 
-# Command routing
-routing:
-  default_flow: "help-flow"
+  fleets:
+    directory: "./fleets"
 
-  commands:
-    "/runbook": "runbook-executor-flow"
-    "/incident": "incident-manager-flow"
-    "/status": "status-checker-flow"
-    "/deploy": "deployment-flow"
-    "/rollback": "rollback-flow"
-    "/approve": "approval-handler-flow"
-    "/reject": "approval-handler-flow"
-
-# Flow discovery
-flows:
-  directory: "./flows"
-  watch: true  # Hot reload on changes
+  runtime:
+    default_agent: k8s-ops
+    max_concurrent_tasks: 5
+    task_timeout_secs: 120
 ```
 
-### 2.2 Set Environment Variables
+## Step 4: Start the Server
 
 ```bash
-export TELEGRAM_BOT_TOKEN="6123456789:ABCdefGHIjklMNOpqrSTUvwxYZ123456789"
-export TELEGRAM_WEBHOOK_SECRET="$(openssl rand -hex 32)"
-```
-
-## Step 3: Create AgentFlows
-
-### 3.1 Runbook Executor Flow
-
-Create `flows/runbook-executor-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: runbook-executor
-  description: Execute operational runbooks on-demand
-
-triggers:
-  - platform: telegram
-    type: command
-    command: "/runbook"
-    description: "Execute a runbook: /runbook <name> [args]"
-
-# Input validation
-input:
-  required:
-    - runbook_name
-  schema:
-    runbook_name:
-      type: string
-      pattern: "^[a-z0-9-]+$"
-      description: "Runbook identifier"
-    args:
-      type: array
-      items:
-        type: string
-
-# Available runbooks
-variables:
-  runbooks:
-    deploy-api:
-      description: "Deploy API to production"
-      requires_approval: true
-      steps:
-        - "kubectl rollout restart deployment/api -n production"
-
-    restart-workers:
-      description: "Restart background workers"
-      requires_approval: false
-      steps:
-        - "kubectl rollout restart deployment/workers -n production"
-
-    clear-cache:
-      description: "Clear Redis cache"
-      requires_approval: false
-      steps:
-        - "redis-cli -h redis.internal FLUSHDB"
-
-    scale-api:
-      description: "Scale API replicas"
-      requires_approval: true
-      args: ["replicas"]
-      steps:
-        - "kubectl scale deployment/api --replicas=${args.replicas} -n production"
-
-steps:
-  - name: validate-runbook
-    agent: validator
-    action: validate
-    input:
-      runbook: "\{\{ input.runbook_name \}\}"
-      available: "\{\{ variables.runbooks | keys \}\}"
-    on_error:
-      response:
-        text: |
-          Unknown runbook: \{\{ input.runbook_name \}\}
-
-          Available runbooks:
-          \{\{ variables.runbooks | keys | join('\n- ') \}\}
-
-  - name: check-approval
-    agent: router
-    condition: "\{\{ variables.runbooks[input.runbook_name].requires_approval \}\}"
-    action: request_approval
-    input:
-      request_id: "\{\{ uuid() \}\}"
-      runbook: "\{\{ input.runbook_name \}\}"
-      requester: "\{\{ trigger.user.username \}\}"
-      channel: "\{\{ trigger.channel_id \}\}"
-    response:
-      text: |
-        🔐 **Approval Required**
-
-        Runbook: `\{\{ input.runbook_name \}\}`
-        Requested by: @\{\{ trigger.user.username \}\}
-
-        Waiting for approval...
-      buttons:
-        - text: "✅ Approve"
-          callback: "/approve \{\{ steps.check-approval.output.request_id \}\}"
-        - text: "❌ Reject"
-          callback: "/reject \{\{ steps.check-approval.output.request_id \}\}"
-    next: wait-for-approval
-
-  - name: execute-runbook
-    agent: shell-executor
-    action: run
-    input:
-      commands: "\{\{ variables.runbooks[input.runbook_name].steps \}\}"
-      timeout: 300
-      env:
-        KUBECONFIG: "/etc/kubernetes/admin.conf"
-    response:
-      text: |
-        ✅ **Runbook Completed**
-
-        Runbook: `\{\{ input.runbook_name \}\}`
-        Duration: \{\{ steps.execute-runbook.duration \}\}s
-
-        ```
-        \{\{ steps.execute-runbook.output | truncate(500) \}\}
-        ```
-
-  - name: wait-for-approval
-    agent: approval-waiter
-    action: wait
-    input:
-      request_id: "\{\{ steps.check-approval.output.request_id \}\}"
-      timeout: 1800  # 30 minutes
-    on_approved:
-      next: execute-runbook
-    on_rejected:
-      response:
-        text: |
-          ❌ **Request Rejected**
-
-          Runbook: `\{\{ input.runbook_name \}\}`
-          Rejected by: @\{\{ steps.wait-for-approval.output.approver \}\}
-    on_timeout:
-      response:
-        text: |
-          ⏰ **Request Expired**
-
-          Approval request for `\{\{ input.runbook_name \}\}` has timed out.
-
-on_error:
-  response:
-    text: |
-      ❌ **Runbook Failed**
-
-      Error: \{\{ error.message \}\}
-
-      Check logs for details.
-```
-
-### 3.2 Incident Manager Flow
-
-Create `flows/incident-manager-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: incident-manager
-  description: Create and manage incidents
-
-triggers:
-  - platform: telegram
-    type: command
-    command: "/incident"
-    description: "Manage incidents: /incident <action> [args]"
-
-input:
-  required:
-    - action
-  schema:
-    action:
-      type: string
-      enum: ["create", "update", "resolve", "list"]
-    severity:
-      type: string
-      enum: ["P1", "P2", "P3", "P4"]
-    title:
-      type: string
-    description:
-      type: string
-
-steps:
-  - name: route-action
-    agent: router
-    action: switch
-    input:
-      value: "\{\{ input.action \}\}"
-    cases:
-      create: create-incident
-      update: update-incident
-      resolve: resolve-incident
-      list: list-incidents
-
-  - name: create-incident
-    agent: incident-creator
-    action: create
-    input:
-      severity: "\{\{ input.severity | default('P3') \}\}"
-      title: "\{\{ input.title \}\}"
-      description: "\{\{ input.description \}\}"
-      reporter: "\{\{ trigger.user.username \}\}"
-      channel: "\{\{ trigger.channel_id \}\}"
-    post_actions:
-      - name: notify-oncall
-        condition: "\{\{ input.severity in ['P1', 'P2'] \}\}"
-        agent: pagerduty
-        action: trigger
-        input:
-          service_key: "${PAGERDUTY_SERVICE_KEY}"
-          description: "\{\{ input.title \}\}"
-          severity: "\{\{ input.severity \}\}"
-
-      - name: create-war-room
-        condition: "\{\{ input.severity == 'P1' \}\}"
-        agent: telegram
-        action: create_group
-        input:
-          title: "🚨 INC-\{\{ steps.create-incident.output.id \}\}"
-          users: "\{\{ oncall.current_team \}\}"
-    response:
-      text: |
-        🚨 **Incident Created**
-
-        ID: `INC-\{\{ steps.create-incident.output.id \}\}`
-        Severity: \{\{ input.severity \}\}
-        Title: \{\{ input.title \}\}
-        Reporter: @\{\{ trigger.user.username \}\}
-        Status: Open
-
-        {% if input.severity in ['P1', 'P2'] %}
-        📟 On-call has been paged
-        {% endif %}
-
-  - name: list-incidents
-    agent: incident-lister
-    action: list
-    input:
-      status: "open"
-      limit: 10
-    response:
-      text: |
-        📋 **Open Incidents**
-
-        {% for inc in steps.list-incidents.output.incidents %}
-        • `\{\{ inc.id \}\}` [\{\{ inc.severity \}\}] \{\{ inc.title \}\}
-          Status: \{\{ inc.status \}\} | Age: \{\{ inc.age \}\}
-        {% endfor %}
-
-        {% if steps.list-incidents.output.total > 10 %}
-        _Showing 10 of \{\{ steps.list-incidents.output.total \}\}_
-        {% endif %}
-
-  - name: resolve-incident
-    agent: incident-resolver
-    action: resolve
-    input:
-      incident_id: "\{\{ input.incident_id \}\}"
-      resolution: "\{\{ input.resolution \}\}"
-      resolver: "\{\{ trigger.user.username \}\}"
-    response:
-      text: |
-        ✅ **Incident Resolved**
-
-        ID: `\{\{ input.incident_id \}\}`
-        Resolution: \{\{ input.resolution \}\}
-        Resolved by: @\{\{ trigger.user.username \}\}
-        Duration: \{\{ steps.resolve-incident.output.duration \}\}
-```
-
-### 3.3 Infrastructure Status Flow
-
-Create `flows/status-checker-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: status-checker
-  description: Check infrastructure and service status
-
-triggers:
-  - platform: telegram
-    type: command
-    command: "/status"
-    description: "Check status: /status [component]"
-
-input:
-  schema:
-    component:
-      type: string
-      default: "all"
-
-variables:
-  components:
-    api:
-      type: kubernetes
-      namespace: production
-      deployment: api
-      health_endpoint: "https://api.example.com/health"
-
-    workers:
-      type: kubernetes
-      namespace: production
-      deployment: workers
-
-    database:
-      type: postgres
-      host: "db.internal"
-      port: 5432
-
-    cache:
-      type: redis
-      host: "redis.internal"
-      port: 6379
-
-    queue:
-      type: rabbitmq
-      host: "rabbitmq.internal"
-      management_port: 15672
-
-steps:
-  - name: check-status
-    agent: health-checker
-    action: check
-    parallel: true  # Check all components in parallel
-    input:
-      components: |
-        {% if input.component == 'all' %}
-        \{\{ variables.components \}\}
-        {% else %}
-        \{\{ { input.component: variables.components[input.component] } \}\}
-        {% endif %}
-    response:
-      text: |
-        📊 **Infrastructure Status**
-
-        {% for name, status in steps.check-status.output.items() %}
-        \{\{ '✅' if status.healthy else '❌' \}\} **\{\{ name \}\}**
-           Status: \{\{ status.status \}\}
-           {% if status.replicas %}Replicas: \{\{ status.ready \}\}/\{\{ status.replicas \}\}{% endif %}
-           {% if status.latency %}Latency: \{\{ status.latency \}\}ms{% endif %}
-           {% if status.error %}Error: \{\{ status.error \}\}{% endif %}
-
-        {% endfor %}
-
-        _Last checked: \{\{ now() | format_time \}\}_
-```
-
-### 3.4 Deployment Flow with Approvals
-
-Create `flows/deployment-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: deployment-flow
-  description: Trigger and manage deployments
-
-triggers:
-  - platform: telegram
-    type: command
-    command: "/deploy"
-    description: "Deploy: /deploy <service> <version> [environment]"
-
-input:
-  required:
-    - service
-    - version
-  schema:
-    service:
-      type: string
-      enum: ["api", "web", "workers", "cron"]
-    version:
-      type: string
-      pattern: "^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[a-z0-9]+)?$"
-    environment:
-      type: string
-      enum: ["staging", "production"]
-      default: "staging"
-
-steps:
-  - name: validate-deployment
-    agent: deployment-validator
-    action: validate
-    input:
-      service: "\{\{ input.service \}\}"
-      version: "\{\{ input.version \}\}"
-      environment: "\{\{ input.environment \}\}"
-    checks:
-      - name: version-exists
-        type: docker-image
-        image: "ghcr.io/myorg/\{\{ input.service \}\}:\{\{ input.version \}\}"
-      - name: tests-passed
-        type: github-checks
-        repo: "myorg/\{\{ input.service \}\}"
-        ref: "\{\{ input.version \}\}"
-      - name: not-already-deployed
-        type: kubernetes
-        deployment: "\{\{ input.service \}\}"
-        namespace: "\{\{ input.environment \}\}"
-        current_version_ne: "\{\{ input.version \}\}"
-
-  - name: request-approval
-    condition: "\{\{ input.environment == 'production' \}\}"
-    agent: approval-requester
-    action: request
-    input:
-      type: deployment
-      service: "\{\{ input.service \}\}"
-      version: "\{\{ input.version \}\}"
-      environment: "\{\{ input.environment \}\}"
-      requester: "\{\{ trigger.user.username \}\}"
-      required_approvers: 1
-      allowed_approvers: ["@sre-team", "@platform-team"]
-    response:
-      text: |
-        🚀 **Deployment Request**
-
-        Service: `\{\{ input.service \}\}`
-        Version: `\{\{ input.version \}\}`
-        Environment: **\{\{ input.environment \}\}**
-        Requested by: @\{\{ trigger.user.username \}\}
-
-        ⏳ Waiting for approval from SRE or Platform team...
-      buttons:
-        - text: "✅ Approve"
-          callback: "/approve deploy:\{\{ steps.request-approval.output.request_id \}\}"
-        - text: "❌ Reject"
-          callback: "/reject deploy:\{\{ steps.request-approval.output.request_id \}\}"
-        - text: "📋 View Changes"
-          url: "https://github.com/myorg/\{\{ input.service \}\}/compare/\{\{ current_version \}\}...\{\{ input.version \}\}"
-
-  - name: execute-deployment
-    agent: kubernetes-deployer
-    action: deploy
-    input:
-      service: "\{\{ input.service \}\}"
-      version: "\{\{ input.version \}\}"
-      namespace: "\{\{ input.environment \}\}"
-      strategy: rolling
-      max_unavailable: "25%"
-      max_surge: "25%"
-    progress:
-      interval: 10
-      message: |
-        🔄 Deployment in progress...
-
-        \{\{ steps.execute-deployment.progress.ready \}\}/\{\{ steps.execute-deployment.progress.total \}\} pods ready
-    response:
-      text: |
-        ✅ **Deployment Complete**
-
-        Service: `\{\{ input.service \}\}`
-        Version: `\{\{ input.version \}\}`
-        Environment: \{\{ input.environment \}\}
-        Duration: \{\{ steps.execute-deployment.duration \}\}s
-
-        All \{\{ steps.execute-deployment.output.replicas \}\} replicas healthy.
-
-  - name: notify-rollback
-    agent: telegram
-    trigger: on_error
-    action: send
-    input:
-      channel: "\{\{ trigger.channel_id \}\}"
-      text: |
-        ❌ **Deployment Failed**
-
-        Service: `\{\{ input.service \}\}`
-        Version: `\{\{ input.version \}\}`
-        Error: \{\{ error.message \}\}
-
-        🔄 Initiating automatic rollback...
-      buttons:
-        - text: "📋 View Logs"
-          url: "https://logs.example.com/deploy/\{\{ steps.execute-deployment.output.deployment_id \}\}"
-
-  - name: auto-rollback
-    agent: kubernetes-deployer
-    trigger: on_error
-    action: rollback
-    input:
-      service: "\{\{ input.service \}\}"
-      namespace: "\{\{ input.environment \}\}"
-```
-
-## Step 4: Set Up Webhook
-
-### 4.1 Start the Trigger Server
-
-```bash
-# Start AOF trigger server
-aofctl trigger serve --config config/telegram-bot.yaml
-
-# Server starts on http://0.0.0.0:8080
-```
-
-### 4.2 Expose with HTTPS (for production)
-
-For production, use a reverse proxy with TLS:
-
-```nginx
-# /etc/nginx/sites-available/aof-webhook
-server {
-    listen 443 ssl;
-    server_name webhook.example.com;
-
-    ssl_certificate /etc/letsencrypt/live/webhook.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/webhook.example.com/privkey.pem;
-
-    location /webhooks/telegram {
-        proxy_pass http://localhost:8080/webhooks/telegram;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-### 4.3 Register Webhook with Telegram
-
-```bash
-# Set webhook URL
+# Set environment variables
+export TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+export GOOGLE_API_KEY="your-google-api-key"
+
+# Start server
+aofctl serve \
+  --config config/telegram-bot.yaml \
+  --agents-dir agents/
+
+# In another terminal, start ngrok
+ngrok http 8080
+# Note the HTTPS URL: https://abc123.ngrok.io
+
+# Set webhook
 curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://webhook.example.com/webhooks/telegram",
-    "secret_token": "'${TELEGRAM_WEBHOOK_SECRET}'",
-    "allowed_updates": ["message", "callback_query"]
-  }'
+  -d "url=https://abc123.ngrok.io/webhook/telegram"
 
-# Verify webhook is set
+# Verify webhook
 curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
 ```
 
-### 4.4 For Local Development (ngrok)
+## Step 5: Test the Bot
 
-```bash
-# Start ngrok tunnel
-ngrok http 8080
-
-# Use the HTTPS URL from ngrok
-# Example: https://abc123.ngrok.io
-
-# Register webhook
-curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-  -d "url=https://abc123.ngrok.io/webhooks/telegram" \
-  -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
-```
-
-## Step 5: Test Your Bot
+Open your bot in Telegram and try these commands:
 
 ### Basic Commands
 
 ```
-# In Telegram, message your bot:
-
 /help
-# Shows available commands
-
-/status
-# Shows all infrastructure status
-
-/status api
-# Shows API service status only
-
-/runbook clear-cache
-# Executes cache clearing runbook
-
-/deploy api v1.2.3 staging
-# Triggers staging deployment
-
-/deploy api v1.2.3 production
-# Triggers production deployment (requires approval)
-
-/incident create P2 "API latency spike" "Response times >500ms"
-# Creates P2 incident
 ```
 
-### Testing Approvals
+Shows available commands and current agent:
 
-1. User A: `/deploy api v1.2.3 production`
-2. Bot shows approval buttons
-3. User B (in allowed_approvers): Clicks "✅ Approve"
-4. Deployment proceeds
+```
+AOF Bot - DevOps from mobile
 
-## Step 6: Advanced Configuration
+Current agent: 🎯 K8s Ops
+Tools: kubectl, helm
 
-### 6.1 Multi-Environment Setup
+Commands:
+/fleet - Switch fleet (recommended)
+/agent - Switch agent
+/help - Show this help
+
+Just type naturally after selecting an agent.
+```
+
+### Switch Agent
+
+```
+/agent
+```
+
+Shows inline keyboard with available agents:
+
+```
+Select an agent:
+
+[🎯 K8s Ops] [🐳 Docker]
+[☁️ AWS] [🔧 DevOps]
+```
+
+Tap a button to switch. Or switch directly:
+
+```
+/agent docker
+```
+
+### Natural Language Queries
+
+After selecting an agent, just type naturally:
+
+```
+show pods in production
+```
+
+Response:
+```
+🔍 Pods in production:
+
+NAME                    STATUS   AGE
+nginx-abc123            Running  5d
+api-xyz789              Running  3d
+worker-def456           Running  1d
+
+✅ 3 pods healthy
+```
+
+### Use Fleets
+
+Fleets are teams of agents with automatic routing:
+
+```
+/fleet
+```
+
+Shows available fleets:
+
+```
+Select a fleet:
+
+[🚀 DevOps Fleet] [☸️ K8s Fleet]
+[🔍 RCA Fleet] [☁️ AWS Fleet]
+```
+
+Switch to a fleet:
+
+```
+/fleet devops
+```
+
+Now queries are routed to the right specialist:
+
+```
+why is the API slow?
+```
+
+The DevOps fleet routes to prometheus-agent for metrics, then k8s-agent for pod analysis.
+
+## Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help and current agent |
+| `/agent` | List agents with inline buttons |
+| `/agent <name>` | Switch to specific agent |
+| `/agent info` | Show current agent details |
+| `/fleet` | List fleets with inline buttons |
+| `/fleet <name>` | Switch to specific fleet |
+| `/fleet info` | Show current fleet details |
+| `/run agent <name> <query>` | Run specific agent once |
+| `/status task <id>` | Check task status |
+
+## Built-in Agents
+
+| Agent | Tools | Use Case |
+|-------|-------|----------|
+| `k8s-ops` | kubectl, helm | Kubernetes operations |
+| `docker-ops` | docker, shell | Container management |
+| `aws-agent` | aws | AWS CLI operations |
+| `devops` | kubectl, docker, terraform, git | Full-stack DevOps |
+
+## Built-in Fleets
+
+| Fleet | Agents | Use Case |
+|-------|--------|----------|
+| `devops-fleet` | k8s, docker, prometheus, git | General DevOps |
+| `k8s-fleet` | k8s, prometheus, loki | Kubernetes focus |
+| `rca-fleet` | collectors + analysts | Root cause analysis |
+| `aws-fleet` | aws, terraform | AWS operations |
+
+## Safety: Read-Only Mode
+
+Telegram is configured as a **read-only platform** by default. This means:
+
+- ✅ Read operations work: `kubectl get`, `docker ps`, `aws describe-*`
+- ❌ Write operations blocked: `kubectl delete`, `docker rm`, `aws terminate-*`
+
+This protects against accidental destructive commands from mobile.
+
+### Why Read-Only?
+
+1. **Mobile context** - Easy to make mistakes on small screens
+2. **No approval UI** - Telegram lacks reaction-based approval like Slack
+3. **Safety first** - Critical operations should use Slack or CLI
+
+### Override (Not Recommended)
+
+If you need write access, configure a separate daemon:
 
 ```yaml
-# config/telegram-bot-prod.yaml
+# telegram-write-enabled.yaml (USE WITH CAUTION)
 platforms:
   telegram:
-    bot_token: "${TELEGRAM_BOT_TOKEN_PROD}"
-    allowed_chats:
-      - "-1001234567890"  # #ops-production channel
+    enabled: true
+    bot_token_env: TELEGRAM_BOT_TOKEN
+    # This removes read-only protection:
+    safety:
+      read_only: false
+```
 
-    # Production requires stricter controls
+## Production Setup
+
+### 1. Use Cloudflared (Free, No Signup)
+
+```bash
+brew install cloudflared
+cloudflared tunnel --url http://localhost:8080
+
+# Use the URL for webhook:
+# https://random-words.trycloudflare.com/webhook/telegram
+```
+
+### 2. Restrict Users
+
+Only allow specific Telegram users:
+
+```yaml
+platforms:
+  telegram:
+    enabled: true
+    bot_token_env: TELEGRAM_BOT_TOKEN
+
+    # Only these users can use the bot
     allowed_users:
-      - "111111111"  # SRE Lead
-      - "222222222"  # Platform Lead
+      - 123456789  # Your Telegram user ID
+      - 987654321  # Team member
 
-    # Audit all commands
-    audit:
-      enabled: true
-      destination: "elasticsearch://logs.internal:9200/telegram-audit"
+    # Or restrict to specific groups
+    allowed_groups:
+      - -1001234567890  # Your ops group
 ```
 
-### 6.2 Rate Limiting
+Find your Telegram user ID: Message `@userinfobot`
 
-```yaml
-platforms:
-  telegram:
-    rate_limits:
-      per_user:
-        requests: 10
-        window: 60  # 10 requests per minute per user
-      per_channel:
-        requests: 30
-        window: 60
+### 3. Run as Service
 
-      # Exempt certain users
-      exempt_users:
-        - "111111111"  # SRE Lead
-```
+```bash
+# systemd service
+sudo tee /etc/systemd/system/aof-telegram.service << 'EOF'
+[Unit]
+Description=AOF Telegram Bot
+After=network.target
 
-### 6.3 Command Aliases
+[Service]
+Type=simple
+User=aof
+Environment=TELEGRAM_BOT_TOKEN=xxx
+Environment=GOOGLE_API_KEY=xxx
+ExecStart=/usr/local/bin/aofctl serve --config /etc/aof/telegram-bot.yaml
+Restart=always
 
-```yaml
-routing:
-  aliases:
-    "/r": "/runbook"
-    "/i": "/incident"
-    "/s": "/status"
-    "/d": "/deploy"
-```
+[Install]
+WantedBy=multi-user.target
+EOF
 
-### 6.4 Scheduled Messages
-
-```yaml
-# flows/daily-status-report.yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: daily-status-report
-
-triggers:
-  - type: schedule
-    cron: "0 9 * * 1-5"  # 9 AM weekdays
-
-steps:
-  - name: gather-metrics
-    agent: metrics-collector
-    action: collect
-    input:
-      sources:
-        - prometheus
-        - cloudwatch
-        - datadog
-      timerange: "24h"
-
-  - name: send-report
-    agent: telegram
-    action: send
-    input:
-      channel: "-1001234567890"  # #ops channel
-      text: |
-        📊 **Daily Infrastructure Report**
-        _\{\{ now() | format_date \}\}_
-
-        **Uptime (24h)**
-        • API: \{\{ metrics.api.uptime \}\}%
-        • Web: \{\{ metrics.web.uptime \}\}%
-        • Workers: \{\{ metrics.workers.uptime \}\}%
-
-        **Incidents**
-        • P1: \{\{ metrics.incidents.p1 \}\}
-        • P2: \{\{ metrics.incidents.p2 \}\}
-        • P3+: \{\{ metrics.incidents.other \}\}
-
-        **Deployments**
-        • Successful: \{\{ metrics.deploys.success \}\}
-        • Failed: \{\{ metrics.deploys.failed \}\}
-
-        **Alerts**
-        • Critical: \{\{ metrics.alerts.critical \}\}
-        • Warning: \{\{ metrics.alerts.warning \}\}
+sudo systemctl enable --now aof-telegram
 ```
 
 ## Troubleshooting
 
-### Bot Not Responding
+### Bot not responding
 
 ```bash
-# Check webhook status
+# Check webhook is set
 curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
 
-# Check for errors
-curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates"
+# Should show:
+# "url": "https://your-url/webhook/telegram"
+# "pending_update_count": 0
 
-# Verify server is receiving requests
-tail -f /var/log/aof/trigger-server.log
+# Check server logs
+RUST_LOG=debug aofctl serve --config config/telegram-bot.yaml
 ```
 
-### Permission Denied
+### "Write operation blocked"
 
-- Verify user ID is in `allowed_users`
-- Check user is in `allowed_chats` for group commands
-- Verify bot has admin rights in group (for some features)
+This is expected! Telegram is read-only for safety. Use:
+- **Slack** for write operations with approval workflow
+- **CLI** for direct command execution
 
-### Webhook SSL Errors
+### Webhook SSL errors
 
-- Telegram requires valid SSL certificate
-- Self-signed certificates won't work
-- Use Let's Encrypt for free certificates
+Telegram requires valid HTTPS. Use:
+- `cloudflared` (free, automatic SSL)
+- `ngrok` (free tier available)
+- Proper SSL certificate in production
 
-## Security Best Practices
+### Inline buttons not showing
 
-1. **Always verify webhook secret** - AOF does this automatically
-2. **Use allowed_users for sensitive commands** - Restrict who can deploy
-3. **Enable audit logging** - Track all commands
-4. **Use environment variables** - Never hardcode tokens
-5. **Restrict bot to specific chats** - Prevent unauthorized access
-6. **Require approvals for production** - Multi-person authorization
+1. Check bot has no pending updates: restart server
+2. Verify agents/fleets directories have YAML files
+3. Check server logs for parsing errors
 
 ## Next Steps
 
-- [WhatsApp Bot Tutorial](./whatsapp-ops-bot.md) - Build WhatsApp integration
-- [GitHub Automation Tutorial](./github-automation.md) - PR reviews and CI/CD
-- [Multi-Platform Routing](./multi-platform-routing.md) - Route between platforms
-- [Custom Agent Development](../developer/building-agents.md) - Build custom agents
+- [Slack Bot Tutorial](./slack-bot.md) - Full read/write with approval workflow
+- [Fleets Guide](../concepts/fleets.md) - Understanding fleet routing
+- [Multi-Model RCA](./multi-model-rca.md) - Advanced root cause analysis
+- [Safety Layer Guide](../guides/safety-layer.md) - Platform safety configuration
