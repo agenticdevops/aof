@@ -47,6 +47,16 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Tools',
+      items: [
+        'tools/index',
+        'tools/builtin-tools',
+        'tools/mcp-integration',
+        'tools/custom-tools',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Guides',
       items: [
         'guides/slack-app-setup',
@@ -88,6 +98,7 @@ const sidebars: SidebarsConfig = {
         'tutorials/telegram-ops-bot',
         'tutorials/incident-response',
         'tutorials/rca-fleet',
+        'tutorials/deep-analysis-fleet',
         'tutorials/multi-model-rca-quickstart',
         'tutorials/multi-model-rca',
       ],

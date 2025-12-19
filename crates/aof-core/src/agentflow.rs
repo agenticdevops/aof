@@ -4,6 +4,7 @@
 // triggers (Slack, Discord, HTTP, Schedule, etc.) to agent execution with
 // support for conditional routing, approval flows, and interactive responses.
 
+use crate::{McpServerConfig, agent::ToolSpec};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -284,6 +285,16 @@ pub struct NodeConfig {
     /// Context variables to pass to agent
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub context: HashMap<String, String>,
+
+    /// Tools available to the agent node
+    /// These override or extend the agent's default tools
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolSpec>,
+
+    /// MCP servers for the agent node
+    /// These override or extend the agent's default MCP servers
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<McpServerConfig>,
 
     // Conditional node
     /// Condition expression

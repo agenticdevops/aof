@@ -43,7 +43,11 @@ spec:
   nodes:                    # Required: Flow steps
     - id: string
       type: NodeType
-      config: NodeConfig
+      config:
+        agent: string         # For Agent nodes: agent name
+        input: string         # Input to pass
+        tools: []             # Optional: Override agent tools
+        mcp_servers: []       # Optional: MCP server configs
       conditions: []
 
   connections:              # Required: Node edges
@@ -494,6 +498,47 @@ nodes:
 - `${node-id.output}` - Agent response
 - `${node-id.output.requires_approval}` - If agent requests approval
 - `${node-id.output.command}` - Command to execute (if any)
+
+#### Inline Tools and MCP Configuration
+
+Agent nodes support inline tool and MCP server configuration that override or extend the referenced agent's defaults:
+
+```yaml
+nodes:
+  - id: code-analyzer
+    type: Agent
+    config:
+      agent: base-analyzer
+      input: ${MESSAGE_TEXT}
+
+      # Override/extend agent's tools
+      tools:
+        - git
+        - shell
+
+      # Add MCP servers for this node
+      mcp_servers:
+        - name: filesystem
+          transport: stdio
+          command: npx
+          args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+        - name: github
+          transport: stdio
+          command: npx
+          args: ["-y", "@modelcontextprotocol/server-github"]
+          env:
+            GITHUB_TOKEN: "${GITHUB_TOKEN}"
+```
+
+**Tool Configuration:**
+- `tools` - List of tool names available to the agent node
+- Tools override the agent's default tools when specified
+- See [Built-in Tools](../tools/builtin-tools.md) for available tools
+
+**MCP Server Configuration:**
+- `mcp_servers` - List of MCP server configurations
+- Each server specifies: `name`, `transport`, `command`, `args`, and optional `env`
+- See [MCP Integration](../tools/mcp-integration.md) for configuration details
 
 ### Conditional
 

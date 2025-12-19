@@ -1,0 +1,199 @@
+# Deep Analysis Fleet with MCP Integration
+#
+# This fleet demonstrates the "deep" coordination mode - an agentic pattern
+# where a planner agent iteratively creates investigation plans and worker
+# agents execute them until the analysis is complete.
+#
+# Features:
+# - Deep (agentic) coordination mode with iterative planning
+# - MCP server integration for filesystem and GitHub access
+# - Multi-model analysis with different providers
+# - Automatic plan refinement based on findings
+#
+# Usage:
+#   aofctl run fleet examples/fleets/deep-analysis-fleet.yaml \
+#     --task "Analyze why the payment service is returning 500 errors"
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: deep-analysis-fleet
+  labels:
+    purpose: investigation
+    pattern: deep-agentic
+  annotations:
+    description: "Deep analysis fleet with MCP integration for thorough investigations"
+
+spec:
+  agents:
+    # Planner agent - creates and refines investigation plans
+    - name: planner
+      role: manager
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are a senior investigation planner. Your role is to:
+
+          1. Analyze the problem statement and current findings
+          2. Create a structured investigation plan with specific steps
+          3. Prioritize steps based on likelihood of finding root cause
+          4. Refine the plan based on worker agent findings
+
+          When creating plans, consider:
+          - Start with high-level observations (logs, metrics, recent changes)
+          - Follow the evidence trail systematically
+          - Include verification steps for hypotheses
+          - Know when enough evidence exists to conclude
+
+          Output investigation plans in this format:
+          ```
+          INVESTIGATION PLAN:
+          1. [Step description] - [Expected outcome]
+          2. [Step description] - [Expected outcome]
+          ...
+
+          PRIORITY: [high|medium|low]
+          HYPOTHESIS: [Current working hypothesis if any]
+          ```
+
+        tools:
+          - shell
+        max_iterations: 5
+        temperature: 0.3
+
+    # Code analyzer - examines source code and configurations
+    - name: code-analyzer
+      role: specialist
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are a code analysis specialist. Your role is to:
+
+          1. Examine source code for bugs, issues, and patterns
+          2. Review configuration files for misconfigurations
+          3. Trace code paths related to reported issues
+          4. Identify recent changes that might cause problems
+
+          Always provide specific file paths and line numbers in findings.
+          Look for: null pointer issues, race conditions, resource leaks,
+          configuration errors, dependency issues.
+
+        tools:
+          - git
+          - shell
+        mcp_servers:
+          - name: filesystem
+            transport: stdio
+            command: npx
+            args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+          - name: github
+            transport: stdio
+            command: npx
+            args: ["-y", "@modelcontextprotocol/server-github"]
+            env:
+              GITHUB_TOKEN: "${GITHUB_TOKEN}"
+        max_iterations: 8
+        temperature: 0.2
+
+    # Infrastructure analyzer - examines k8s, logs, metrics
+    - name: infra-analyzer
+      role: specialist
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are an infrastructure analysis specialist. Your role is to:
+
+          1. Query Kubernetes for pod status, events, and resource usage
+          2. Analyze application logs for errors and patterns
+          3. Check metrics for anomalies (latency, error rates, resource usage)
+          4. Identify infrastructure-level issues
+
+          Focus on:
+          - Pod restarts and OOMKills
+          - Network connectivity issues
+          - Resource constraints (CPU, memory, disk)
+          - Configuration drift from expected state
+
+        tools:
+          - kubectl
+          - prometheus_query
+          - loki_query
+        max_iterations: 8
+        temperature: 0.2
+
+    # Synthesizer - combines findings into conclusions
+    - name: synthesizer
+      role: validator
+      spec:
+        model: google:gemini-2.5-flash
+        instructions: |
+          You are an analysis synthesizer. Your role is to:
+
+          1. Review all findings from specialist agents
+          2. Identify patterns and correlations across findings
+          3. Determine root cause with confidence level
+          4. Recommend remediation steps
+
+          Structure your synthesis as:
+          ```
+          FINDINGS SUMMARY:
+          - [Key finding 1]
+          - [Key finding 2]
+          ...
+
+          ROOT CAUSE: [Description]
+          CONFIDENCE: [high|medium|low]
+          EVIDENCE: [Supporting evidence]
+
+          REMEDIATION:
+          1. [Immediate action]
+          2. [Follow-up action]
+          ...
+
+          PREVENTION:
+          - [Preventive measure]
+          ```
+
+        tools:
+          - shell
+        max_iterations: 5
+        temperature: 0.3
+
+  coordination:
+    mode: deep
+    manager: planner
+
+    # Deep mode specific configuration
+    deep:
+      # Maximum planning iterations
+      max_iterations: 5
+
+      # Minimum confidence to conclude (0.0-1.0)
+      confidence_threshold: 0.8
+
+      # How findings are passed between iterations
+      context_strategy: cumulative
+
+      # Agents to use for investigation steps
+      investigation_agents:
+        - code-analyzer
+        - infra-analyzer
+
+      # Agent to synthesize final results
+      synthesis_agent: synthesizer
+
+    # Task distribution for investigation steps
+    distribution: capability_based
+
+  # Shared context across all agents
+  shared:
+    env:
+      KUBECONFIG: "${KUBECONFIG}"
+      PROMETHEUS_URL: "${PROMETHEUS_URL:-http://prometheus:9090}"
+      LOKI_URL: "${LOKI_URL:-http://loki:3100}"
+
+  communication:
+    pattern: broadcast
+    channels:
+      - findings
+      - hypotheses

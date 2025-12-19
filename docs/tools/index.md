@@ -1,0 +1,105 @@
+# Tools Overview
+
+AOF provides a comprehensive tools system that enables agents to interact with infrastructure, execute commands, and integrate with external services. Tools can be built-in (native Rust implementations) or provided via MCP (Model Context Protocol) servers.
+
+## Tool Categories
+
+| Category | Description | Examples |
+|----------|-------------|----------|
+| **CLI Tools** | Unified command-line wrappers | `kubectl`, `git`, `docker`, `terraform`, `aws`, `helm` |
+| **File Tools** | File system operations | `read_file`, `write_file`, `list_directory`, `search_files` |
+| **Execution Tools** | Shell and HTTP execution | `shell`, `http_request` |
+| **Observability Tools** | Metrics and logs queries | `prometheus_query`, `loki_query`, `elasticsearch_query` |
+| **MCP Tools** | External MCP server tools | Any tool from configured MCP servers |
+
+## Quick Start
+
+### Using Built-in Tools
+
+```yaml
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: devops-agent
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are a DevOps assistant with access to Kubernetes and Git.
+  tools:
+    - kubectl
+    - git
+    - shell
+```
+
+### Using MCP Tools
+
+```yaml
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: filesystem-agent
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    You are a file management assistant.
+  mcp_servers:
+    - name: filesystem
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+```
+
+## Tool Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Agent Execution                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  Model Response with Tool Calls                                  │
+│           │                                                       │
+│           ▼                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │              Tool Executor Router                            │ │
+│  │                                                               │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │ │
+│  │  │  Built-in   │  │  Single MCP │  │    Multi-MCP        │  │ │
+│  │  │  Executor   │  │  Executor   │  │    Executor         │  │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────┘  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│           │                                                       │
+│           ▼                                                       │
+│  Tool Result → Added to conversation → Next model call           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Tool Configuration Formats
+
+### Simple Format (Recommended)
+
+```yaml
+tools:
+  - kubectl
+  - git
+  - shell
+```
+
+### Qualified Format (Advanced)
+
+```yaml
+tools:
+  - name: kubectl
+    source: builtin
+    timeout_secs: 120
+
+  - name: custom_tool
+    source: mcp
+    server: my-mcp-server
+```
+
+## Next Steps
+
+- [Built-in Tools Reference](./builtin-tools.md) - Complete list of built-in tools
+- [MCP Integration](./mcp-integration.md) - Using MCP servers with agents
+- [Custom Tools](./custom-tools.md) - Creating custom tool implementations
+
