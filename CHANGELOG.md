@@ -8,112 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Agent Switching (`/agent`)** - Switch between agents via Telegram
+- **Simplified Agent Switching** - Easy agent switching via `/agent` and `/help` commands
+  - `/help` now shows agent selection buttons (tap to switch)
   - `/agent` command with inline keyboard selection
-  - `/agent <name>` to switch directly (e.g., `/agent k8s`)
-  - `/agent info` for detailed current agent info
-  - Built-in agents: k8s, aws, docker, devops
-  - Per-user session tracking
+  - Built-in agents: Kubernetes, AWS, Docker, DevOps
+  - Greeting message shows current agent and usage info
   - New quickstart guide: `docs/guides/quickstart-telegram.md`
-- **Comprehensive DevOps Read-Only Agent** - Single agent with all DevOps tools
-  - New `devops-readonly` agent combining kubectl, docker, helm, git, terraform, aws, prometheus
-  - Designed as default mobile agent (no constant switching needed)
-  - Complete tool restrictions for read-only access across all tools
-  - Located at `examples/agents/mobile-read-only/devops-readonly.yaml`
-- **Environment Context Files** - Pre-built environment configurations
-  - `examples/contexts/env-prod.yaml` - Production (read-only from mobile)
-  - `examples/contexts/env-staging.yaml` - Staging (write with approval)
-  - `examples/contexts/env-dev.yaml` - Development (full access)
-  - Each includes kubeconfig, namespace, AWS settings, and platform policies
-- **Sample Approval Flow for kubectl** - Example write operation workflow
-  - `examples/flows/kubectl-apply-approval.yaml` - Complete approval workflow
-  - Environment-aware policies (prod stricter, dev auto-approve)
-  - Dry-run validation before approval request
-  - Timeout handling with auto-deny
-  - Comprehensive variable interpolation
-- **Telegram Mobile Companion** - Safe mobile interface for AOF agents
-  - `/agents` command with inline keyboard selection for switching agents
-  - `/flows` command with inline keyboard selection for triggering flows
-  - Session-based agent tracking per user
-  - Callback handling for Telegram inline buttons
-- **MVP Safety Layer** - Platform-based read-only mode for mobile
-  - Telegram/WhatsApp: Read-only (all writes blocked)
+- **Platform-Based Safety Layer** - Simple read-only mode for mobile platforms
+  - Telegram/WhatsApp: Read-only (all writes blocked automatically)
   - Slack: Full access with existing approval workflow
   - CLI: Full access (no restrictions)
   - Pattern-based write detection for kubectl, docker, helm, terraform, aws, git
-  - Natural language intent detection (create, deploy, delete, scale, etc.)
-  - Clear error messages explaining why operation was blocked
-- **ASCII Visualization Crate** - `aof-viz` for mobile-friendly output
-  - Status rendering with emoji and ASCII styles
-  - Flow visualization (linear, inline, branching)
-  - Tool call result formatting with tables
-  - Safety decision rendering
-  - Progress bars and spinners
-  - Platform-specific render configs (Telegram, Slack, terminal)
-- **Read-Only Mobile Agents** - Pre-built agents for Telegram
-  - k8s-status, docker-status, git-status, prometheus-query, helm-status
-  - All labeled with `mobile-safe: "true"`
-  - Only read operations exposed
-- **Agent Tool Execution System** - Full tool execution support for agents
-  - Built-in tools: `kubectl`, `docker`, `helm`, `terraform`, `aws`, `git`, `shell`
-  - File tools: `read_file`, `write_file`, `list_directory`, `search_files`
-  - Observability tools: `prometheus_query`, `loki_query`
-  - Tools registered and passed to LLM with definitions
-- **Kubernetes-Style Agent Discovery** - Load agents by `kind: Agent` and `metadata.name`
-  - Agents indexed by `metadata.name`, not filename
-  - Support for both K8s-style and flat YAML formats via `AgentConfigInput` enum
-  - `--agents-dir` flag for pre-loading agents on server startup
-- **Approval User Whitelist** - Configure which users can approve destructive commands
-  - New `approval_allowed_users` field in platform config (Slack implemented)
-  - Platform-agnostic design: supports `U12345678`, `slack:U12345678`, `email:user@company.com` formats
-  - Currently implemented: Raw Slack user IDs (e.g., `U015VBH1GTZ`)
-  - Planned: Global `spec.approval.allowed_users` for multi-platform deployments
-  - If not configured, anyone can approve (backward compatible)
-  - Documentation and example config updated
-- **Multi-Tenant AgentFlow Architecture** - Enterprise-ready multi-tenant deployments
-  - Route different channels/users/patterns to different agents
-  - Support for multiple organizations in single daemon
-  - Environment isolation per AgentFlow (kubeconfig, namespace, env vars)
-  - Comprehensive architecture documentation at `docs/architecture/multi-tenant-agentflows.md`
-- **Telegram AgentFlow Example** - Complete Telegram bot setup following Slack pattern
-  - New `examples/configs/telegram-k8s-flow.yaml` example
-  - Same architecture as Slack bot with channel/user/pattern routing
-- **AgentFlow Routing Documentation** - Complete guide on how routing works
-  - Flow scoring algorithm explained
-  - Common routing patterns (pattern-based, channel-based, user-based)
-  - Debugging tips and best practices
-  - New guide at `docs/guides/agentflow-routing.md`
+  - Plain text error messages (no markdown for better mobile display)
 
 ### Changed
-- All example agents updated to use `google:gemini-2.5-flash` as the primary model
-- Improved debug logging for agent parsing and tool registration
-- Documentation updated with correct model names for all providers
-- **`/run agent` command now routes through AgentFlow** - Uses pre-loaded agents with correct model and tools
-  - No longer creates hardcoded Anthropic fallback
-  - Follows same code path as natural language messages
-  - Ensures consistent behavior across commands and chat
-- **`/help` command updated** - Now includes `/agents` and `/flows` in quick start section
-  - Shows chat mode usage (select agent then type naturally)
-  - Updated examples with interactive workflow
-  - Fixed support URL to point to correct GitHub repository
+- **Simplified Output** - Text-only responses for better Telegram display
+  - Removed markdown formatting from agent responses
+  - Cleaner, simpler messages without asterisks or backticks
+  - Agent info shows only relevant details (tools, description)
+- **Simplified Documentation** - MVP-focused docs
+  - Removed complex context/policy YAML examples
+  - Archived enterprise-setup.md to internal/future
+  - Updated DOCUMENTATION_INDEX.md with simple structure
+  - Cleaned up obsolete telegram-specific examples
 
-### Fixed
-- **Telegram inline keyboard callback handling** - Fixed "Invalid selection" error when tapping agent/flow buttons
-  - Improved callback format parsing to handle both `callback:agent:name` and `agent:name` formats
-  - Added better debug logging for callback troubleshooting
-  - More descriptive error messages when callback parsing fails
-- System prompts from agent YAML files now correctly loaded and used
-- Agent execution error handling with proper response to platforms
-- Bracket structure in `handle_natural_language` function
-- **Agent loading flag logic** - Fixed issue where agents weren't loaded when flows directory didn't exist
-  - Introduced proper `agents_loaded` boolean tracking
-  - Agents now correctly pre-load regardless of flows configuration
-- **`/run agent` using wrong model** - Fixed hardcoded Anthropic model to use pre-loaded agent's configuration
-  - Now uses `google:gemini-2.5-flash` from agent YAML
-  - Tools and system prompts correctly applied
-
-### Notes
-- Config changes to `approval_allowed_users` require server restart (hot-reload coming in [Issue #22](https://github.com/agenticdevops/aof/issues/22))
+### Removed
+- Complex context YAML files (telegram-prod.yaml, telegram-dev.yaml, telegram-personal.yaml)
+- Complex telegram-k8s-flow.yaml example
+- mobile-read-only agent directory (platform safety makes this unnecessary)
+- Complex platform_policies configuration (now handled automatically by platform detection)
 
 ## [0.1.15] - 2025-12-18
 
@@ -145,9 +68,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated slack-k8s-bot agent with explicit kubectl syntax guidance
 
 ### Fixed
-- Agent instructions now correctly guide LLM to use `kubectl create deployment` instead of `kubectl run` for deployments with replicas
-- Consistent command syntax across all documentation and examples
-- Example YAML files now use correct `aofctl verb noun` comments
+- **Telegram inline keyboard callback handling** - Fixed "Invalid selection" error when tapping agent/flow buttons
+  - Improved callback format parsing to handle both `callback:agent:name` and `agent:name` formats
+  - Added better debug logging for callback troubleshooting
+  - More descriptive error messages when callback parsing fails
+- System prompts from agent YAML files now correctly loaded and used
+- Agent execution error handling with proper response to platforms
+- Bracket structure in `handle_natural_language` function
+- **Agent loading flag logic** - Fixed issue where agents weren't loaded when flows directory didn't exist
+  - Introduced proper `agents_loaded` boolean tracking
+  - Agents now correctly pre-load regardless of flows configuration
+- **`/run agent` using wrong model** - Fixed hardcoded Anthropic model to use pre-loaded agent's configuration
+  - Now uses `google:gemini-2.5-flash` from agent YAML
+  - Tools and system prompts correctly applied
+
+### Notes
+- Config changes to `approval_allowed_users` require server restart (hot-reload coming in [Issue #22](https://github.com/agenticdevops/aof/issues/22))
 
 ## [0.1.14] - 2025-12-17
 

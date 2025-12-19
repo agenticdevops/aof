@@ -909,42 +909,50 @@ impl TriggerHandler {
         }
     }
 
-    /// Handle help command
-    async fn handle_help_command(&self, _cmd: TriggerCommand) -> TriggerResponse {
-        let help_text = r#"
-**AOF Bot Commands**
+    /// Handle help command with agent selection buttons
+    async fn handle_help_command(&self, cmd: TriggerCommand) -> TriggerResponse {
+        // Get current agent for this user
+        let current_context = self.get_user_context(&cmd.context.user_id);
+        let current_display = self.available_contexts
+            .get(&current_context)
+            .map(|c| format!("{} {}", c.emoji, c.display_name))
+            .unwrap_or_else(|| current_context.clone());
 
-**Quick Start:**
-• `/agent` - Switch agent (interactive)
-• `/flows` - Trigger a workflow (interactive)
-• `/help` - Show this help
+        let help_text = format!(
+            "AOF Bot - DevOps from mobile\n\n\
+            Current agent: {}\n\n\
+            Commands:\n\
+            /agent - Switch agent\n\
+            /help - Show this help\n\n\
+            Just type naturally after selecting an agent.\n\n\
+            Select agent:",
+            current_display
+        );
 
-**Agent Commands:**
-• `/agent` - List agents with inline selection
-• `/agent <name>` - Switch to agent directly
-• `/agent info` - Show current agent details
+        let mut builder = TriggerResponseBuilder::new()
+            .text(help_text);
 
-Each agent has tools (kubectl, docker, git, etc.) and connection settings.
+        // Add agent buttons
+        for entry in self.available_contexts.iter() {
+            let ctx_name = entry.key();
+            let ctx_config = entry.value();
+            let is_current = ctx_name == &current_context;
 
-**Other Commands:**
-• `/run agent <name> <input>` - Run specific agent directly
-• `/status task <id>` - Check task status
-• `/cancel task <id>` - Cancel a running task
+            let label = if is_current {
+                format!("{} {} ✓", ctx_config.emoji, ctx_config.display_name)
+            } else {
+                format!("{} {}", ctx_config.emoji, ctx_config.display_name)
+            };
 
-**Chat Mode:**
-Once you select an agent, just type naturally.
+            builder = builder.action(Action {
+                id: format!("ctx_{}", ctx_name),
+                label,
+                value: format!("callback:context:{}", ctx_name),
+                style: if is_current { ActionStyle::Primary } else { ActionStyle::Secondary },
+            });
+        }
 
-**Examples:**
-• `/agent` → tap "DevOps" → "list pods"
-• `/agent dev-k8s` → "show deployments"
-• `/flows` → tap approval-flow
-
-**Support:** https://github.com/agenticdevops/aof
-        "#;
-
-        TriggerResponseBuilder::new()
-            .text(help_text.trim())
-            .build()
+        builder.build()
     }
 
     /// Handle info command
@@ -998,20 +1006,20 @@ Once you select an agent, just type naturally.
 
         match context_arg {
             None => {
-                // List all contexts with inline keyboard
+                // List all agents with inline keyboard
                 let mut builder = TriggerResponseBuilder::new();
 
                 let current_display = self.available_contexts
                     .get(&current_context)
-                    .map(|c| format!("{} {} ({})", c.emoji, c.display_name, current_context))
-                    .unwrap_or_else(|| format!("*{}*", current_context));
+                    .map(|c| format!("{} {}", c.emoji, c.display_name))
+                    .unwrap_or_else(|| current_context.clone());
 
                 builder = builder.text(format!(
-                    "**Select Agent**\n\nCurrent: {}\n\nTap to switch:",
+                    "Select Agent\n\nCurrent: {}\n\nTap to switch:",
                     current_display
                 ));
 
-                // Add context buttons
+                // Add agent buttons
                 for entry in self.available_contexts.iter() {
                     let ctx_name = entry.key();
                     let ctx_config = entry.value();
@@ -1043,24 +1051,10 @@ Once you select an agent, just type naturally.
                     };
 
                     let info_text = format!(
-                        "**Current Agent: {} {}**\n\n\
-                        **Name:** {}\n\
-                        **Tools:** {}\n\n\
-                        **Connection:**\n\
-                        • Kubernetes Context: {}\n\
-                        • Namespace: {}\n\
-                        • AWS Profile: {}\n\
-                        • AWS Region: {}\n\n\
-                        {}\n\n\
-                        Use `/agent <name>` to switch agents.",
+                        "Current: {} {}\n\nTools: {}\n\n{}\n\nUse /agent to switch.",
                         ctx_config.emoji,
                         ctx_config.display_name,
-                        current_context,
                         tools_display,
-                        ctx_config.kubecontext.as_deref().unwrap_or("not set"),
-                        ctx_config.namespace.as_deref().unwrap_or("default"),
-                        ctx_config.aws_profile.as_deref().unwrap_or("not set"),
-                        ctx_config.aws_region.as_deref().unwrap_or("not set"),
                         ctx_config.description
                     );
                     TriggerResponseBuilder::new()
@@ -1086,9 +1080,7 @@ Once you select an agent, just type naturally.
                     };
 
                     let response_text = format!(
-                        "✅ Switched to {} *{}*\n\n\
-                        **Tools:** {}\n\n\
-                        {}",
+                        "Switched to {} {}\n\nTools: {}\n\n{}",
                         ctx_config.emoji,
                         ctx_config.display_name,
                         tools_display,
@@ -1246,35 +1238,22 @@ Once you select an agent, just type naturally.
 
         match callback_type {
             "context" => {
-                // Switch to the selected context
-                // Context = Agent + Connection Parameters
+                // Switch to the selected agent
                 if self.available_contexts.contains_key(callback_value) {
                     self.set_user_context(&message.user.id, callback_value);
 
                     let ctx_config = self.available_contexts.get(callback_value).unwrap();
-                    let agent_display = ctx_config.agent_ref.as_deref().unwrap_or("default");
                     let tools_display = if ctx_config.tools.is_empty() {
                         "standard".to_string()
                     } else {
                         ctx_config.tools.join(", ")
                     };
 
+                    // Simple, clean response - text only, no markdown for mobile
                     let response_text = format!(
-                        "✅ Switched to {} *{}*\n\n\
-                        🔄 Switching agent: {}\n\n\
-                        **Connection:**\n\
-                        • Cluster: {}\n\
-                        • Namespace: {}\n\
-                        • Region: {}\n\n\
-                        **Tools Available:**\n\
-                        • {}\n\n\
-                        {}",
+                        "Switched to {} {}\n\nTools: {}\n\n{}",
                         ctx_config.emoji,
                         ctx_config.display_name,
-                        agent_display,
-                        ctx_config.kubecontext.as_deref().unwrap_or("not set"),
-                        ctx_config.namespace.as_deref().unwrap_or("default"),
-                        ctx_config.aws_region.as_deref().unwrap_or("not set"),
                         tools_display,
                         ctx_config.description
                     );
@@ -1410,9 +1389,35 @@ Once you select an agent, just type naturally.
             .trim()
             .to_string();
 
-        if input.is_empty() {
+        // Handle empty input or greetings with current agent info
+        let is_greeting = input.is_empty() ||
+            ["hi", "hello", "hey", "hola", "howdy", "start"]
+                .iter()
+                .any(|g| input.to_lowercase() == *g);
+
+        if is_greeting {
+            // Get current agent info
+            let ctx_name = self.get_user_context(&message.user.id);
+            let (agent_display, tools_display) = self.available_contexts
+                .get(&ctx_name)
+                .map(|c| {
+                    let tools = if c.tools.is_empty() { "standard".to_string() } else { c.tools.join(", ") };
+                    (format!("{} {}", c.emoji, c.display_name), tools)
+                })
+                .unwrap_or_else(|| (ctx_name.clone(), "standard".to_string()));
+
+            let greeting_text = format!(
+                "Hi! I'm your DevOps assistant.\n\n\
+                Current agent: {}\n\
+                Tools: {}\n\n\
+                Just type your question naturally.\n\n\
+                Use /help to switch agents.",
+                agent_display,
+                tools_display
+            );
+
             let response = TriggerResponseBuilder::new()
-                .text("Hi! How can I help you? Just ask me anything.")
+                .text(greeting_text)
                 .build();
             let _ = platform_impl.send_response(&message.channel_id, response).await;
             return Ok(());
@@ -1427,16 +1432,15 @@ Once you select an agent, just type naturally.
             let ctx_name = self.get_user_context(&message.user.id);
             warn!("Blocked write operation on {} in context '{}': {}", message.platform, ctx_name, input);
 
+            // Plain text response for mobile (no markdown)
             let response = TriggerResponseBuilder::new()
                 .text(format!(
-                    "🚫 *Write operation blocked*\n\n\
-                    {} is read-only. Write, delete, and dangerous operations are not allowed from mobile.\n\n\
-                    *What you can do:*\n\
-                    • Use read-only commands (get, list, describe, logs)\n\
-                    • Use Slack or CLI for write operations\n\n\
-                    _Detected write intent: `{}`_",
-                    message.platform,
-                    if input.len() > 50 { &input[..50] } else { &input }
+                    "Write operation blocked\n\n\
+                    {} is read-only for safety.\n\n\
+                    What you can do:\n\
+                    - Read-only commands (get, list, describe, logs)\n\
+                    - Use Slack or CLI for write operations",
+                    message.platform
                 ))
                 .error()
                 .build();

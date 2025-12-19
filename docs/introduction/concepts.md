@@ -268,12 +268,12 @@ spec:
 
 ### Usage
 ```
-/context              # List contexts with inline buttons
-/context cluster-a    # Switch to cluster-a
-/context info         # Show current context
+/agent                # List agents with inline buttons
+/agent k8s            # Switch to Kubernetes agent
+/agent info           # Show current agent
 ```
 
-See [Context Switching Guide](../guides/context-switching.md) for details.
+See [Agent Switching Guide](../guides/agent-switching.md) for details.
 
 ## 5. Trigger (Future)
 
