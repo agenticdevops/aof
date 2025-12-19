@@ -50,5 +50,5 @@ spec:
     task_timeout_secs: 300
     max_tasks_per_user: 3
     # Default agent when no AgentFlow matches (fallback)
-    # Uses devops agent with full toolset: kubectl, docker, helm, terraform, git, shell
-    default_agent: "devops"
+    # Uses k8s-ops agent with: kubectl, helm
+    default_agent: "k8s-ops"

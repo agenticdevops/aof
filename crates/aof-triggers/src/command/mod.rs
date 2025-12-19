@@ -53,10 +53,9 @@ pub enum CommandType {
     /// Show available flows with inline keyboard selection
     Flows,
 
-    /// Switch or show context (project/cluster/cloud account)
-    /// Context = Agent + Connection Parameters
-    /// Replaces both /env and /agents commands
-    Context,
+    /// Switch or show agent (with associated tools and connection)
+    /// /agent command for switching between configured agents
+    Agent,
 }
 
 impl CommandType {
@@ -70,9 +69,8 @@ impl CommandType {
             "list" | "ls" | "show" => Ok(Self::List),
             "help" | "h" => Ok(Self::Help),
             "flows" => Ok(Self::Flows),
-            // Context replaces both /env and /agents
-            // Context = Agent + Connection Parameters
-            "context" | "ctx" | "env" | "agents" => Ok(Self::Context),
+            // /agent command for switching agents
+            "agent" | "agents" | "context" | "ctx" => Ok(Self::Agent),
             _ => Err(CommandError::UnknownCommand(s.to_string())),
         }
     }
@@ -88,13 +86,13 @@ impl CommandType {
             Self::Help => "Show help information",
             Self::Info => "Show system information",
             Self::Flows => "Show available flows for selection",
-            Self::Context => "Switch or show context (project/cluster)",
+            Self::Agent => "Switch or show agent",
         }
     }
 
     /// Check if this command type requires no target argument
     pub fn is_targetless(&self) -> bool {
-        matches!(self, Self::Help | Self::Flows | Self::Context)
+        matches!(self, Self::Help | Self::Flows | Self::Agent)
     }
 }
 

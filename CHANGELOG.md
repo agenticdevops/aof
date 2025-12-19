@@ -8,16 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Context Switching (`/context`)** - Unified project/cluster switching command
-  - `/context` command with inline keyboard selection for context switching
-  - `/context <name>` to switch directly (e.g., `/context cluster-a`)
-  - `/context info` for detailed current context information
-  - **Context = Agent + Connection Parameters** - Bundles agent, kubeconfig, AWS profile, etc.
-  - Replaces both `/env` and `/agents` commands with unified `/context`
-  - Per-user context session tracking
-  - Example context files: k8s-cluster-a.yaml, aws-dev.yaml, database.yaml, prometheus.yaml
-  - New documentation guide: `docs/guides/context-switching.md`
-  - Framework-first design: Context is platform-agnostic, works across Telegram, Slack, CLI
+- **Agent Switching (`/agent`)** - Switch between agents via Telegram
+  - `/agent` command with inline keyboard selection
+  - `/agent <name>` to switch directly (e.g., `/agent k8s`)
+  - `/agent info` for detailed current agent info
+  - Built-in agents: k8s, aws, docker, devops
+  - Per-user session tracking
+  - New quickstart guide: `docs/guides/quickstart-telegram.md`
 - **Comprehensive DevOps Read-Only Agent** - Single agent with all DevOps tools
   - New `devops-readonly` agent combining kubectl, docker, helm, git, terraform, aws, prometheus
   - Designed as default mobile agent (no constant switching needed)

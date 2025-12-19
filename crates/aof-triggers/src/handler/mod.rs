@@ -313,111 +313,82 @@ impl TriggerHandler {
         handler
     }
 
-    /// Initialize default contexts
-    /// Each context bundles: agent + connection params + env vars
-    /// Agent refs must match metadata.name in examples/agents/*.yaml
+    /// Initialize default agents
+    /// These reference real agents in examples/agents/
     fn init_default_contexts(&self) {
-        // Development K8s context (full stack with Prometheus, Loki, Argo, AWS)
-        // This is the recommended default for testing
-        // Uses "devops" agent which has: kubectl, docker, helm, terraform, git, shell
-        // read_only: true by default - write ops blocked on Telegram
-        self.available_contexts.insert("dev-k8s".to_string(), ContextConfig {
-            display_name: "Dev K8s (Full Stack)".to_string(),
-            emoji: "🚀".to_string(),
-            description: "Dev K8s with Prometheus, Loki, Argo, AWS".to_string(),
+        // K8s Agent - DEFAULT
+        // Uses k8s-ops.yaml: kubectl, helm
+        self.available_contexts.insert("k8s".to_string(), ContextConfig {
+            display_name: "Kubernetes".to_string(),
+            emoji: "☸️".to_string(),
+            description: "Kubernetes cluster operations".to_string(),
             kubeconfig: Some("~/.kube/config".to_string()),
-            kubecontext: Some("dev-cluster".to_string()),
+            kubecontext: None,
             namespace: Some("default".to_string()),
-            aws_profile: Some("development".to_string()),
-            aws_region: Some("us-west-2".to_string()),
+            aws_profile: None,
+            aws_region: None,
+            agent_ref: Some("k8s-ops".to_string()),  // examples/agents/k8s-ops.yaml
+            tools: vec!["kubectl".to_string(), "helm".to_string()],
+            env: std::collections::HashMap::new(),
+            read_only: true,
+        });
+
+        // AWS Agent
+        // Uses aws-agent.yaml: aws cli
+        self.available_contexts.insert("aws".to_string(), ContextConfig {
+            display_name: "AWS".to_string(),
+            emoji: "☁️".to_string(),
+            description: "AWS cloud operations".to_string(),
+            kubeconfig: None,
+            kubecontext: None,
+            namespace: None,
+            aws_profile: None,
+            aws_region: None,
+            agent_ref: Some("aws-agent".to_string()),  // examples/agents/aws-agent.yaml
+            tools: vec!["aws".to_string()],
+            env: std::collections::HashMap::new(),
+            read_only: true,
+        });
+
+        // Docker Agent
+        // Uses docker-ops.yaml: docker, shell
+        self.available_contexts.insert("docker".to_string(), ContextConfig {
+            display_name: "Docker".to_string(),
+            emoji: "🐳".to_string(),
+            description: "Container management".to_string(),
+            kubeconfig: None,
+            kubecontext: None,
+            namespace: None,
+            aws_profile: None,
+            aws_region: None,
+            agent_ref: Some("docker-ops".to_string()),  // examples/agents/docker-ops.yaml
+            tools: vec!["docker".to_string(), "shell".to_string()],
+            env: std::collections::HashMap::new(),
+            read_only: true,
+        });
+
+        // DevOps Agent (full stack)
+        // Uses devops.yaml: kubectl, docker, helm, terraform, git, shell
+        self.available_contexts.insert("devops".to_string(), ContextConfig {
+            display_name: "DevOps".to_string(),
+            emoji: "🚀".to_string(),
+            description: "Full-stack DevOps (K8s, Docker, Terraform, Git)".to_string(),
+            kubeconfig: None,
+            kubecontext: None,
+            namespace: None,
+            aws_profile: None,
+            aws_region: None,
             agent_ref: Some("devops".to_string()),  // examples/agents/devops.yaml
             tools: vec![
                 "kubectl".to_string(),
-                "helm".to_string(),
                 "docker".to_string(),
+                "helm".to_string(),
+                "terraform".to_string(),
                 "git".to_string(),
-                "aws".to_string(),
-                "prometheus_query".to_string(),
+                "shell".to_string(),
             ],
-            env: [
-                ("KUBECONFIG".to_string(), "~/.kube/config".to_string()),
-                ("AWS_PROFILE".to_string(), "development".to_string()),
-                ("AWS_REGION".to_string(), "us-west-2".to_string()),
-            ].into_iter().collect(),
-            read_only: true,  // MVP safety: block writes on Telegram
-        });
-
-        // Kubernetes Cluster A context (production EKS)
-        // Uses "k8s-ops" agent which has: kubectl, helm
-        self.available_contexts.insert("cluster-a".to_string(), ContextConfig {
-            display_name: "Cluster A (EKS)".to_string(),
-            emoji: "🔷".to_string(),
-            description: "Production EKS cluster in us-east-1".to_string(),
-            kubeconfig: Some("~/.kube/config".to_string()),
-            kubecontext: Some("cluster-a-prod".to_string()),
-            namespace: Some("default".to_string()),
-            aws_profile: Some("production".to_string()),
-            aws_region: Some("us-east-1".to_string()),
-            agent_ref: Some("k8s-ops".to_string()),  // examples/agents/k8s-ops.yaml
-            tools: vec!["kubectl".to_string(), "helm".to_string()],
-            env: [
-                ("KUBECONFIG".to_string(), "~/.kube/config".to_string()),
-                ("AWS_PROFILE".to_string(), "production".to_string()),
-            ].into_iter().collect(),
-            read_only: true,  // Production: always read-only from Telegram
-        });
-
-        // AWS Dev Account context
-        // Uses "aws-agent" which has: aws, shell, read_file, write_file
-        self.available_contexts.insert("aws-dev".to_string(), ContextConfig {
-            display_name: "AWS Dev Account".to_string(),
-            emoji: "☁️".to_string(),
-            description: "AWS development account".to_string(),
-            kubeconfig: None,
-            kubecontext: None,
-            namespace: None,
-            aws_profile: Some("development".to_string()),
-            aws_region: Some("us-west-2".to_string()),
-            agent_ref: Some("aws-agent".to_string()),  // examples/agents/aws-agent.yaml
-            tools: vec!["aws".to_string(), "terraform".to_string()],
-            env: [
-                ("AWS_PROFILE".to_string(), "development".to_string()),
-                ("AWS_REGION".to_string(), "us-west-2".to_string()),
-            ].into_iter().collect(),
-            read_only: true,  // MVP safety: block writes on Telegram
-        });
-
-        // Database context - uses general assistant (no specific db agent yet)
-        self.available_contexts.insert("database".to_string(), ContextConfig {
-            display_name: "PostgreSQL".to_string(),
-            emoji: "🗄️".to_string(),
-            description: "Production database (read-only)".to_string(),
-            kubeconfig: None,
-            kubecontext: None,
-            namespace: None,
-            aws_profile: None,
-            aws_region: None,
-            agent_ref: Some("assistant".to_string()),  // examples/agents/assistant.yaml
-            tools: vec!["psql".to_string()],
             env: std::collections::HashMap::new(),
-            read_only: true,  // Database: always read-only
-        });
-
-        // Prometheus/Monitoring context
-        // Uses "sre-agent" which has: prometheus_query, loki_query, kubectl, read_file, list_directory
-        self.available_contexts.insert("prometheus".to_string(), ContextConfig {
-            display_name: "Prometheus".to_string(),
-            emoji: "📊".to_string(),
-            description: "Monitoring and metrics".to_string(),
-            kubeconfig: None,
-            kubecontext: None,
-            namespace: None,
-            aws_profile: None,
-            aws_region: None,
-            agent_ref: Some("sre-agent".to_string()),  // examples/agents/sre-agent.yaml
-            tools: vec!["prometheus_query".to_string(), "loki_query".to_string()],
-            env: std::collections::HashMap::new(),
-            read_only: true,  // Monitoring: read-only by nature
+            read_only: true,
         });
     }
 
@@ -729,7 +700,7 @@ impl TriggerHandler {
             CommandType::Help => Ok(self.handle_help_command(cmd).await),
             CommandType::Info => Ok(self.handle_info_command(cmd).await),
             CommandType::Flows => Ok(self.handle_flows_command(cmd).await),
-            CommandType::Context => Ok(self.handle_context_command(cmd).await),
+            CommandType::Agent => Ok(self.handle_agent_command(cmd).await),
         }
     }
 
@@ -944,32 +915,28 @@ impl TriggerHandler {
 **AOF Bot Commands**
 
 **Quick Start:**
-• `/context` - Switch project/cluster (interactive)
+• `/agent` - Switch agent (interactive)
 • `/flows` - Trigger a workflow (interactive)
 • `/help` - Show this help
 
-**Context Commands:**
-• `/context` - List contexts with inline selection
-• `/context <name>` - Switch to context directly
-• `/context info` - Show current context details
+**Agent Commands:**
+• `/agent` - List agents with inline selection
+• `/agent <name>` - Switch to agent directly
+• `/agent info` - Show current agent details
 
-Context = Agent + Connection. Each context has:
-• An agent (k8s-readonly, aws-readonly, etc.)
-• Connection params (cluster, AWS profile, etc.)
-• Tools available for that context
+Each agent has tools (kubectl, docker, git, etc.) and connection settings.
 
 **Other Commands:**
 • `/run agent <name> <input>` - Run specific agent directly
 • `/status task <id>` - Check task status
 • `/cancel task <id>` - Cancel a running task
-• `/list tasks` - List all tasks
 
 **Chat Mode:**
-Once you select a context, just type naturally. The agent for that context will respond.
+Once you select an agent, just type naturally.
 
 **Examples:**
-• `/context` → tap "Cluster A" → "pod status"
-• `/context aws-dev` → "list ec2 instances"
+• `/agent` → tap "DevOps" → "list pods"
+• `/agent dev-k8s` → "show deployments"
 • `/flows` → tap approval-flow
 
 **Support:** https://github.com/agenticdevops/aof
@@ -1016,16 +983,13 @@ Once you select a context, just type naturally. The agent for that context will 
             .build()
     }
 
-    /// Handle /context command - show or switch contexts
-    ///
-    /// Context = Agent + Connection Parameters
-    /// Replaces both /env and /agents commands.
+    /// Handle /agent command - show or switch agents
     ///
     /// Usage:
-    /// - `/context` - List available contexts with inline selection
-    /// - `/context <name>` - Switch to the specified context
-    /// - `/context info` - Show detailed current context info
-    async fn handle_context_command(&self, cmd: TriggerCommand) -> TriggerResponse {
+    /// - `/agent` - List available agents with inline selection
+    /// - `/agent <name>` - Switch to the specified agent
+    /// - `/agent info` - Show detailed current agent info
+    async fn handle_agent_command(&self, cmd: TriggerCommand) -> TriggerResponse {
         // Check if user wants to switch or just list
         let context_arg = cmd.args.first().map(|s| s.as_str());
 
@@ -1043,7 +1007,7 @@ Once you select a context, just type naturally. The agent for that context will 
                     .unwrap_or_else(|| format!("*{}*", current_context));
 
                 builder = builder.text(format!(
-                    "**Select Context**\n\nCurrent: {}\n\nTap to switch:",
+                    "**Select Agent**\n\nCurrent: {}\n\nTap to switch:",
                     current_display
                 ));
 
@@ -1070,9 +1034,8 @@ Once you select a context, just type naturally. The agent for that context will 
                 builder.build()
             }
             Some("info") => {
-                // Show detailed info about current context
+                // Show detailed info about current agent
                 if let Some(ctx_config) = self.available_contexts.get(&current_context) {
-                    let agent_display = ctx_config.agent_ref.as_deref().unwrap_or("default");
                     let tools_display = if ctx_config.tools.is_empty() {
                         "none".to_string()
                     } else {
@@ -1080,9 +1043,8 @@ Once you select a context, just type naturally. The agent for that context will 
                     };
 
                     let info_text = format!(
-                        "**Current Context: {} {}**\n\n\
+                        "**Current Agent: {} {}**\n\n\
                         **Name:** {}\n\
-                        **Agent:** {}\n\
                         **Tools:** {}\n\n\
                         **Connection:**\n\
                         • Kubernetes Context: {}\n\
@@ -1090,11 +1052,10 @@ Once you select a context, just type naturally. The agent for that context will 
                         • AWS Profile: {}\n\
                         • AWS Region: {}\n\n\
                         {}\n\n\
-                        Use `/context <name>` to switch contexts.",
+                        Use `/agent <name>` to switch agents.",
                         ctx_config.emoji,
                         ctx_config.display_name,
                         current_context,
-                        agent_display,
                         tools_display,
                         ctx_config.kubecontext.as_deref().unwrap_or("not set"),
                         ctx_config.namespace.as_deref().unwrap_or("default"),
@@ -1107,18 +1068,17 @@ Once you select a context, just type naturally. The agent for that context will 
                         .build()
                 } else {
                     TriggerResponseBuilder::new()
-                        .text(format!("Context '{}' not found.", current_context))
+                        .text(format!("Agent '{}' not found.", current_context))
                         .error()
                         .build()
                 }
             }
-            Some(ctx_name) => {
-                // Switch to the specified context
-                if self.available_contexts.contains_key(ctx_name) {
-                    self.set_user_context(&cmd.context.user_id, ctx_name);
+            Some(agent_name) => {
+                // Switch to the specified agent
+                if self.available_contexts.contains_key(agent_name) {
+                    self.set_user_context(&cmd.context.user_id, agent_name);
 
-                    let ctx_config = self.available_contexts.get(ctx_name).unwrap();
-                    let agent_display = ctx_config.agent_ref.as_deref().unwrap_or("default");
+                    let ctx_config = self.available_contexts.get(agent_name).unwrap();
                     let tools_display = if ctx_config.tools.is_empty() {
                         "standard".to_string()
                     } else {
@@ -1127,20 +1087,10 @@ Once you select a context, just type naturally. The agent for that context will 
 
                     let response_text = format!(
                         "✅ Switched to {} *{}*\n\n\
-                        🔄 Switching agent: {}\n\n\
-                        **Connection:**\n\
-                        • Cluster: {}\n\
-                        • Namespace: {}\n\
-                        • Region: {}\n\n\
-                        **Tools Available:**\n\
-                        • {}\n\n\
+                        **Tools:** {}\n\n\
                         {}",
                         ctx_config.emoji,
                         ctx_config.display_name,
-                        agent_display,
-                        ctx_config.kubecontext.as_deref().unwrap_or("not set"),
-                        ctx_config.namespace.as_deref().unwrap_or("default"),
-                        ctx_config.aws_region.as_deref().unwrap_or("not set"),
                         tools_display,
                         ctx_config.description
                     );
@@ -1150,7 +1100,7 @@ Once you select a context, just type naturally. The agent for that context will 
                         .success()
                         .build()
                 } else {
-                    // Unknown context
+                    // Unknown agent
                     let available: Vec<String> = self.available_contexts
                         .iter()
                         .map(|e| e.key().clone())
@@ -1158,8 +1108,8 @@ Once you select a context, just type naturally. The agent for that context will 
 
                     TriggerResponseBuilder::new()
                         .text(format!(
-                            "Unknown context: '{}'\n\nAvailable: {}",
-                            ctx_name,
+                            "Unknown agent: '{}'\n\nAvailable: {}",
+                            agent_name,
                             available.join(", ")
                         ))
                         .error()
@@ -1230,7 +1180,7 @@ Once you select a context, just type naturally. The agent for that context will 
                     .iter()
                     .next()
                     .map(|e| e.key().clone())
-                    .unwrap_or_else(|| "cluster-a".to_string())
+                    .unwrap_or_else(|| "k8s".to_string())
             })
     }
 
