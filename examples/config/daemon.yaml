@@ -1,7 +1,6 @@
 # AOF Daemon Configuration
 #
-# Minimal configuration for AOF daemon with Trigger-based architecture.
-# Platform configuration is now embedded in Trigger files (examples/triggers/).
+# Configuration for AOF daemon server.
 #
 # Prerequisites:
 #   Set environment variables for enabled platforms:
@@ -47,11 +46,31 @@ spec:
     timeout_secs: 60
 
   # =============================================================================
+  # Platform Integrations
+  # Enable/disable platforms as needed. Only enabled platforms require env vars.
+  #
+  # NOTE: In future versions, platform config will move entirely to Trigger files.
+  # For now, platforms must be enabled here for the webhook endpoints to work.
+  # =============================================================================
+  platforms:
+    # Slack Bot
+    # Setup: https://api.slack.com/apps → Create App → Enable Event Subscriptions
+    slack:
+      enabled: true
+      bot_token_env: SLACK_BOT_TOKEN
+      signing_secret_env: SLACK_SIGNING_SECRET
+
+    # Telegram Bot
+    # Setup: Message @BotFather on Telegram → /newbot
+    telegram:
+      enabled: true
+      bot_token_env: TELEGRAM_BOT_TOKEN
+
+  # =============================================================================
   # Triggers Configuration
   #
-  # Triggers are self-contained platform definitions with command bindings.
-  # Each Trigger file includes: platform config + commands + default agent.
-  # See examples/triggers/ for Slack, Telegram, and other platform examples.
+  # Triggers define command bindings for platforms.
+  # See examples/triggers/ for Slack, Telegram examples.
   # =============================================================================
   triggers:
     directory: ./examples/triggers/
@@ -66,7 +85,6 @@ spec:
 
   # =============================================================================
   # Fleet Configuration
-  # Fleets are teams of agents that work together for complex tasks
   # =============================================================================
   fleets:
     directory: ./examples/fleets/
@@ -74,7 +92,6 @@ spec:
 
   # =============================================================================
   # AgentFlow Configuration (Optional)
-  # Enables multi-step workflows with approval gates, loops, etc.
   # =============================================================================
   flows:
     directory: ./examples/flows/
