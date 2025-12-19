@@ -1,4 +1,4 @@
-use anyhow::{Context as AnyhowContext, Result};
+use anyhow::{Context as AnyhowContext, Result, anyhow};
 use aof_core::{AgentConfig, Context as AofContext};
 use aof_runtime::Runtime;
 use std::fs;
@@ -8,6 +8,115 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{mpsc as tokio_mpsc, RwLock};
 use tracing::info;
 use crate::resources::ResourceType;
+
+/// Internal struct to try parsing K8s format explicitly for better errors
+#[derive(serde::Deserialize)]
+struct K8sAgentConfig {
+    #[serde(rename = "apiVersion")]
+    api_version: String,
+    kind: String,
+    metadata: K8sMetadata,
+    spec: serde_yaml::Value,  // Capture spec as Value to check fields
+}
+
+#[derive(serde::Deserialize)]
+struct K8sMetadata {
+    name: String,
+}
+
+/// Parse agent config with detailed error messages including field path and line numbers
+fn parse_agent_config(content: &str, file_path: &str) -> Result<AgentConfig> {
+    // First, try the normal parse
+    let deserializer = serde_yaml::Deserializer::from_str(content);
+    let result: Result<AgentConfig, _> = serde_path_to_error::deserialize(deserializer);
+
+    match result {
+        Ok(config) => Ok(config),
+        Err(e) => {
+            let path = e.path().to_string();
+            let inner = e.inner();
+            let err_str = inner.to_string();
+
+            // For untagged enum errors, try to get more specific error info
+            if err_str.contains("untagged enum") {
+                // Try parsing as K8s format to get specific field errors
+                let k8s_result: Result<K8sAgentConfig, _> = serde_yaml::from_str(content);
+
+                if let Ok(k8s) = k8s_result {
+                    // The structure parsed, so the error is in spec fields
+                    // Try to parse spec with path tracking
+                    let spec_yaml = serde_yaml::to_string(&k8s.spec).unwrap_or_default();
+                    let spec_deserializer = serde_yaml::Deserializer::from_str(&spec_yaml);
+
+                    // Define expected spec fields
+                    #[derive(serde::Deserialize)]
+                    struct AgentSpecCheck {
+                        model: String,
+                        #[serde(default)]
+                        instructions: Option<String>,
+                        #[serde(default)]
+                        tools: Vec<serde_yaml::Value>,
+                        #[serde(default)]
+                        mcp_servers: Vec<serde_yaml::Value>,
+                        #[serde(default)]
+                        memory: Option<String>,  // This must be a string!
+                    }
+
+                    if let Err(spec_err) = serde_path_to_error::deserialize::<_, AgentSpecCheck>(spec_deserializer) {
+                        let spec_path = spec_err.path().to_string();
+                        let field = if spec_path.is_empty() || spec_path == "." {
+                            "spec".to_string()
+                        } else {
+                            format!("spec.{}", spec_path)
+                        };
+                        return Err(anyhow!(
+                            "Failed to parse agent config: {}\n\n  Field: {}\n  Error: {}\n",
+                            file_path,
+                            field,
+                            spec_err.inner()
+                        ));
+                    }
+                }
+            }
+
+            // Build error message with location if available
+            let mut error_msg = format!("Failed to parse agent config: {}\n", file_path);
+
+            if !path.is_empty() && path != "." {
+                error_msg.push_str(&format!("\n  Field: {}\n", path));
+            }
+
+            if let Some(location) = inner.location() {
+                error_msg.push_str(&format!("  Location: line {}, column {}\n", location.line(), location.column()));
+
+                let lines: Vec<&str> = content.lines().collect();
+                let line_idx = location.line().saturating_sub(1);
+
+                error_msg.push_str("\n");
+
+                if line_idx >= 1 {
+                    if let Some(line) = lines.get(line_idx - 1) {
+                        error_msg.push_str(&format!("   {:>4} | {}\n", line_idx, line));
+                    }
+                }
+
+                if let Some(line) = lines.get(line_idx) {
+                    error_msg.push_str(&format!("   {:>4} | {}\n", line_idx + 1, line));
+                    let pointer = " ".repeat(location.column().saturating_sub(1));
+                    error_msg.push_str(&format!("        | {}^\n", pointer));
+                }
+
+                if let Some(line) = lines.get(line_idx + 1) {
+                    error_msg.push_str(&format!("   {:>4} | {}\n", line_idx + 2, line));
+                }
+            }
+
+            error_msg.push_str(&format!("\n  Error: {}\n", inner));
+
+            Err(anyhow!(error_msg))
+        }
+    }
+}
 use ratatui::{
     backend::CrosstermBackend,
     Terminal,
@@ -89,8 +198,7 @@ async fn run_agent(config: &str, input: Option<&str>, output: &str, context: Opt
         let config_content = fs::read_to_string(config)
             .with_context(|| format!("Failed to read config file: {}", config))?;
 
-        let agent_config: AgentConfig = serde_yaml::from_str(&config_content)
-            .with_context(|| format!("Failed to parse agent config from: {}", config))?;
+        let agent_config = parse_agent_config(&config_content, config)?;
 
         let agent_name = agent_config.name.clone();
 
@@ -118,8 +226,7 @@ async fn run_agent(config: &str, input: Option<&str>, output: &str, context: Opt
     let config_content = fs::read_to_string(config)
         .with_context(|| format!("Failed to read config file: {}", config))?;
 
-    let agent_config: AgentConfig = serde_yaml::from_str(&config_content)
-        .with_context(|| format!("Failed to parse agent config from: {}", config))?;
+    let agent_config = parse_agent_config(&config_content, config)?;
 
     let agent_name = agent_config.name.clone();
     info!("Agent loaded: {}", agent_name);

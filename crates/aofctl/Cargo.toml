@@ -23,6 +23,7 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+serde_path_to_error = { workspace = true }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 thiserror = { workspace = true }
