@@ -36,9 +36,7 @@ spec:
       command: string
       args: []
       env: {}
-  memory:                   # Optional: Memory configuration
-    type: string
-    config: object
+  memory: string            # Optional: "InMemory", "File:./path", etc.
 ```
 
 ## Metadata Fields
@@ -304,71 +302,39 @@ For more details, see [MCP Integration Guide](../tools/mcp-integration.md).
 ## Memory Configuration
 
 ### `spec.memory`
-**Type:** `object`
+**Type:** `string`
 **Required:** No
-**Description:** Configure conversation memory persistence.
+**Description:** Memory backend identifier string.
 
-**Memory Types:**
+**Format:** `"Type"` or `"Type:config"`
 
-#### InMemory (Default)
-RAM-based storage, cleared on restart.
-
-```yaml
-spec:
-  memory:
-    type: InMemory
-    config:
-      max_messages: 100  # Keep last 100 messages
-```
-
-#### File
-JSON file storage.
+**Examples:**
 
 ```yaml
 spec:
-  memory:
-    type: File
-    config:
-      path: ./agent-memory.json
-      max_messages: 50
+  # In-memory (default) - cleared on restart
+  memory: "InMemory"
+
+  # File-based - persists to JSON file
+  memory: "File:./agent-memory.json"
+
+  # SQLite - embedded database
+  memory: "SQLite:./agent-memory.db"
+
+  # PostgreSQL - for production
+  memory: "PostgreSQL:postgres://user:pass@localhost/aof"
 ```
 
-#### SQLite
-Embedded database.
+**Available Memory Types:**
 
-```yaml
-spec:
-  memory:
-    type: SQLite
-    config:
-      path: ./agent-memory.db
-      max_messages: 1000
-```
+| Type | Format | Description |
+|------|--------|-------------|
+| `InMemory` | `"InMemory"` | RAM-based, cleared on restart (default) |
+| `File` | `"File:./path.json"` | JSON file persistence |
+| `SQLite` | `"SQLite:./path.db"` | Embedded SQLite database |
+| `PostgreSQL` | `"PostgreSQL:connection_url"` | External PostgreSQL |
 
-#### PostgreSQL
-External database for production.
-
-```yaml
-spec:
-  memory:
-    type: PostgreSQL
-    config:
-      url: postgres://user:pass@localhost/aof
-      table: agent_memory
-      max_messages: 10000
-```
-
-**Context Key (Optional):**
-Use different memory contexts for different sessions.
-
-```yaml
-spec:
-  memory:
-    type: SQLite
-    config:
-      path: ./memory.db
-      context_key: "user_${USER_ID}"  # Separate memory per user
-```
+**Note:** Memory is a simple string, not a complex object. If omitted, defaults to `InMemory`.
 
 ---
 
@@ -416,11 +382,7 @@ spec:
     - helm
     - shell
 
-  memory:
-    type: PostgreSQL
-    config:
-      url: ${DATABASE_URL}
-      max_messages: 1000
+  memory: "PostgreSQL:${DATABASE_URL}"
 ```
 
 ### Multi-Tool Agent with MCP
@@ -459,10 +421,7 @@ spec:
       env:
         GITHUB_TOKEN: "${GITHUB_TOKEN}"
 
-  memory:
-    type: SQLite
-    config:
-      path: ./devops-memory.db
+  memory: "SQLite:./devops-memory.db"
 ```
 
 ---
@@ -494,9 +453,9 @@ spec:
 - ❌ Don't give unrestricted shell access
 
 ### Memory
-- **Development**: InMemory or File
-- **Production**: PostgreSQL
-- **Testing**: InMemory (clean state)
+- **Development**: `"InMemory"` or `"File:./memory.json"`
+- **Production**: `"PostgreSQL:connection_url"`
+- **Testing**: `"InMemory"` (clean state each run)
 
 ---
 
