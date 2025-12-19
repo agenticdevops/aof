@@ -1470,23 +1470,22 @@ Once you select a context, just type naturally. The agent for that context will 
 
         info!("Processing natural language input for agent {}: {}", agent_name, input);
 
-        // MVP Safety Layer: Block write operations in read-only contexts
-        // This is the simplest possible safety check for Telegram/mobile platforms
-        let is_read_only = self.is_user_context_read_only(&message.user.id);
-        if is_read_only && is_write_operation(&input) {
+        // MVP Safety Layer: Block write operations on mobile platforms (Telegram, WhatsApp)
+        // Platform hierarchy: CLI (full access) > Slack (approval for writes) > Telegram/WhatsApp (read-only)
+        let is_mobile_platform = matches!(message.platform.as_str(), "telegram" | "whatsapp");
+        if is_mobile_platform && is_write_operation(&input) {
             let ctx_name = self.get_user_context(&message.user.id);
-            warn!("Blocked write operation in read-only context '{}': {}", ctx_name, input);
+            warn!("Blocked write operation on {} in context '{}': {}", message.platform, ctx_name, input);
 
             let response = TriggerResponseBuilder::new()
                 .text(format!(
                     "🚫 *Write operation blocked*\n\n\
-                    This context (`{}`) is read-only. Write, delete, and dangerous operations are not allowed.\n\n\
+                    {} is read-only. Write, delete, and dangerous operations are not allowed from mobile.\n\n\
                     *What you can do:*\n\
                     • Use read-only commands (get, list, describe, logs)\n\
-                    • Switch to a write-enabled context\n\
                     • Use Slack or CLI for write operations\n\n\
                     _Detected write intent: `{}`_",
-                    ctx_name,
+                    message.platform,
                     if input.len() > 50 { &input[..50] } else { &input }
                 ))
                 .error()
