@@ -64,7 +64,7 @@ When a context is specified:
 - Audit logs include context information
 - Rate limits are applied per context configuration
 
-See [Context Resource](../resources/context.md) for context configuration details.
+See [Context Resource](../reference/context-spec.md) for context configuration details.
 
 ## Commands
 

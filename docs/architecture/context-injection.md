@@ -895,4 +895,4 @@ telegram-prod-incident-bot
 - [Composable Design Architecture](composable-design.md)
 - [Multi-Tenant AgentFlow Architecture](multi-tenant-agentflows.md)
 - [AgentFlow Spec Reference](../reference/agentflow-spec.md)
-- [Security Best Practices](../guides/security.md)
+- [Context Spec Reference](../reference/context-spec.md)

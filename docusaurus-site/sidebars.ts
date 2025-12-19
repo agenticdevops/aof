@@ -35,6 +35,7 @@ const sidebars: SidebarsConfig = {
       label: 'Concepts',
       items: [
         'concepts/fleets',
+        'concepts/resource-selection',
       ],
     },
     {
@@ -56,11 +57,20 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Reference',
+      label: 'Resources',
       items: [
         'reference/agent-spec',
         'reference/agentflow-spec',
         'reference/fleet-spec',
+        'reference/trigger-spec',
+        'reference/context-spec',
+        'reference/flowbinding-spec',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Reference',
+      items: [
         'reference/daemon-config',
         'reference/aofctl',
       ],

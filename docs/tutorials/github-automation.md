@@ -1164,5 +1164,5 @@ on_error:
 
 - [Telegram Bot Tutorial](./telegram-ops-bot.md)
 - [WhatsApp Bot Tutorial](./whatsapp-ops-bot.md)
-- [Multi-Platform Routing](./multi-platform-routing.md)
-- [Building Custom Triggers](../developer/BUILDING_TRIGGERS.md)
+- [Resource Selection Guide](../concepts/resource-selection.md)
+- [FlowBinding Reference](../reference/flowbinding-spec.md)

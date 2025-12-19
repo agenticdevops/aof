@@ -340,7 +340,7 @@ Congratulations! You've built your first agentic workflow. 🎉
 ### Learn More
 
 - **[Core Concepts](concepts.md)** - Understand the 6 resource types
-- **[Multi-Tenant Setup](../guides/enterprise-setup.md)** - Deploy across environments
+- **[Resource Selection Guide](../concepts/resource-selection.md)** - When to use DaemonConfig vs AgentFlow vs FlowBinding
 - **[Agent YAML Reference](../reference/agent-spec.md)** - Complete spec
 
 ### Build More
@@ -354,7 +354,7 @@ Try these examples:
 2. **Multi-Environment Setup**
    - Create separate flows for prod/staging/dev
    - Route based on Telegram chat ID
-   - See [Enterprise Setup](../guides/enterprise-setup.md)
+   - See [Context Reference](../reference/context-spec.md)
 
 3. **Add More Agents**
    - Create a security scanner agent
@@ -445,4 +445,4 @@ For production deployments:
 
 ---
 
-**Ready for enterprise deployment?** → [Enterprise Setup Guide](../guides/enterprise-setup.md)
+**Ready for enterprise deployment?** → [FlowBinding Reference](../reference/flowbinding-spec.md) for multi-tenant setup

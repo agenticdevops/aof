@@ -1132,8 +1132,7 @@ kubectl get contexts,triggers -A
 
 ## See Also
 
-- [Context Resource](../resources/context.md) - Context specification
-- [Trigger Resource](../resources/trigger.md) - Trigger specification
-- [FlowBinding Resource](../resources/binding.md) - Binding specification
-- [Architecture Overview](../concepts/architecture.md) - AOF architecture
-- [Multi-Tenancy Guide](../guides/multi-tenancy.md) - Multi-tenant patterns
+- [Context Resource](./context-spec.md) - Context specification
+- [Trigger Resource](./trigger-spec.md) - Trigger specification
+- [FlowBinding Resource](./flowbinding-spec.md) - Binding specification
+- [Resource Selection Guide](../concepts/resource-selection.md) - When to use what

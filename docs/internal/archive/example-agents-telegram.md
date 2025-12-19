@@ -645,4 +645,4 @@ examples/
 
 - [Telegram Mobile Companion Design](./telegram-mobile-companion.md)
 - [Tool Classification Spec](./tool-classification-spec.md)
-- [Context Resource Documentation](../../resources/context.md)
+- [Context Resource Documentation](../../reference/context-spec.md)

@@ -567,6 +567,6 @@ aofctl serve --config daemon-config.yaml --flows-dir ./flows
 ## Related Documentation
 
 - [AgentFlow Reference](../reference/agentflow-spec.md)
-- [Approval Workflow Guide](../guides/approval-workflow.md)
+- [Context Reference](../reference/context-spec.md)
 - [Agent Configuration](../reference/agent-spec.md)
-- [Platform Setup Guides](../guides/)
+- [Trigger Reference](../reference/trigger-spec.md)

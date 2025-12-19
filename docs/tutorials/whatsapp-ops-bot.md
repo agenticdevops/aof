@@ -877,5 +877,5 @@ curl "https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}?fields=messaging_limit
 
 - [Telegram Bot Tutorial](./telegram-ops-bot.md)
 - [GitHub Automation Tutorial](./github-automation.md)
-- [Multi-Platform Routing](./multi-platform-routing.md)
-- [Building Custom Triggers](../developer/BUILDING_TRIGGERS.md)
+- [Resource Selection Guide](../concepts/resource-selection.md)
+- [FlowBinding Reference](../reference/flowbinding-spec.md)
