@@ -1982,6 +1982,7 @@ impl TriggerHandler {
             tools: vec![],
             mcp_servers: vec![],
             memory: None,
+            max_context_messages: 10, // Default for Slack interactions
             max_iterations: 5,
             temperature: 0.7,
             max_tokens: Some(2000),

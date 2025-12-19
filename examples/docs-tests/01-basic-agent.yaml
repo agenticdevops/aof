@@ -14,3 +14,5 @@ spec:
     - read_file
   max_iterations: 20
   temperature: 0.3
+  # Context control - limit messages sent to LLM to manage token costs
+  max_context_messages: 10  # Default is 10, increase for longer conversations

@@ -271,6 +271,7 @@ impl FleetCoordinator {
                 tools: spec.tools.clone(),
                 mcp_servers: spec.mcp_servers.clone(),
                 memory: None,
+                max_context_messages: 10, // Default for fleet agents
                 max_iterations: spec.max_iterations.map(|v| v as usize).unwrap_or(10),
                 temperature: spec.temperature.unwrap_or(0.7),
                 max_tokens: None,

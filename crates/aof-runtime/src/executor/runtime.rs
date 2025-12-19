@@ -10,7 +10,7 @@ use aof_core::{
 };
 use aof_llm::create_model;
 use aof_mcp::McpClientBuilder;
-use aof_memory::{InMemoryBackend, SimpleMemory};
+use aof_memory::{FileBackend, InMemoryBackend, SimpleMemory};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -154,8 +154,8 @@ impl Runtime {
             None
         };
 
-        // Create memory backend
-        let memory = self.create_memory(&config)?;
+        // Create memory backend (using async version to support all backends)
+        let memory = self.create_memory_async(&config).await?;
         debug!("Memory backend created for agent: {}", agent_name);
 
         // Create agent executor
@@ -561,8 +561,61 @@ impl Runtime {
         Ok(create_builtin_executor_for_tools(tool_names))
     }
 
-    // Helper: Create memory backend
+    // Helper: Create memory backend from config string
+    //
+    // Supported formats:
+    // - "InMemory" or "" (default): In-memory backend, cleared on restart
+    // - "File:./path.json": File-based JSON backend, persists across restarts
+    // - "File:./path.json:100": File backend with max 100 entries (oldest removed first)
+    // - "SQLite:./path.db": (Future) SQLite backend
+    // - "PostgreSQL:connection_url": (Future) PostgreSQL backend
+    async fn create_memory_async(&self, config: &AgentConfig) -> AofResult<Arc<SimpleMemory>> {
+        let memory_config = config.memory.as_deref().unwrap_or("InMemory");
+
+        if memory_config.is_empty() || memory_config == "InMemory" {
+            debug!("Creating InMemory backend");
+            let backend = InMemoryBackend::new();
+            return Ok(Arc::new(SimpleMemory::new(Arc::new(backend))));
+        }
+
+        if let Some(rest) = memory_config.strip_prefix("File:") {
+            // Parse optional max_entries: "File:./path.json:100"
+            let parts: Vec<&str> = rest.splitn(2, ':').collect();
+            let path = parts[0];
+            let max_entries = parts.get(1).and_then(|s| s.parse().ok());
+
+            debug!("Creating File backend at: {}, max_entries: {:?}", path, max_entries);
+            let backend = FileBackend::with_max_entries(path, max_entries).await?;
+            return Ok(Arc::new(SimpleMemory::new(Arc::new(backend))));
+        }
+
+        if memory_config.starts_with("SQLite:") {
+            return Err(AofError::config(
+                "SQLite memory backend is not yet implemented. \
+                Use 'InMemory' or 'File:./path.json' instead. \
+                SQLite support is planned for a future release."
+            ));
+        }
+
+        if memory_config.starts_with("PostgreSQL:") {
+            return Err(AofError::config(
+                "PostgreSQL memory backend is not yet implemented. \
+                Use 'InMemory' or 'File:./path.json' instead. \
+                PostgreSQL support is planned for a future release."
+            ));
+        }
+
+        Err(AofError::config(format!(
+            "Unknown memory backend: '{}'. \
+            Supported: 'InMemory', 'File:./path.json', 'File:./path.json:100' (with max entries)",
+            memory_config
+        )))
+    }
+
+    // Sync wrapper for create_memory (for backward compatibility)
     fn create_memory(&self, _config: &AgentConfig) -> AofResult<Arc<SimpleMemory>> {
+        // For backward compatibility, default to InMemory
+        // The async version should be used for full config support
         let backend = InMemoryBackend::new();
         Ok(Arc::new(SimpleMemory::new(Arc::new(backend))))
     }
@@ -1071,6 +1124,7 @@ mod tests {
             tools: vec![],
             mcp_servers: vec![],
             memory: None,
+            max_context_messages: 10,
             max_iterations: 10,
             temperature: 0.7,
             max_tokens: None,
@@ -1095,6 +1149,7 @@ mod tests {
             tools: vec![],
             mcp_servers: vec![],
             memory: None,
+            max_context_messages: 10,
             max_iterations: 10,
             temperature: 0.7,
             max_tokens: None,

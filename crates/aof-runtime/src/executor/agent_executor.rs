@@ -1040,40 +1040,104 @@ impl AgentExecutor {
     }
 
     /// Prune conversation history to fit context window
+    ///
+    /// Uses `max_context_messages` from agent config (default: 10).
+    /// This controls token usage by limiting how much history is sent to the LLM.
+    ///
+    /// IMPORTANT: This function preserves tool call/response pairs to avoid Gemini API errors.
+    /// Gemini requires that function response turns immediately follow function call turns.
     fn prune_conversation_history(&self, mut history: Vec<aof_core::Message>) -> Vec<aof_core::Message> {
-        const MAX_MESSAGES: usize = 100;
+        let max_messages = self.config.max_context_messages;
 
-        if history.len() > MAX_MESSAGES {
-            warn!(
-                "Pruning conversation history from {} to {} messages for agent: {}",
-                history.len(),
-                MAX_MESSAGES,
-                self.config.name
-            );
-
-            // Keep system messages and most recent messages
-            let system_messages: Vec<_> = history
-                .iter()
-                .filter(|m| m.role == MessageRole::System)
-                .cloned()
-                .collect();
-
-            // Take most recent non-system messages
-            let recent_messages: Vec<_> = history
-                .into_iter()
-                .filter(|m| m.role != MessageRole::System)
-                .rev()
-                .take(MAX_MESSAGES - system_messages.len())
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
-
-            // Combine system + recent
-            history = system_messages;
-            history.extend(recent_messages);
+        if history.len() <= max_messages {
+            return history;
         }
 
+        info!(
+            "Pruning conversation history from {} to {} messages for agent: {}",
+            history.len(),
+            max_messages,
+            self.config.name
+        );
+
+        // Separate system messages (always kept)
+        let system_messages: Vec<_> = history
+            .iter()
+            .filter(|m| m.role == MessageRole::System)
+            .cloned()
+            .collect();
+
+        // Get non-system messages
+        let non_system: Vec<_> = history
+            .into_iter()
+            .filter(|m| m.role != MessageRole::System)
+            .collect();
+
+        // Calculate how many non-system messages we can keep
+        let available_slots = max_messages.saturating_sub(system_messages.len());
+
+        if non_system.len() <= available_slots {
+            // No pruning needed for non-system messages
+            history = system_messages;
+            history.extend(non_system);
+            return history;
+        }
+
+        // Find safe pruning point that doesn't break tool call/response pairs
+        // We need to keep the last N messages, but ensure we don't start in the middle
+        // of a tool call/response sequence
+        let mut keep_from_index = non_system.len().saturating_sub(available_slots);
+
+        // Scan backwards from keep_from_index to find a safe cut point
+        // A safe cut point is:
+        // 1. Before a User message (start of a new turn), OR
+        // 2. After a Tool message (end of a tool response sequence)
+        //
+        // We should NOT cut:
+        // - Between an Assistant message with tool_calls and its Tool response(s)
+        while keep_from_index > 0 {
+            let msg_at_cut = &non_system[keep_from_index];
+
+            // Safe to cut before a User message (new conversation turn)
+            if msg_at_cut.role == MessageRole::User {
+                break;
+            }
+
+            // Check if the previous message has tool_calls - if so, we can't cut here
+            // because this message might be a Tool response to that call
+            if keep_from_index > 0 {
+                let prev_msg = &non_system[keep_from_index - 1];
+                if prev_msg.tool_calls.as_ref().map_or(false, |tc| !tc.is_empty()) {
+                    // Previous message has tool calls, this might be its response
+                    // Move back to include the tool call message
+                    keep_from_index -= 1;
+                    continue;
+                }
+            }
+
+            // If current message is a Tool response, check if there are more tool responses
+            // that belong to the same tool call batch
+            if msg_at_cut.role == MessageRole::Tool {
+                // Move back to find the assistant message that initiated this tool call
+                keep_from_index -= 1;
+                continue;
+            }
+
+            // Safe cut point found
+            break;
+        }
+
+        // Build result: system messages + kept non-system messages
+        let kept_messages: Vec<_> = non_system.into_iter().skip(keep_from_index).collect();
+
+        debug!(
+            "Kept {} messages after pruning (cut at index {})",
+            kept_messages.len(),
+            keep_from_index
+        );
+
+        history = system_messages;
+        history.extend(kept_messages);
         history
     }
 

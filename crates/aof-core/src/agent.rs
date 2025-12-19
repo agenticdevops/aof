@@ -296,6 +296,12 @@ pub struct AgentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory: Option<String>,
 
+    /// Maximum number of conversation messages to include in context
+    /// Controls token usage by limiting how much history is sent to the LLM.
+    /// Default is 10 messages. Set higher for longer context, lower to save tokens.
+    #[serde(default = "default_max_context_messages")]
+    pub max_context_messages: usize,
+
     /// Max iterations
     #[serde(default = "default_max_iterations")]
     pub max_iterations: usize,
@@ -371,6 +377,8 @@ struct AgentSpec {
     #[serde(default)]
     mcp_servers: Vec<McpServerConfig>,
     memory: Option<String>,
+    #[serde(default = "default_max_context_messages")]
+    max_context_messages: usize,
     #[serde(default = "default_max_iterations")]
     max_iterations: usize,
     #[serde(default = "default_temperature")]
@@ -392,6 +400,8 @@ struct FlatAgentConfig {
     #[serde(default)]
     mcp_servers: Vec<McpServerConfig>,
     memory: Option<String>,
+    #[serde(default = "default_max_context_messages")]
+    max_context_messages: usize,
     #[serde(default = "default_max_iterations")]
     max_iterations: usize,
     #[serde(default = "default_temperature")]
@@ -412,6 +422,7 @@ impl From<AgentConfigInput> for AgentConfig {
                 tools: flat.tools,
                 mcp_servers: flat.mcp_servers,
                 memory: flat.memory,
+                max_context_messages: flat.max_context_messages,
                 max_iterations: flat.max_iterations,
                 temperature: flat.temperature,
                 max_tokens: flat.max_tokens,
@@ -426,6 +437,7 @@ impl From<AgentConfigInput> for AgentConfig {
                     tools: k8s.spec.tools,
                     mcp_servers: k8s.spec.mcp_servers,
                     memory: k8s.spec.memory,
+                    max_context_messages: k8s.spec.max_context_messages,
                     max_iterations: k8s.spec.max_iterations,
                     temperature: k8s.spec.temperature,
                     max_tokens: k8s.spec.max_tokens,
@@ -437,6 +449,10 @@ impl From<AgentConfigInput> for AgentConfig {
 }
 
 fn default_max_iterations() -> usize {
+    10
+}
+
+fn default_max_context_messages() -> usize {
     10
 }
 

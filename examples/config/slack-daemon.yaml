@@ -31,7 +31,7 @@ metadata:
 
 spec:
   server:
-    port: 3000
+    port: 3002
     host: 0.0.0.0
     cors: true
     timeout_secs: 60
@@ -47,6 +47,13 @@ spec:
       # approval_allowed_users:
       #   - U12345678         # Replace with actual Slack user IDs
       #   - U87654321         # Multiple users can be whitelisted
+
+    telegram:
+      enabled: true
+      # Set via environment variable: TELEGRAM_BOT_TOKEN
+      bot_token_env: "TELEGRAM_BOT_TOKEN"
+      # Optional: webhook secret for verification (set in BotFather)
+      webhook_secret: null
 
   agents:
     directory: ./examples/agents/
@@ -69,4 +76,4 @@ spec:
     max_tasks_per_user: 5
     # Default agent for @mentions and natural language messages
     # Slash commands (/run, /status, etc.) still work independently
-    default_agent: slack-k8s-bot
+    default_agent: devops

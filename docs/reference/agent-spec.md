@@ -24,6 +24,7 @@ spec:
     temperature: float
     max_tokens: int
   instructions: string      # Required: System prompt
+  max_context_messages: int # Optional: Max history messages (default: 10)
   tools:                    # Optional: List of tools
     - string                # Simple format: just tool name
     # OR qualified format:
@@ -131,6 +132,28 @@ spec:
     temperature: 0.3      # More deterministic
     max_tokens: 2000      # Concise responses
     top_p: 0.9
+```
+
+### `spec.max_context_messages`
+**Type:** `int`
+**Required:** No
+**Default:** `10`
+**Description:** Maximum number of conversation messages to include in context when using persistent memory.
+
+This controls token usage by limiting how much conversation history is sent to the LLM. When history exceeds this limit, oldest messages are pruned (keeping system messages).
+
+**Trade-offs:**
+- **Lower values (5-10)**: Less token usage, cheaper, but agent has shorter memory
+- **Higher values (50-100)**: More context, better continuity, but more expensive
+
+**Example:**
+```yaml
+spec:
+  # Short memory - good for simple Q&A
+  max_context_messages: 5
+
+  # Longer memory - good for complex multi-turn conversations
+  max_context_messages: 50
 ```
 
 ### `spec.instructions`
@@ -306,7 +329,7 @@ For more details, see [MCP Integration Guide](../tools/mcp-integration.md).
 **Required:** No
 **Description:** Memory backend identifier string.
 
-**Format:** `"Type"` or `"Type:config"`
+**Format:** `"Type"` or `"Type:config"` or `"Type:config:options"`
 
 **Examples:**
 
@@ -318,11 +341,8 @@ spec:
   # File-based - persists to JSON file
   memory: "File:./agent-memory.json"
 
-  # SQLite - embedded database
-  memory: "SQLite:./agent-memory.db"
-
-  # PostgreSQL - for production
-  memory: "PostgreSQL:postgres://user:pass@localhost/aof"
+  # File-based with max entries limit (keeps last 100 conversations)
+  memory: "File:./agent-memory.json:100"
 ```
 
 **Available Memory Types:**
@@ -331,10 +351,28 @@ spec:
 |------|--------|-------------|
 | `InMemory` | `"InMemory"` | RAM-based, cleared on restart (default) |
 | `File` | `"File:./path.json"` | JSON file persistence |
-| `SQLite` | `"SQLite:./path.db"` | Embedded SQLite database |
-| `PostgreSQL` | `"PostgreSQL:connection_url"` | External PostgreSQL |
+| `File` | `"File:./path.json:N"` | JSON file with max N entries (oldest removed) |
+| `SQLite` | `"SQLite:./path.db"` | *Planned for future release* |
+| `PostgreSQL` | `"PostgreSQL:url"` | *Planned for future release* |
+
+### File Memory with Entry Limits
+
+To prevent unbounded file growth, you can specify a maximum number of entries. When the limit is exceeded, the oldest entries (by creation time) are automatically removed.
+
+This is especially useful for conversation history where you only want to retain recent interactions:
+
+```yaml
+spec:
+  # Keep only the last 50 conversation turns
+  memory: "File:./conversations.json:50"
+
+  # Keep last 200 entries for longer context
+  memory: "File:./agent-memory.json:200"
+```
 
 **Note:** Memory is a simple string, not a complex object. If omitted, defaults to `InMemory`.
+
+**Future Backends:** SQLite and PostgreSQL backends are planned for future releases. Use `InMemory` for development/testing and `File` for persistent storage.
 
 ---
 
@@ -382,7 +420,9 @@ spec:
     - helm
     - shell
 
-  memory: "PostgreSQL:${DATABASE_URL}"
+  # Persistent memory with conversation limit
+  memory: "File:./k8s-agent-memory.json:100"
+  max_context_messages: 20  # Keep last 20 messages for context
 ```
 
 ### Multi-Tool Agent with MCP
@@ -421,7 +461,8 @@ spec:
       env:
         GITHUB_TOKEN: "${GITHUB_TOKEN}"
 
-  memory: "SQLite:./devops-memory.db"
+  memory: "File:./devops-memory.json:200"
+  max_context_messages: 30  # More context for complex DevOps tasks
 ```
 
 ---
@@ -454,8 +495,9 @@ spec:
 
 ### Memory
 - **Development**: `"InMemory"` or `"File:./memory.json"`
-- **Production**: `"PostgreSQL:connection_url"`
+- **Production**: `"File:./memory.json:1000"` (with entry limit)
 - **Testing**: `"InMemory"` (clean state each run)
+- **Conversation History**: Use `"File:./path.json:N"` to keep last N interactions
 
 ---
 

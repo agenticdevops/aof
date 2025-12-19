@@ -12,3 +12,6 @@ spec:
     - git
     - docker
     - shell
+  # Persistent memory for conversation history
+  memory: "File:./devops-memory.json:100"
+  max_context_messages: 15  # Keep last 15 messages for context

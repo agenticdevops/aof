@@ -1,5 +1,6 @@
 //! Memory backend implementations
 
+pub mod file;
 pub mod memory;
 
 use aof_core::{AofError, AofResult, Memory, MemoryBackend, MemoryEntry};
@@ -22,6 +23,15 @@ impl SimpleMemory {
     /// Create a new SimpleMemory with InMemoryBackend
     pub fn in_memory() -> Self {
         Self::new(Arc::new(memory::InMemoryBackend::new()))
+    }
+
+    /// Create a new SimpleMemory with FileBackend
+    ///
+    /// The file will be created if it doesn't exist. If it exists, existing
+    /// entries will be loaded. All changes are persisted immediately.
+    pub async fn file(path: impl Into<std::path::PathBuf>) -> AofResult<Self> {
+        let backend = file::FileBackend::new(path).await?;
+        Ok(Self::new(Arc::new(backend)))
     }
 }
 

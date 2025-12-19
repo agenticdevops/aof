@@ -51,6 +51,10 @@ spec:
   max_iterations: 30
   temperature: 0.2
 
+  # Memory configuration for incident context persistence
+  memory: "File:./sre-agent-memory.json:50"
+  max_context_messages: 20  # Keep last 20 messages for incident context
+
   # Environment variables for observability endpoints
   env:
     PROMETHEUS_URL: "http://prometheus:9090"
