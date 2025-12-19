@@ -1,0 +1,212 @@
+# kubectl Apply Approval Flow
+#
+# This flow demonstrates the approval workflow for write operations.
+# Users interact through read-only agents, but can trigger this flow
+# for operations that require approval (kubectl apply, helm upgrade, etc.)
+#
+# Usage:
+#   - Telegram: /flows -> Select "kubectl-apply-approval"
+#   - Slack: Automatic for write operations from slack-k8s-flow
+#   - CLI: aofctl run flow kubectl-apply-approval
+#
+# How it works:
+#   1. User requests a deployment/change via agent
+#   2. Agent determines it requires approval (output: requires_approval: true)
+#   3. This flow is triggered
+#   4. Approval message sent to designated channel/user
+#   5. On approval: execute the command
+#   6. On denial: notify user
+#
+# Safety:
+#   - Only authorized users can approve (approval_allowed_users)
+#   - Timeout after 30 minutes (auto-deny)
+#   - Audit log of all approvals/denials
+#   - Environment-aware (stricter for prod)
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: kubectl-apply-approval
+  labels:
+    category: operations
+    requires_approval: "true"
+    platform: all
+
+spec:
+  description: "Approval workflow for kubectl apply and other write operations"
+
+  # Trigger: Called from agents when requires_approval: true
+  trigger:
+    # Can be triggered from any platform
+    slack:
+      channels: ["#k8s-ops", "#devops"]
+      pattern: "apply|deploy|create|delete|scale"
+    telegram:
+      chat_ids: [] # All chats allowed
+      pattern: "apply|deploy|create"
+    webhook:
+      path: /flows/kubectl-apply
+
+  # Approval configuration
+  approval:
+    # Timeout for approval (in minutes)
+    timeout_minutes: 30
+
+    # Users who can approve (platform-agnostic format)
+    allowed_users:
+      - "@oncall"           # User group
+      - "@sre-team"         # Team
+      - "U015VBH1GTZ"       # Specific Slack user ID
+      # Add more approvers as needed
+
+    # Channel for approval notifications (Slack)
+    notification_channel: "#k8s-approvals"
+
+    # Auto-deny after timeout
+    auto_deny_on_timeout: true
+
+    # Require reason for approval/denial
+    require_reason: false
+
+  # Environment-specific policies
+  environment_policies:
+    prod:
+      # Production requires senior approval
+      additional_approvers:
+        - "@senior-sre"
+      # Longer timeout for critical changes
+      timeout_minutes: 60
+      # Notify additional channel
+      additional_notification_channels:
+        - "#incidents"
+
+    staging:
+      # Staging is more permissive
+      timeout_minutes: 15
+
+    dev:
+      # Dev auto-approves after brief delay (for testing)
+      auto_approve_delay_seconds: 30
+
+  # Flow nodes
+  nodes:
+    # Step 1: Validate the command
+    - name: validate
+      type: shell
+      config:
+        command: |
+          echo "Validating command: ${command}"
+          # Basic validation - ensure it's a kubectl command
+          if [[ ! "${command}" =~ ^kubectl ]]; then
+            echo "ERROR: Only kubectl commands are supported"
+            exit 1
+          fi
+          # Dry-run to catch syntax errors
+          ${command} --dry-run=client -o yaml 2>&1 || exit 1
+          echo "Validation passed"
+
+    # Step 2: Send approval request
+    - name: request_approval
+      type: approval
+      config:
+        message: |
+          **Approval Required**
+
+          **User:** ${user_name} (${user_id})
+          **Environment:** ${environment}
+          **Command:**
+          ```
+          ${command}
+          ```
+
+          **Context:** ${context_message}
+
+          React with ✅ to approve or ❌ to deny.
+        timeout_minutes: ${approval.timeout_minutes}
+        notification_channel: ${approval.notification_channel}
+
+    # Step 3: Execute on approval
+    - name: execute
+      type: shell
+      condition: "approval.status == 'approved'"
+      config:
+        command: |
+          echo "Executing approved command..."
+          echo "Approved by: ${approval.approved_by}"
+
+          # Set environment context
+          if [ -n "${kube_context}" ]; then
+            export KUBECONFIG=~/.kube/config
+            kubectl config use-context ${kube_context}
+          fi
+
+          # Execute the command
+          ${command}
+
+          echo "Command executed successfully"
+
+    # Step 4: Handle denial
+    - name: notify_denial
+      type: notify
+      condition: "approval.status == 'denied'"
+      config:
+        message: |
+          **Request Denied**
+
+          Your request was denied by ${approval.denied_by}.
+          ${approval.denial_reason}
+
+          Command: `${command}`
+
+    # Step 5: Handle timeout
+    - name: notify_timeout
+      type: notify
+      condition: "approval.status == 'timeout'"
+      config:
+        message: |
+          **Request Timed Out**
+
+          Your approval request expired after ${approval.timeout_minutes} minutes.
+
+          Command: `${command}`
+
+          Please resubmit if still needed.
+
+  # Connections between nodes
+  connections:
+    - from: validate
+      to: request_approval
+      condition: "validate.exit_code == 0"
+
+    - from: request_approval
+      to: execute
+      condition: "approval.status == 'approved'"
+
+    - from: request_approval
+      to: notify_denial
+      condition: "approval.status == 'denied'"
+
+    - from: request_approval
+      to: notify_timeout
+      condition: "approval.status == 'timeout'"
+
+  # Variables passed to the flow
+  variables:
+    command:
+      description: "The kubectl command to execute"
+      required: true
+    user_id:
+      description: "ID of the user requesting approval"
+      required: true
+    user_name:
+      description: "Name of the user requesting approval"
+      required: true
+    environment:
+      description: "Target environment (dev, staging, prod)"
+      default: "prod"
+    kube_context:
+      description: "Kubernetes context to use"
+      required: false
+    context_message:
+      description: "Additional context about why this change is needed"
+      default: "No additional context provided"

@@ -1,0 +1,138 @@
+# Helm Status Agent (Read-Only)
+#
+# Read-only Helm release status agent optimized for mobile/Telegram usage.
+# Provides release status and chart information without modification capabilities.
+#
+# Usage:
+#   - Reference in fleets: ref: agents/mobile-read-only/helm-status.yaml
+#   - Reference in flows: agent: helm-status
+#   - Direct execution: aofctl run agent helm-status "list releases"
+#   - Telegram: /agents -> Select "helm-status"
+#
+# Safety:
+#   - READ-ONLY: Only list, status, get, show, history commands allowed
+#   - No: install, upgrade, uninstall, rollback
+#   - Safe for mobile platforms like Telegram/WhatsApp
+#
+# Capabilities:
+#   - Release listing and status
+#   - Release history and revisions
+#   - Chart information and values
+#   - Repository listing
+#   - Manifest inspection
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: helm-status
+  labels:
+    category: infrastructure
+    platform: mobile
+    capability: helm
+    tier: read-only
+    mobile-safe: "true"
+
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 2048
+  temperature: 0
+
+  description: "Read-only Helm release status checker for mobile platforms"
+
+  tools:
+    - helm
+
+  tool_restrictions:
+    helm:
+      allowed_verbs:
+        - list
+        - status
+        - get
+        - get all
+        - get hooks
+        - get manifest
+        - get notes
+        - get values
+        - show
+        - show all
+        - show chart
+        - show readme
+        - show values
+        - history
+        - search
+        - search hub
+        - search repo
+        - template
+        - verify
+        - repo list
+        - env
+        - version
+      blocked_verbs:
+        - install
+        - upgrade
+        - uninstall
+        - rollback
+        - repo add
+        - repo remove
+        - repo update
+        - plugin install
+        - plugin uninstall
+        - pull
+        - push
+        - package
+
+  system_prompt: |
+    You are a Helm release status assistant for mobile users.
+
+    ## Your Role
+    Provide quick, read-only information about Helm releases.
+    You CANNOT install, upgrade, or modify releases.
+
+    ## Available Commands (READ-ONLY)
+    - `helm list` - List releases
+    - `helm status` - Release status
+    - `helm history` - Release history
+    - `helm get values` - Current values
+    - `helm search` - Find charts
+
+    ## Response Format (Mobile-Optimized)
+    Keep responses SHORT:
+
+    ```
+    RELEASES (production)
+
+    Name         Rev   Status    Chart
+    api          5     deployed  api-2.1.0
+    redis        3     deployed  redis-17.0.1
+    postgres     2     deployed  postgres-12.1.0
+
+    Last Updated: 2h ago
+    ```
+
+    ## Quick Patterns
+    - "all releases": `helm list -A`
+    - "release status": `helm status <release> -n <ns>`
+    - "release history": `helm history <release> -n <ns>`
+    - "current values": `helm get values <release> -n <ns>`
+
+    ## Status Indicators
+    - deployed - Currently running
+    - failed - Last operation failed
+    - pending-* - Operation in progress
+    - superseded - Old revision
+
+    ## History Format
+    ```
+    HISTORY: api
+
+    Rev  Status      Updated      Description
+    5    deployed    2h ago       Upgrade to v2.1.0
+    4    superseded  1d ago       v2.0.5
+    3    superseded  3d ago       v2.0.4
+    ```
+
+    ## Safety Notice
+    If users ask to install, upgrade, or rollback:
+    "This is a read-only agent. Use /agents to switch to devops, or use Slack/CLI for modifications."
+
+    Keep it mobile-friendly!

@@ -1,0 +1,72 @@
+# Development Context with Telegram Platform Policy
+#
+# This context demonstrates permissive controls for development clusters
+# accessed via any platform including Telegram.
+#
+# Policy:
+# - Telegram: Block dangerous, allow read/write/delete
+# - Slack: Full access
+# - CLI: Full access
+
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: dev
+  labels:
+    environment: development
+    tier: non-critical
+
+spec:
+  namespace: development
+  cluster: dev-cluster
+
+  # Default agent (full devops for dev work)
+  default_agent: devops
+
+  # Platform-specific policies
+  platform_policies:
+    # Telegram: Mostly permissive (it's dev!)
+    telegram:
+      blocked_classes:
+        - dangerous
+      approval_classes: []  # No approval needed in dev
+      allowed_classes:
+        - read
+        - write
+        - delete
+
+    # Slack: Full access
+    slack:
+      blocked_classes: []
+      approval_classes: []
+      allowed_classes:
+        - read
+        - write
+        - delete
+        - dangerous
+
+    # WhatsApp: Still somewhat restricted
+    whatsapp:
+      blocked_classes:
+        - dangerous
+      approval_classes:
+        - delete
+      allowed_classes:
+        - read
+        - write
+
+    # CLI: Full access
+    cli:
+      blocked_classes: []
+      approval_classes: []
+      allowed_classes:
+        - read
+        - write
+        - delete
+        - dangerous
+
+  # Lighter safety settings for dev
+  safety:
+    require_confirmation_for_namespace: []
+    max_resources_per_operation: 50
+    audit_all_operations: false

@@ -49,6 +49,14 @@ pub enum CommandType {
 
     /// Show system info
     Info,
+
+    /// Show available flows with inline keyboard selection
+    Flows,
+
+    /// Switch or show context (project/cluster/cloud account)
+    /// Context = Agent + Connection Parameters
+    /// Replaces both /env and /agents commands
+    Context,
 }
 
 impl CommandType {
@@ -61,6 +69,10 @@ impl CommandType {
             "cancel" | "stop" | "abort" => Ok(Self::Cancel),
             "list" | "ls" | "show" => Ok(Self::List),
             "help" | "h" => Ok(Self::Help),
+            "flows" => Ok(Self::Flows),
+            // Context replaces both /env and /agents
+            // Context = Agent + Connection Parameters
+            "context" | "ctx" | "env" | "agents" => Ok(Self::Context),
             _ => Err(CommandError::UnknownCommand(s.to_string())),
         }
     }
@@ -75,7 +87,14 @@ impl CommandType {
             Self::List => "List agents, tasks, or fleets",
             Self::Help => "Show help information",
             Self::Info => "Show system information",
+            Self::Flows => "Show available flows for selection",
+            Self::Context => "Switch or show context (project/cluster)",
         }
+    }
+
+    /// Check if this command type requires no target argument
+    pub fn is_targetless(&self) -> bool {
+        matches!(self, Self::Help | Self::Flows | Self::Context)
     }
 }
 
@@ -231,12 +250,12 @@ impl TriggerCommand {
         let command_type = CommandType::from_str(parts[0])?;
         let context = CommandContext::from_message(msg);
 
-        // Handle help command (no target needed)
-        if command_type == CommandType::Help {
+        // Handle targetless commands (help, agents, flows)
+        if command_type.is_targetless() {
             return Ok(Self::new(
                 command_type,
-                TriggerTarget::Agent, // Default, unused for help
-                Vec::new(),
+                TriggerTarget::Agent, // Default, unused for targetless commands
+                parts.iter().skip(1).map(|s| s.to_string()).collect(),
                 context,
             ));
         }

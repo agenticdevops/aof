@@ -380,18 +380,32 @@ impl TelegramPlatform {
     pub fn create_help_text() -> String {
         r#"*AOF Bot Commands*
 
-*Agent Commands:*
-• `/run agent <name> <input>` \- Run an agent
+*Quick Start:*
+• `/context` \- Switch project/cluster \(interactive\)
+• `/flows` \- Trigger a workflow \(interactive\)
+• `/help` \- Show this help
+
+*Context Commands:*
+• `/context` \- List contexts with inline buttons
+• `/context <name>` \- Switch to context directly
+• `/context info` \- Show current context details
+
+Context \= Agent \+ Connection params\. Each context has:
+• An agent \(k8s\-readonly, aws\-readonly, etc\.\)
+• Connection params \(cluster, AWS profile, etc\.\)
+
+*Other Commands:*
+• `/run agent <name> <input>` \- Run agent directly
 • `/status task <id>` \- Check task status
-• `/cancel task <id>` \- Cancel a task
-• `/list tasks` \- List all tasks
+
+*Chat Mode:*
+Select a context with `/context`, then chat naturally\!
 
 *Examples:*
-• `/run agent monitor Check server health`
-• `/status task trigger\-user123\-abc`
-• `/list tasks`
+• `/context` → tap "Cluster A" → "pod status"
+• `/context aws\-dev` → "list ec2 instances"
 
-*Support:* [GitHub](https://github\.com/yourusername/aof)"#.to_string()
+*Support:* [GitHub](https://github\.com/agenticdevops/aof)"#.to_string()
     }
 }
 

@@ -1,0 +1,47 @@
+# Database Context
+#
+# Context = Agent + Connection Parameters
+# When users select this context, they get the db-readonly agent
+# connected to the production PostgreSQL database.
+#
+# Usage:
+#   /context database     # Switch to this context
+#   /context              # See inline keyboard with all contexts
+#
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: database
+  labels:
+    type: database
+    engine: postgresql
+    environment: production
+
+spec:
+  # Display information for /context command
+  display:
+    name: "PostgreSQL"
+    emoji: "🗄️"
+    description: "Production PostgreSQL database (read-only access)"
+
+  # Connection parameters
+  connection:
+    database_url: ${DATABASE_URL}
+    database_host: db.example.com
+    database_name: production
+    database_port: 5432
+
+  # Environment variables set when this context is active
+  env:
+    PGHOST: db.example.com
+    PGDATABASE: production
+    PGUSER: readonly
+    PGPORT: "5432"
+
+  # Agent to use for this context
+  agent:
+    ref: agents/db-readonly.yaml
+
+  # Tools available in this context
+  tools:
+    - psql

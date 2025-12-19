@@ -211,6 +211,16 @@ impl FlowRouter {
     pub fn registry(&self) -> &Arc<FlowRegistry> {
         &self.registry
     }
+
+    /// List all flow names
+    pub fn list_flows(&self) -> Vec<String> {
+        self.registry.list_names()
+    }
+
+    /// Get a flow by name
+    pub fn get_flow(&self, name: &str) -> Option<Arc<AgentFlow>> {
+        self.registry.get(name)
+    }
 }
 
 #[cfg(test)]

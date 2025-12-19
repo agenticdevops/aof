@@ -1,0 +1,50 @@
+# Kubernetes Cluster A Context
+#
+# Context = Agent + Connection Parameters
+# When users select this context, they get the k8s-readonly agent
+# connected to cluster-a-prod Kubernetes context.
+#
+# Usage:
+#   /context cluster-a    # Switch to this context
+#   /context              # See inline keyboard with all contexts
+#
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: cluster-a
+  labels:
+    type: kubernetes
+    provider: aws
+    region: us-east-1
+    environment: production
+
+spec:
+  # Display information for /context command
+  display:
+    name: "Cluster A (EKS)"
+    emoji: "🔷"
+    description: "Production EKS cluster in us-east-1"
+
+  # Connection parameters
+  connection:
+    kubeconfig: ~/.kube/config
+    kubecontext: cluster-a-prod
+    namespace: default
+
+  # Environment variables set when this context is active
+  env:
+    KUBECONFIG: ~/.kube/config
+    KUBECTL_CONTEXT: cluster-a-prod
+    AWS_PROFILE: production
+    AWS_REGION: us-east-1
+
+  # Agent to use for this context
+  # This agent will be activated when user switches to this context
+  agent:
+    ref: agents/k8s-readonly.yaml
+
+  # Tools available in this context (informational)
+  tools:
+    - kubectl
+    - helm
+    - docker

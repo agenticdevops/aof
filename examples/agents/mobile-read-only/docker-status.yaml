@@ -1,0 +1,132 @@
+# Docker Status Agent (Read-Only)
+#
+# Read-only Docker status agent optimized for mobile/Telegram usage.
+# Provides container status and resource monitoring without modification capabilities.
+#
+# Usage:
+#   - Reference in fleets: ref: agents/mobile-read-only/docker-status.yaml
+#   - Reference in flows: agent: docker-status
+#   - Direct execution: aofctl run agent docker-status "container status"
+#   - Telegram: /agents -> Select "docker-status"
+#
+# Safety:
+#   - READ-ONLY: Only ps, images, logs, inspect, stats commands allowed
+#   - No: run, rm, stop, kill, exec, attach, prune
+#   - Safe for mobile platforms like Telegram/WhatsApp
+#
+# Capabilities:
+#   - Container status and health checks
+#   - Image listing and inspection
+#   - Resource usage monitoring (docker stats)
+#   - Log viewing (read-only)
+#   - Network and volume inspection
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: docker-status
+  labels:
+    category: infrastructure
+    platform: mobile
+    capability: docker
+    tier: read-only
+    mobile-safe: "true"
+
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 2048
+  temperature: 0
+
+  description: "Read-only Docker container status checker for mobile platforms"
+
+  tools:
+    - docker
+
+  tool_restrictions:
+    docker:
+      allowed_verbs:
+        - ps
+        - images
+        - logs
+        - inspect
+        - info
+        - version
+        - stats
+        - top
+        - history
+        - diff
+        - events
+        - port
+        - network ls
+        - network inspect
+        - volume ls
+        - volume inspect
+        - system df
+        - container ls
+      blocked_verbs:
+        - run
+        - build
+        - push
+        - pull
+        - rm
+        - rmi
+        - stop
+        - start
+        - restart
+        - kill
+        - pause
+        - unpause
+        - exec
+        - attach
+        - commit
+        - prune
+        - network create
+        - network rm
+        - volume create
+        - volume rm
+        - system prune
+        - --privileged
+
+  system_prompt: |
+    You are a Docker status assistant for mobile users.
+
+    ## Your Role
+    Provide quick, read-only status information about Docker containers.
+    You CANNOT make any changes - only view and report.
+
+    ## Available Commands (READ-ONLY)
+    - `docker ps` - List containers
+    - `docker images` - List images
+    - `docker logs` - View container logs
+    - `docker stats` - Resource usage
+    - `docker inspect` - Detailed info
+    - `docker system df` - Disk usage
+
+    ## Response Format (Mobile-Optimized)
+    Keep responses SHORT:
+
+    ```
+    CONTAINERS: 12 running, 3 stopped
+
+    Name         Status   CPU   Mem
+    api          Up 2d    5%    256M
+    db           Up 2d    12%   1.2G
+    redis        Up 1d    1%    64M
+    ```
+
+    ## Status Indicators
+    - Up/Running/Healthy
+    - Exited/Stopped
+    - Unhealthy/Restarting
+
+    ## Quick Patterns
+    - "container status": `docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"`
+    - "resource usage": `docker stats --no-stream`
+    - "recent logs": `docker logs --tail 50 <container>`
+    - "disk usage": `docker system df`
+
+    ## Safety Notice
+    If users ask to start/stop/remove containers:
+    "This is a read-only agent. Use /agents to switch to docker-ops, or use Slack/CLI for modifications."
+
+    Keep responses mobile-friendly!

@@ -14,7 +14,7 @@ use tracing::{debug, error, info, warn};
 use crate::command::{CommandError, CommandType, TriggerCommand, TriggerTarget};
 use crate::flow::{FlowRegistry, FlowRouter, FlowMatch};
 use crate::platforms::{TriggerMessage, TriggerPlatform, TriggerUser};
-use crate::response::{TriggerResponse, TriggerResponseBuilder};
+use crate::response::{Action, ActionStyle, TriggerResponse, TriggerResponseBuilder};
 use aof_core::{AgentContext, AofError, AofResult};
 use aof_runtime::{Runtime, RuntimeOrchestrator, Task, TaskStatus, AgentFlowExecutor};
 
@@ -149,12 +149,57 @@ pub struct TriggerHandler {
     /// Conversation memory per channel/thread (channel_id:thread_id -> messages)
     /// Maintains conversation context for natural language interactions
     conversation_memory: Arc<DashMap<String, Vec<ConversationEntry>>>,
+
+    /// User context sessions (user_id -> context name)
+    /// Tracks which context each user has selected for their session
+    /// Context = Agent + Connection Parameters (replaces both agent and env sessions)
+    user_context_sessions: Arc<DashMap<String, String>>,
+
+    /// Available contexts (name -> config)
+    /// Configured contexts that users can switch between
+    /// Each context bundles: agent, connection params, env vars, tools
+    available_contexts: Arc<DashMap<String, ContextConfig>>,
+}
+
+/// Context configuration bundling agent + connection + environment
+/// Context = Agent + Connection Parameters
+/// Replaces separate EnvironmentConfig and agent sessions
+#[derive(Debug, Clone)]
+pub struct ContextConfig {
+    /// Display name (e.g., "Cluster A (EKS)", "AWS Dev Account")
+    pub display_name: String,
+    /// Emoji for visual identification
+    pub emoji: String,
+    /// Description of what this context connects to
+    pub description: String,
+
+    // Connection parameters
+    /// Kubernetes kubeconfig path
+    pub kubeconfig: Option<String>,
+    /// Kubernetes context name
+    pub kubecontext: Option<String>,
+    /// Default namespace
+    pub namespace: Option<String>,
+    /// AWS profile
+    pub aws_profile: Option<String>,
+    /// AWS region
+    pub aws_region: Option<String>,
+
+    /// Agent reference (e.g., "k8s-readonly", "aws-readonly")
+    /// This agent will be used when this context is active
+    pub agent_ref: Option<String>,
+
+    /// Tools available in this context
+    pub tools: Vec<String>,
+
+    /// Environment variables set when this context is active
+    pub env: std::collections::HashMap<String, String>,
 }
 
 impl TriggerHandler {
     /// Create a new trigger handler
     pub fn new(orchestrator: Arc<RuntimeOrchestrator>) -> Self {
-        Self {
+        let handler = Self {
             orchestrator,
             platforms: HashMap::new(),
             config: TriggerHandlerConfig::default(),
@@ -164,12 +209,16 @@ impl TriggerHandler {
             agents_dir: None,
             pending_approvals: Arc::new(DashMap::new()),
             conversation_memory: Arc::new(DashMap::new()),
-        }
+            user_context_sessions: Arc::new(DashMap::new()),
+            available_contexts: Arc::new(DashMap::new()),
+        };
+        handler.init_default_contexts();
+        handler
     }
 
     /// Create handler with custom configuration
     pub fn with_config(orchestrator: Arc<RuntimeOrchestrator>, config: TriggerHandlerConfig) -> Self {
-        Self {
+        let handler = Self {
             orchestrator,
             platforms: HashMap::new(),
             config,
@@ -179,7 +228,113 @@ impl TriggerHandler {
             agents_dir: None,
             pending_approvals: Arc::new(DashMap::new()),
             conversation_memory: Arc::new(DashMap::new()),
-        }
+            user_context_sessions: Arc::new(DashMap::new()),
+            available_contexts: Arc::new(DashMap::new()),
+        };
+        handler.init_default_contexts();
+        handler
+    }
+
+    /// Initialize default contexts
+    /// Each context bundles: agent + connection params + env vars
+    /// Agent refs must match metadata.name in examples/agents/*.yaml
+    fn init_default_contexts(&self) {
+        // Development K8s context (full stack with Prometheus, Loki, Argo, AWS)
+        // This is the recommended default for testing
+        // Uses "devops" agent which has: kubectl, docker, helm, terraform, git, shell
+        self.available_contexts.insert("dev-k8s".to_string(), ContextConfig {
+            display_name: "Dev K8s (Full Stack)".to_string(),
+            emoji: "🚀".to_string(),
+            description: "Dev K8s with Prometheus, Loki, Argo, AWS".to_string(),
+            kubeconfig: Some("~/.kube/config".to_string()),
+            kubecontext: Some("dev-cluster".to_string()),
+            namespace: Some("default".to_string()),
+            aws_profile: Some("development".to_string()),
+            aws_region: Some("us-west-2".to_string()),
+            agent_ref: Some("devops".to_string()),  // examples/agents/devops.yaml
+            tools: vec![
+                "kubectl".to_string(),
+                "helm".to_string(),
+                "docker".to_string(),
+                "git".to_string(),
+                "aws".to_string(),
+                "prometheus_query".to_string(),
+            ],
+            env: [
+                ("KUBECONFIG".to_string(), "~/.kube/config".to_string()),
+                ("AWS_PROFILE".to_string(), "development".to_string()),
+                ("AWS_REGION".to_string(), "us-west-2".to_string()),
+            ].into_iter().collect(),
+        });
+
+        // Kubernetes Cluster A context (production EKS)
+        // Uses "k8s-ops" agent which has: kubectl, helm
+        self.available_contexts.insert("cluster-a".to_string(), ContextConfig {
+            display_name: "Cluster A (EKS)".to_string(),
+            emoji: "🔷".to_string(),
+            description: "Production EKS cluster in us-east-1".to_string(),
+            kubeconfig: Some("~/.kube/config".to_string()),
+            kubecontext: Some("cluster-a-prod".to_string()),
+            namespace: Some("default".to_string()),
+            aws_profile: Some("production".to_string()),
+            aws_region: Some("us-east-1".to_string()),
+            agent_ref: Some("k8s-ops".to_string()),  // examples/agents/k8s-ops.yaml
+            tools: vec!["kubectl".to_string(), "helm".to_string()],
+            env: [
+                ("KUBECONFIG".to_string(), "~/.kube/config".to_string()),
+                ("AWS_PROFILE".to_string(), "production".to_string()),
+            ].into_iter().collect(),
+        });
+
+        // AWS Dev Account context
+        // Uses "aws-agent" which has: aws, shell, read_file, write_file
+        self.available_contexts.insert("aws-dev".to_string(), ContextConfig {
+            display_name: "AWS Dev Account".to_string(),
+            emoji: "☁️".to_string(),
+            description: "AWS development account".to_string(),
+            kubeconfig: None,
+            kubecontext: None,
+            namespace: None,
+            aws_profile: Some("development".to_string()),
+            aws_region: Some("us-west-2".to_string()),
+            agent_ref: Some("aws-agent".to_string()),  // examples/agents/aws-agent.yaml
+            tools: vec!["aws".to_string(), "terraform".to_string()],
+            env: [
+                ("AWS_PROFILE".to_string(), "development".to_string()),
+                ("AWS_REGION".to_string(), "us-west-2".to_string()),
+            ].into_iter().collect(),
+        });
+
+        // Database context - uses general assistant (no specific db agent yet)
+        self.available_contexts.insert("database".to_string(), ContextConfig {
+            display_name: "PostgreSQL".to_string(),
+            emoji: "🗄️".to_string(),
+            description: "Production database (read-only)".to_string(),
+            kubeconfig: None,
+            kubecontext: None,
+            namespace: None,
+            aws_profile: None,
+            aws_region: None,
+            agent_ref: Some("assistant".to_string()),  // examples/agents/assistant.yaml
+            tools: vec!["psql".to_string()],
+            env: std::collections::HashMap::new(),
+        });
+
+        // Prometheus/Monitoring context
+        // Uses "sre-agent" which has: prometheus_query, loki_query, kubectl, read_file, list_directory
+        self.available_contexts.insert("prometheus".to_string(), ContextConfig {
+            display_name: "Prometheus".to_string(),
+            emoji: "📊".to_string(),
+            description: "Monitoring and metrics".to_string(),
+            kubeconfig: None,
+            kubecontext: None,
+            namespace: None,
+            aws_profile: None,
+            aws_region: None,
+            agent_ref: Some("sre-agent".to_string()),  // examples/agents/sre-agent.yaml
+            tools: vec!["prometheus_query".to_string(), "loki_query".to_string()],
+            env: std::collections::HashMap::new(),
+        });
     }
 
     /// Get pending approvals (for external access like reaction handlers)
@@ -396,6 +551,12 @@ impl TriggerHandler {
             }
         }
 
+        // Check for callback:agent: or callback:flow: patterns (from inline keyboards)
+        // Telegram wraps callback data with "callback:" prefix, so we get "callback:callback:agent:name"
+        if message.text.starts_with("callback:") {
+            return self.handle_callback(&message, platform_impl).await;
+        }
+
         // First, check if we have a FlowRouter and try to match an AgentFlow
         if let Some(ref router) = self.flow_router {
             // Convert TriggerMessage to aof_triggers::TriggerMessage
@@ -425,10 +586,12 @@ impl TriggerHandler {
         let cmd = match TriggerCommand::parse(&message) {
             Ok(cmd) => cmd,
             Err(e) => {
-                // If we have a default agent configured, route natural language to it
-                if let Some(ref default_agent) = self.config.default_agent {
-                    info!("Routing natural language message to default agent: {}", default_agent);
-                    return self.handle_natural_language(&message, platform_impl, default_agent).await;
+                // Get user's session agent or fall back to default
+                let active_agent = self.get_user_agent(&message.user.id);
+
+                if let Some(ref agent_name) = active_agent {
+                    info!("Routing natural language message to agent '{}' for user '{}'", agent_name, message.user.id);
+                    return self.handle_natural_language(&message, platform_impl, agent_name).await;
                 }
 
                 warn!("Failed to parse command: {}", e);
@@ -481,6 +644,8 @@ impl TriggerHandler {
             CommandType::List => self.handle_list_command(cmd).await,
             CommandType::Help => Ok(self.handle_help_command(cmd).await),
             CommandType::Info => Ok(self.handle_info_command(cmd).await),
+            CommandType::Flows => Ok(self.handle_flows_command(cmd).await),
+            CommandType::Context => Ok(self.handle_context_command(cmd).await),
         }
     }
 
@@ -694,19 +859,36 @@ impl TriggerHandler {
         let help_text = r#"
 **AOF Bot Commands**
 
-**Basic Commands:**
-• `/run agent <name> <input>` - Run an agent
+**Quick Start:**
+• `/context` - Switch project/cluster (interactive)
+• `/flows` - Trigger a workflow (interactive)
+• `/help` - Show this help
+
+**Context Commands:**
+• `/context` - List contexts with inline selection
+• `/context <name>` - Switch to context directly
+• `/context info` - Show current context details
+
+Context = Agent + Connection. Each context has:
+• An agent (k8s-readonly, aws-readonly, etc.)
+• Connection params (cluster, AWS profile, etc.)
+• Tools available for that context
+
+**Other Commands:**
+• `/run agent <name> <input>` - Run specific agent directly
 • `/status task <id>` - Check task status
 • `/cancel task <id>` - Cancel a running task
 • `/list tasks` - List all tasks
-• `/help` - Show this help
+
+**Chat Mode:**
+Once you select a context, just type naturally. The agent for that context will respond.
 
 **Examples:**
-• `/run agent monitor Check server health`
-• `/status task trigger-user123-abc`
-• `/list tasks`
+• `/context` → tap "Cluster A" → "pod status"
+• `/context aws-dev` → "list ec2 instances"
+• `/flows` → tap approval-flow
 
-**Support:** https://github.com/yourusername/aof
+**Support:** https://github.com/agenticdevops/aof
         "#;
 
         TriggerResponseBuilder::new()
@@ -748,6 +930,383 @@ impl TriggerHandler {
         TriggerResponseBuilder::new()
             .text(info_text.trim())
             .build()
+    }
+
+    /// Handle /context command - show or switch contexts
+    ///
+    /// Context = Agent + Connection Parameters
+    /// Replaces both /env and /agents commands.
+    ///
+    /// Usage:
+    /// - `/context` - List available contexts with inline selection
+    /// - `/context <name>` - Switch to the specified context
+    /// - `/context info` - Show detailed current context info
+    async fn handle_context_command(&self, cmd: TriggerCommand) -> TriggerResponse {
+        // Check if user wants to switch or just list
+        let context_arg = cmd.args.first().map(|s| s.as_str());
+
+        // Get current context for this user
+        let current_context = self.get_user_context(&cmd.context.user_id);
+
+        match context_arg {
+            None => {
+                // List all contexts with inline keyboard
+                let mut builder = TriggerResponseBuilder::new();
+
+                let current_display = self.available_contexts
+                    .get(&current_context)
+                    .map(|c| format!("{} {} ({})", c.emoji, c.display_name, current_context))
+                    .unwrap_or_else(|| format!("*{}*", current_context));
+
+                builder = builder.text(format!(
+                    "**Select Context**\n\nCurrent: {}\n\nTap to switch:",
+                    current_display
+                ));
+
+                // Add context buttons
+                for entry in self.available_contexts.iter() {
+                    let ctx_name = entry.key();
+                    let ctx_config = entry.value();
+                    let is_current = ctx_name == &current_context;
+
+                    let label = if is_current {
+                        format!("{} {} ✓", ctx_config.emoji, ctx_config.display_name)
+                    } else {
+                        format!("{} {}", ctx_config.emoji, ctx_config.display_name)
+                    };
+
+                    builder = builder.action(Action {
+                        id: format!("ctx_{}", ctx_name),
+                        label,
+                        value: format!("callback:context:{}", ctx_name),
+                        style: if is_current { ActionStyle::Primary } else { ActionStyle::Secondary },
+                    });
+                }
+
+                builder.build()
+            }
+            Some("info") => {
+                // Show detailed info about current context
+                if let Some(ctx_config) = self.available_contexts.get(&current_context) {
+                    let agent_display = ctx_config.agent_ref.as_deref().unwrap_or("default");
+                    let tools_display = if ctx_config.tools.is_empty() {
+                        "none".to_string()
+                    } else {
+                        ctx_config.tools.join(", ")
+                    };
+
+                    let info_text = format!(
+                        "**Current Context: {} {}**\n\n\
+                        **Name:** {}\n\
+                        **Agent:** {}\n\
+                        **Tools:** {}\n\n\
+                        **Connection:**\n\
+                        • Kubernetes Context: {}\n\
+                        • Namespace: {}\n\
+                        • AWS Profile: {}\n\
+                        • AWS Region: {}\n\n\
+                        {}\n\n\
+                        Use `/context <name>` to switch contexts.",
+                        ctx_config.emoji,
+                        ctx_config.display_name,
+                        current_context,
+                        agent_display,
+                        tools_display,
+                        ctx_config.kubecontext.as_deref().unwrap_or("not set"),
+                        ctx_config.namespace.as_deref().unwrap_or("default"),
+                        ctx_config.aws_profile.as_deref().unwrap_or("not set"),
+                        ctx_config.aws_region.as_deref().unwrap_or("not set"),
+                        ctx_config.description
+                    );
+                    TriggerResponseBuilder::new()
+                        .text(info_text)
+                        .build()
+                } else {
+                    TriggerResponseBuilder::new()
+                        .text(format!("Context '{}' not found.", current_context))
+                        .error()
+                        .build()
+                }
+            }
+            Some(ctx_name) => {
+                // Switch to the specified context
+                if self.available_contexts.contains_key(ctx_name) {
+                    self.set_user_context(&cmd.context.user_id, ctx_name);
+
+                    let ctx_config = self.available_contexts.get(ctx_name).unwrap();
+                    let agent_display = ctx_config.agent_ref.as_deref().unwrap_or("default");
+                    let tools_display = if ctx_config.tools.is_empty() {
+                        "standard".to_string()
+                    } else {
+                        ctx_config.tools.join(", ")
+                    };
+
+                    let response_text = format!(
+                        "✅ Switched to {} *{}*\n\n\
+                        🔄 Switching agent: {}\n\n\
+                        **Connection:**\n\
+                        • Cluster: {}\n\
+                        • Namespace: {}\n\
+                        • Region: {}\n\n\
+                        **Tools Available:**\n\
+                        • {}\n\n\
+                        {}",
+                        ctx_config.emoji,
+                        ctx_config.display_name,
+                        agent_display,
+                        ctx_config.kubecontext.as_deref().unwrap_or("not set"),
+                        ctx_config.namespace.as_deref().unwrap_or("default"),
+                        ctx_config.aws_region.as_deref().unwrap_or("not set"),
+                        tools_display,
+                        ctx_config.description
+                    );
+
+                    TriggerResponseBuilder::new()
+                        .text(response_text)
+                        .success()
+                        .build()
+                } else {
+                    // Unknown context
+                    let available: Vec<String> = self.available_contexts
+                        .iter()
+                        .map(|e| e.key().clone())
+                        .collect();
+
+                    TriggerResponseBuilder::new()
+                        .text(format!(
+                            "Unknown context: '{}'\n\nAvailable: {}",
+                            ctx_name,
+                            available.join(", ")
+                        ))
+                        .error()
+                        .build()
+                }
+            }
+        }
+    }
+
+    /// Handle /flows command - show available flows with inline keyboard
+    ///
+    /// Returns a response with action buttons for each available flow.
+    /// Users can click to trigger a flow execution.
+    async fn handle_flows_command(&self, _cmd: TriggerCommand) -> TriggerResponse {
+        // Get flows from the router if available
+        let flows: Vec<String> = if let Some(ref router) = self.flow_router {
+            router.list_flows()
+        } else {
+            Vec::new()
+        };
+
+        if flows.is_empty() {
+            return TriggerResponseBuilder::new()
+                .text("No flows available. Add flows to the flows directory.")
+                .warning()
+                .build();
+        }
+
+        // Build action buttons for each flow
+        let mut builder = TriggerResponseBuilder::new()
+            .text("**Select a Flow**\n\nTap to run:");
+
+        for flow_name in flows.iter().take(8) { // Limit to 8 flows for UI
+            builder = builder.action(Action {
+                id: format!("flow_{}", flow_name),
+                label: flow_name.clone(),
+                value: format!("callback:flow:{}", flow_name),
+                style: ActionStyle::Secondary,
+            });
+        }
+
+        if flows.len() > 8 {
+            builder = builder.text(format!(
+                "\n\n_...and {} more flows._",
+                flows.len() - 8
+            ));
+        }
+
+        builder.build()
+    }
+
+    /// Set the active context for a user session
+    /// Context = Agent + Connection Parameters
+    pub fn set_user_context(&self, user_id: &str, ctx_name: &str) {
+        self.user_context_sessions.insert(user_id.to_string(), ctx_name.to_string());
+        info!("Set context '{}' for user '{}'", ctx_name, user_id);
+    }
+
+    /// Get the active context for a user session
+    /// Returns the context name (defaults to first available or "cluster-a")
+    pub fn get_user_context(&self, user_id: &str) -> String {
+        self.user_context_sessions
+            .get(user_id)
+            .map(|v| v.clone())
+            .unwrap_or_else(|| {
+                // Return first available context or default
+                self.available_contexts
+                    .iter()
+                    .next()
+                    .map(|e| e.key().clone())
+                    .unwrap_or_else(|| "cluster-a".to_string())
+            })
+    }
+
+    /// Get the agent for the user's current context
+    /// Used by handle_natural_language to determine which agent to use
+    pub fn get_user_agent(&self, user_id: &str) -> Option<String> {
+        let ctx_name = self.get_user_context(user_id);
+        self.available_contexts
+            .get(&ctx_name)
+            .and_then(|ctx| ctx.agent_ref.clone())
+            .or_else(|| self.config.default_agent.clone())
+    }
+
+    /// Handle callback from inline keyboard (context/flow selection)
+    ///
+    /// Callback data format:
+    /// - Context selection: `callback:context:<context_name>`
+    /// - Flow trigger: `callback:flow:<flow_name>`
+    ///
+    /// Telegram wraps with additional "callback:" so we receive "callback:callback:context:name"
+    async fn handle_callback(
+        &self,
+        message: &TriggerMessage,
+        platform_impl: &Arc<dyn TriggerPlatform>,
+    ) -> AofResult<()> {
+        // Strip the outer "callback:" prefix from Telegram platform wrapper
+        let callback_data = message.text.trim_start_matches("callback:").trim();
+
+        info!("Processing callback - raw: '{}', stripped: '{}'", message.text, callback_data);
+
+        // Parse callback format: "callback:context:name" or "callback:flow:name"
+        // Also support direct format: "context:name" or "flow:name" (without callback: prefix)
+        let parts: Vec<&str> = callback_data.splitn(3, ':').collect();
+
+        // Determine the callback type and value
+        let (callback_type, callback_value) = if parts.len() >= 3 && parts[0] == "callback" {
+            // Format: callback:context:name or callback:flow:name
+            (parts[1], parts[2])
+        } else if parts.len() >= 2 && (parts[0] == "context" || parts[0] == "flow") {
+            // Format: context:name or flow:name (direct format)
+            (parts[0], parts[1])
+        } else {
+            warn!("Invalid callback format: '{}' (parts: {:?})", callback_data, parts);
+            let response = TriggerResponseBuilder::new()
+                .text(format!("Invalid selection format. Please try again.\nReceived: {}", callback_data))
+                .error()
+                .build();
+            let _ = platform_impl.send_response(&message.channel_id, response).await;
+            return Ok(());
+        };
+
+        info!("Parsed callback - type: '{}', value: '{}'", callback_type, callback_value);
+
+        match callback_type {
+            "context" => {
+                // Switch to the selected context
+                // Context = Agent + Connection Parameters
+                if self.available_contexts.contains_key(callback_value) {
+                    self.set_user_context(&message.user.id, callback_value);
+
+                    let ctx_config = self.available_contexts.get(callback_value).unwrap();
+                    let agent_display = ctx_config.agent_ref.as_deref().unwrap_or("default");
+                    let tools_display = if ctx_config.tools.is_empty() {
+                        "standard".to_string()
+                    } else {
+                        ctx_config.tools.join(", ")
+                    };
+
+                    let response_text = format!(
+                        "✅ Switched to {} *{}*\n\n\
+                        🔄 Switching agent: {}\n\n\
+                        **Connection:**\n\
+                        • Cluster: {}\n\
+                        • Namespace: {}\n\
+                        • Region: {}\n\n\
+                        **Tools Available:**\n\
+                        • {}\n\n\
+                        {}",
+                        ctx_config.emoji,
+                        ctx_config.display_name,
+                        agent_display,
+                        ctx_config.kubecontext.as_deref().unwrap_or("not set"),
+                        ctx_config.namespace.as_deref().unwrap_or("default"),
+                        ctx_config.aws_region.as_deref().unwrap_or("not set"),
+                        tools_display,
+                        ctx_config.description
+                    );
+
+                    let response = TriggerResponseBuilder::new()
+                        .text(response_text)
+                        .success()
+                        .build();
+                    let _ = platform_impl.send_response(&message.channel_id, response).await;
+                } else {
+                    let response = TriggerResponseBuilder::new()
+                        .text(format!("Context not found: {}", callback_value))
+                        .error()
+                        .build();
+                    let _ = platform_impl.send_response(&message.channel_id, response).await;
+                }
+            }
+            "flow" => {
+                // Trigger the selected flow
+                info!("Triggering flow: {}", callback_value);
+
+                // Send acknowledgment
+                let ack = TriggerResponseBuilder::new()
+                    .text(format!("Running flow: *{}*...", callback_value))
+                    .build();
+                let _ = platform_impl.send_response(&message.channel_id, ack).await;
+
+                // Execute the flow if we have a router
+                if let Some(ref router) = self.flow_router {
+                    if let Some(flow) = router.get_flow(callback_value) {
+                        // Create a synthetic message to trigger the flow
+                        let synthetic_msg = TriggerMessage {
+                            id: format!("flow-{}", uuid::Uuid::new_v4()),
+                            platform: message.platform.clone(),
+                            channel_id: message.channel_id.clone(),
+                            user: message.user.clone(),
+                            text: format!("Run flow {}", callback_value),
+                            timestamp: chrono::Utc::now(),
+                            metadata: message.metadata.clone(),
+                            thread_id: message.thread_id.clone(),
+                            reply_to: None,
+                        };
+
+                        let flow_match = FlowMatch {
+                            flow: flow.clone(),
+                            score: 100,
+                            reason: crate::flow::MatchReason::ExplicitDefault,
+                        };
+
+                        return self.execute_agentflow(platform_impl, &synthetic_msg, flow_match).await;
+                    } else {
+                        let response = TriggerResponseBuilder::new()
+                            .text(format!("Flow not found: {}", callback_value))
+                            .error()
+                            .build();
+                        let _ = platform_impl.send_response(&message.channel_id, response).await;
+                    }
+                } else {
+                    let response = TriggerResponseBuilder::new()
+                        .text("No flows available.")
+                        .error()
+                        .build();
+                    let _ = platform_impl.send_response(&message.channel_id, response).await;
+                }
+            }
+            _ => {
+                warn!("Unknown callback type: {}", callback_type);
+                let response = TriggerResponseBuilder::new()
+                    .text(format!("Unknown selection type: {}", callback_type))
+                    .error()
+                    .build();
+                let _ = platform_impl.send_response(&message.channel_id, response).await;
+            }
+        }
+
+        Ok(())
     }
 
     /// Handle parse error

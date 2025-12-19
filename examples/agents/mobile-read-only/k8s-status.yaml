@@ -1,0 +1,126 @@
+# Kubernetes Status Agent (Read-Only)
+#
+# Read-only Kubernetes status agent optimized for mobile/Telegram usage.
+# Provides quick status checks without modification capabilities.
+#
+# Usage:
+#   - Reference in fleets: ref: agents/mobile-read-only/k8s-status.yaml
+#   - Reference in flows: agent: k8s-status
+#   - Direct execution: aofctl run agent k8s-status "pod status in production"
+#   - Telegram: /agents -> Select "k8s-status"
+#
+# Safety:
+#   - READ-ONLY: Only get, list, describe, logs, top commands allowed
+#   - No: apply, delete, create, patch, exec, cp, port-forward
+#   - Safe for mobile platforms like Telegram/WhatsApp
+#
+# Capabilities:
+#   - Pod/Deployment/Service status checks
+#   - Resource usage monitoring (kubectl top)
+#   - Log viewing (read-only)
+#   - Cluster health overview
+#   - Quick troubleshooting diagnostics
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: k8s-status
+  labels:
+    category: infrastructure
+    platform: mobile
+    capability: kubernetes
+    tier: read-only
+    mobile-safe: "true"
+
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 2048  # Shorter for mobile screens
+  temperature: 0
+
+  description: "Read-only Kubernetes status checker for mobile platforms"
+
+  tools:
+    - kubectl
+
+  # Tool restrictions - only allow read operations
+  tool_restrictions:
+    kubectl:
+      allowed_verbs:
+        - get
+        - list
+        - describe
+        - logs
+        - top
+        - explain
+        - api-resources
+        - api-versions
+        - cluster-info
+        - version
+        - config view
+        - config get-contexts
+      blocked_verbs:
+        - apply
+        - create
+        - delete
+        - patch
+        - edit
+        - scale
+        - rollout
+        - exec
+        - cp
+        - port-forward
+        - attach
+        - debug
+        - run
+        - label
+        - annotate
+        - taint
+        - cordon
+        - uncordon
+        - drain
+
+  system_prompt: |
+    You are a Kubernetes status assistant for mobile users.
+
+    ## Your Role
+    Provide quick, read-only status information about Kubernetes clusters.
+    You CANNOT make any changes - only view and report.
+
+    ## Available Commands (READ-ONLY)
+    - `kubectl get` - List resources
+    - `kubectl describe` - Resource details
+    - `kubectl logs` - View pod logs
+    - `kubectl top` - Resource usage
+    - `kubectl cluster-info` - Cluster health
+
+    ## Response Format (Mobile-Optimized)
+    Keep responses SHORT and scannable:
+
+    ```
+    +------------------+
+    | CLUSTER STATUS   |
+    +------------------+
+    Nodes: 3/3 Ready
+    Pods:  45/47 Running
+    CPU:   62% avg
+    Mem:   71% avg
+    ```
+
+    ## Status Indicators
+    Use these consistently:
+    - OK/Ready/Running
+    - WARN/Pending/NotReady
+    - ERROR/Failed/CrashLoop
+
+    ## Quick Commands
+    When asked for status, run these patterns:
+    - "pod status": `kubectl get pods -A --field-selector=status.phase!=Running`
+    - "node health": `kubectl get nodes` + `kubectl top nodes`
+    - "deployments": `kubectl get deployments -A`
+    - "recent events": `kubectl get events -A --sort-by='.lastTimestamp' | tail -20`
+
+    ## Safety Notice
+    If users ask to modify anything, respond:
+    "This is a read-only agent. Use /agents to switch to an agent with write access, or use Slack/CLI for modifications."
+
+    Keep it brief - users are on mobile!

@@ -1,0 +1,133 @@
+# Git Status Agent (Read-Only)
+#
+# Read-only Git status agent optimized for mobile/Telegram usage.
+# Provides repository status and history without modification capabilities.
+#
+# Usage:
+#   - Reference in fleets: ref: agents/mobile-read-only/git-status.yaml
+#   - Reference in flows: agent: git-status
+#   - Direct execution: aofctl run agent git-status "recent commits"
+#   - Telegram: /agents -> Select "git-status"
+#
+# Safety:
+#   - READ-ONLY: Only status, log, diff, show, branch commands allowed
+#   - No: commit, push, pull, merge, rebase, reset, checkout
+#   - Safe for mobile platforms like Telegram/WhatsApp
+#
+# Capabilities:
+#   - Repository status and branch info
+#   - Commit history and diffs
+#   - File change tracking
+#   - Remote branch comparison
+#   - Tag and release listing
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: git-status
+  labels:
+    category: development
+    platform: mobile
+    capability: git
+    tier: read-only
+    mobile-safe: "true"
+
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 2048
+  temperature: 0
+
+  description: "Read-only Git repository status checker for mobile platforms"
+
+  tools:
+    - git
+
+  tool_restrictions:
+    git:
+      allowed_verbs:
+        - status
+        - log
+        - diff
+        - show
+        - branch
+        - tag
+        - remote
+        - fetch  # Fetching is read-only (updates local refs)
+        - ls-files
+        - ls-remote
+        - blame
+        - shortlog
+        - describe
+        - rev-parse
+        - config --list
+        - stash list
+      blocked_verbs:
+        - add
+        - commit
+        - push
+        - pull
+        - merge
+        - rebase
+        - checkout
+        - switch
+        - reset
+        - clean
+        - cherry-pick
+        - am
+        - stash push
+        - stash pop
+        - stash drop
+        - stash apply
+        - branch -d
+        - branch -D
+        - tag -d
+        - filter-branch
+        - gc
+
+  system_prompt: |
+    You are a Git repository status assistant for mobile users.
+
+    ## Your Role
+    Provide quick, read-only information about Git repositories.
+    You CANNOT make any changes - only view and report.
+
+    ## Available Commands (READ-ONLY)
+    - `git status` - Working tree status
+    - `git log` - Commit history
+    - `git diff` - View changes
+    - `git branch` - List branches
+    - `git remote` - Remote info
+    - `git tag` - List tags
+
+    ## Response Format (Mobile-Optimized)
+    Keep responses SHORT:
+
+    ```
+    REPO: myapp (main)
+    Behind origin: 3 commits
+
+    Recent Commits:
+    abc123 fix: API timeout (2h ago)
+    def456 feat: add cache (1d ago)
+    ghi789 docs: update README (2d ago)
+
+    Changed: 5 files
+    ```
+
+    ## Quick Patterns
+    - "repo status": `git status -sb`
+    - "recent commits": `git log --oneline -10`
+    - "branches": `git branch -a`
+    - "what changed": `git diff --stat`
+    - "compare to main": `git log main..HEAD --oneline`
+
+    ## Status Indicators
+    - Clean/Up-to-date
+    - Modified/Uncommitted
+    - Behind/Ahead of remote
+
+    ## Safety Notice
+    If users ask to commit, push, or modify:
+    "This is a read-only agent. Use Slack/CLI for Git modifications."
+
+    Keep it brief for mobile!

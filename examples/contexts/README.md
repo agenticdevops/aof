@@ -1,82 +1,145 @@
 # Execution Contexts
 
-Contexts define **environment-specific configuration**: kubeconfig, approval rules, audit logging, resource limits.
+**Context = Agent + Connection Parameters**
+
+Contexts define what you're connected to when chatting with the bot. Each context bundles:
+- **Agent** - The AI assistant with specific tools (k8s-readonly, aws-readonly, etc.)
+- **Connection** - Where to connect (kubeconfig, AWS profile, etc.)
+- **Environment Variables** - Runtime configuration
 
 ## Available Contexts
 
-- **`prod.yaml`** - Production environment
-  - Strict approvals for destructive ops
-  - Full audit logging to S3
-  - Rate limiting: 20 req/min
-  - Timeout: 5 minutes
+### Project/Cluster Contexts (New!)
 
-- **`staging.yaml`** - Staging environment
-  - Relaxed approvals
-  - Basic audit logging
-  - Rate limiting: 40 req/min
-  - Timeout: 3 minutes
+Use these with the `/context` command:
 
-- **`dev.yaml`** - Development environment
-  - No approvals
-  - No audit logging
-  - Rate limiting: 100 req/min
-  - Timeout: 1 minute
+- **`k8s-cluster-a.yaml`** - Kubernetes Cluster A (EKS)
+  - Agent: k8s-readonly (kubectl, helm)
+  - Connection: cluster-a-prod context
+  - Region: us-east-1
 
-## What Contexts Configure
+- **`aws-dev.yaml`** - AWS Development Account
+  - Agent: aws-readonly (aws, terraform)
+  - Connection: development profile
+  - Region: us-west-2
 
-\`\`\`yaml
+- **`database.yaml`** - PostgreSQL Database
+  - Agent: db-readonly (psql)
+  - Connection: production database
+  - Read-only access
+
+- **`prometheus.yaml`** - Monitoring Stack
+  - Agent: prometheus-query (promql)
+  - Connection: prometheus/grafana URLs
+
+### Bot-per-Environment Contexts
+
+For deploying separate bots per environment:
+
+- **`telegram-prod.yaml`** - Production bot configuration
+- **`telegram-dev.yaml`** - Development bot configuration
+- **`telegram-personal.yaml`** - Personal testing bot
+
+### Environment Contexts (Legacy)
+
+For flow-level environment configuration:
+
+- **`prod.yaml`** - Production environment policies
+- **`staging.yaml`** - Staging environment policies
+- **`dev.yaml`** - Development environment policies
+
+## Context Resource Definition
+
+```yaml
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: cluster-a
+  labels:
+    type: kubernetes
+    region: us-east-1
+
 spec:
-  # K8s cluster access
-  kubeconfig: /path/to/kubeconfig
-  namespace: default
-  cluster_name: prod-cluster
+  # Display for /context command
+  display:
+    name: "Cluster A (EKS)"
+    emoji: "🔷"
+    description: "Production EKS cluster"
 
-  # Approval workflow
-  approval:
-    enabled: true
-    required_for: [delete, scale_down]
-    allowed_users: [U012USER1, U012USER2]
-    timeout_seconds: 300
-
-  # Audit logging
-  audit:
-    enabled: true
-    log_commands: true
-    destination: s3://audit-logs/
-
-  # Resource limits
-  limits:
-    max_concurrent_operations: 5
-    rate_limit_per_minute: 20
-    timeout_seconds: 300
+  # Connection parameters
+  connection:
+    kubeconfig: ~/.kube/config
+    kubecontext: cluster-a-prod
+    namespace: default
 
   # Environment variables
   env:
-    ENVIRONMENT: production
-    LOG_LEVEL: info
+    AWS_PROFILE: production
+    AWS_REGION: us-east-1
 
-  # Notifications
-  notifications:
-    slack_channel: "#prod-alerts"
-\`\`\`
+  # Agent to activate with this context
+  agent:
+    ref: agents/k8s-readonly.yaml
+
+  # Available tools (informational)
+  tools:
+    - kubectl
+    - helm
+```
 
 ## Usage
 
-Contexts are referenced in **bindings**:
+### From Chat Platforms
 
-\`\`\`yaml
-spec:
-  trigger: triggers/slack-prod.yaml
-  flow: flows/k8s-ops-flow.yaml
-  context: contexts/prod.yaml  # Environment config
-\`\`\`
+```
+/context              # List contexts with inline buttons
+/context cluster-a    # Switch to cluster-a context
+/context info         # Show current context details
+```
+
+### In Flows
+
+Flows automatically receive context variables:
+
+```yaml
+nodes:
+  - name: execute
+    type: shell
+    config:
+      command: |
+        kubectl --context=${context.cluster} \
+                --namespace=${context.namespace} \
+                get pods
+```
+
+### Bot-per-Environment Deployment
+
+Deploy separate bots for each environment:
+
+```bash
+# Development bot (permissive)
+TELEGRAM_BOT_TOKEN=$DEV_BOT_TOKEN aofctl serve \
+  --contexts-dir=./contexts/dev/
+
+# Production bot (strict, read-only)
+TELEGRAM_BOT_TOKEN=$PROD_BOT_TOKEN aofctl serve \
+  --contexts-dir=./contexts/prod/
+```
 
 ## Multi-Tenant Pattern
 
-Use different contexts for same flow:
+Use different contexts within the same bot:
 
-| Binding | Trigger | Flow | Context | Result |
-|---------|---------|------|---------|--------|
-| prod-slack-k8s | Slack #prod | k8s-ops | prod | Strict, audited |
-| staging-slack-k8s | Slack #staging | k8s-ops | staging | Relaxed |
-| dev-slack-k8s | Slack #dev | k8s-ops | dev | Permissive |
+| Context | Agent | Connection | Use Case |
+|---------|-------|------------|----------|
+| cluster-a | k8s-readonly | EKS us-east-1 | K8s operations |
+| cluster-b | k8s-readonly | GKE us-central1 | K8s operations |
+| aws-dev | aws-readonly | AWS development | Cloud resources |
+| database | db-readonly | PostgreSQL | Database queries |
+| prometheus | prometheus-query | Prometheus | Monitoring |
+
+## See Also
+
+- [Context Switching Guide](../../docs/guides/context-switching.md)
+- [Agent Reference](../agents/README.md)
+- [Flow Reference](../flows/README.md)

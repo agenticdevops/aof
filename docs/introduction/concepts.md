@@ -221,33 +221,59 @@ spec:
 | `Schedule` | Cron expression | Daily reports, health checks |
 | `Manual` | CLI invocation | Testing, ad-hoc runs |
 
-## 4. Context (Future)
+## 4. Context
 
-A **Context** defines environment-specific configuration that can be shared across flows.
+A **Context** bundles an Agent with its connection parameters. It defines what you're connected to when chatting with the bot.
 
-> **Status**: Planned for v1alpha2 - not yet implemented. Currently, context is embedded in AgentFlow specs.
+**Key Concept**: Context = Agent + Connection Parameters
 
 ### When to Use
-- ✅ Separate prod/staging/dev configurations
+- ✅ Switch between different clusters/projects in chat
+- ✅ Bundle agent tools with connection configuration
 - ✅ Multi-cluster Kubernetes setups
-- ✅ Environment-specific credentials
-- ✅ Reusable configuration across flows
+- ✅ Different cloud accounts (AWS, GCP, etc.)
 
-### Planned Example
+### Example
 ```yaml
-apiVersion: aof.dev/v1alpha2
+apiVersion: aof.dev/v1
 kind: Context
 metadata:
-  name: prod-cluster
+  name: cluster-a
+  labels:
+    type: kubernetes
+    region: us-east-1
+
 spec:
-  kubeconfig: ${KUBECONFIG_PROD}
-  namespace: production
-  cluster: prod-us-east-1
+  display:
+    name: "Cluster A (EKS)"
+    emoji: "🔷"
+    description: "Production EKS cluster in us-east-1"
+
+  connection:
+    kubeconfig: ~/.kube/config
+    kubecontext: cluster-a-prod
+    namespace: default
+
   env:
-    REQUIRE_APPROVAL: "true"
-    APPROVAL_TIMEOUT: "300"
-    PAGERDUTY_ROUTING_KEY: ${PD_ROUTING_KEY_PROD}
+    AWS_PROFILE: production
+    AWS_REGION: us-east-1
+
+  agent:
+    ref: agents/k8s-readonly.yaml
+
+  tools:
+    - kubectl
+    - helm
 ```
+
+### Usage
+```
+/context              # List contexts with inline buttons
+/context cluster-a    # Switch to cluster-a
+/context info         # Show current context
+```
+
+See [Context Switching Guide](../guides/context-switching.md) for details.
 
 ## 5. Trigger (Future)
 

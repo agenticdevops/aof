@@ -1,0 +1,25 @@
+[package]
+name = "aof-viz"
+version = "0.1.11"
+edition = "2021"
+description = "ASCII visualization for AOF agent execution and workflows"
+license = "Apache-2.0"
+repository = "https://github.com/agenticdevops/aof"
+keywords = ["aof", "visualization", "ascii", "terminal"]
+categories = ["command-line-utilities", "visualization"]
+
+[dependencies]
+aof-core = { path = "../aof-core", version = "0.1.11" }
+
+# Terminal colors and styling
+colored = "2.1"
+
+# Unicode box drawing
+unicode-width = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4"

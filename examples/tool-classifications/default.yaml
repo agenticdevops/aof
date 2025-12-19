@@ -1,0 +1,430 @@
+# Default Tool Classifications
+#
+# This configuration defines verb classifications for common DevOps tools.
+# Used by the safety layer to enforce platform-aware policies.
+#
+# Classification Priority:
+# 1. Dangerous patterns (highest priority - always checked first)
+# 2. Tool-specific verbs
+# 3. Generic patterns
+# 4. Default: assume 'write' (fail secure)
+
+apiVersion: aof.dev/v1
+kind: ToolClassification
+metadata:
+  name: default-classifications
+  labels:
+    scope: builtin
+
+spec:
+  # ==========================================================================
+  # Tool-Specific Classifications
+  # ==========================================================================
+
+  tools:
+    # ------------------------------------------------------------------------
+    # Kubernetes (kubectl)
+    # ------------------------------------------------------------------------
+    kubectl:
+      read:
+        - get
+        - list
+        - describe
+        - logs
+        - top
+        - explain
+        - auth
+        - api-resources
+        - api-versions
+        - config view
+        - config get-contexts
+        - cluster-info
+        - version
+      write:
+        - apply
+        - create
+        - patch
+        - scale
+        - set
+        - label
+        - annotate
+        - taint
+        - cordon
+        - uncordon
+        - drain
+        - rollout
+        - edit
+        - replace
+        - autoscale
+        - expose
+      delete:
+        - delete
+      dangerous:
+        - exec
+        - cp
+        - port-forward
+        - attach
+        - debug
+        - run --rm
+
+    # ------------------------------------------------------------------------
+    # Docker
+    # ------------------------------------------------------------------------
+    docker:
+      read:
+        - ps
+        - images
+        - logs
+        - inspect
+        - info
+        - version
+        - stats
+        - top
+        - history
+        - diff
+        - events
+        - port
+        - network ls
+        - network inspect
+        - volume ls
+        - volume inspect
+        - system df
+        - container ls
+      write:
+        - run
+        - build
+        - push
+        - pull
+        - tag
+        - start
+        - restart
+        - pause
+        - unpause
+        - commit
+        - import
+        - load
+        - save
+        - network create
+        - volume create
+      delete:
+        - rm
+        - rmi
+        - stop
+        - kill
+        - prune
+        - network rm
+        - volume rm
+        - system prune
+      dangerous:
+        - exec
+        - attach
+        - --privileged
+
+    # ------------------------------------------------------------------------
+    # Helm
+    # ------------------------------------------------------------------------
+    helm:
+      read:
+        - list
+        - status
+        - get
+        - get all
+        - get hooks
+        - get manifest
+        - get notes
+        - get values
+        - show
+        - show all
+        - show chart
+        - show readme
+        - show values
+        - history
+        - search
+        - search hub
+        - search repo
+        - template
+        - verify
+        - repo list
+        - env
+        - version
+      write:
+        - install
+        - upgrade
+        - rollback
+        - repo add
+        - repo update
+        - plugin install
+        - pull
+        - push
+        - package
+      delete:
+        - uninstall
+        - repo remove
+        - plugin uninstall
+      dangerous: []
+
+    # ------------------------------------------------------------------------
+    # Terraform
+    # ------------------------------------------------------------------------
+    terraform:
+      read:
+        - show
+        - state list
+        - state show
+        - plan
+        - output
+        - providers
+        - validate
+        - version
+        - fmt -check
+        - graph
+        - workspace list
+      write:
+        - apply
+        - import
+        - taint
+        - untaint
+        - refresh
+        - init
+        - workspace new
+        - workspace select
+        - fmt
+      delete:
+        - destroy
+        - state rm
+        - workspace delete
+      dangerous:
+        - apply -auto-approve
+        - destroy -auto-approve
+
+    # ------------------------------------------------------------------------
+    # Git
+    # ------------------------------------------------------------------------
+    git:
+      read:
+        - status
+        - log
+        - diff
+        - show
+        - branch
+        - tag
+        - remote
+        - fetch
+        - ls-files
+        - ls-remote
+        - blame
+        - shortlog
+        - describe
+        - rev-parse
+        - config --list
+        - stash list
+      write:
+        - add
+        - commit
+        - push
+        - pull
+        - merge
+        - rebase
+        - checkout
+        - switch
+        - stash
+        - cherry-pick
+        - am
+        - format-patch
+        - tag -a
+        - branch -m
+        - config --global
+      delete:
+        - reset --hard
+        - clean -fd
+        - branch -D
+        - push --delete
+        - tag -d
+        - stash drop
+        - stash clear
+      dangerous:
+        - push --force
+        - push -f
+        - rebase -i
+        - filter-branch
+        - gc --prune
+
+    # ------------------------------------------------------------------------
+    # AWS CLI
+    # ------------------------------------------------------------------------
+    aws:
+      read:
+        - describe
+        - list
+        - get
+        - s3 ls
+        - sts get-caller-identity
+        - iam list-users
+        - iam list-roles
+        - ec2 describe-instances
+        - rds describe-db-instances
+        - eks describe-cluster
+        - logs get-log-events
+        - cloudwatch get-metric-data
+      write:
+        - create
+        - put
+        - update
+        - start
+        - run
+        - s3 cp
+        - s3 sync
+        - ec2 run-instances
+        - ec2 start-instances
+        - ec2 stop-instances
+        - rds start-db-instance
+        - rds stop-db-instance
+        - eks update-cluster
+        - lambda update-function
+      delete:
+        - delete
+        - terminate
+        - s3 rm
+        - ec2 terminate-instances
+        - rds delete-db-instance
+        - eks delete-cluster
+        - lambda delete-function
+      dangerous:
+        - iam create-user
+        - iam create-access-key
+        - iam attach-policy
+        - iam put-role-policy
+        - s3 rm --recursive
+        - s3api delete-bucket
+
+    # ------------------------------------------------------------------------
+    # Google Cloud (gcloud)
+    # ------------------------------------------------------------------------
+    gcloud:
+      read:
+        - describe
+        - list
+        - get
+        - info
+        - config list
+        - auth list
+        - compute instances list
+        - container clusters list
+        - sql instances list
+        - logging read
+      write:
+        - create
+        - update
+        - set
+        - deploy
+        - compute instances create
+        - compute instances start
+        - compute instances stop
+        - container clusters create
+        - container clusters resize
+        - sql instances patch
+        - run deploy
+      delete:
+        - delete
+        - compute instances delete
+        - container clusters delete
+        - sql instances delete
+      dangerous:
+        - iam service-accounts create
+        - iam service-accounts keys create
+
+    # ------------------------------------------------------------------------
+    # Prometheus (promtool)
+    # ------------------------------------------------------------------------
+    promtool:
+      read:
+        - query
+        - query instant
+        - query range
+        - check config
+        - check rules
+        - check metrics
+        - tsdb list
+      write:
+        - push metrics
+      delete: []
+      dangerous: []
+
+    # ------------------------------------------------------------------------
+    # systemctl
+    # ------------------------------------------------------------------------
+    systemctl:
+      read:
+        - status
+        - list-units
+        - list-unit-files
+        - is-active
+        - is-enabled
+        - show
+        - cat
+      write:
+        - start
+        - stop
+        - restart
+        - reload
+        - enable
+        - disable
+      delete:
+        - mask
+        - unmask
+      dangerous:
+        - daemon-reload
+        - daemon-reexec
+
+  # ==========================================================================
+  # Generic Pattern Fallback
+  # ==========================================================================
+  #
+  # For tools not explicitly defined above, these regex patterns are used.
+  # Patterns are evaluated in order: dangerous -> read -> write -> delete
+
+  generic_patterns:
+    read:
+      # Command starts with read verbs
+      - "^(get|list|show|describe|status|info|inspect|cat|head|tail|watch|ls|ps|version|check|validate)\\b"
+      # Common read flags
+      - "\\b(--help|-h|--version|--dry-run)$"
+      # Query-like patterns
+      - "\\bquery\\b"
+      - "\\bfetch\\b"
+      - "\\bread\\b"
+      - "\\bview\\b"
+
+    write:
+      # Command starts with write verbs
+      - "^(create|apply|patch|update|set|add|push|install|upgrade|run|start|exec|deploy|scale|restart|enable|configure)\\b"
+      # Common write patterns
+      - "\\bwrite\\b"
+      - "\\bsync\\b"
+      - "\\bimport\\b"
+      - "\\bsave\\b"
+
+    delete:
+      # Command starts with delete verbs
+      - "^(delete|destroy|remove|rm|uninstall|terminate|kill|stop|drop|purge|prune|disable)\\b"
+      # Destructive patterns
+      - "\\btruncate\\b"
+      - "\\bclear\\b"
+      - "\\bwipe\\b"
+      - "\\bclean\\b"
+
+    dangerous:
+      # Force flags
+      - "\\b(--force|-f)\\b"
+      # Recursive operations on delete
+      - "\\b(--all|--recursive|-r|-R)\\b.*\\b(delete|rm|remove)\\b"
+      - "\\b(delete|rm|remove)\\b.*\\b(--all|--recursive|-r|-R)\\b"
+      # Privilege escalation
+      - "\\bsudo\\b"
+      # Classic dangerous patterns
+      - "\\brm\\s+-rf\\b"
+      - "\\brm\\s+-r\\b"
+      # Shell redirects (potential data exfil)
+      - "\\b>\\s*/"
+      # Credential operations
+      - "\\b(password|secret|token|credential)\\b.*\\b(create|set|add)\\b"

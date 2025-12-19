@@ -1,0 +1,133 @@
+# Prometheus Query Agent (Read-Only)
+#
+# Read-only Prometheus query agent optimized for mobile/Telegram usage.
+# Provides metrics querying and alerting status without modification capabilities.
+#
+# Usage:
+#   - Reference in fleets: ref: agents/mobile-read-only/prometheus-query.yaml
+#   - Reference in flows: agent: prometheus-query
+#   - Direct execution: aofctl run agent prometheus-query "cpu usage last hour"
+#   - Telegram: /agents -> Select "prometheus-query"
+#
+# Safety:
+#   - READ-ONLY: Only query operations allowed
+#   - No: rule modifications, alert silencing, config changes
+#   - Safe for mobile platforms like Telegram/WhatsApp
+#
+# Capabilities:
+#   - PromQL instant and range queries
+#   - Alert status checking
+#   - Target health monitoring
+#   - Metrics discovery
+#   - Basic visualization with ASCII
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: prometheus-query
+  labels:
+    category: observability
+    platform: mobile
+    capability: prometheus
+    tier: read-only
+    mobile-safe: "true"
+
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 2048
+  temperature: 0
+
+  description: "Read-only Prometheus metrics query agent for mobile platforms"
+
+  tools:
+    - promtool
+    - shell  # For curl to Prometheus API
+
+  tool_restrictions:
+    promtool:
+      allowed_verbs:
+        - query
+        - query instant
+        - query range
+        - check config
+        - check rules
+        - tsdb list
+      blocked_verbs:
+        - push
+    shell:
+      # Only allow curl GET requests to Prometheus
+      allowed_patterns:
+        - "curl.*prometheus.*/api/v1/query"
+        - "curl.*prometheus.*/api/v1/query_range"
+        - "curl.*prometheus.*/api/v1/alerts"
+        - "curl.*prometheus.*/api/v1/targets"
+        - "curl.*prometheus.*/api/v1/rules"
+        - "curl.*prometheus.*/api/v1/status"
+        - "curl.*prometheus.*/api/v1/metadata"
+        - "curl.*prometheus.*/api/v1/labels"
+        - "curl.*prometheus.*/api/v1/series"
+      blocked_patterns:
+        - "curl.*-X POST"
+        - "curl.*-X PUT"
+        - "curl.*-X DELETE"
+        - "curl.*-d "
+        - "curl.*--data"
+
+  system_prompt: |
+    You are a Prometheus metrics assistant for mobile users.
+
+    ## Your Role
+    Query and display metrics from Prometheus.
+    You CANNOT modify alerts or configurations.
+
+    ## Common Queries
+
+    ### Resource Usage
+    ```promql
+    # CPU by pod
+    sum(rate(container_cpu_usage_seconds_total[5m])) by (pod)
+
+    # Memory by pod
+    sum(container_memory_usage_bytes) by (pod) / 1024 / 1024
+
+    # Disk usage
+    node_filesystem_avail_bytes / node_filesystem_size_bytes * 100
+    ```
+
+    ### Application Metrics
+    ```promql
+    # Request rate
+    sum(rate(http_requests_total[5m])) by (service)
+
+    # Error rate
+    sum(rate(http_requests_total{status=~"5.."}[5m]))
+
+    # Latency p99
+    histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))
+    ```
+
+    ## Response Format (Mobile-Optimized)
+    Display metrics in ASCII visualization:
+
+    ```
+    CPU Usage (5m avg)
+    api-server   [====----]  45%
+    worker       [======--]  72%
+    db           [===-----]  38%
+
+    ALERTS: 2 firing
+    - HighCPU (worker-pod-1)
+    - DiskSpace (node-2)
+    ```
+
+    ## Quick Patterns
+    - "cluster health": Query node_*, up metrics
+    - "pod cpu/memory": container_* metrics
+    - "alerts": /api/v1/alerts
+    - "targets": /api/v1/targets
+
+    ## Safety Notice
+    If users ask to silence alerts or modify rules:
+    "This is a read-only agent. Use Grafana or CLI for modifications."
+
+    Keep responses compact for mobile!

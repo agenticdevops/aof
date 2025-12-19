@@ -171,6 +171,11 @@ impl FlowRegistry {
         self.flows.is_empty()
     }
 
+    /// List all flow names
+    pub fn list_names(&self) -> Vec<String> {
+        self.flows.iter().map(|r| r.key().clone()).collect()
+    }
+
     /// Reload all flows from the configured directory
     pub async fn reload(&self) -> AofResult<usize> {
         if let Some(ref dir) = self.flows_dir {

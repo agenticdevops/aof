@@ -1,0 +1,67 @@
+# Development Kubernetes Cluster Context
+#
+# Context = Agent + Connection Parameters
+# Full DevOps toolset for development environment with:
+# - Kubernetes (kubectl, helm)
+# - Prometheus/Loki monitoring
+# - Argo CD/Workflows
+# - Docker, Git
+# - AWS access
+#
+# Usage:
+#   /context dev-k8s      # Switch to this context
+#   /context              # See inline keyboard with all contexts
+#
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: dev-k8s
+  labels:
+    type: kubernetes
+    provider: aws
+    environment: development
+    stack: full-devops
+
+spec:
+  # Display information for /context command
+  display:
+    name: "Dev K8s (Full Stack)"
+    emoji: "🚀"
+    description: "Development K8s with Prometheus, Loki, Argo, AWS"
+
+  # Connection parameters
+  connection:
+    kubeconfig: ~/.kube/config
+    kubecontext: dev-cluster
+    namespace: default
+    # Monitoring URLs
+    prometheus_url: http://prometheus.monitoring.svc:9090
+    loki_url: http://loki.monitoring.svc:3100
+    grafana_url: http://grafana.monitoring.svc:3000
+    # Argo
+    argocd_url: https://argocd.dev.example.com
+    argo_workflows_url: https://argo-workflows.dev.example.com
+
+  # Environment variables set when this context is active
+  env:
+    KUBECONFIG: ~/.kube/config
+    KUBECTL_CONTEXT: dev-cluster
+    AWS_PROFILE: development
+    AWS_REGION: us-west-2
+    PROMETHEUS_URL: http://prometheus.monitoring.svc:9090
+    LOKI_URL: http://loki.monitoring.svc:3100
+
+  # Agent to use for this context - comprehensive devops agent
+  # Must match metadata.name in examples/agents/devops.yaml
+  agent:
+    ref: devops
+
+  # Tools available in this context
+  tools:
+    - kubectl
+    - helm
+    - docker
+    - git
+    - aws
+    - prometheus_query
+    - loki_query

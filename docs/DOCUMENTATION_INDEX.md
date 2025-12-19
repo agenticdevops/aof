@@ -120,6 +120,13 @@ Complete documentation for the Agentic Ops Framework (AOF).
   - Config management
   - Examples and troubleshooting
 
+- **[Platform Policies Reference](reference/platform-policies.md)** ⭐ NEW - Complete platform policy specification
+  - Default policies for all platforms (CLI, Slack, Telegram, WhatsApp, Discord)
+  - Action classes (read, write, delete, dangerous)
+  - Custom policy configuration
+  - Environment-specific policies
+  - Approval workflow integration
+
 - **[Kubernetes CRDs](reference/kubernetes-crds.md)** ⭐ NEW - Complete CRD definitions for Kubernetes Operator
   - All 6 resource CRDs (Agent, Fleet, Flow, Context, Trigger, FlowBinding)
   - Operator architecture overview
@@ -180,6 +187,12 @@ Complete documentation for the Agentic Ops Framework (AOF).
 - **Slack Bot**: [Slack Bot Tutorial](tutorials/slack-bot.md) + [slack-bot-flow.yaml](examples/slack-bot-flow.yaml)
 - **Human-in-the-Loop Approval**: [Approval Workflow Guide](guides/approval-workflow.md) - Reaction-based command approval
 - **Conversation Memory**: [Conversation Memory Guide](guides/conversation-memory.md) - Context persistence across messages
+- **Context Switching**: [Context Switching Guide](guides/context-switching.md) - Switch between projects/clusters (replaces /env and /agents)
+- **Telegram Mobile Companion**: [Telegram Mobile Guide](guides/telegram-mobile.md) - Safe mobile access with read-first UX
+- **Safety Layer**: [Safety Layer Guide](guides/safety-layer.md) - Platform-agnostic tool classification and policies
+- **Platform Policies**: [Platform Policies Reference](reference/platform-policies.md) - Complete policy specification
+- **WhatsApp Integration**: Uses same safety layer as Telegram (see [Safety Layer Guide](guides/safety-layer.md))
+- **Discord Integration**: Uses same safety layer as Slack (see [Safety Layer Guide](guides/safety-layer.md))
 - **Incident Response**: [Incident Response Tutorial](tutorials/incident-response.md) + [incident-responder.yaml](examples/incident-responder.yaml)
 - **Code Review**: [github-pr-reviewer.yaml](examples/github-pr-reviewer.yaml)
 - **K8s Operations**: [kubernetes-agent.yaml](examples/kubernetes-agent.yaml)
@@ -294,9 +307,29 @@ See [Examples README](examples/README.md#contributing-examples) for guidelines.
 
 ## 🔄 Documentation Updates
 
-Last updated: 2025-12-18
+Last updated: 2025-12-19
 
 ### Recent Changes
+- **NEW**: Context Switching Guide - Unified `/context` command for project/cluster switching
+  - `/context` command with inline keyboard selection
+  - Context = Agent + Connection Parameters (replaces `/env` and `/agents`)
+  - Per-user context session tracking
+  - Example context files (k8s-cluster-a.yaml, aws-dev.yaml, database.yaml, prometheus.yaml)
+- **NEW**: Comprehensive DevOps Read-Only Agent
+  - Single agent with kubectl, docker, helm, git, terraform, aws, prometheus
+  - Designed as default mobile agent (no constant switching)
+  - Located at examples/agents/mobile-read-only/devops-readonly.yaml
+- **NEW**: Platform Policies Reference - Complete platform policy specification
+  - Default policies for CLI, Slack, Telegram, WhatsApp, Discord
+  - Action classes and custom policy configuration
+  - Environment-specific policies
+- **UPDATED**: Safety Layer Guide - Now emphasizes platform-agnostic architecture
+  - Platform trust hierarchy documentation
+  - Testing instructions with example configurations
+  - Extension guide for new platforms
+- **UPDATED**: Telegram Mobile Guide - Now reflects platform-agnostic foundation
+  - Testing examples and end-to-end test instructions
+  - Architecture diagram showing shared safety components
 - **NEW**: Kubernetes CRD Documentation - Complete CRD definitions for future operator
   - All 6 resource CRDs with OpenAPI v3 schemas
   - Status fields and operator-managed conditions
@@ -316,6 +349,10 @@ Last updated: 2025-12-18
 - **NEW**: Conversation Memory Guide - Contextual follow-up conversations
 - **NEW**: Multi-Model Consensus Architecture guide
 - **NEW**: Multi-Model RCA Tutorial with tiered execution
+- **NEW**: Telegram Mobile Companion - Safe mobile access with /agents, /flows commands
+- **NEW**: Safety Layer - Platform-agnostic tool classification and policies
+- **NEW**: Platform Policies Reference - Complete policy specification for all platforms
+- **NEW**: ASCII Visualization Crate (aof-viz) - Mobile-friendly output rendering
 - **NEW**: AgentFleet YAML Reference (fleet-spec.md)
 - **NEW**: 8 observability + reasoning example agents
 - **NEW**: Tiered coordination mode (data collectors → reasoning → synthesis)

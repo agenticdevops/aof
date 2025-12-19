@@ -1,0 +1,27 @@
+# Simple Telegram Test Configuration
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: telegram-test
+
+spec:
+  server:
+    port: 8080
+    host: 0.0.0.0
+    cors: true
+    timeout_secs: 60
+
+  platforms:
+    telegram:
+      enabled: true
+      bot_token_env: TELEGRAM_BOT_TOKEN
+
+  agents:
+    directory: ./examples/agents/
+    watch: true
+
+  runtime:
+    max_concurrent_tasks: 5
+    task_timeout_secs: 120
+    # Route plain text messages to devops agent (has kubectl, docker, helm, terraform, git, shell tools)
+    default_agent: devops

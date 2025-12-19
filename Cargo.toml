@@ -8,6 +8,7 @@ members = [
     "crates/aof-memory",
     "crates/aof-triggers",
     "crates/aof-tools",
+    "crates/aof-viz",
     "crates/aofctl",
     "crates/smoke-test-mcp",
     "crates/test-trigger-server",

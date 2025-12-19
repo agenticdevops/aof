@@ -8,6 +8,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Context Switching (`/context`)** - Unified project/cluster switching command
+  - `/context` command with inline keyboard selection for context switching
+  - `/context <name>` to switch directly (e.g., `/context cluster-a`)
+  - `/context info` for detailed current context information
+  - **Context = Agent + Connection Parameters** - Bundles agent, kubeconfig, AWS profile, etc.
+  - Replaces both `/env` and `/agents` commands with unified `/context`
+  - Per-user context session tracking
+  - Example context files: k8s-cluster-a.yaml, aws-dev.yaml, database.yaml, prometheus.yaml
+  - New documentation guide: `docs/guides/context-switching.md`
+  - Framework-first design: Context is platform-agnostic, works across Telegram, Slack, CLI
+- **Comprehensive DevOps Read-Only Agent** - Single agent with all DevOps tools
+  - New `devops-readonly` agent combining kubectl, docker, helm, git, terraform, aws, prometheus
+  - Designed as default mobile agent (no constant switching needed)
+  - Complete tool restrictions for read-only access across all tools
+  - Located at `examples/agents/mobile-read-only/devops-readonly.yaml`
+- **Environment Context Files** - Pre-built environment configurations
+  - `examples/contexts/env-prod.yaml` - Production (read-only from mobile)
+  - `examples/contexts/env-staging.yaml` - Staging (write with approval)
+  - `examples/contexts/env-dev.yaml` - Development (full access)
+  - Each includes kubeconfig, namespace, AWS settings, and platform policies
+- **Sample Approval Flow for kubectl** - Example write operation workflow
+  - `examples/flows/kubectl-apply-approval.yaml` - Complete approval workflow
+  - Environment-aware policies (prod stricter, dev auto-approve)
+  - Dry-run validation before approval request
+  - Timeout handling with auto-deny
+  - Comprehensive variable interpolation
+- **Telegram Mobile Companion** - Safe mobile interface for AOF agents
+  - `/agents` command with inline keyboard selection for switching agents
+  - `/flows` command with inline keyboard selection for triggering flows
+  - Session-based agent tracking per user
+  - Callback handling for Telegram inline buttons
+- **Safety Layer** - Tool classification and platform-aware policies
+  - `aof-triggers::safety` module with classifier, policy, and context
+  - Action classes: read, write, delete, dangerous
+  - Default policies: CLI (permissive), Slack (approval for writes), Telegram/WhatsApp (read-only)
+  - Tool-specific verb classifications (kubectl, docker, helm, git, aws, gcloud, terraform)
+  - Generic regex patterns for unknown tools
+  - Fail-secure defaults (unknown = write)
+- **ASCII Visualization Crate** - `aof-viz` for mobile-friendly output
+  - Status rendering with emoji and ASCII styles
+  - Flow visualization (linear, inline, branching)
+  - Tool call result formatting with tables
+  - Safety decision rendering
+  - Progress bars and spinners
+  - Platform-specific render configs (Telegram, Slack, terminal)
+- **Read-Only Mobile Agents** - Pre-built agents for Telegram
+  - k8s-status, docker-status, git-status, prometheus-query, helm-status
+  - All labeled with `mobile-safe: "true"`
+  - Only read operations exposed
 - **Agent Tool Execution System** - Full tool execution support for agents
   - Built-in tools: `kubectl`, `docker`, `helm`, `terraform`, `aws`, `git`, `shell`
   - File tools: `read_file`, `write_file`, `list_directory`, `search_files`
@@ -46,8 +95,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No longer creates hardcoded Anthropic fallback
   - Follows same code path as natural language messages
   - Ensures consistent behavior across commands and chat
+- **`/help` command updated** - Now includes `/agents` and `/flows` in quick start section
+  - Shows chat mode usage (select agent then type naturally)
+  - Updated examples with interactive workflow
+  - Fixed support URL to point to correct GitHub repository
 
 ### Fixed
+- **Telegram inline keyboard callback handling** - Fixed "Invalid selection" error when tapping agent/flow buttons
+  - Improved callback format parsing to handle both `callback:agent:name` and `agent:name` formats
+  - Added better debug logging for callback troubleshooting
+  - More descriptive error messages when callback parsing fails
 - System prompts from agent YAML files now correctly loaded and used
 - Agent execution error handling with proper response to platforms
 - Bracket structure in `handle_natural_language` function

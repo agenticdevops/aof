@@ -1,0 +1,493 @@
+# DevOps Read-Only Agent (Comprehensive)
+#
+# The DEFAULT mobile agent combining ALL DevOps read operations.
+# This is the recommended default agent for Telegram/WhatsApp platforms.
+#
+# Why this agent exists:
+#   - One agent to rule them all (no constant switching)
+#   - Comprehensive read access across the entire stack
+#   - Safe for mobile platforms
+#   - Perfect for quick status checks and troubleshooting
+#
+# Usage:
+#   - Reference in flows: agent: devops-readonly
+#   - Direct execution: aofctl run agent devops-readonly "cluster status"
+#   - Telegram: Set as default agent, or /agents -> Select "devops-readonly"
+#   - Slack: Safe read-only operations, write ops require approval
+#
+# Safety:
+#   - READ-ONLY: All tools restricted to read operations
+#   - No: apply, delete, create, push, commit, run, exec
+#   - Safe for all mobile platforms (Telegram, WhatsApp, etc.)
+#
+# Tools included:
+#   - kubectl: Kubernetes status (get, describe, logs, top)
+#   - docker: Container status (ps, logs, stats, inspect)
+#   - helm: Release status (list, status, history, get values)
+#   - git: Repository status (status, log, diff, branch)
+#   - terraform: State inspection (show, state list, output)
+#   - aws: AWS resource status (describe, list, get)
+#   - prometheus: Metrics query (curl to Prometheus API)
+#   - shell: Limited read commands (curl, jq, cat, grep, awk)
+
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: devops-readonly
+  labels:
+    category: infrastructure
+    platform: mobile
+    capability: full-stack
+    tier: read-only
+    mobile-safe: "true"
+    default: "true"  # Recommended as default mobile agent
+
+spec:
+  model: google:gemini-2.5-flash
+  max_tokens: 2048  # Optimized for mobile screens
+  temperature: 0    # Deterministic for status queries
+
+  description: "Comprehensive read-only DevOps agent for mobile platforms - kubectl, docker, helm, git, terraform, aws, prometheus"
+
+  tools:
+    - kubectl
+    - docker
+    - helm
+    - git
+    - terraform
+    - aws
+    - shell  # For prometheus queries and basic read operations
+
+  # Comprehensive tool restrictions for read-only access
+  tool_restrictions:
+    kubectl:
+      allowed_verbs:
+        - get
+        - list
+        - describe
+        - logs
+        - top
+        - explain
+        - api-resources
+        - api-versions
+        - cluster-info
+        - version
+        - config view
+        - config get-contexts
+        - config current-context
+        - auth can-i
+      blocked_verbs:
+        - apply
+        - create
+        - delete
+        - patch
+        - edit
+        - scale
+        - rollout
+        - exec
+        - cp
+        - port-forward
+        - attach
+        - debug
+        - run
+        - label
+        - annotate
+        - taint
+        - cordon
+        - uncordon
+        - drain
+
+    docker:
+      allowed_verbs:
+        - ps
+        - images
+        - logs
+        - inspect
+        - info
+        - version
+        - stats
+        - top
+        - history
+        - diff
+        - events
+        - port
+        - network ls
+        - network inspect
+        - volume ls
+        - volume inspect
+        - system df
+        - container ls
+      blocked_verbs:
+        - run
+        - build
+        - push
+        - pull
+        - rm
+        - rmi
+        - stop
+        - start
+        - restart
+        - kill
+        - pause
+        - unpause
+        - exec
+        - attach
+        - commit
+        - prune
+        - network create
+        - network rm
+        - volume create
+        - volume rm
+        - system prune
+        - --privileged
+
+    helm:
+      allowed_verbs:
+        - list
+        - status
+        - get
+        - get all
+        - get hooks
+        - get manifest
+        - get notes
+        - get values
+        - show
+        - show all
+        - show chart
+        - show readme
+        - show values
+        - history
+        - search
+        - search hub
+        - search repo
+        - template
+        - verify
+        - repo list
+        - env
+        - version
+      blocked_verbs:
+        - install
+        - upgrade
+        - uninstall
+        - rollback
+        - repo add
+        - repo remove
+        - repo update
+        - plugin install
+        - plugin uninstall
+        - pull
+        - push
+        - package
+
+    git:
+      allowed_verbs:
+        - status
+        - log
+        - diff
+        - show
+        - branch
+        - tag
+        - remote
+        - fetch
+        - ls-files
+        - ls-remote
+        - blame
+        - shortlog
+        - describe
+        - rev-parse
+        - config --list
+        - stash list
+      blocked_verbs:
+        - add
+        - commit
+        - push
+        - pull
+        - merge
+        - rebase
+        - checkout
+        - switch
+        - reset
+        - clean
+        - cherry-pick
+        - am
+        - stash push
+        - stash pop
+        - stash drop
+        - stash apply
+        - branch -d
+        - branch -D
+        - tag -d
+        - filter-branch
+        - gc
+
+    terraform:
+      allowed_verbs:
+        - show
+        - state list
+        - state show
+        - output
+        - providers
+        - version
+        - workspace list
+        - workspace show
+        - graph
+        - validate
+        - fmt -check
+      blocked_verbs:
+        - init
+        - plan
+        - apply
+        - destroy
+        - import
+        - taint
+        - untaint
+        - workspace new
+        - workspace delete
+        - state mv
+        - state rm
+        - state push
+        - state pull
+        - force-unlock
+
+    aws:
+      allowed_verbs:
+        - describe
+        - list
+        - get
+        - sts get-caller-identity
+        - ec2 describe-instances
+        - ec2 describe-vpcs
+        - ec2 describe-subnets
+        - ec2 describe-security-groups
+        - ecs list-clusters
+        - ecs describe-clusters
+        - ecs list-services
+        - ecs describe-services
+        - eks list-clusters
+        - eks describe-cluster
+        - s3 ls
+        - rds describe-db-instances
+        - lambda list-functions
+        - cloudwatch get-metric-statistics
+        - logs describe-log-groups
+        - iam get-user
+        - iam list-users
+        - iam list-roles
+      blocked_verbs:
+        - create
+        - delete
+        - modify
+        - update
+        - terminate
+        - put
+        - run
+        - start
+        - stop
+        - reboot
+        - attach
+        - detach
+        - invoke
+        - deploy
+        - register
+        - deregister
+        - tag
+        - untag
+        - configure
+
+    shell:
+      # Only allow read-oriented shell commands
+      allowed_patterns:
+        - "curl.*-X GET"
+        - "curl.*prometheus.*/api/v1/"
+        - "curl.*grafana.*/api/"
+        - "curl.*localhost"
+        - "jq"
+        - "cat"
+        - "head"
+        - "tail"
+        - "grep"
+        - "awk"
+        - "sed -n"
+        - "wc"
+        - "sort"
+        - "uniq"
+        - "date"
+        - "uptime"
+        - "hostname"
+        - "whoami"
+        - "env"
+        - "printenv"
+        - "df -h"
+        - "du -sh"
+        - "free"
+        - "top -bn1"
+        - "ps aux"
+        - "netstat"
+        - "ss -tulpn"
+        - "dig"
+        - "nslookup"
+        - "ping -c"
+        - "traceroute"
+      blocked_patterns:
+        - "curl.*-X POST"
+        - "curl.*-X PUT"
+        - "curl.*-X DELETE"
+        - "curl.*-X PATCH"
+        - "curl.*-d "
+        - "curl.*--data"
+        - "rm "
+        - "mv "
+        - "cp "
+        - "mkdir"
+        - "rmdir"
+        - "chmod"
+        - "chown"
+        - "kill"
+        - "pkill"
+        - "sudo"
+        - "su "
+        - "passwd"
+        - "useradd"
+        - "userdel"
+        - "groupadd"
+        - "apt"
+        - "yum"
+        - "dnf"
+        - "brew"
+        - "pip"
+        - "npm"
+        - "yarn"
+        - ">"
+        - ">>"
+        - "tee"
+        - "dd"
+        - "mkfs"
+        - "mount"
+        - "umount"
+        - "reboot"
+        - "shutdown"
+        - "systemctl"
+        - "service"
+
+  system_prompt: |
+    You are a comprehensive DevOps status assistant for mobile users.
+    You have access to ALL major DevOps tools in READ-ONLY mode.
+
+    ## Your Role
+    Provide quick status information across the entire DevOps stack.
+    You CANNOT make any changes - only view and report.
+
+    ## Available Tools (READ-ONLY)
+
+    ### Kubernetes (kubectl)
+    - `kubectl get` - List resources
+    - `kubectl describe` - Resource details
+    - `kubectl logs` - View pod logs
+    - `kubectl top` - Resource usage
+    - `kubectl cluster-info` - Cluster health
+
+    ### Docker
+    - `docker ps` - Container list
+    - `docker logs` - Container logs
+    - `docker stats` - Resource usage
+    - `docker inspect` - Detailed info
+
+    ### Helm
+    - `helm list` - Release list
+    - `helm status` - Release status
+    - `helm history` - Release history
+    - `helm get values` - Current values
+
+    ### Git
+    - `git status` - Repo status
+    - `git log` - Commit history
+    - `git diff` - View changes
+    - `git branch` - List branches
+
+    ### Terraform
+    - `terraform show` - Current state
+    - `terraform state list` - Resources
+    - `terraform output` - Outputs
+
+    ### AWS
+    - `aws describe-*` - Resource info
+    - `aws list-*` - List resources
+    - `aws get-*` - Get details
+
+    ### Prometheus
+    - Query metrics via curl to Prometheus API
+    - Check alert status
+    - View target health
+
+    ## Response Format (Mobile-Optimized)
+    Keep responses SHORT and scannable:
+
+    ```
+    CLUSTER: prod-east (aws-eks)
+    +-----------------+
+    | STATUS SUMMARY  |
+    +-----------------+
+    Nodes:   5/5 Ready
+    Pods:    127/130 Running
+    CPU:     45% avg
+    Memory:  62% avg
+
+    RECENT ISSUES:
+    - 3 pods pending (resource limits)
+    - 1 node high memory (85%)
+    ```
+
+    ## Quick Commands by Topic
+
+    **Kubernetes Status:**
+    ```bash
+    kubectl get nodes
+    kubectl get pods -A --field-selector=status.phase!=Running
+    kubectl top nodes
+    ```
+
+    **Docker Status:**
+    ```bash
+    docker ps -a --format "table {{.Names}}\t{{.Status}}"
+    docker stats --no-stream
+    ```
+
+    **Helm Releases:**
+    ```bash
+    helm list -A
+    helm status <release> -n <namespace>
+    ```
+
+    **Git Status:**
+    ```bash
+    git status -sb
+    git log --oneline -5
+    ```
+
+    **AWS Resources:**
+    ```bash
+    aws eks describe-cluster --name <cluster>
+    aws ec2 describe-instances --query 'Reservations[*].Instances[*].[InstanceId,State.Name]'
+    ```
+
+    ## Status Indicators
+    Use these consistently:
+    - OK/Ready/Running/Healthy
+    - WARN/Pending/NotReady/Degraded
+    - ERROR/Failed/CrashLoop/Critical
+
+    ## Safety Notice
+    If users ask to modify anything (deploy, delete, apply, push, commit):
+
+    "This is a read-only agent. For modifications:
+    - Use `/env` to switch to an environment with write access
+    - Use Slack for operations with approval workflow
+    - Use CLI (aofctl) for direct access"
+
+    ## Tips
+    - Run multiple status checks in one response
+    - Compare resources across namespaces
+    - Identify patterns in logs
+    - Suggest next steps for issues found
+
+    Keep responses mobile-friendly and actionable!

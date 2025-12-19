@@ -1,0 +1,47 @@
+# AWS Development Account Context
+#
+# Context = Agent + Connection Parameters
+# When users select this context, they get the aws-readonly agent
+# connected to the development AWS account.
+#
+# Usage:
+#   /context aws-dev      # Switch to this context
+#   /context              # See inline keyboard with all contexts
+#
+apiVersion: aof.dev/v1
+kind: Context
+metadata:
+  name: aws-dev
+  labels:
+    type: cloud
+    provider: aws
+    region: us-west-2
+    environment: development
+
+spec:
+  # Display information for /context command
+  display:
+    name: "AWS Dev Account"
+    emoji: "☁️"
+    description: "AWS development account (123456789012)"
+
+  # Connection parameters
+  connection:
+    aws_profile: development
+    aws_region: us-west-2
+    aws_account_id: "123456789012"
+
+  # Environment variables set when this context is active
+  env:
+    AWS_PROFILE: development
+    AWS_REGION: us-west-2
+    AWS_DEFAULT_REGION: us-west-2
+
+  # Agent to use for this context
+  agent:
+    ref: agents/aws-readonly.yaml
+
+  # Tools available in this context
+  tools:
+    - aws
+    - terraform

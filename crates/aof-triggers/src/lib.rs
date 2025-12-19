@@ -13,6 +13,7 @@ pub mod flow;
 pub mod handler;
 pub mod platforms;
 pub mod response;
+pub mod safety;
 pub mod server;
 
 // Re-export main types from command module
@@ -32,6 +33,13 @@ pub use server::{TriggerServer, TriggerServerBuilder, TriggerServerConfig};
 
 // Re-export flow types
 pub use flow::{FlowMatch, FlowRegistry, FlowRouter, MatchReason};
+
+// Re-export safety types
+pub use safety::{
+    ActionClass, ClassificationResult, ToolClassifier, ToolClassifications,
+    PlatformPolicy, PolicyDecision, PolicyEngine,
+    SafetyContext, SafetyConfig,
+};
 
 // Re-export error types from aof-core
 pub use aof_core::{AofError, AofResult};
