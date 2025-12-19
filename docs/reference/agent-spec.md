@@ -25,8 +25,17 @@ spec:
     max_tokens: int
   instructions: string      # Required: System prompt
   tools:                    # Optional: List of tools
-    - type: string
-      config: object
+    - string                # Simple format: just tool name
+    # OR qualified format:
+    # - name: string
+    #   source: builtin|mcp
+    #   config: object
+  mcp_servers:              # Optional: MCP server configs
+    - name: string
+      transport: stdio|sse|http
+      command: string
+      args: []
+      env: {}
   memory:                   # Optional: Memory configuration
     type: string
     config: object
@@ -160,239 +169,135 @@ spec:
 **Required:** No
 **Description:** List of tools the agent can use to interact with external systems.
 
-**Tool Types:**
-1. Shell
-2. HTTP
-3. MCP (Model Context Protocol)
-4. FileSystem
-5. Slack
-6. GitHub
-7. PagerDuty
+Tools can be specified in two formats:
+1. **Simple format**: Just the tool name as a string
+2. **Qualified format**: Object with name, source, config, and other options
 
----
+**Simple Format (Recommended):**
+```yaml
+tools:
+  - shell
+  - kubectl
+  - git
+  - docker
+```
 
-## Tool: Shell
+**Qualified Format (For Advanced Configuration):**
+```yaml
+tools:
+  - name: shell
+    source: builtin
+    config:
+      allowed_commands: ["kubectl", "helm"]
+    timeout_secs: 60
 
-Execute terminal commands.
+  - name: read_file
+    source: mcp
+    server: filesystem
+```
 
-**Configuration:**
+**Qualified Tool Fields:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `allowed_commands` | array | Yes | Whitelist of allowed commands |
-| `working_directory` | string | No | Directory to execute from |
-| `timeout_seconds` | int | No | Max execution time (default: 30) |
-| `env` | map | No | Environment variables |
+| `name` | string | Yes | Tool name |
+| `source` | string | No | `builtin` or `mcp` (default: builtin) |
+| `server` | string | MCP only | MCP server name for this tool |
+| `config` | object | No | Tool-specific configuration |
+| `enabled` | bool | No | Enable/disable tool (default: true) |
+| `timeout_secs` | int | No | Timeout override for this tool |
+
+---
+
+## Built-in Tools Reference
+
+AOF provides 40+ built-in tools. Here are the most commonly used:
+
+### CLI Tools (Unified Interface)
+
+These tools call system CLIs with a `command` argument:
+
+| Tool | Description | Example |
+|------|-------------|---------|
+| `shell` | Execute shell commands | General command execution |
+| `kubectl` | Kubernetes CLI | `kubectl get pods -n default` |
+| `git` | Git version control | `git status`, `git log` |
+| `docker` | Docker container CLI | `docker ps`, `docker logs` |
+| `helm` | Helm package manager | `helm list`, `helm upgrade` |
+| `terraform` | Infrastructure as Code | `terraform plan` |
+| `aws` | AWS CLI | `aws s3 ls` |
 
 **Example:**
 ```yaml
 tools:
-  - type: Shell
-    config:
-      allowed_commands:
-        - kubectl
-        - helm
-        - git
-      working_directory: /tmp
-      timeout_seconds: 60
+  - kubectl
+  - git
+  - docker
+  - helm
+```
+
+### File Operations
+
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read file contents |
+| `write_file` | Write to files |
+| `list_directory` | List directory contents |
+
+### Observability Tools
+
+| Tool | Description |
+|------|-------------|
+| `prometheus_query` | Query Prometheus metrics |
+| `loki_query` | Query Loki logs |
+
+For the complete list of 40+ tools, see [Built-in Tools Reference](../tools/builtin-tools.md).
+
+---
+
+## MCP Servers
+
+For external tools via MCP servers, configure them separately using `mcp_servers`:
+
+```yaml
+spec:
+  tools:
+    - shell
+    - git
+
+  mcp_servers:
+    - name: filesystem
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+
+    - name: github
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-github"]
       env:
-        KUBECONFIG: /path/to/kubeconfig
+        GITHUB_TOKEN: "${GITHUB_TOKEN}"
 ```
 
-**Security Note:** Only commands in `allowed_commands` can be executed. Paths and arguments are validated.
-
----
-
-## Tool: HTTP
-
-Make HTTP/REST API requests.
-
-**Configuration:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `base_url` | string | No | Base URL for requests |
-| `headers` | map | No | Default headers |
-| `timeout_seconds` | int | No | Request timeout (default: 10) |
-| `allowed_methods` | array | No | HTTP methods (default: all) |
-| `auth` | object | No | Authentication config |
-
-**Example:**
-```yaml
-tools:
-  - type: HTTP
-    config:
-      base_url: https://api.github.com
-      headers:
-        Authorization: "token ${GITHUB_TOKEN}"
-        Accept: "application/vnd.github.v3+json"
-      timeout_seconds: 30
-      allowed_methods: [GET, POST, PUT, DELETE]
-```
-
-**Authentication Types:**
-```yaml
-# Bearer token
-auth:
-  type: Bearer
-  token: ${API_TOKEN}
-
-# Basic auth
-auth:
-  type: Basic
-  username: ${USERNAME}
-  password: ${PASSWORD}
-
-# API key
-auth:
-  type: ApiKey
-  header: X-API-Key
-  value: ${API_KEY}
-```
-
----
-
-## Tool: MCP (Model Context Protocol)
-
-Connect to MCP servers for specialized functionality.
-
-**Configuration:**
+**MCP Server Configuration Fields:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Server identifier |
-| `command` | array | Yes | Command to start server |
+| `transport` | string | Yes | `stdio`, `sse`, or `http` |
+| `command` | string | Yes (stdio) | Command to start server |
+| `args` | array | No | Command arguments |
 | `env` | map | No | Environment variables |
-| `args` | array | No | Server arguments |
+| `url` | string | Yes (sse/http) | Server URL |
+| `timeout_secs` | int | No | Connection timeout |
 
-**Example:**
-```yaml
-tools:
-  # kubectl MCP server
-  - type: MCP
-    config:
-      name: kubectl-mcp
-      command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
-      env:
-        KUBECONFIG: "${KUBECONFIG}"
-
-  # GitHub MCP server
-  - type: MCP
-    config:
-      name: github-mcp
-      command: ["npx", "-y", "@modelcontextprotocol/server-github"]
-      env:
-        GITHUB_TOKEN: "${GITHUB_TOKEN}"
-
-  # Postgres MCP server
-  - type: MCP
-    config:
-      name: postgres-mcp
-      command: ["npx", "-y", "@modelcontextprotocol/server-postgres"]
-      env:
-        DATABASE_URL: "${DATABASE_URL}"
-```
-
-**Available MCP Servers:**
-- `@modelcontextprotocol/server-kubectl` - Kubernetes operations
+**Popular MCP Servers:**
+- `@modelcontextprotocol/server-filesystem` - File operations
 - `@modelcontextprotocol/server-github` - GitHub API
 - `@modelcontextprotocol/server-postgres` - PostgreSQL queries
-- `@modelcontextprotocol/server-filesystem` - File operations
-- Custom servers (see MCP documentation)
+- `@modelcontextprotocol/server-slack` - Slack integration
 
----
-
-## Tool: FileSystem
-
-Read and write files.
-
-**Configuration:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `allowed_paths` | array | Yes | Whitelist of paths |
-| `read_only` | bool | No | Disable writes (default: false) |
-| `max_file_size` | int | No | Max file size in bytes |
-
-**Example:**
-```yaml
-tools:
-  - type: FileSystem
-    config:
-      allowed_paths:
-        - /etc/kubernetes
-        - /tmp
-      read_only: false
-      max_file_size: 10485760  # 10MB
-```
-
----
-
-## Tool: Slack
-
-Send Slack messages and handle interactions.
-
-**Configuration:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `bot_token` | string | Yes | Slack bot token (xoxb-...) |
-| `signing_secret` | string | Yes | Slack signing secret |
-| `default_channel` | string | No | Default channel |
-
-**Example:**
-```yaml
-tools:
-  - type: Slack
-    config:
-      bot_token: ${SLACK_BOT_TOKEN}
-      signing_secret: ${SLACK_SIGNING_SECRET}
-      default_channel: "#platform"
-```
-
----
-
-## Tool: GitHub
-
-Interact with GitHub API.
-
-**Configuration:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `token` | string | Yes | GitHub personal access token |
-| `default_repo` | string | No | Default repository (owner/repo) |
-
-**Example:**
-```yaml
-tools:
-  - type: GitHub
-    config:
-      token: ${GITHUB_TOKEN}
-      default_repo: myorg/myrepo
-```
-
----
-
-## Tool: PagerDuty
-
-Manage PagerDuty incidents.
-
-**Configuration:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `api_key` | string | Yes | PagerDuty API key |
-| `service_id` | string | No | Default service ID |
-
-**Example:**
-```yaml
-tools:
-  - type: PagerDuty
-    config:
-      api_key: ${PAGERDUTY_API_KEY}
-      service_id: ${PAGERDUTY_SERVICE_ID}
-```
+For more details, see [MCP Integration Guide](../tools/mcp-integration.md).
 
 ---
 
@@ -495,7 +400,7 @@ metadata:
     owner: platform@company.com
 
 spec:
-  model: anthropic:claude-3-5-sonnet-20241022
+  model: google:gemini-2.5-flash
 
   model_config:
     temperature: 0.3
@@ -505,20 +410,11 @@ spec:
     You are an expert Kubernetes operations assistant.
     Help DevOps engineers manage their clusters safely.
 
+  # Simple tool format - just names
   tools:
-    - type: Shell
-      config:
-        allowed_commands: [kubectl, helm]
-        timeout_seconds: 60
-
-    - type: MCP
-      config:
-        name: kubectl-mcp
-        command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
-
-    - type: HTTP
-      config:
-        base_url: http://localhost
+    - kubectl
+    - helm
+    - shell
 
   memory:
     type: PostgreSQL
@@ -527,7 +423,7 @@ spec:
       max_messages: 1000
 ```
 
-### Multi-Tool Agent
+### Multi-Tool Agent with MCP
 
 ```yaml
 apiVersion: aof.dev/v1
@@ -540,32 +436,28 @@ spec:
 
   instructions: |
     You are a DevOps automation assistant.
-    You can manage K8s, GitHub, and Slack.
+    You can manage K8s, GitHub, and files.
 
+  # Built-in tools
   tools:
-    - type: Shell
-      config:
-        allowed_commands: [kubectl, git, docker]
+    - kubectl
+    - git
+    - docker
+    - shell
 
-    - type: MCP
-      config:
-        name: kubectl-mcp
-        command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+  # MCP servers for extended capabilities
+  mcp_servers:
+    - name: filesystem
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
 
-    - type: GitHub
-      config:
-        token: ${GITHUB_TOKEN}
-
-    - type: Slack
-      config:
-        bot_token: ${SLACK_BOT_TOKEN}
-        signing_secret: ${SLACK_SIGNING_SECRET}
-
-    - type: HTTP
-      config:
-        base_url: https://api.company.com
-        headers:
-          Authorization: "Bearer ${API_TOKEN}"
+    - name: github
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-github"]
+      env:
+        GITHUB_TOKEN: "${GITHUB_TOKEN}"
 
   memory:
     type: SQLite
@@ -615,17 +507,19 @@ Agents can reference environment variables with `${VAR_NAME}` syntax.
 **Example:**
 ```yaml
 spec:
-  tools:
-    - type: HTTP
-      config:
-        headers:
-          Authorization: "Bearer ${API_TOKEN}"
+  mcp_servers:
+    - name: github
+      transport: stdio
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-github"]
+      env:
+        GITHUB_TOKEN: "${GITHUB_TOKEN}"
 ```
 
 Set variables:
 ```bash
-export API_TOKEN=secret
-aofctl agent apply -f agent.yaml
+export GITHUB_TOKEN=ghp_your_token
+aofctl run agent agent.yaml --input "list my repos"
 ```
 
 ---
