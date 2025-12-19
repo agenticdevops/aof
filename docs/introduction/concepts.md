@@ -380,5 +380,5 @@ aofctl serve --flows-dir ./flows --agents-dir ./agents
 
 - **[Telegram Quickstart](../guides/quickstart-telegram.md)** - Get a bot running in 5 minutes
 - **[Fleet Reference](../reference/fleet-spec.md)** - Complete fleet specification
-- **[Agent Library](../../examples/agents/library/)** - Pre-built agents
-- **[Example Fleets](../../examples/fleets/)** - Ready-to-use fleet compositions
+- **[Agent Reference](../reference/agent-spec.md)** - Agent YAML specification
+- **[Resource Selection Guide](../concepts/resource-selection.md)** - When to use DaemonConfig vs AgentFlow vs FlowBinding

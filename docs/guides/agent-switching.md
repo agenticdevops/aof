@@ -172,4 +172,4 @@ See [Safety Layer Guide](safety-layer.md) for details.
 
 - [Core Concepts](../introduction/concepts.md) - Agent → Fleet → Flow model
 - [Fleets Deep Dive](../concepts/fleets.md) - Coordination modes and consensus
-- [Example Fleets](../../examples/fleets/) - Ready-to-use fleet compositions
+- [Fleet Reference](../reference/fleet-spec.md) - Fleet specification

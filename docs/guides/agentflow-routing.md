@@ -617,5 +617,5 @@ aofctl serve --config daemon-config.yaml
 
 - [Multi-Tenant Architecture](../architecture/multi-tenant-agentflows.md)
 - [Agent Configuration Reference](../reference/agent-spec.md)
-- [Approval Workflow Guide](./approval-workflow.md)
-- [Platform Setup Guides](./platforms/)
+- [Trigger Reference](../reference/trigger-spec.md)
+- [FlowBinding Reference](../reference/flowbinding-spec.md)
