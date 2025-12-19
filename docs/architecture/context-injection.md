@@ -168,13 +168,13 @@ Context can be injected at **two points in the execution lifecycle**:
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                   INJECTION POINT 1                          │
-│                   Via FlowBinding (for triggers)             │
+│                   Via AgentFlow context field                │
 │                                                              │
 │  Slack message arrives                                       │
 │        ↓                                                     │
-│  FlowRouter matches to FlowBinding                           │
+│  Trigger routes to AgentFlow                                 │
 │        ↓                                                     │
-│  FlowBinding specifies Context                               │
+│  AgentFlow specifies context ref                             │
 │        ↓                                                     │
 │  Context variables injected                                  │
 │        ↓                                                     │
@@ -195,9 +195,9 @@ Context can be injected at **two points in the execution lifecycle**:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### Injection Point 1: Via FlowBinding (Trigger-Based)
+### Injection Point 1: Via AgentFlow Context (Trigger-Based)
 
-When using triggers (Slack, WhatsApp, webhooks), context is specified in the **FlowBinding**:
+When using triggers (Slack, Telegram, webhooks), context is specified in the **AgentFlow**:
 
 ```yaml
 # agents/k8s-ops.yaml (context-agnostic)
@@ -206,24 +206,9 @@ kind: Agent
 metadata:
   name: k8s-ops
 spec:
-  model: anthropic:claude-sonnet-4
+  model: google:gemini-2.5-flash
   instructions: "You are a Kubernetes ops assistant."
   tools: [kubectl]
-
----
-# flows/slack-k8s-flow.yaml (orchestration, no context)
-apiVersion: aof.dev/v1
-kind: AgentFlow
-metadata:
-  name: slack-k8s-flow
-spec:
-  nodes:
-    - id: agent-process
-      type: Agent
-      config:
-        agent: k8s-ops  # References agent
-        input: ${MESSAGE_TEXT}
-  # NO context specified here!
 
 ---
 # contexts/prod-context.yaml
@@ -238,21 +223,39 @@ spec:
     ENVIRONMENT: production
 
 ---
-# bindings/prod/slack-bot.yaml (ties everything together)
+# flows/slack-k8s-flow.yaml (orchestration with context reference)
 apiVersion: aof.dev/v1
-kind: FlowBinding
+kind: AgentFlow
 metadata:
-  name: slack-prod-bot
+  name: slack-k8s-flow
 spec:
-  flow:
-    name: slack-k8s-flow  # WHAT to run
   context:
-    name: prod-context    # WHERE to run it ← CONTEXT INJECTION
-  trigger:
-    type: Slack
-    config:
-      channels: [production]
-      bot_token: ${SLACK_BOT_TOKEN}
+    ref: prod-context    # Context injection happens here
+  nodes:
+    - id: agent-process
+      type: Agent
+      config:
+        agent: k8s-ops
+        input: ${MESSAGE_TEXT}
+  connections:
+    - from: start
+      to: agent-process
+
+---
+# triggers/slack-prod.yaml (routes commands to flows)
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: slack-prod
+spec:
+  type: Slack
+  config:
+    bot_token: ${SLACK_BOT_TOKEN}
+    channels: [production]
+  commands:
+    /kubectl:
+      flow: slack-k8s-flow
+  default_agent: devops
 ```
 
 **Execution Flow:**
@@ -260,12 +263,11 @@ spec:
 ```
 1. Slack message arrives in #production channel
    ↓
-2. FlowRouter finds matching FlowBinding: slack-prod-bot
+2. Trigger routes /kubectl command to slack-k8s-flow
    ↓
-3. FlowBinding loads:
-   - Flow: slack-k8s-flow (orchestration logic)
+3. AgentFlow loads:
    - Context: prod-context (environment boundaries) ← INJECTED HERE
-   - Trigger: Slack config (message source)
+   - Nodes: Agent workflow
    ↓
 4. Flow executes with prod-context:
    - Agent sees env var: ENVIRONMENT=production
@@ -606,36 +608,59 @@ spec:
     CLUSTER_NAME: prod-eu-west-1
 
 ---
-# bindings/prod/slack-us-bot.yaml
+# flows/us-east-flow.yaml (references US East context)
 apiVersion: aof.dev/v1
-kind: FlowBinding
+kind: AgentFlow
 metadata:
-  name: slack-us-bot
+  name: us-east-k8s-flow
 spec:
-  flow:
-    name: slack-k8s-flow
   context:
-    name: prod-us-east  # ← US region
-  trigger:
-    type: Slack
-    config:
-      channels: [prod-us-east]
+    ref: prod-us-east  # ← US region context
+  nodes:
+    - id: agent
+      type: Agent
+      config:
+        agent: k8s-ops
+  connections:
+    - from: start
+      to: agent
 
 ---
-# bindings/prod/slack-eu-bot.yaml
+# flows/eu-west-flow.yaml (references EU West context)
 apiVersion: aof.dev/v1
-kind: FlowBinding
+kind: AgentFlow
 metadata:
-  name: slack-eu-bot
+  name: eu-west-k8s-flow
 spec:
-  flow:
-    name: slack-k8s-flow
   context:
-    name: prod-eu-west  # ← EU region (SAME agent, DIFFERENT region!)
-  trigger:
-    type: Slack
-    config:
-      channels: [prod-eu-west]
+    ref: prod-eu-west  # ← EU region context (SAME agent, DIFFERENT region!)
+  nodes:
+    - id: agent
+      type: Agent
+      config:
+        agent: k8s-ops
+  connections:
+    - from: start
+      to: agent
+
+---
+# triggers/slack-regional.yaml (routes channels to region-specific flows)
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: slack-regional
+spec:
+  type: Slack
+  config:
+    bot_token: ${SLACK_BOT_TOKEN}
+  commands:
+    /us-east:
+      flow: us-east-k8s-flow
+      description: "Manage US East cluster"
+    /eu-west:
+      flow: eu-west-k8s-flow
+      description: "Manage EU West cluster"
+  default_agent: devops
 ```
 
 **Result**: One agent manages multiple production regions with different contexts!

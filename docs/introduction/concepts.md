@@ -1,20 +1,20 @@
 # Core Concepts
 
-AOF uses a simple, composable model: **Agents** are single-purpose building blocks, **Fleets** compose agents into teams, and **Flows** handle event-driven routing.
+AOF uses a simple, composable model: **Agents** are single-purpose building blocks, **Fleets** compose agents into teams, **Flows** define multi-step workflows, and **Triggers** route messages to handlers.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    AOF Building Blocks                       │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   AGENT          FLEET              FLOW                    │
-│   ┌────┐       ┌─────────┐       ┌──────────┐              │
-│   │ 🔧 │       │ 🔧  🔧  │       │ Trigger  │              │
-│   └────┘       │ 🔧  🔧  │       │    ↓     │              │
-│   Single       └─────────┘       │  Agent   │              │
-│   Purpose      Composition       │    ↓     │              │
-│                                  │ Response │              │
-│                                  └──────────┘              │
+│   AGENT          FLEET           FLOW          TRIGGER      │
+│   ┌────┐       ┌─────────┐    ┌──────────┐   ┌──────────┐  │
+│   │ 🔧 │       │ 🔧  🔧  │    │ Node     │   │ Platform │  │
+│   └────┘       │ 🔧  🔧  │    │   ↓      │   │    ↓     │  │
+│   Single       └─────────┘    │ Node     │   │ Commands │  │
+│   Purpose      Composition    │   ↓      │   │    ↓     │  │
+│                               │ End      │   │ Handler  │  │
+│                               └──────────┘   └──────────┘  │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -25,9 +25,10 @@ AOF uses a simple, composable model: **Agents** are single-purpose building bloc
 |---------|------------|---------|
 | **Agent** | Single-purpose specialist | `kubectl-agent`, `prometheus-agent` |
 | **Fleet** | Team of agents for a purpose | `devops-fleet`, `rca-fleet` |
-| **Flow** | Event routing to agents/fleets | Telegram → Fleet → Response |
+| **Flow** | Multi-step workflow with nodes | `deploy-flow`, `incident-flow` |
+| **Trigger** | Platform + command routing | `slack-prod`, `telegram-oncall` |
 
-**One way to do it**: Build single-purpose agents, compose them into fleets, connect fleets to chat platforms via flows.
+**One way to do it**: Build single-purpose agents, compose them into fleets, define workflows as flows, connect to chat platforms via triggers.
 
 ---
 
@@ -241,47 +242,118 @@ spec:
 
 ## 3. Flow
 
-A **Flow** connects triggers (Telegram, Slack, webhooks) to agents or fleets.
+A **Flow** is a multi-step workflow with nodes and connections. Flows are pure workflow logic - they define *what happens* in a sequence of steps.
 
-### Key Principle: Event-Driven Routing
+### Key Principle: Declarative Workflows
 
 ```yaml
-apiVersion: aof.dev/v1alpha1
+apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
-  name: telegram-ops
+  name: deploy-flow
 spec:
-  trigger:
-    type: Telegram
-    config:
-      token: ${TELEGRAM_BOT_TOKEN}
+  description: "Deployment workflow with approval gate"
 
-  # Route to a Fleet (not individual agent)
   nodes:
-    - id: agent
-      type: Fleet
+    - id: validate
+      type: Agent
       config:
-        fleet: devops-fleet
+        agent: validator-agent
 
-    - id: respond
-      type: Telegram
+    - id: approval
+      type: HumanApproval
       config:
-        message: ${agent.output}
+        timeout: 300
+        message: "Approve deployment to production?"
+
+    - id: deploy
+      type: Agent
+      config:
+        agent: k8s-agent
+
+    - id: notify
+      type: End
+
+  connections:
+    - from: start
+      to: validate
+    - from: validate
+      to: approval
+    - from: approval
+      to: deploy
+      condition: approved
+    - from: deploy
+      to: notify
 ```
 
-### Flow Triggers
+### Flow Nodes
+
+| Node Type | Purpose | Example |
+|-----------|---------|---------|
+| `Agent` | Execute single agent | k8s-agent, docker-agent |
+| `Fleet` | Execute agent fleet | rca-fleet, devops-fleet |
+| `HumanApproval` | Wait for human approval | Deployment gates |
+| `Conditional` | Branch based on conditions | Success/failure paths |
+| `End` | Terminal node | Final response |
+
+---
+
+## 4. Trigger
+
+A **Trigger** defines message sources and command routing. Triggers are self-contained units that include platform configuration and command bindings.
+
+### Key Principle: Self-Contained Routing
+
+```yaml
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: slack-production
+spec:
+  type: Slack
+  config:
+    bot_token: ${SLACK_BOT_TOKEN}
+    signing_secret: ${SLACK_SIGNING_SECRET}
+
+  # Route commands to handlers
+  commands:
+    /diagnose:
+      fleet: rca-fleet
+      description: "Multi-model root cause analysis"
+    /deploy:
+      flow: deploy-flow
+      description: "Deployment workflow with approvals"
+    /kubectl:
+      agent: k8s-agent
+      description: "Direct Kubernetes operations"
+
+  # Fallback for natural language
+  default_agent: devops
+```
+
+### Trigger Types
 
 | Trigger | Events | Use Case |
 |---------|--------|----------|
 | `Telegram` | message, command | Mobile DevOps |
-| `Slack` | message, app_mention | Team chat |
+| `Slack` | message, app_mention, slash_command | Team chat |
 | `WhatsApp` | message | Customer support |
-| `HTTP` | webhook POST | Integrations |
-| `Schedule` | cron | Scheduled jobs |
+| `PagerDuty` | incident events | Automated response |
+| `HTTP` | webhook POST | Generic integrations |
+
+### Command Binding Options
+
+Each command routes to one target:
+
+| Target | When to Use | Example |
+|--------|-------------|---------|
+| `agent` | Single-purpose task | `/kubectl → k8s-agent` |
+| `fleet` | Multi-agent coordination | `/diagnose → rca-fleet` |
+| `flow` | Multi-step workflow | `/deploy → deploy-flow` |
 
 ### Platform Safety
 
-Flows automatically apply platform-appropriate safety:
+Triggers automatically apply platform-appropriate safety:
 
 | Platform | Read Operations | Write Operations |
 |----------|-----------------|------------------|
@@ -297,30 +369,28 @@ Flows automatically apply platform-appropriate safety:
 ### The Full Picture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Complete Architecture                     │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  AGENT LIBRARY              FLEETS               FLOWS      │
-│  (building blocks)          (compositions)       (routing)  │
-│                                                              │
-│  ┌─────────────┐          ┌─────────────┐     ┌──────────┐ │
-│  │ k8s-agent   │────┬────▶│devops-fleet │◀────│ Telegram │ │
-│  ├─────────────┤    │     └─────────────┘     └──────────┘ │
-│  │docker-agent │────┤                                       │
-│  ├─────────────┤    │     ┌─────────────┐     ┌──────────┐ │
-│  │ git-agent   │────┘     │  rca-fleet  │◀────│  Slack   │ │
-│  ├─────────────┤          └─────────────┘     └──────────┘ │
-│  │prometheus   │────┬────▶│ k8s-fleet   │                   │
-│  ├─────────────┤    │     └─────────────┘                   │
-│  │ loki-agent  │────┘                                       │
-│  ├─────────────┤          ┌─────────────┐                   │
-│  │postgres     │─────────▶│database-fleet│                   │
-│  ├─────────────┤          └─────────────┘                   │
-│  │ redis       │                                            │
-│  └─────────────┘                                            │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                       Complete Architecture                           │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  AGENTS              FLEETS              FLOWS        TRIGGERS        │
+│  (building blocks)   (compositions)      (workflows)  (routing)       │
+│                                                                        │
+│  ┌─────────────┐   ┌─────────────┐   ┌───────────┐  ┌────────────┐   │
+│  │ k8s-agent   │──▶│devops-fleet │   │deploy-flow│◀─│slack-prod  │   │
+│  ├─────────────┤   └─────────────┘   └───────────┘  ├────────────┤   │
+│  │docker-agent │                                    │            │   │
+│  ├─────────────┤   ┌─────────────┐                  │ /deploy    │──▶│
+│  │ git-agent   │──▶│  rca-fleet  │◀────────────────│ /diagnose  │   │
+│  ├─────────────┤   └─────────────┘                  │ /kubectl   │   │
+│  │prometheus   │                                    └────────────┘   │
+│  ├─────────────┤   ┌─────────────┐                  ┌────────────┐   │
+│  │ loki-agent  │──▶│ k8s-fleet   │◀────────────────│telegram    │   │
+│  ├─────────────┤   └─────────────┘                  └────────────┘   │
+│  │postgres     │                                                      │
+│  └─────────────┘                                                      │
+│                                                                        │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### CLI Usage
@@ -332,21 +402,21 @@ aofctl run agent library/k8s-agent.yaml -i "list pods"
 # Run a fleet (composed agents)
 aofctl run fleet examples/fleets/devops-fleet.yaml -i "check cluster health"
 
-# Serve flows (connect to chat platforms)
-aofctl serve --flows-dir ./flows --agents-dir ./agents
+# Start the daemon (connects triggers to handlers)
+aofctl serve --config examples/config/daemon.yaml
 ```
 
-### Telegram Usage
+### Chat Usage
+
+Via Slack or Telegram, use slash commands defined in your triggers:
 
 ```
-/fleet               # List available fleets
-/fleet devops        # Switch to DevOps fleet
-/fleet info          # Show current fleet
+/diagnose pod is crashing     # → Routes to rca-fleet
+/deploy v2.1.0                # → Routes to deploy-flow
+/kubectl get pods             # → Routes to k8s-agent
 
-# Then just chat naturally:
-"list pods in production"
-"show deployment status"
-"what's the memory usage?"
+# Or just chat naturally with the default agent:
+"what's the memory usage in production?"
 ```
 
 ---
@@ -358,9 +428,9 @@ aofctl serve --flows-dir ./flows --agents-dir ./agents
 | Test a single tool | **Agent** | Quick, focused testing |
 | Kubernetes operations | **Fleet** (k8s-fleet) | K8s + monitoring agents |
 | Full DevOps | **Fleet** (devops-fleet) | K8s + Docker + Git + monitoring |
-| Database work | **Fleet** (database-fleet) | Postgres + Redis agents |
 | Root cause analysis | **Fleet** (rca-fleet) | Multi-model consensus |
-| Telegram/Slack bot | **Flow** | Connect fleet to chat platform |
+| Multi-step workflow | **Flow** | Approval gates, pipelines |
+| Chat platform bot | **Trigger** | Slack, Telegram with command routing |
 
 ---
 
@@ -370,9 +440,10 @@ aofctl serve --flows-dir ./flows --agents-dir ./agents
 |---------|---------|----------|
 | **Agent** | Single-purpose building block | One tool domain, reusable |
 | **Fleet** | Composition of agents | Teams of specialists |
-| **Flow** | Event-driven routing | Connects triggers to fleets |
+| **Flow** | Multi-step workflow | Nodes, connections, approval gates |
+| **Trigger** | Platform + command routing | Maps commands to handlers |
 
-**The simple rule**: Build focused agents → Compose into fleets → Connect via flows.
+**The simple rule**: Build focused agents → Compose into fleets → Define workflows as flows → Connect to chat via triggers.
 
 ---
 
@@ -381,4 +452,4 @@ aofctl serve --flows-dir ./flows --agents-dir ./agents
 - **[Telegram Quickstart](../guides/quickstart-telegram.md)** - Get a bot running in 5 minutes
 - **[Fleet Reference](../reference/fleet-spec.md)** - Complete fleet specification
 - **[Agent Reference](../reference/agent-spec.md)** - Agent YAML specification
-- **[Resource Selection Guide](../concepts/resource-selection.md)** - When to use DaemonConfig vs AgentFlow vs FlowBinding
+- **[Trigger Reference](../reference/trigger-spec.md)** - Trigger YAML specification

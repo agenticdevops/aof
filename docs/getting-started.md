@@ -238,8 +238,11 @@ export SLACK_BOT_TOKEN="xoxb-your-token"
 export SLACK_SIGNING_SECRET="your-secret"
 export KUBECONFIG_PROD="~/.kube/prod-config"
 
-# Start daemon with flows
-aofctl serve --flows-dir ./flows --agents-dir ./agents --port 3000
+# Start daemon with the unified config (includes Slack + Telegram)
+aofctl serve --config examples/config/daemon.yaml
+
+# Or with CLI overrides
+aofctl serve --config examples/config/daemon.yaml --port 3000
 
 # Expose via tunnel (for Slack webhooks)
 cloudflared tunnel --url http://localhost:3000

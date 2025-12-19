@@ -249,7 +249,7 @@ To enable reaction-based approvals, your Slack app needs these additional event 
 3. Add OAuth scope:
    - `reactions:write` - To add ✅ ❌ reactions
 
-See [Slack App Setup Guide](slack-app-setup.md) for complete configuration.
+See [Slack Bot Tutorial](../tutorials/slack-bot.md) for complete configuration.
 
 ## Example Session
 

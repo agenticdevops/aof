@@ -153,21 +153,13 @@ async fn describe_agentflow(content: &str, name: &str) -> Result<()> {
         }
     }
 
-    // Trigger info
-    println!("\nTrigger:");
-    println!("  Type:   {:?}", agentflow.spec.trigger.trigger_type);
-    let config = &agentflow.spec.trigger.config;
-    if !config.events.is_empty() {
-        println!("  Events: {}", config.events.join(", "));
+    // Description
+    if let Some(desc) = &agentflow.spec.description {
+        println!("\nDescription:");
+        println!("  {}", desc);
     }
 
-    // Additional triggers
-    if !agentflow.spec.triggers.is_empty() {
-        println!("\nAdditional Triggers ({}):", agentflow.spec.triggers.len());
-        for trigger in &agentflow.spec.triggers {
-            println!("  - {:?}", trigger.trigger_type);
-        }
-    }
+    // Note: Triggers are now defined in Trigger CRDs and reference flows via command bindings
 
     // Nodes
     println!("\nNodes ({}):", agentflow.spec.nodes.len());

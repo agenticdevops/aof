@@ -15,7 +15,7 @@ AOF resources follow Kubernetes CRD conventions, enabling native Kubernetes depl
 
 ## Resource Model
 
-AOF defines **6 core resources** organized into two layers:
+AOF defines **5 core resources** organized into two layers:
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -26,9 +26,9 @@ AOF defines **6 core resources** organized into two layers:
 │  │ Agent   │  │ Fleet   │  │ Flow    │  ← Execution       │
 │  └─────────┘  └─────────┘  └─────────┘                    │
 │                                                             │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐                    │
-│  │ Context │  │ Trigger │  │FlowBindng│  ← Configuration  │
-│  └─────────┘  └─────────┘  └─────────┘                    │
+│  ┌─────────┐  ┌─────────┐                                 │
+│  │ Context │  │ Trigger │              ← Configuration    │
+│  └─────────┘  └─────────┘                                 │
 │                                                             │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -39,15 +39,14 @@ AOF defines **6 core resources** organized into two layers:
 |----------|-------------|-------------------|
 | **Agent** | Single AI assistant | Pod |
 | **Fleet** | Team of coordinated agents | Deployment |
-| **Flow** | Event-driven workflow | Argo Workflow |
+| **Flow** | Multi-step workflow | Argo Workflow |
 
 ### Configuration Resources
 
 | Resource | Description | Kubernetes Analog |
 |----------|-------------|-------------------|
 | **Context** | Environment configuration | ConfigMap |
-| **Trigger** | Event source | CronJob trigger |
-| **FlowBinding** | Connects Trigger → Context → Flow | Binding |
+| **Trigger** | Platform + command routing | Ingress with routing rules |
 
 ## Complete CRD Definitions
 
@@ -174,7 +173,7 @@ spec:
 
 ### 2. Trigger CRD
 
-Defines event sources that initiate agent workflows.
+Defines event sources with command routing to agents, fleets, or flows.
 
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -199,12 +198,37 @@ spec:
               properties:
                 type:
                   type: string
-                  enum: [Slack, Telegram, Discord, HTTP, Schedule, PagerDuty, Jira]
-                  description: "Trigger type"
+                  enum: [Slack, Telegram, Discord, HTTP, Schedule, PagerDuty, GitHub, WhatsApp, Jira, Manual]
+                  description: "Platform type"
                 config:
                   type: object
                   x-kubernetes-preserve-unknown-fields: true
-                  description: "Type-specific configuration"
+                  description: "Platform-specific configuration"
+                commands:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    properties:
+                      agent:
+                        type: string
+                        description: "Route to agent"
+                      fleet:
+                        type: string
+                        description: "Route to fleet"
+                      flow:
+                        type: string
+                        description: "Route to flow"
+                      description:
+                        type: string
+                        description: "Help text"
+                  description: "Command bindings (e.g., /kubectl → k8s-agent)"
+                default_agent:
+                  type: string
+                  description: "Fallback agent for natural language"
+                enabled:
+                  type: boolean
+                  default: true
+                  description: "Enable/disable trigger"
             status:
               type: object
               properties:
@@ -250,26 +274,11 @@ spec:
                 errorCount:
                   type: integer
                   description: "Total errors encountered"
-                webhookEndpoint:
-                  type: string
-                  description: "Operator-assigned webhook URL (HTTP triggers)"
-                platformStatus:
+                commandStats:
                   type: object
-                  x-kubernetes-preserve-unknown-fields: true
-                  description: "Platform-specific status"
-                metrics:
-                  type: object
-                  properties:
-                    eventsReceived:
-                      type: integer
-                    eventsProcessed:
-                      type: integer
-                    eventsDropped:
-                      type: integer
-                    averageProcessingTime:
-                      type: string
-                    errorRate:
-                      type: number
+                  additionalProperties:
+                    type: integer
+                  description: "Execution count per command"
                 observedGeneration:
                   type: integer
       subresources:
@@ -284,6 +293,9 @@ spec:
         - name: Phase
           type: string
           jsonPath: .status.phase
+        - name: Default
+          type: string
+          jsonPath: .spec.default_agent
         - name: Events
           type: integer
           jsonPath: .status.eventCount
@@ -299,202 +311,7 @@ spec:
       - trg
 ```
 
-### 3. FlowBinding CRD
-
-Connects triggers, contexts, and flows together.
-
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: flowbindings.aof.dev
-spec:
-  group: aof.dev
-  versions:
-    - name: v1
-      served: true
-      storage: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              required:
-                - trigger
-                - context
-                - flow
-              properties:
-                trigger:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                    namespace:
-                      type: string
-                  description: "Reference to Trigger resource"
-                context:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                    namespace:
-                      type: string
-                  description: "Reference to Context resource"
-                flow:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                    namespace:
-                      type: string
-                  description: "Reference to Flow resource"
-                match:
-                  type: object
-                  properties:
-                    patterns:
-                      type: array
-                      items:
-                        type: string
-                      description: "Regex patterns to match"
-                    conditions:
-                      type: object
-                      additionalProperties:
-                        type: string
-                      description: "Key-value conditions"
-            status:
-              type: object
-              properties:
-                active:
-                  type: boolean
-                  description: "Whether binding is active"
-                phase:
-                  type: string
-                  enum: [Pending, Bound, Failed, Suspended]
-                  description: "Binding phase"
-                conditions:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      type:
-                        type: string
-                      status:
-                        type: string
-                        enum: ["True", "False", "Unknown"]
-                      lastTransitionTime:
-                        type: string
-                        format: date-time
-                      reason:
-                        type: string
-                      message:
-                        type: string
-                matchCount:
-                  type: integer
-                  description: "Events matched"
-                executionCount:
-                  type: integer
-                  description: "Flows executed"
-                successCount:
-                  type: integer
-                  description: "Successful executions"
-                failureCount:
-                  type: integer
-                  description: "Failed executions"
-                lastTriggered:
-                  type: object
-                  properties:
-                    timestamp:
-                      type: string
-                      format: date-time
-                    eventId:
-                      type: string
-                    successful:
-                      type: boolean
-                    duration:
-                      type: string
-                resourceStatus:
-                  type: object
-                  properties:
-                    trigger:
-                      type: object
-                      x-kubernetes-preserve-unknown-fields: true
-                    context:
-                      type: object
-                      x-kubernetes-preserve-unknown-fields: true
-                    flow:
-                      type: object
-                      x-kubernetes-preserve-unknown-fields: true
-                metrics:
-                  type: object
-                  properties:
-                    averageExecutionTime:
-                      type: string
-                    p95ExecutionTime:
-                      type: string
-                    p99ExecutionTime:
-                      type: string
-                    successRate:
-                      type: number
-                    lastHourExecutions:
-                      type: integer
-                    lastDayExecutions:
-                      type: integer
-                patternMatching:
-                  type: object
-                  properties:
-                    totalEvents:
-                      type: integer
-                    matchedEvents:
-                      type: integer
-                    matchRate:
-                      type: number
-                    patterns:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          pattern:
-                            type: string
-                          matches:
-                            type: integer
-                observedGeneration:
-                  type: integer
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Trigger
-          type: string
-          jsonPath: .spec.trigger.name
-        - name: Context
-          type: string
-          jsonPath: .spec.context.name
-        - name: Flow
-          type: string
-          jsonPath: .spec.flow.name
-        - name: Active
-          type: boolean
-          jsonPath: .status.active
-        - name: Executions
-          type: integer
-          jsonPath: .status.executionCount
-        - name: Success Rate
-          type: string
-          jsonPath: .status.metrics.successRate
-        - name: Age
-          type: date
-          jsonPath: .metadata.creationTimestamp
-  scope: Namespaced
-  names:
-    plural: flowbindings
-    singular: flowbinding
-    kind: FlowBinding
-    shortNames:
-      - fb
-      - binding
-```
-
-### 4. Agent CRD
+### 3. Agent CRD
 
 Single AI assistant with specific instructions and tools.
 
@@ -589,7 +406,7 @@ spec:
     kind: Agent
 ```
 
-### 5. AgentFleet CRD
+### 4. AgentFleet CRD
 
 Team of coordinated agents for parallel processing.
 
@@ -691,9 +508,9 @@ spec:
       - fleet
 ```
 
-### 6. AgentFlow CRD
+### 5. AgentFlow CRD
 
-Event-driven workflow with triggers and nodes.
+Multi-step workflow with nodes and connections. Flows are pure workflow logic - they are invoked via Trigger command bindings.
 
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -713,42 +530,81 @@ spec:
             spec:
               type: object
               required:
-                - trigger
                 - nodes
                 - connections
               properties:
-                trigger:
-                  type: object
-                  properties:
-                    type:
-                      type: string
-                    config:
-                      type: object
-                      x-kubernetes-preserve-unknown-fields: true
+                description:
+                  type: string
+                  description: "Human-readable description"
                 context:
                   type: object
+                  properties:
+                    ref:
+                      type: string
+                      description: "Reference to Context resource"
+                    namespace:
+                      type: string
+                    env:
+                      type: object
+                      additionalProperties:
+                        type: string
                   x-kubernetes-preserve-unknown-fields: true
+                  description: "Execution context"
                 nodes:
                   type: array
                   items:
                     type: object
+                    required:
+                      - id
+                      - type
                     properties:
                       id:
                         type: string
+                        description: "Unique node identifier"
                       type:
                         type: string
+                        enum: [Agent, Fleet, HumanApproval, Conditional, Response, End]
+                        description: "Node type"
                       config:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                        description: "Type-specific configuration"
+                  description: "Workflow nodes"
                 connections:
                   type: array
                   items:
                     type: object
+                    required:
+                      - from
+                      - to
                     properties:
                       from:
                         type: string
+                        description: "Source node ID (or 'start')"
                       to:
                         type: string
+                        description: "Target node ID"
+                      condition:
+                        type: string
+                        description: "Conditional expression"
+                  description: "Node connections (edges)"
+                config:
+                  type: object
+                  properties:
+                    default_timeout_seconds:
+                      type: integer
+                      description: "Default node timeout"
+                    verbose:
+                      type: boolean
+                    retry:
+                      type: object
+                      properties:
+                        max_attempts:
+                          type: integer
+                        initial_delay:
+                          type: string
+                        backoff_multiplier:
+                          type: number
             status:
               type: object
               properties:
@@ -771,12 +627,12 @@ spec:
       subresources:
         status: {}
       additionalPrinterColumns:
-        - name: Trigger
-          type: string
-          jsonPath: .spec.trigger.type
         - name: Ready
           type: boolean
           jsonPath: .status.ready
+        - name: Nodes
+          type: integer
+          jsonPath: .spec.nodes[*]
         - name: Executions
           type: integer
           jsonPath: .status.totalExecutions
@@ -919,23 +775,28 @@ spec:
       - C01234567
 EOF
 
-# Create binding
+# Trigger includes command routing
 kubectl apply -f - <<EOF
 apiVersion: aof.dev/v1
-kind: FlowBinding
+kind: Trigger
 metadata:
-  name: prod-slack
-  namespace: workflows
+  name: slack-oncall
+  namespace: aof-system
 spec:
-  trigger:
-    name: slack-oncall
-    namespace: aof-system
-  context:
-    name: prod
-    namespace: aof-system
-  flow:
-    name: k8s-troubleshoot
-    namespace: workflows
+  type: Slack
+  config:
+    bot_token: \${SLACK_BOT_TOKEN}
+    app_token: \${SLACK_APP_TOKEN}
+    channels:
+      - C01234567
+  commands:
+    /kubectl:
+      agent: k8s-ops
+    /diagnose:
+      fleet: rca-fleet
+    /deploy:
+      flow: workflows/deploy-flow
+  default_agent: devops
 EOF
 ```
 
@@ -943,10 +804,10 @@ EOF
 
 ```bash
 # Watch all AOF resources
-kubectl get contexts,triggers,flowbindings -A --watch
+kubectl get contexts,triggers,agentflows -A --watch
 
-# Check binding status
-kubectl describe flowbinding prod-slack -n workflows
+# Check trigger status
+kubectl describe trigger slack-oncall -n aof-system
 
 # View trigger events
 kubectl get trigger slack-oncall -n aof-system \
@@ -956,9 +817,9 @@ kubectl get trigger slack-oncall -n aof-system \
 kubectl get context prod -n aof-system \
   -o jsonpath='{.status.ready}'
 
-# View metrics
-kubectl get flowbinding prod-slack -n workflows \
-  -o jsonpath='{.status.metrics.successRate}'
+# View command execution stats
+kubectl get trigger slack-oncall -n aof-system \
+  -o jsonpath='{.status.commandStats}'
 ```
 
 ### GitOps Integration
@@ -1019,51 +880,61 @@ spec:
   type: Slack
   config:
     channels: [C_TEAM_A]
----
-apiVersion: aof.dev/v1
-kind: FlowBinding
-metadata:
-  name: prod-k8s
-  namespace: team-a
-spec:
-  trigger: { name: slack }
-  context: { name: prod }
-  flow: { name: k8s-troubleshoot }
+  commands:
+    /kubectl:
+      agent: k8s-ops
+    /diagnose:
+      fleet: rca-fleet
+  default_agent: devops
 EOF
 
-# Team B gets isolated resources
+# Team B gets isolated resources with their own Trigger
 kubectl apply -f team-b-resources.yaml -n team-b
 ```
 
-### Shared Resources with Cross-Namespace References
+### Shared Flows with Team-Specific Triggers
 
 ```bash
-# Shared contexts (cluster-wide)
+# Shared flow (cluster-wide)
 kubectl apply -f - <<EOF
 apiVersion: aof.dev/v1
-kind: Context
+kind: AgentFlow
 metadata:
-  name: shared-dev
-  namespace: shared-contexts
+  name: deploy-flow
+  namespace: shared-flows
 spec:
-  namespace: development
-  approval:
-    required: false
+  description: "Shared deployment workflow"
+  nodes:
+    - id: validate
+      type: Agent
+      config:
+        agent: validator
+    - id: deploy
+      type: Agent
+      config:
+        agent: k8s-agent
+  connections:
+    - from: start
+      to: validate
+    - from: validate
+      to: deploy
 EOF
 
-# Teams reference shared context
+# Team A trigger references shared flow
 kubectl apply -f - <<EOF
 apiVersion: aof.dev/v1
-kind: FlowBinding
+kind: Trigger
 metadata:
-  name: dev-slack
+  name: team-a-slack
   namespace: team-a
 spec:
-  trigger: { name: slack }
-  context:
-    name: shared-dev
-    namespace: shared-contexts  # Cross-namespace
-  flow: { name: k8s-troubleshoot }
+  type: Slack
+  config:
+    channels: [C_TEAM_A]
+  commands:
+    /deploy:
+      flow: shared-flows/deploy-flow  # Cross-namespace reference
+  default_agent: devops
 EOF
 ```
 
@@ -1083,12 +954,11 @@ aof_trigger_connected{name="slack-oncall", type="Slack"} 1
 aof_trigger_events_total{name="slack-oncall"} 1420
 aof_trigger_errors_total{name="slack-oncall"} 2
 
-# Binding metrics
-aof_binding_executions_total{name="prod-slack"} 287
-aof_binding_success_total{name="prod-slack"} 281
-aof_binding_failure_total{name="prod-slack"} 6
-aof_binding_success_rate{name="prod-slack"} 0.979
-aof_binding_execution_duration_seconds{name="prod-slack", quantile="0.95"} 4.8
+# Command execution metrics
+aof_command_executions_total{trigger="slack-oncall", command="/kubectl"} 287
+aof_command_success_total{trigger="slack-oncall", command="/kubectl"} 281
+aof_command_failure_total{trigger="slack-oncall", command="/kubectl"} 6
+aof_command_execution_duration_seconds{trigger="slack-oncall", quantile="0.95"} 4.8
 ```
 
 ### Grafana Dashboard
@@ -1096,9 +966,9 @@ aof_binding_execution_duration_seconds{name="prod-slack", quantile="0.95"} 4.8
 Example PromQL queries:
 
 ```promql
-# Success rate per binding
-sum(rate(aof_binding_success_total[5m])) by (name) /
-sum(rate(aof_binding_executions_total[5m])) by (name)
+# Success rate per command
+sum(rate(aof_command_success_total[5m])) by (trigger, command) /
+sum(rate(aof_command_executions_total[5m])) by (trigger, command)
 
 # Average execution time
 rate(aof_binding_execution_duration_seconds_sum[5m]) /
@@ -1133,6 +1003,7 @@ kubectl get contexts,triggers -A
 ## See Also
 
 - [Context Resource](./context-spec.md) - Context specification
-- [Trigger Resource](./trigger-spec.md) - Trigger specification
-- [FlowBinding Resource](./flowbinding-spec.md) - Binding specification
+- [Trigger Resource](./trigger-spec.md) - Trigger specification with command bindings
+- [AgentFlow Resource](./agentflow-spec.md) - Multi-step workflow specification
+- [Fleet Resource](./fleet-spec.md) - Fleet specification
 - [Resource Selection Guide](../concepts/resource-selection.md) - When to use what

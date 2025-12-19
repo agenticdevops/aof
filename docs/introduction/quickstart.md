@@ -290,57 +290,48 @@ spec:
       REQUIRE_APPROVAL: "true"  # Approval needed for prod
 ```
 
-## Step 9: Create a FlowBinding (Future)
+## Step 9: Add Command Routing to Triggers
 
-> **Note**: FlowBinding is planned for v1alpha2. For now, we configure everything in the AgentFlow spec.
-
-In the future, you'll be able to separate concerns:
+Triggers now include command bindings directly. This lets you route different commands to different handlers:
 
 ```yaml
 ---
-# flows/telegram-k8s-bot.yaml
-apiVersion: aof.dev/v1alpha2
-kind: Flow
+# triggers/telegram-bot.yaml
+apiVersion: aof.dev/v1
+kind: Trigger
 metadata:
-  name: k8s-bot-flow
+  name: telegram-bot
 spec:
-  nodes:
-    - id: agent
-      type: Agent
-      config:
-        agent: { ref: k8s-ops }  # Reference
----
-# contexts/dev-cluster.yaml
-apiVersion: aof.dev/v1alpha2
-kind: Context
-metadata:
-  name: dev-cluster
-spec:
-  kubeconfig: ${KUBECONFIG_DEV}
-  namespace: default
----
-# bindings/telegram-dev-binding.yaml
-apiVersion: aof.dev/v1alpha2
-kind: FlowBinding
-metadata:
-  name: telegram-dev-binding
-spec:
-  trigger: { ref: telegram-bot }
-  flow: { ref: k8s-bot-flow }
-  agent: { ref: k8s-ops }
-  context: { ref: dev-cluster }
+  type: Telegram
+  config:
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+
+  # Route commands to handlers
+  commands:
+    /kubectl:
+      agent: k8s-ops
+      description: "Kubernetes operations"
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis"
+    /deploy:
+      flow: deploy-flow
+      description: "Deployment workflow"
+
+  # Fallback for natural language
+  default_agent: k8s-ops
 ```
 
-This makes it easy to swap contexts (dev → staging → prod) without changing the flow logic.
+This makes it easy to add new commands without changing your agents or flows.
 
 ## Next Steps
 
-Congratulations! You've built your first agentic workflow. 🎉
+Congratulations! You've built your first agentic workflow.
 
 ### Learn More
 
-- **[Core Concepts](concepts.md)** - Understand the 6 resource types
-- **[Resource Selection Guide](../concepts/resource-selection.md)** - When to use DaemonConfig vs AgentFlow vs FlowBinding
+- **[Core Concepts](concepts.md)** - Understand the 4 resource types (Agent, Fleet, Flow, Trigger)
+- **[Resource Selection Guide](../concepts/resource-selection.md)** - When to use Agent vs Fleet vs Flow
 - **[Agent YAML Reference](../reference/agent-spec.md)** - Complete spec
 
 ### Build More
@@ -445,4 +436,4 @@ For production deployments:
 
 ---
 
-**Ready for enterprise deployment?** → [FlowBinding Reference](../reference/flowbinding-spec.md) for multi-tenant setup
+**Ready for enterprise deployment?** → [Trigger Reference](../reference/trigger-spec.md) for multi-platform routing

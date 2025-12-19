@@ -59,7 +59,8 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Guides',
       items: [
-        'guides/slack-app-setup',
+        'guides/quickstart-telegram',
+        'guides/approval-workflow',
         'guides/deployment',
         'guides/local-testing',
         'guides/testing-mcp',
@@ -74,7 +75,6 @@ const sidebars: SidebarsConfig = {
         'reference/fleet-spec',
         'reference/trigger-spec',
         'reference/context-spec',
-        'reference/flowbinding-spec',
       ],
     },
     {

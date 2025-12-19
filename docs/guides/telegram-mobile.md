@@ -10,29 +10,29 @@ See [Telegram Quickstart](quickstart-telegram.md) for setup instructions.
 
 | Command | Description |
 |---------|-------------|
-| `/help` | Show help and available fleets |
-| `/fleet` | Switch between fleets |
-| `/fleet devops` | Switch to DevOps fleet |
-| `/fleet k8s` | Switch to Kubernetes fleet |
-| `/fleet info` | Show current fleet details |
+| `/help` | Show help and available agents |
+| `/agent` | Switch between agents (interactive) |
+| `/agent k8s` | Switch to Kubernetes agent |
+| `/agent aws` | Switch to AWS agent |
+| `/agent info` | Show current agent details |
 
 ## Usage Flow
 
-1. **Send `/help` or `/fleet`** - Shows available fleets as buttons
-2. **Tap a fleet** - Switches to that fleet
-3. **Send natural messages** - Fleet routes to the right specialist
+1. **Send `/help` or `/agent`** - Shows available agents as buttons
+2. **Tap an agent** - Switches to that agent
+3. **Send natural messages** - Agent handles your query
 
 Example:
 ```
-You: /fleet
-Bot: Select Fleet
-     Current: DevOps
+You: /agent
+Bot: Select Agent
+     Current: Kubernetes
 
-     [DevOps] [Kubernetes] [AWS] [Database] [RCA]
+     [Kubernetes] [AWS] [Docker] [Git]
 
 You: *tap Kubernetes*
 Bot: Switched to Kubernetes
-     Agents: k8s, prometheus, loki
+     Tools: kubectl, helm
 
 You: list pods in production
 Bot: NAME                    READY   STATUS
@@ -40,19 +40,16 @@ Bot: NAME                    READY   STATUS
      web-5c4d3b2a1-p9m8l    1/1     Running
 ```
 
-## How Fleets Work
+## How Agents Work
 
-Fleets are teams of single-purpose agents. When you ask a question, the fleet routes to the right specialist:
+When you ask a question, the selected agent handles your request:
 
 ```
 You: "check pod logs"
          │
          ▼
-    DevOps Fleet
-    (coordinator)
-         │
-         ▼
-    k8s-agent  ← kubectl specialist
+    Kubernetes Agent
+    (kubectl, helm)
          │
          ▼
     Response with logs
@@ -71,15 +68,15 @@ Write operations are blocked on Telegram.
 Use Slack or CLI for this operation.
 ```
 
-## Built-in Fleets
+## Built-in Agents
 
-| Fleet | Agents | Purpose |
-|-------|--------|---------|
-| **DevOps** | k8s + docker + git + prometheus | Full-stack DevOps |
-| **Kubernetes** | k8s + prometheus + loki | K8s cluster operations |
-| **AWS** | aws + terraform | AWS cloud infrastructure |
-| **Database** | postgres + redis | Database operations |
-| **RCA** | collectors + multi-model analysts | Root cause analysis |
+| Agent | Tools | Purpose |
+|-------|-------|---------|
+| **k8s** | kubectl, helm | Kubernetes operations |
+| **aws** | aws cli | AWS cloud operations |
+| **docker** | docker | Container management |
+| **git** | git | Version control |
+| **devops** | kubectl, docker, helm, git, shell | Full-stack DevOps |
 
 ## Troubleshooting
 
@@ -87,9 +84,9 @@ Use Slack or CLI for this operation.
 - Check webhook is set correctly
 - Check server logs for errors
 
-**Fleet has no agents?**
-- Ensure `--fleets-dir` points to fleet YAML files
-- Check fleet file has correct `metadata.name`
+**Agent not found?**
+- Ensure `agents.directory` in config points to agent YAML files
+- Check agent file has correct `metadata.name`
 
 **"Write operation blocked"?**
 - Expected behavior - Telegram is read-only
@@ -98,5 +95,5 @@ Use Slack or CLI for this operation.
 ## Related
 
 - [Quickstart](quickstart-telegram.md) - Setup guide
-- [Fleet Switching](agent-switching.md) - Full command reference
+- [Agent Switching](agent-switching.md) - Full command reference
 - [Safety Layer](safety-layer.md) - Platform policies

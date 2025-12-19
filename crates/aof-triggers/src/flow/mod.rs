@@ -2,13 +2,14 @@
 //!
 //! This module provides:
 //! - `FlowRegistry` - Loads and manages AgentFlow configurations
-//! - `FlowRouter` - Routes incoming trigger events to matching flows (legacy)
-//! - `BindingRouter` - Routes events using FlowBinding resources (composable)
+//! - `FlowRouter` - Simple flow lookup by name
+//! - `FlowMatch` - Container for matched flow with metadata
+//!
+//! Note: Routing decisions are now made at the Trigger level via command bindings.
+//! AgentFlows are pure workflow definitions without embedded triggers.
 
-pub mod binding_router;
 pub mod registry;
 pub mod router;
 
-pub use binding_router::{BindingMatch, BindingRouter, ResolvedExecutionContext};
 pub use registry::FlowRegistry;
 pub use router::{FlowMatch, FlowRouter, MatchReason};

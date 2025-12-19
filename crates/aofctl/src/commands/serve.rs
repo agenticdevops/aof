@@ -343,6 +343,7 @@ pub async fn execute(
         max_tasks_per_user: config.spec.runtime.max_tasks_per_user,
         command_timeout_secs: config.spec.runtime.task_timeout_secs,
         default_agent: config.spec.runtime.default_agent.clone(),
+        command_bindings: std::collections::HashMap::new(), // Loaded from Trigger CRDs
     };
 
     if let Some(ref agent) = config.spec.runtime.default_agent {

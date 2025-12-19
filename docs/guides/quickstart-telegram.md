@@ -4,18 +4,24 @@ Get your AOF Telegram bot running in 5 minutes.
 
 ## What You Need
 
-**3 files only:**
+**Use the built-in config or create your own:**
 
 ```
 your-project/
-├── config.yaml           # Bot configuration
-└── fleets/
-    └── devops-fleet.yaml # Your fleet (or use built-in)
+├── config.yaml           # Bot configuration (or use examples/config/daemon.yaml)
+├── agents/               # Your agents
+└── fleets/               # Your fleets (optional)
 ```
 
-## Step 1: Create Bot Config
+## Step 1: Use or Create Bot Config
 
-Create `config.yaml`:
+**Option A: Use the built-in config:**
+```bash
+# Built-in config already has Telegram enabled
+aofctl serve --config examples/config/daemon.yaml
+```
+
+**Option B: Create your own `config.yaml`:**
 
 ```yaml
 apiVersion: aof.dev/v1
@@ -25,7 +31,7 @@ metadata:
 
 spec:
   server:
-    port: 8080
+    port: 3000
     host: "0.0.0.0"
 
   platforms:
@@ -33,11 +39,11 @@ spec:
       enabled: true
       bot_token_env: "TELEGRAM_BOT_TOKEN"
 
-  fleets:
-    directory: "./fleets"
+  agents:
+    directory: "./agents"
 
   runtime:
-    default_fleet: "devops-fleet"
+    default_agent: "devops"
 ```
 
 ## Step 2: Get Telegram Bot Token
@@ -57,10 +63,10 @@ export GOOGLE_API_KEY="your-google-ai-key"  # or ANTHROPIC_API_KEY
 ## Step 4: Run the Bot
 
 ```bash
-# Using built-in fleets
-aofctl serve --config config.yaml --fleets-dir /path/to/aof/examples/fleets
+# Using built-in example config (Telegram already enabled)
+aofctl serve --config examples/config/daemon.yaml
 
-# Or with your own fleets directory
+# Or with your own config
 aofctl serve --config config.yaml
 ```
 
@@ -80,35 +86,33 @@ Open your bot in Telegram and try:
 
 ```
 /help                    # Show commands
-/fleet                   # Switch fleets
-/fleet devops            # Switch to DevOps fleet
+/agent                   # Switch agents (interactive)
+/agent k8s               # Switch to Kubernetes agent
 list pods                # Natural language query
 kubectl get deployments  # Direct commands
 ```
 
-## Built-in Fleets
+## Built-in Agents
 
-| Command | Fleet | Agents |
-|---------|-------|--------|
-| `/fleet devops` | devops-fleet | k8s, docker, git, prometheus |
-| `/fleet k8s` | k8s-fleet | k8s, prometheus, loki |
-| `/fleet aws` | aws-fleet | aws, terraform |
-| `/fleet database` | database-fleet | postgres, redis |
-| `/fleet rca` | rca-fleet | collectors + multi-model analysts |
+The default config includes these agents from `examples/agents/`:
 
-## How Fleets Work
+| Agent | Tools | Use Case |
+|-------|-------|----------|
+| `devops` | kubectl, docker, helm, git, shell | Full-stack DevOps |
+| `k8s-ops` | kubectl, helm | Kubernetes operations |
+| `sre-agent` | prometheus, loki, kubectl | Observability & SRE |
+| `security` | security tools | Security scanning |
 
-Fleets are teams of single-purpose agents. When you ask a question, the fleet routes to the right specialist:
+## How Agents Work
+
+The daemon routes messages to agents based on the `default_agent` setting or AgentFlow routing:
 
 ```
 You: "why are pods crashing?"
          │
          ▼
-    DevOps Fleet
-    (coordinator)
-         │
-         ▼
-    k8s-agent  ← kubectl specialist
+    devops agent
+    (kubectl, docker, etc.)
          │
          ▼
     Response with analysis
@@ -126,9 +130,9 @@ You: "why are pods crashing?"
 - Check webhook is set: `curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"`
 - Check server logs: look for "Registered platform: telegram"
 
-**Fleet has no agents?**
-- Ensure `--fleets-dir` points to directory with fleet YAML files
-- Check fleet file has correct `metadata.name`
+**Agent not found?**
+- Ensure `agents.directory` in config points to directory with agent YAML files
+- Check agent file has correct `metadata.name` matching `default_agent`
 
 **"Write operation blocked"?**
 - This is expected! Telegram is read-only for safety

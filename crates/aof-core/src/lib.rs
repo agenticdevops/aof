@@ -49,10 +49,9 @@ pub use fleet::{
     MessagePattern, TaskDistribution, ScalingConfig, TieredConfig,
 };
 pub use agentflow::{
-    AgentFlow, AgentFlowMetadata, AgentFlowSpec, AgentFlowState, FlowConfig,
-    FlowConnection, FlowContext, FlowError, FlowExecutionStatus, FlowNode, FlowRetryConfig,
-    FlowTrigger, NodeCondition, NodeConfig, NodeExecutionStatus, NodeResult, NodeType,
-    TriggerConfig, TriggerType,
+    AgentFlow, AgentFlowMetadata, AgentFlowSpec, AgentFlowState, FlowConfig, FlowConnection,
+    FlowContext, FlowError, FlowExecutionStatus, FlowNode, FlowRetryConfig, NodeCondition,
+    NodeConfig, NodeExecutionStatus, NodeResult, NodeType,
 };
 pub use binding::{
     BindingMatch, FlowBinding, FlowBindingMetadata, FlowBindingSpec, ResolvedBinding,
@@ -66,7 +65,8 @@ pub use registry::{
     ResourceManager, TriggerRegistry,
 };
 pub use trigger::{
-    StandaloneTriggerConfig, StandaloneTriggerType, Trigger, TriggerMetadata, TriggerSpec,
+    CommandBinding, StandaloneTriggerConfig, StandaloneTriggerType, Trigger, TriggerMetadata,
+    TriggerSpec,
 };
 
 /// Version information

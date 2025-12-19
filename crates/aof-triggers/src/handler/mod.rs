@@ -75,6 +75,19 @@ impl<T> CommandErrorExt<T> for Result<T, CommandError> {
     }
 }
 
+/// Command binding - maps a slash command to an agent, fleet, or flow
+#[derive(Debug, Clone)]
+pub struct CommandBinding {
+    /// Agent to route to
+    pub agent: Option<String>,
+    /// Fleet to route to
+    pub fleet: Option<String>,
+    /// Flow to route to (AgentFlow name)
+    pub flow: Option<String>,
+    /// Description shown in help
+    pub description: String,
+}
+
 /// Handler configuration
 #[derive(Debug, Clone)]
 pub struct TriggerHandlerConfig {
@@ -92,6 +105,10 @@ pub struct TriggerHandlerConfig {
 
     /// Default agent for natural language messages (non-command messages)
     pub default_agent: Option<String>,
+
+    /// Command bindings (slash command name -> binding)
+    /// Maps commands like "/diagnose" to specific agents or fleets
+    pub command_bindings: HashMap<String, CommandBinding>,
 }
 
 impl Default for TriggerHandlerConfig {
@@ -102,6 +119,7 @@ impl Default for TriggerHandlerConfig {
             max_tasks_per_user: 3,
             command_timeout_secs: 300, // 5 minutes
             default_agent: None,
+            command_bindings: HashMap::new(),
         }
     }
 }
@@ -825,30 +843,56 @@ impl TriggerHandler {
             return self.handle_callback(&message, platform_impl).await;
         }
 
-        // First, check if we have a FlowRouter and try to match an AgentFlow
-        if let Some(ref router) = self.flow_router {
-            // Convert TriggerMessage to aof_triggers::TriggerMessage
-            let trigger_msg = crate::TriggerMessage {
-                message_id: message.id.clone(),
-                user_id: message.user.id.clone(),
-                user_name: message.user.username.clone().unwrap_or_default(),
-                channel_id: message.channel_id.clone(),
-                text: message.text.clone(),
-                thread_id: message.thread_id.clone(),
-                timestamp: message.timestamp,
-                metadata: message.metadata.clone(),
-            };
+        // Check for command bindings (works across all platforms)
+        // - Slack/Discord: metadata.event_type = "slash_command", metadata.command = "/aof"
+        // - Telegram/WhatsApp: message.text starts with "/command"
+        let (command_name, command_text) = self.extract_command_binding(&message);
 
-            if let Some(flow_match) = router.route_best(platform, &trigger_msg) {
-                info!(
-                    "Matched AgentFlow '{}' for message (score: {}, reason: {:?})",
-                    flow_match.flow.metadata.name,
-                    flow_match.score,
-                    flow_match.reason
-                );
-                return self.execute_agentflow(platform_impl, &message, flow_match).await;
+        if let Some(cmd_name) = command_name {
+            // Check if we have a binding for this command
+            if let Some(binding) = self.config.command_bindings.get(&cmd_name) {
+                info!("Command '{}' matched binding: {:?}", cmd_name, binding);
+
+                // Create modified message with just the text (without the command)
+                let mut routed_message = message.clone();
+                routed_message.text = command_text.clone().unwrap_or_default();
+
+                // Route to flow if specified (highest priority - complex workflows)
+                if let Some(ref flow_name) = binding.flow {
+                    info!("Routing command '{}' to flow '{}'", cmd_name, flow_name);
+                    return self.handle_flow_execution(&routed_message, platform_impl, flow_name).await;
+                }
+
+                // Route to fleet if specified (multi-agent teams)
+                if let Some(ref fleet_name) = binding.fleet {
+                    info!("Routing command '{}' to fleet '{}'", cmd_name, fleet_name);
+                    return self.handle_fleet_execution(&routed_message, platform_impl, fleet_name).await;
+                }
+
+                // Route to agent if specified (single agent)
+                if let Some(ref agent_name) = binding.agent {
+                    info!("Routing command '{}' to agent '{}'", cmd_name, agent_name);
+                    return self.handle_natural_language(&routed_message, platform_impl, agent_name).await;
+                }
             }
+
+            // Check for default binding (for any unbound slash command)
+            if let Some(binding) = self.config.command_bindings.get("default") {
+                let mut routed_message = message.clone();
+                routed_message.text = command_text.unwrap_or_else(|| message.text.clone());
+
+                if let Some(ref agent_name) = binding.agent {
+                    info!("Routing command '{}' to default agent '{}'", cmd_name, agent_name);
+                    return self.handle_natural_language(&routed_message, platform_impl, agent_name).await;
+                }
+            }
+
+            // Fall through to default agent handling below
+            info!("No binding for command '{}', using default agent", cmd_name);
         }
+
+        // Note: Flow routing now happens through Trigger command bindings, not flow-embedded triggers.
+        // The FlowRouter provides simple lookup by name for explicit flow references.
 
         // Parse command - if it fails and we have a default agent, route to it
         let cmd = match TriggerCommand::parse(&message) {
@@ -1501,18 +1545,28 @@ impl TriggerHandler {
     }
 
     /// Get the active context for a user session
-    /// Returns the context name (defaults to first available or "cluster-a")
+    /// Returns the context name (defaults to config.default_agent or "devops")
     pub fn get_user_context(&self, user_id: &str) -> String {
         self.user_context_sessions
             .get(user_id)
             .map(|v| v.clone())
             .unwrap_or_else(|| {
-                // Return first available context or default
-                self.available_contexts
-                    .iter()
-                    .next()
-                    .map(|e| e.key().clone())
-                    .unwrap_or_else(|| "k8s".to_string())
+                // Use config's default_agent if set and available as a context
+                if let Some(ref default) = self.config.default_agent {
+                    if self.available_contexts.contains_key(default) {
+                        return default.clone();
+                    }
+                }
+                // Fallback to devops if available, otherwise first context
+                if self.available_contexts.contains_key("devops") {
+                    "devops".to_string()
+                } else {
+                    self.available_contexts
+                        .iter()
+                        .next()
+                        .map(|e| e.key().clone())
+                        .unwrap_or_else(|| "devops".to_string())
+                }
             })
     }
 
@@ -1735,6 +1789,117 @@ impl TriggerHandler {
             .entry(user_id.to_string())
             .and_modify(|count| *count += 1)
             .or_insert(1);
+    }
+
+    /// Extract command binding from message (works across all platforms)
+    /// Returns (command_name, remaining_text) if a bound command is found
+    fn extract_command_binding(&self, message: &TriggerMessage) -> (Option<String>, Option<String>) {
+        // Check Slack/Discord style: metadata contains command info
+        if let Some(event_type) = message.metadata.get("event_type").and_then(|v| v.as_str()) {
+            if event_type == "slash_command" {
+                if let Some(command) = message.metadata.get("command").and_then(|v| v.as_str()) {
+                    let cmd_name = command.trim_start_matches('/').to_string();
+                    // For Slack slash commands, message.text is already just the text after the command
+                    return (Some(cmd_name), Some(message.text.clone()));
+                }
+            }
+        }
+
+        // Check Telegram/WhatsApp/CLI style: message starts with /command
+        // Only check if we have bindings configured (avoid false positives for /help, /agent, etc.)
+        if message.text.starts_with('/') && !self.config.command_bindings.is_empty() {
+            let parts: Vec<&str> = message.text.splitn(2, char::is_whitespace).collect();
+            let cmd_name = parts[0].trim_start_matches('/');
+
+            // Only return if this command has a binding (not built-in commands)
+            if self.config.command_bindings.contains_key(cmd_name) {
+                let remaining_text = parts.get(1).map(|s| s.to_string());
+                return (Some(cmd_name.to_string()), remaining_text);
+            }
+        }
+
+        (None, None)
+    }
+
+    /// Handle flow execution for a bound command
+    async fn handle_flow_execution(
+        &self,
+        message: &TriggerMessage,
+        platform_impl: &Arc<dyn TriggerPlatform>,
+        flow_name: &str,
+    ) -> AofResult<()> {
+        // Check if we have a flow router
+        if let Some(ref router) = self.flow_router {
+            if let Some(flow) = router.get_flow(flow_name) {
+                info!("Executing flow '{}' for message: {}", flow_name, message.text);
+
+                // Send acknowledgment
+                let ack = TriggerResponseBuilder::new()
+                    .text(format!("🔄 Running {} flow...", flow_name))
+                    .build();
+                let _ = platform_impl.send_response(&message.channel_id, ack).await;
+
+                // Create FlowMatch and execute
+                let flow_match = FlowMatch {
+                    flow: flow.clone(),
+                    score: 100, // Highest priority for explicit command binding
+                    reason: crate::flow::MatchReason::ExplicitDefault,
+                };
+
+                return self.execute_agentflow(platform_impl, message, flow_match).await;
+            }
+        }
+
+        // Flow not found
+        let response = TriggerResponseBuilder::new()
+            .text(format!("Flow '{}' not found. Check flows configuration.", flow_name))
+            .error()
+            .build();
+        let _ = platform_impl.send_response(&message.channel_id, response).await;
+        Ok(())
+    }
+
+    /// Handle fleet execution for a bound command
+    async fn handle_fleet_execution(
+        &self,
+        message: &TriggerMessage,
+        platform_impl: &Arc<dyn TriggerPlatform>,
+        fleet_name: &str,
+    ) -> AofResult<()> {
+        // Check if fleet exists
+        if let Some(fleet_config) = self.available_fleets.get(fleet_name) {
+            info!("Executing fleet '{}' for message: {}", fleet_name, message.text);
+
+            // Send acknowledgment
+            let ack = TriggerResponseBuilder::new()
+                .text(format!("{} Running {} fleet...", fleet_config.emoji, fleet_config.display_name))
+                .build();
+            let _ = platform_impl.send_response(&message.channel_id, ack).await;
+
+            // Set user's fleet context
+            self.set_user_fleet(&message.user.id, fleet_name);
+
+            // Route to fleet's first agent for now
+            // TODO: Implement full fleet routing with LLM-based agent selection
+            if let Some(first_agent) = fleet_config.agents.first() {
+                return self.handle_natural_language(message, platform_impl, &first_agent.name).await;
+            }
+
+            let response = TriggerResponseBuilder::new()
+                .text(format!("Fleet '{}' has no agents configured.", fleet_name))
+                .error()
+                .build();
+            let _ = platform_impl.send_response(&message.channel_id, response).await;
+            return Ok(());
+        }
+
+        // Fleet not found
+        let response = TriggerResponseBuilder::new()
+            .text(format!("Fleet '{}' not found. Check fleets configuration.", fleet_name))
+            .error()
+            .build();
+        let _ = platform_impl.send_response(&message.channel_id, response).await;
+        Ok(())
     }
 
     /// Handle natural language message by routing to default agent

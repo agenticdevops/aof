@@ -1165,4 +1165,4 @@ on_error:
 - [Telegram Bot Tutorial](./telegram-ops-bot.md)
 - [WhatsApp Bot Tutorial](./whatsapp-ops-bot.md)
 - [Resource Selection Guide](../concepts/resource-selection.md)
-- [FlowBinding Reference](../reference/flowbinding-spec.md)
+- [Trigger Reference](../reference/trigger-spec.md)

@@ -1,36 +1,38 @@
-# PagerDuty Trigger
+# PagerDuty Webhook Trigger
 #
-# PagerDuty webhook for incident alerts.
+# Receives PagerDuty incident webhooks and routes to incident flow.
 
 apiVersion: aof.dev/v1
 kind: Trigger
 metadata:
-  name: pagerduty
+  name: pagerduty-incidents
   labels:
     platform: pagerduty
-    purpose: alerts
+    purpose: incidents
 
 spec:
-  type: Webhook
+  type: PagerDuty
   config:
     # Webhook endpoint
     path: /webhook/pagerduty
 
     # Authentication
-    auth_type: token
-    auth_token: ${PAGERDUTY_WEBHOOK_TOKEN}
-
-    # Event filtering
-    event_types:
-      - incident.triggered
-      - incident.acknowledged
-      - incident.resolved
+    webhook_secret: ${PAGERDUTY_WEBHOOK_TOKEN}
 
     # PagerDuty service IDs to monitor
-    services:
+    service_ids:
       - PXXXXXX  # Production platform
       - PYYYYYY  # Production database
 
-    # Headers validation
-    required_headers:
-      - X-PagerDuty-Signature
+  # Route PagerDuty events to flows/agents
+  # Event types act as virtual "commands"
+  commands:
+    incident.triggered:
+      flow: incident-flow
+      description: "Auto-triggered incident response"
+
+    incident.acknowledged:
+      agent: devops
+      description: "Incident acknowledged"
+
+  default_agent: devops

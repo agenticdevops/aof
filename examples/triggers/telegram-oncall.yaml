@@ -1,6 +1,7 @@
 # On-Call Telegram Trigger
 #
-# Telegram event source for on-call incident response.
+# Complete Telegram configuration for on-call incident response.
+# Includes command bindings - no separate Binding CRD needed.
 
 apiVersion: aof.dev/v1
 kind: Trigger
@@ -18,21 +19,34 @@ spec:
       - message
       - command
 
-    # Specific chat/group IDs
-    chats:
-      - -1001234567890  # SRE on-call group
+    # Specific chat/group IDs (optional)
+    # chats:
+    #   - -1001234567890  # SRE on-call group
 
-    # Allowed users (Telegram user IDs)
-    users:
-      - 123456789   # On-call engineer 1
-      - 987654321   # On-call engineer 2
+    # Allowed users (Telegram user IDs) - optional
+    # users:
+    #   - 123456789   # On-call engineer 1
 
-    # Authentication
+    # Authentication (env var reference)
     bot_token: ${TELEGRAM_BOT_TOKEN}
 
-    # Commands
-    commands:
-      - /incident
-      - /status
-      - /ack
-      - /resolve
+  # Command bindings for this trigger
+  commands:
+    /agent:
+      agent: devops
+      description: "Switch to DevOps agent"
+
+    /incident:
+      flow: incident-flow
+      description: "Start incident response workflow"
+
+    /status:
+      agent: k8s-ops
+      description: "Check system status"
+
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis"
+
+  # Default agent for natural language messages
+  default_agent: devops

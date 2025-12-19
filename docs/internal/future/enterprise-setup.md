@@ -81,15 +81,11 @@ For enterprise deployments, organize your configuration like this:
 │   ├── staging.yaml                        # Staging environment
 │   └── dev.yaml                            # Development environment
 │
-├── triggers/                                # Trigger definitions (future)
-│   ├── slack-platform.yaml                 # Slack workspace config
-│   ├── telegram-bots.yaml                  # Telegram bots
-│   └── webhooks.yaml                       # HTTP webhooks
-│
-└── bindings/                                # FlowBindings (future)
-    ├── prod-slack-k8s.yaml                 # Bind Slack → Prod flow
-    ├── staging-slack-k8s.yaml              # Bind Slack → Staging flow
-    └── dev-telegram-k8s.yaml               # Bind Telegram → Dev flow
+└── triggers/                                # Trigger definitions with command routing
+    ├── slack-prod.yaml                     # Slack production (routes to prod flows)
+    ├── slack-staging.yaml                  # Slack staging
+    ├── telegram-oncall.yaml                # Telegram for on-call
+    └── webhooks.yaml                       # HTTP webhooks for CI/CD
 ```
 
 ## Setup 1: Multi-Environment (Dev/Staging/Prod)

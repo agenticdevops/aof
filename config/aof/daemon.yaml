@@ -1,5 +1,9 @@
-# AOF Daemon Configuration
-# This file configures the AOF webhook server for platform integrations
+# AOF Daemon Configuration - Production Template
+#
+# This is the production-ready config template with all platform options.
+# Copy to your deployment and configure environment variables.
+#
+# See examples/config/daemon.yaml for detailed documentation and setup instructions.
 
 apiVersion: aof.dev/v1
 kind: DaemonConfig
@@ -7,46 +11,51 @@ metadata:
   name: production
 
 spec:
-  # Server configuration
   server:
     port: 8080
     host: 0.0.0.0
     cors: true
-    timeout_secs: 30
+    timeout_secs: 60
 
-  # Platform integrations
   platforms:
-    # Slack Bot integration
+    # Slack Bot - Enable with SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET
     slack:
       enabled: true
       bot_token_env: SLACK_BOT_TOKEN
       signing_secret_env: SLACK_SIGNING_SECRET
+      # approval_allowed_users:
+      #   - U12345678
 
-    # Telegram Bot integration
+    # Telegram Bot - Enable with TELEGRAM_BOT_TOKEN
     telegram:
       enabled: true
       bot_token_env: TELEGRAM_BOT_TOKEN
+      webhook_secret: null
 
-    # Discord Bot integration
-    discord:
-      enabled: false
-      bot_token_env: DISCORD_BOT_TOKEN
-      application_id_env: DISCORD_APPLICATION_ID
+    # Discord Bot (not yet implemented)
+    # discord:
+    #   enabled: false
+    #   bot_token_env: DISCORD_BOT_TOKEN
+    #   application_id_env: DISCORD_APPLICATION_ID
 
-    # WhatsApp integration (Business API)
-    whatsapp:
-      enabled: false
-      phone_number_id_env: WHATSAPP_PHONE_NUMBER_ID
-      access_token_env: WHATSAPP_ACCESS_TOKEN
-      verify_token_env: WHATSAPP_VERIFY_TOKEN
+    # WhatsApp Business API (not yet implemented)
+    # whatsapp:
+    #   enabled: false
+    #   phone_number_id_env: WHATSAPP_PHONE_NUMBER_ID
+    #   access_token_env: WHATSAPP_ACCESS_TOKEN
+    #   verify_token_env: WHATSAPP_VERIFY_TOKEN
 
-  # Agent configuration
   agents:
     directory: /app/agents
-    watch: true  # Hot-reload agents on file changes
+    watch: true
 
-  # Runtime configuration
+  flows:
+    directory: /app/flows
+    watch: true
+    enabled: true
+
   runtime:
     max_concurrent_tasks: 10
     task_timeout_secs: 300
-    default_model: openai:gpt-4o
+    max_tasks_per_user: 5
+    default_agent: devops

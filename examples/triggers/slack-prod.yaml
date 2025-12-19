@@ -1,7 +1,11 @@
 # Production Slack Trigger
 #
-# Slack event source for production environment.
-# Referenced in bindings to configure message sources.
+# Complete Slack configuration for production environment.
+# Includes command bindings - no separate Binding CRD needed.
+#
+# Usage in daemon.yaml:
+#   triggers:
+#     directory: ./examples/triggers/
 
 apiVersion: aof.dev/v1
 kind: Trigger
@@ -26,15 +30,40 @@ spec:
       - sre-oncall
 
     # Optional: restrict to specific users
-    users:
-      - U012PLATFORM1   # Platform team lead
-      - U012PLATFORM2   # SRE team
+    # users:
+    #   - U012PLATFORM1   # Platform team lead
+    #   - U012PLATFORM2   # SRE team
 
-    # Authentication
+    # Authentication (env var references)
     bot_token: ${SLACK_BOT_TOKEN}
     signing_secret: ${SLACK_SIGNING_SECRET}
 
-    # Rate limiting
-    rate_limit:
-      max_requests_per_minute: 20
-      burst: 5
+  # Command bindings for this trigger
+  # Maps /command to agent, fleet, or flow
+  commands:
+    /aof:
+      agent: devops
+      description: "General DevOps assistant"
+
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis with multi-model consensus"
+
+    /k8s:
+      agent: k8s-ops
+      description: "Kubernetes cluster operations"
+
+    /aws:
+      agent: aws-agent
+      description: "AWS cloud operations"
+
+    /docker:
+      agent: docker-ops
+      description: "Container management"
+
+    /deploy:
+      flow: deploy-flow
+      description: "Deployment workflow with approvals"
+
+  # Default agent for @mentions and natural language
+  default_agent: devops

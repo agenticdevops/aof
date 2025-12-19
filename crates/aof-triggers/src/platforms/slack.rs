@@ -78,6 +78,20 @@ enum SlackEventPayload {
     },
 }
 
+/// Slack slash command payload (form-urlencoded)
+#[derive(Debug, Clone, Deserialize)]
+struct SlackSlashCommand {
+    command: String,
+    text: String,
+    user_id: String,
+    user_name: String,
+    channel_id: String,
+    channel_name: String,
+    team_id: String,
+    response_url: String,
+    trigger_id: String,
+}
+
 /// Slack event types
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -588,6 +602,93 @@ impl SlackPlatform {
             None => true, // Anyone can approve if no whitelist configured
         }
     }
+
+    /// Parse a slash command payload (form-urlencoded)
+    ///
+    /// Slack sends slash commands as application/x-www-form-urlencoded POST requests.
+    /// This method parses the payload and converts it to a TriggerMessage.
+    async fn parse_slash_command(&self, raw: &[u8]) -> Result<TriggerMessage, PlatformError> {
+        let body_str = std::str::from_utf8(raw).map_err(|e| {
+            error!("Invalid UTF-8 in slash command payload: {}", e);
+            PlatformError::ParseError(format!("Invalid UTF-8: {}", e))
+        })?;
+
+        debug!("Parsing slash command payload: {}", body_str);
+
+        // Parse form-urlencoded data
+        let params: HashMap<String, String> = url::form_urlencoded::parse(body_str.as_bytes())
+            .into_owned()
+            .collect();
+
+        // Extract required fields
+        let command = params
+            .get("command")
+            .ok_or_else(|| PlatformError::ParseError("Missing command field".to_string()))?;
+        let text = params.get("text").cloned().unwrap_or_default();
+        let user_id = params
+            .get("user_id")
+            .ok_or_else(|| PlatformError::ParseError("Missing user_id field".to_string()))?;
+        let user_name = params.get("user_name").cloned().unwrap_or_default();
+        let channel_id = params
+            .get("channel_id")
+            .ok_or_else(|| PlatformError::ParseError("Missing channel_id field".to_string()))?;
+        let channel_name = params.get("channel_name").cloned().unwrap_or_default();
+        let team_id = params.get("team_id").cloned().unwrap_or_default();
+        let response_url = params.get("response_url").cloned().unwrap_or_default();
+        let trigger_id = params.get("trigger_id").cloned().unwrap_or_default();
+
+        info!(
+            "Received slash command: {} '{}' from user {} in channel {}",
+            command, text, user_name, channel_name
+        );
+
+        // Check workspace/channel restrictions
+        if !team_id.is_empty() && !self.is_workspace_allowed(&team_id) {
+            warn!("Workspace {} not allowed for slash command", team_id);
+            return Err(PlatformError::InvalidSignature(
+                "Workspace not allowed".to_string(),
+            ));
+        }
+
+        if !self.is_channel_allowed(channel_id) {
+            warn!("Channel {} not allowed for slash command", channel_id);
+            return Err(PlatformError::InvalidSignature(
+                "Channel not allowed".to_string(),
+            ));
+        }
+
+        // Create TriggerUser
+        let trigger_user = TriggerUser {
+            id: user_id.clone(),
+            username: Some(user_name.clone()),
+            display_name: Some(user_name),
+            is_bot: false,
+        };
+
+        // Build metadata
+        let mut metadata = HashMap::new();
+        metadata.insert("team_id".to_string(), serde_json::json!(team_id));
+        metadata.insert("channel_name".to_string(), serde_json::json!(channel_name));
+        metadata.insert("command".to_string(), serde_json::json!(command));
+        metadata.insert("response_url".to_string(), serde_json::json!(response_url));
+        metadata.insert("trigger_id".to_string(), serde_json::json!(trigger_id));
+        metadata.insert("event_type".to_string(), serde_json::json!("slash_command"));
+
+        // Generate unique ID from timestamp
+        let id = format!("slash_{}_{}", chrono::Utc::now().timestamp_millis(), user_id);
+
+        Ok(TriggerMessage {
+            id,
+            platform: "slack".to_string(),
+            channel_id: channel_id.clone(),
+            user: trigger_user,
+            text, // The text after the command (e.g., "show me pods" from "/aof show me pods")
+            timestamp: chrono::Utc::now(),
+            metadata,
+            thread_id: None, // Slash commands don't have threads
+            reply_to: None,
+        })
+    }
 }
 
 #[async_trait]
@@ -610,10 +711,22 @@ impl TriggerPlatform for SlackPlatform {
             }
         }
 
+        // Check content-type to determine if this is a slash command or event
+        let content_type = headers
+            .get("content-type")
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+
+        // Slash commands use application/x-www-form-urlencoded
+        if content_type.contains("application/x-www-form-urlencoded") {
+            return self.parse_slash_command(raw).await;
+        }
+
+        // Events API uses application/json
         let event_payload = self.parse_event_payload(raw)?;
 
         match event_payload {
-            SlackEventPayload::UrlVerification { challenge } => {
+            SlackEventPayload::UrlVerification { challenge: _ } => {
                 // This should be handled separately by the webhook handler
                 Err(PlatformError::UnsupportedMessageType)
             }
@@ -902,5 +1015,83 @@ mod tests {
         assert!(platform.supports_threading());
         assert!(platform.supports_interactive());
         assert!(platform.supports_files());
+    }
+
+    #[tokio::test]
+    async fn test_parse_slash_command() {
+        let config = create_test_config();
+        let platform = SlackPlatform::new(config).unwrap();
+
+        // Simulate Slack slash command form-urlencoded payload
+        let payload = "command=%2Faof&text=show+me+pods&user_id=U12345&user_name=testuser&channel_id=C12345&channel_name=general&team_id=T12345&response_url=https%3A%2F%2Fhooks.slack.com%2Fcommands%2Fxxx&trigger_id=123.456.xxx";
+
+        let result = platform.parse_slash_command(payload.as_bytes()).await;
+        assert!(result.is_ok());
+
+        let msg = result.unwrap();
+        assert_eq!(msg.platform, "slack");
+        assert_eq!(msg.text, "show me pods");
+        assert_eq!(msg.channel_id, "C12345");
+        assert_eq!(msg.user.id, "U12345");
+        assert_eq!(msg.user.username.as_deref(), Some("testuser"));
+        assert_eq!(
+            msg.metadata.get("command").and_then(|v| v.as_str()),
+            Some("/aof")
+        );
+        assert_eq!(
+            msg.metadata.get("event_type").and_then(|v| v.as_str()),
+            Some("slash_command")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_slash_command_empty_text() {
+        let config = create_test_config();
+        let platform = SlackPlatform::new(config).unwrap();
+
+        // Slash command with no text (just "/aof")
+        let payload = "command=%2Faof&text=&user_id=U12345&user_name=testuser&channel_id=C12345&channel_name=general&team_id=T12345&response_url=https%3A%2F%2Fhooks.slack.com%2Fcommands%2Fxxx&trigger_id=123.456.xxx";
+
+        let result = platform.parse_slash_command(payload.as_bytes()).await;
+        assert!(result.is_ok());
+
+        let msg = result.unwrap();
+        assert_eq!(msg.text, ""); // Empty text is valid
+    }
+
+    #[tokio::test]
+    async fn test_parse_slash_command_missing_required_field() {
+        let config = create_test_config();
+        let platform = SlackPlatform::new(config).unwrap();
+
+        // Missing user_id
+        let payload = "command=%2Faof&text=hello&channel_id=C12345";
+
+        let result = platform.parse_slash_command(payload.as_bytes()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_parse_message_detects_slash_command() {
+        let config = create_test_config();
+        let platform = SlackPlatform::new(config).unwrap();
+
+        let payload = "command=%2Faof&text=show+me+pods&user_id=U12345&user_name=testuser&channel_id=C12345&channel_name=general&team_id=T12345&response_url=https%3A%2F%2Fhooks.slack.com%2Fcommands%2Fxxx&trigger_id=123.456.xxx";
+
+        let mut headers = HashMap::new();
+        headers.insert(
+            "content-type".to_string(),
+            "application/x-www-form-urlencoded".to_string(),
+        );
+
+        let result = platform.parse_message(payload.as_bytes(), &headers).await;
+        assert!(result.is_ok());
+
+        let msg = result.unwrap();
+        assert_eq!(msg.text, "show me pods");
+        assert_eq!(
+            msg.metadata.get("event_type").and_then(|v| v.as_str()),
+            Some("slash_command")
+        );
     }
 }

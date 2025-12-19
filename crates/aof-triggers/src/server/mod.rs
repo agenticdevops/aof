@@ -203,8 +203,25 @@ async fn webhook_handler(
     headers: axum::http::HeaderMap,
     body: bytes::Bytes,
 ) -> Result<Response, WebhookError> {
-    // Log incoming webhook event type for debugging
-    if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body) {
+    // Get content-type for logging and routing
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+
+    // Log incoming webhook with content-type
+    if content_type.contains("application/x-www-form-urlencoded") {
+        // Slack slash command - log the command
+        if let Ok(body_str) = std::str::from_utf8(&body) {
+            let params: std::collections::HashMap<String, String> =
+                url::form_urlencoded::parse(body_str.as_bytes())
+                    .into_owned()
+                    .collect();
+            let command = params.get("command").map(|s| s.as_str()).unwrap_or("unknown");
+            let text = params.get("text").map(|s| s.as_str()).unwrap_or("");
+            info!("Received slash command for platform: {} (command: {}, text: '{}')", platform, command, text);
+        }
+    } else if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body) {
         let event_type = payload.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
         let inner_event_type = payload.get("event")
             .and_then(|e| e.get("type"))
@@ -212,7 +229,7 @@ async fn webhook_handler(
             .unwrap_or("none");
         info!("Received webhook for platform: {} (type: {}, event: {})", platform, event_type, inner_event_type);
     } else {
-        debug!("Received webhook for platform: {}", platform);
+        debug!("Received webhook for platform: {} (content-type: {})", platform, content_type);
     }
 
     // Extract headers (lowercase for consistent access)
@@ -253,6 +270,9 @@ async fn webhook_handler(
         .await
         .map_err(|e| WebhookError::ParseError(e.to_string()))?;
 
+    // Check if this is a slash command (form-urlencoded content type)
+    let is_slash_command = content_type.contains("application/x-www-form-urlencoded");
+
     // Handle message asynchronously (fire and forget)
     let handler = Arc::clone(&state.handler);
     let platform_name = platform.clone();
@@ -263,10 +283,16 @@ async fn webhook_handler(
     });
 
     // Return immediate acknowledgment
-    Ok(Json(serde_json::json!({
-        "status": "accepted"
-    }))
-    .into_response())
+    // For Slack slash commands, return empty 200 (we'll respond via response_url or chat.postMessage)
+    // For events API, return JSON acknowledgment
+    if is_slash_command {
+        Ok((StatusCode::OK, "").into_response())
+    } else {
+        Ok(Json(serde_json::json!({
+            "status": "accepted"
+        }))
+        .into_response())
+    }
 }
 
 /// List registered platforms
@@ -287,15 +313,20 @@ enum WebhookError {
 
 impl IntoResponse for WebhookError {
     fn into_response(self) -> Response {
-        let (status, message) = match self {
+        let (status, message) = match &self {
             WebhookError::UnknownPlatform(platform) => {
+                error!("Unknown platform in webhook: {}", platform);
                 (StatusCode::NOT_FOUND, format!("Unknown platform: {}", platform))
             }
             WebhookError::ParseError(msg) => {
+                error!("Parse error in webhook: {}", msg);
                 (StatusCode::BAD_REQUEST, format!("Parse error: {}", msg))
             }
         };
 
+        // For Slack slash commands, we need to return 200 even on errors
+        // otherwise Slack shows "dispatch_failed"
+        // We log the error but return 200 to acknowledge receipt
         (
             status,
             Json(serde_json::json!({

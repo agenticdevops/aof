@@ -422,9 +422,9 @@ aofctl describe context prod
 
 ---
 
-## Usage with FlowBinding
+## Usage with AgentFlow
 
-Contexts are referenced in FlowBindings:
+Contexts are referenced in AgentFlow specs:
 
 ```yaml
 # contexts/prod.yaml
@@ -438,22 +438,28 @@ spec:
     required: true
 
 ---
-# bindings/prod-k8s.yaml
+# flows/k8s-flow.yaml
 apiVersion: aof.dev/v1
-kind: FlowBinding
+kind: AgentFlow
 metadata:
-  name: prod-k8s-binding
+  name: k8s-ops-flow
 spec:
-  trigger: slack-prod
-  context: prod              # Reference to Context
-  flow: k8s-ops-flow
+  context:
+    ref: prod                # Reference to Context
+  nodes:
+    - id: execute
+      type: Agent
+      config:
+        agent: k8s-agent
+  connections:
+    - from: start
+      to: execute
 ```
 
 ---
 
 ## See Also
 
-- [FlowBinding Reference](./flowbinding-spec.md) - Compose contexts with flows
-- [Trigger Reference](./trigger-spec.md) - Message source configuration
+- [Trigger Reference](./trigger-spec.md) - Platform configuration and command routing
+- [AgentFlow Reference](./agentflow-spec.md) - Multi-step workflow specification
 - [DaemonConfig Reference](./daemon-config.md) - Server configuration
-- [Resource Selection Guide](../concepts/resource-selection.md) - When to use what

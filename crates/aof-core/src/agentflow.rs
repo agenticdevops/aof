@@ -1,34 +1,51 @@
 // AOF Core - AgentFlow configuration types
 //
-// AgentFlow is an event-driven workflow orchestration resource that connects
-// triggers (Slack, Discord, HTTP, Schedule, etc.) to agent execution with
-// support for conditional routing, approval flows, and interactive responses.
+// AgentFlow defines multi-step workflows with conditional routing, approval flows,
+// and interactive responses. Flows are triggered via Trigger CRDs which contain
+// command bindings that route to specific flows.
+//
+// Architecture:
+//   Trigger CRD (platform + commands) → references → AgentFlow (workflow logic)
+//
+// This separation allows:
+// - Same flow used from multiple platforms (Slack, Telegram, etc.)
+// - Different commands routing to same flow
+// - Cleaner separation of concerns
 
 use crate::{McpServerConfig, agent::ToolSpec};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// AgentFlow - Event-driven agent workflow
+/// AgentFlow - Multi-step agent workflow
 ///
 /// Example:
 /// ```yaml
 /// apiVersion: aof.dev/v1
 /// kind: AgentFlow
 /// metadata:
-///   name: slack-k8s-bot-flow
+///   name: deploy-flow
 /// spec:
-///   trigger:
-///     type: Slack
-///     config:
-///       events: [app_mention, message]
+///   description: "Deployment workflow with approval"
 ///   nodes:
-///     - id: process
+///     - id: validate
 ///       type: Agent
 ///       config:
-///         agent: my-agent
+///         agent: validator
+///     - id: approve
+///       type: Approval
+///       config:
+///         message: "Deploy to production?"
+///     - id: deploy
+///       type: Agent
+///       config:
+///         agent: deployer
 ///   connections:
-///     - from: trigger
-///       to: process
+///     - from: start
+///       to: validate
+///     - from: validate
+///       to: approve
+///     - from: approve
+///       to: deploy
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,8 +96,9 @@ pub struct AgentFlowMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentFlowSpec {
-    /// Trigger configuration - what starts the flow
-    pub trigger: FlowTrigger,
+    /// Human-readable description of the flow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 
     /// Workflow nodes
     pub nodes: Vec<FlowNode>,
@@ -88,10 +106,6 @@ pub struct AgentFlowSpec {
     /// Node connections (edges in the graph)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub connections: Vec<FlowConnection>,
-
-    /// Additional triggers (for multi-trigger flows)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub triggers: Vec<FlowTrigger>,
 
     /// Execution context (environment, kubeconfig, etc.)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -127,87 +141,6 @@ pub struct FlowContext {
     pub working_dir: Option<String>,
 
     /// Additional context variables available in templates
-    #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
-    pub extra: HashMap<String, serde_json::Value>,
-}
-
-/// Flow trigger configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FlowTrigger {
-    /// Trigger type (Slack, Discord, HTTP, Schedule, etc.)
-    #[serde(rename = "type")]
-    pub trigger_type: TriggerType,
-
-    /// Trigger-specific configuration
-    #[serde(default)]
-    pub config: TriggerConfig,
-}
-
-/// Types of triggers
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TriggerType {
-    /// Slack events (mentions, messages, slash commands)
-    Slack,
-    /// Discord events
-    Discord,
-    /// Telegram events
-    Telegram,
-    /// WhatsApp events
-    WhatsApp,
-    /// Generic HTTP webhook
-    HTTP,
-    /// Cron/schedule-based trigger
-    Schedule,
-    /// Manual trigger
-    Manual,
-}
-
-/// Trigger-specific configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TriggerConfig {
-    /// Events to listen for (Slack: app_mention, message, slash_command)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub events: Vec<String>,
-
-    /// Channels to listen on (Slack/Discord channel names or IDs)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub channels: Vec<String>,
-
-    /// Users to respond to (user IDs or patterns)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub users: Vec<String>,
-
-    /// Message patterns to match (regex)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub patterns: Vec<String>,
-
-    /// Bot token (or env var reference ${VAR_NAME})
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bot_token: Option<String>,
-
-    /// Signing secret (or env var reference)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signing_secret: Option<String>,
-
-    /// Cron expression (for Schedule trigger)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cron: Option<String>,
-
-    /// Timezone (for Schedule trigger)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timezone: Option<String>,
-
-    /// HTTP method (for HTTP trigger)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub method: Option<String>,
-
-    /// HTTP path pattern (for HTTP trigger)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-
-    /// Additional configuration
     #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, serde_json::Value>,
 }
@@ -606,8 +539,9 @@ impl AgentFlow {
         }
 
         // Validate connections reference existing nodes
+        // "start" is a special source that represents the flow entry point
         for conn in &self.spec.connections {
-            if conn.from != "trigger" && !node_ids.contains(conn.from.as_str()) {
+            if conn.from != "start" && !node_ids.contains(conn.from.as_str()) {
                 return Err(format!("Connection references unknown node: {}", conn.from));
             }
             if !node_ids.contains(conn.to.as_str()) {
@@ -643,13 +577,13 @@ impl AgentFlow {
         Ok(())
     }
 
-    /// Get entry nodes (nodes that have a connection from "trigger")
+    /// Get entry nodes (nodes that have a connection from "start")
     pub fn entry_nodes(&self) -> Vec<&FlowNode> {
         let entry_ids: std::collections::HashSet<&str> = self
             .spec
             .connections
             .iter()
-            .filter(|c| c.from == "trigger")
+            .filter(|c| c.from == "start")
             .map(|c| c.to.as_str())
             .collect();
 
@@ -688,45 +622,31 @@ mod tests {
 apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
-  name: slack-bot-flow
+  name: deploy-flow
 spec:
-  trigger:
-    type: Slack
-    config:
-      events:
-        - app_mention
-        - message
-      bot_token: ${SLACK_BOT_TOKEN}
+  description: "Deployment workflow with approval"
   nodes:
-    - id: parse-message
-      type: Transform
-      config:
-        script: |
-          export MESSAGE_TEXT="${event.text}"
-    - id: agent-process
+    - id: validate
       type: Agent
       config:
-        agent: slack-k8s-bot
-        input: ${MESSAGE_TEXT}
-    - id: send-response
-      type: Slack
+        agent: validator
+        input: ${input}
+    - id: deploy
+      type: Agent
       config:
-        channel: ${SLACK_CHANNEL}
-        message: ${agent-process.output}
+        agent: deployer
   connections:
-    - from: trigger
-      to: parse-message
-    - from: parse-message
-      to: agent-process
-    - from: agent-process
-      to: send-response
+    - from: start
+      to: validate
+    - from: validate
+      to: deploy
 "#;
 
         let flow: AgentFlow = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(flow.metadata.name, "slack-bot-flow");
-        assert_eq!(flow.spec.trigger.trigger_type, TriggerType::Slack);
-        assert_eq!(flow.spec.nodes.len(), 3);
-        assert_eq!(flow.spec.connections.len(), 3);
+        assert_eq!(flow.metadata.name, "deploy-flow");
+        assert_eq!(flow.spec.description, Some("Deployment workflow with approval".to_string()));
+        assert_eq!(flow.spec.nodes.len(), 2);
+        assert_eq!(flow.spec.connections.len(), 2);
 
         // Validate
         assert!(flow.validate().is_ok());
@@ -740,8 +660,6 @@ kind: AgentFlow
 metadata:
   name: test-flow
 spec:
-  trigger:
-    type: HTTP
   nodes:
     - id: entry1
       type: Transform
@@ -752,9 +670,9 @@ spec:
     - id: other
       type: End
   connections:
-    - from: trigger
+    - from: start
       to: entry1
-    - from: trigger
+    - from: start
       to: entry2
     - from: entry1
       to: other
@@ -776,8 +694,6 @@ kind: AgentFlow
 metadata:
   name: bad-flow
 spec:
-  trigger:
-    type: HTTP
   nodes: []
   connections: []
 "#;
@@ -792,13 +708,11 @@ kind: AgentFlow
 metadata:
   name: bad-flow
 spec:
-  trigger:
-    type: HTTP
   nodes:
     - id: agent
       type: Agent
   connections:
-    - from: trigger
+    - from: start
       to: agent
 "#;
 
@@ -814,25 +728,21 @@ kind: AgentFlow
 metadata:
   name: conditional-flow
 spec:
-  trigger:
-    type: Slack
   nodes:
     - id: check
       type: Conditional
       config:
         condition: ${requires_approval} == true
     - id: approve
-      type: Slack
+      type: Approval
       config:
-        channel: ${channel}
         message: "Approval needed"
-        wait_for_reaction: true
     - id: execute
       type: Agent
       config:
         agent: executor
   connections:
-    - from: trigger
+    - from: start
       to: check
     - from: check
       to: approve

@@ -381,29 +381,24 @@ impl TelegramPlatform {
         r#"*AOF Bot Commands*
 
 *Quick Start:*
-• `/context` \- Switch project/cluster \(interactive\)
-• `/flows` \- Trigger a workflow \(interactive\)
+• `/agent` \- Switch agent \(interactive\)
 • `/help` \- Show this help
 
-*Context Commands:*
-• `/context` \- List contexts with inline buttons
-• `/context <name>` \- Switch to context directly
-• `/context info` \- Show current context details
-
-Context \= Agent \+ Connection params\. Each context has:
-• An agent \(k8s\-readonly, aws\-readonly, etc\.\)
-• Connection params \(cluster, AWS profile, etc\.\)
+*Agent Commands:*
+• `/agent` \- List agents with inline buttons
+• `/agent <name>` \- Switch to agent directly
+• `/agent info` \- Show current agent details
 
 *Other Commands:*
 • `/run agent <name> <input>` \- Run agent directly
 • `/status task <id>` \- Check task status
 
 *Chat Mode:*
-Select a context with `/context`, then chat naturally\!
+Select an agent with `/agent`, then chat naturally\!
 
 *Examples:*
-• `/context` → tap "Cluster A" → "pod status"
-• `/context aws\-dev` → "list ec2 instances"
+• `/agent` → tap "Kubernetes" → "show pods"
+• `/agent k8s` → "list deployments"
 
 *Support:* [GitHub](https://github\.com/agenticdevops/aof)"#.to_string()
     }

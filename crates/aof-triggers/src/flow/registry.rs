@@ -3,16 +3,17 @@
 //! The FlowRegistry provides:
 //! - Loading flows from YAML files in a directory
 //! - Hot-reload with file watching (optional)
-//! - Flow lookup by name and trigger matching
+//! - Flow lookup by name
+//!
+//! Note: Flows no longer contain triggers. Triggers are defined in Trigger CRDs
+//! which reference flows via command bindings.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use aof_core::{AgentFlow, AofResult, AofError, TriggerType};
+use aof_core::{AgentFlow, AofError, AofResult};
 use dashmap::DashMap;
-use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 /// FlowRegistry manages AgentFlow configurations
 pub struct FlowRegistry {
@@ -137,30 +138,6 @@ impl FlowRegistry {
         self.flows.iter().map(|r| r.value().clone()).collect()
     }
 
-    /// Get flows by trigger type
-    pub fn by_trigger_type(&self, trigger_type: TriggerType) -> Vec<Arc<AgentFlow>> {
-        self.flows
-            .iter()
-            .filter(|r| r.value().spec.trigger.trigger_type == trigger_type)
-            .map(|r| r.value().clone())
-            .collect()
-    }
-
-    /// Get flows for a specific platform (Slack, Discord, etc.)
-    pub fn by_platform(&self, platform: &str) -> Vec<Arc<AgentFlow>> {
-        let trigger_type = match platform.to_lowercase().as_str() {
-            "slack" => TriggerType::Slack,
-            "discord" => TriggerType::Discord,
-            "telegram" => TriggerType::Telegram,
-            "whatsapp" => TriggerType::WhatsApp,
-            "http" | "webhook" => TriggerType::HTTP,
-            "schedule" | "cron" => TriggerType::Schedule,
-            _ => return vec![],
-        };
-
-        self.by_trigger_type(trigger_type)
-    }
-
     /// Number of registered flows
     pub fn len(&self) -> usize {
         self.flows.len()
@@ -209,18 +186,22 @@ mod tests {
     fn test_registry_register_get() {
         let registry = FlowRegistry::new();
 
-        let flow: AgentFlow = serde_yaml::from_str(r#"
+        let flow: AgentFlow = serde_yaml::from_str(
+            r#"
 apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
   name: test-flow
 spec:
-  trigger:
-    type: HTTP
   nodes:
     - id: process
       type: End
-"#).unwrap();
+  connections:
+    - from: start
+      to: process
+"#,
+        )
+        .unwrap();
 
         let name = registry.register(flow);
         assert_eq!(name, "test-flow");
@@ -235,18 +216,23 @@ spec:
         let registry = FlowRegistry::new();
 
         for i in 0..3 {
-            let flow: AgentFlow = serde_yaml::from_str(&format!(r#"
+            let flow: AgentFlow = serde_yaml::from_str(&format!(
+                r#"
 apiVersion: aof.dev/v1
 kind: AgentFlow
 metadata:
   name: flow-{}
 spec:
-  trigger:
-    type: HTTP
   nodes:
     - id: process
       type: End
-"#, i)).unwrap();
+  connections:
+    - from: start
+      to: process
+"#,
+                i
+            ))
+            .unwrap();
             registry.register(flow);
         }
 

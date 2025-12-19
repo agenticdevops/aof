@@ -16,9 +16,10 @@ AOF uses a simple, composable model:
 |---------|------------|---------|
 | **Agent** | Single-purpose specialist | `k8s-agent`, `prometheus-agent` |
 | **Fleet** | Team of agents for a purpose | `devops-fleet`, `rca-fleet` |
-| **Flow** | Event routing to agents/fleets | Telegram → Fleet → Response |
+| **Flow** | Multi-step workflow with nodes | `deploy-flow`, `incident-flow` |
+| **Trigger** | Platform + command routing | `slack-prod`, `telegram-oncall` |
 
-**One way to do it**: Build focused agents → Compose into fleets → Connect via flows.
+**One way to do it**: Build focused agents → Compose into fleets → Define workflows as flows → Connect to chat via triggers.
 
 ## User Guides
 
@@ -29,7 +30,7 @@ AOF uses a simple, composable model:
 - **[Telegram Mobile](guides/telegram-mobile.md)** - Mobile companion guide
 
 ### Platform Setup
-- **[Slack App Setup](guides/slack-app-setup.md)** - Configure Slack bot
+- **[Slack Bot Tutorial](tutorials/slack-bot.md)** - Complete Slack bot setup with approval workflow
 - **[Approval Workflow](guides/approval-workflow.md)** - Human-in-the-loop approvals for Slack
 - **[Conversation Memory](guides/conversation-memory.md)** - Context persistence
 
@@ -38,6 +39,10 @@ AOF uses a simple, composable model:
 - **[aofctl CLI](reference/aofctl.md)** - Command reference
 - **[Agent Spec](reference/agent-spec.md)** - Agent YAML specification
 - **[Fleet Spec](reference/fleet-spec.md)** - Fleet YAML specification
+- **[Trigger Spec](reference/trigger-spec.md)** - Trigger YAML specification (platform + command routing)
+- **[AgentFlow Spec](reference/agentflow-spec.md)** - Multi-step workflow specification
+- **[Context Spec](reference/context-spec.md)** - Execution environment specification
+- **[DaemonConfig](reference/daemon-config.md)** - Server configuration
 - **[Platform Policies](reference/platform-policies.md)** - Safety rules per platform
 
 ## Tutorials
@@ -87,9 +92,9 @@ Composed teams in `examples/fleets/`:
 ## Commands
 
 ```
-/fleet               # List and switch fleets
-/fleet devops        # Switch to DevOps fleet
-/fleet info          # Show current fleet details
+/agent               # List and switch agents (interactive)
+/agent k8s           # Switch to Kubernetes agent
+/agent info          # Show current agent details
 /help                # Show help
 ```
 
@@ -111,8 +116,9 @@ what's the memory usage?
 
 - `examples/agents/library/` - Single-purpose agent library
 - `examples/fleets/` - Fleet compositions
-- `examples/configs/telegram-bot.yaml` - Telegram bot config
-- `examples/configs/slack-k8s-bot.yaml` - Slack bot config
+- `examples/triggers/` - Trigger configurations with command routing
+- `examples/flows/` - Multi-step workflow examples
+- `examples/config/daemon.yaml` - Unified daemon config
 
 ## Support
 
@@ -121,4 +127,4 @@ what's the memory usage?
 
 ---
 
-Last updated: 2025-12-19
+Last updated: 2025-12-20

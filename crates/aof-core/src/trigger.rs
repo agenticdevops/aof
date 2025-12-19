@@ -84,6 +84,36 @@ pub struct TriggerSpec {
     /// Whether this trigger is enabled
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+
+    /// Command bindings for this trigger
+    /// Maps slash commands to agents, fleets, or flows
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub commands: HashMap<String, CommandBinding>,
+
+    /// Default agent for @mentions and natural language messages
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_agent: Option<String>,
+}
+
+/// Command binding - routes a slash command to an agent, fleet, or flow
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CommandBinding {
+    /// Route to a specific agent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+
+    /// Route to a fleet (multi-agent team)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fleet: Option<String>,
+
+    /// Route to a flow (multi-step workflow)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flow: Option<String>,
+
+    /// Description for help text
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
 }
 
 fn default_enabled() -> bool {

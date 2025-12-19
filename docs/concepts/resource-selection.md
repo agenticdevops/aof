@@ -1,455 +1,278 @@
-# Choosing the Right Resource: DaemonConfig vs AgentFlow vs FlowBinding
+# Choosing the Right Resource
 
-AOF provides multiple approaches for connecting platforms to agents. This guide helps you choose the right architecture for your use case.
+AOF provides a composable architecture with four core concepts. This guide helps you choose the right approach for your use case.
 
 ## Quick Decision Tree
 
 ```
-Do you need multi-step workflows (transform → agent → response)?
-├─ No → Use DaemonConfig + Agent (simple)
-└─ Yes → Do you need multi-tenant deployment?
-         ├─ No → Use AgentFlow (workflow orchestration)
-         └─ Yes → Use FlowBinding (composable architecture)
+What do you need to do?
+├─ Single-purpose task → Use Agent
+├─ Multi-agent coordination → Use Fleet
+├─ Multi-step workflow → Use AgentFlow (Flow)
+└─ Connect chat platforms → Use Trigger (with command bindings)
 ```
 
-## Comparison Table
+## The Four Core Concepts
 
-| Feature | DaemonConfig | AgentFlow | FlowBinding |
-|---------|--------------|-----------|-------------|
-| **Complexity** | Simple | Medium | Advanced |
-| **Use case** | Single agent bots | Multi-step workflows | Enterprise multi-tenant |
-| **Agent routing** | `default_agent` + `/agent` command | Flow nodes | Binding composition |
-| **Multi-step flows** | No | Yes | Yes (via AgentFlow ref) |
-| **Parallel execution** | No | Yes | Yes (via AgentFlow ref) |
-| **Conditional routing** | No | Yes | Yes |
-| **Context injection** | No | Per-flow | Per-binding |
-| **Multi-tenant** | No | Limited | Yes |
-| **Approval workflow** | Agent-based | Node-based | Context-based |
-| **Resource reuse** | Low | Medium | High |
+| Concept | What It Is | Example |
+|---------|------------|---------|
+| **Agent** | Single-purpose specialist | `k8s-agent`, `prometheus-agent` |
+| **Fleet** | Team of agents for a purpose | `devops-fleet`, `rca-fleet` |
+| **Flow** | Multi-step workflow with nodes | `deploy-flow`, `incident-flow` |
+| **Trigger** | Platform + command routing | `slack-prod`, `telegram-oncall` |
+
+**One way to do it**: Build focused agents → Compose into fleets → Define workflows as flows → Connect to chat via triggers.
 
 ---
 
-## Option 1: DaemonConfig + Agent (Simple)
+## Option 1: Agent (Single-Purpose)
 
-**Best for:** Slack/Telegram bots, single-agent interactions, quick setup
+**Best for:** Focused tasks, testing, building blocks
 
 ### When to Use
-- You have one agent (or a few selectable agents)
-- Users interact via natural language or commands
-- No complex orchestration needed
-- MVP or proof-of-concept
-
-### Architecture
-```
-┌─────────────────────────────────────────────────────┐
-│ DaemonConfig                                        │
-│ ├─ platforms: telegram, slack                       │
-│ ├─ agents: directory: ./agents                      │
-│ └─ runtime: default_agent: k8s-ops                  │
-└─────────────────────────────────────────────────────┘
-                         │
-                         ▼
-              ┌──────────────────┐
-              │ TriggerHandler   │
-              │ /agent, /fleet   │
-              │ Natural language │
-              └──────────────────┘
-                         │
-                         ▼
-              ┌──────────────────┐
-              │ Agent: k8s-ops   │
-              └──────────────────┘
-```
+- Single tool domain (kubectl, docker, git)
+- Reusable building block
+- Testing a specific capability
+- Simple Q&A interactions
 
 ### Example
 ```yaml
-# config/telegram-bot.yaml
-apiVersion: aof.dev/v1
-kind: DaemonConfig
-metadata:
-  name: telegram-bot
-spec:
-  server:
-    port: 8080
-  platforms:
-    telegram:
-      enabled: true
-      bot_token_env: TELEGRAM_BOT_TOKEN
-  agents:
-    directory: ./agents
-  fleets:
-    directory: ./fleets
-  runtime:
-    default_agent: k8s-ops
-```
-
-```yaml
-# agents/k8s-ops.yaml
-apiVersion: aof.dev/v1
+apiVersion: aof.dev/v1alpha1
 kind: Agent
 metadata:
-  name: k8s-ops
+  name: k8s-agent
 spec:
   model: google:gemini-2.5-flash
-  instructions: |
-    You are a Kubernetes operations assistant.
   tools:
     - kubectl
     - helm
+  system_prompt: |
+    You are a Kubernetes specialist.
+    Focus ONLY on Kubernetes operations.
 ```
 
-### User Interaction
+### CLI Usage
+```bash
+aofctl run agent library/k8s-agent.yaml -i "list pods in production"
 ```
-User: /agent k8s-ops
-Bot: Switched to k8s-ops agent
-
-User: show pods in production
-Bot: [runs kubectl get pods -n production]
-```
-
-### Pros
-- Simple to set up
-- Easy to understand
-- Works today (implemented)
-
-### Cons
-- No multi-step workflows
-- No parallel execution
-- Limited routing logic
 
 ---
 
-## Option 2: AgentFlow (Workflow Orchestration)
+## Option 2: Fleet (Multi-Agent Team)
 
-**Best for:** Multi-step processes, parallel execution, conditional logic
+**Best for:** Complex tasks requiring multiple specialists
 
 ### When to Use
-- You need to chain multiple agents
-- You want parallel agent execution
-- You need conditional branching
-- Complex approval workflows with reactions
-
-### Architecture
-```
-┌─────────────────────────────────────────────────────┐
-│ AgentFlow: pr-review-flow                           │
-│ ┌─────────────────────────────────────────────────┐ │
-│ │ Trigger: Slack (patterns: ["review PR"])        │ │
-│ └─────────────────────────────────────────────────┘ │
-│                        │                            │
-│                        ▼                            │
-│ ┌─────────────────────────────────────────────────┐ │
-│ │ Node: parse-pr (Transform)                      │ │
-│ │ Extract PR URL from message                     │ │
-│ └─────────────────────────────────────────────────┘ │
-│                   /        \                        │
-│                  ▼          ▼                       │
-│ ┌──────────────────┐  ┌──────────────────┐         │
-│ │ security-review  │  │ perf-review      │  ← Parallel
-│ │ (Agent node)     │  │ (Agent node)     │         │
-│ └──────────────────┘  └──────────────────┘         │
-│                   \        /                        │
-│                    ▼      ▼                         │
-│ ┌─────────────────────────────────────────────────┐ │
-│ │ Node: summarize (Agent)                         │ │
-│ │ Combine reviews into final report               │ │
-│ └─────────────────────────────────────────────────┘ │
-│                        │                            │
-│                        ▼                            │
-│ ┌─────────────────────────────────────────────────┐ │
-│ │ Node: send-response (Slack)                     │ │
-│ └─────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────┘
-```
+- Task spans multiple tool domains
+- Need multi-model consensus (RCA)
+- Complex investigation requiring different perspectives
+- Parallel data collection and analysis
 
 ### Example
 ```yaml
-# flows/pr-review-flow.yaml
-apiVersion: aof.dev/v1
-kind: AgentFlow
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
 metadata:
-  name: pr-review-flow
+  name: devops-fleet
 spec:
-  trigger:
-    type: Slack
-    config:
-      events: [app_mention]
-      patterns: ["review PR", "PR review"]
-
-  context:
-    env:
-      GITHUB_TOKEN: ${GITHUB_TOKEN}
-
-  nodes:
-    - id: parse-pr
-      type: Transform
-      config:
-        script: |
-          export PR_URL=$(echo "${event.text}" | grep -oP 'https://github.com/[^ ]+')
-
-    - id: security-review
-      type: Agent
-      config:
-        agent: security-reviewer
-        input: "Review PR for security issues: ${PR_URL}"
-
-    - id: perf-review
-      type: Agent
-      config:
-        agent: perf-reviewer
-        input: "Review PR for performance: ${PR_URL}"
-
-    - id: summarize
-      type: Agent
-      config:
-        agent: summary-agent
-        input: |
-          Combine these reviews:
-          Security: ${security-review.output}
-          Performance: ${perf-review.output}
-
-    - id: respond
-      type: Slack
-      config:
-        channel: ${event.channel_id}
-        thread_ts: ${event.thread_ts}
-        message: ${summarize.output}
-
-  connections:
-    - from: trigger
-      to: parse-pr
-    - from: parse-pr
-      to: security-review
-    - from: parse-pr
-      to: perf-review    # Parallel with security-review
-    - from: security-review
-      to: summarize
-    - from: perf-review
-      to: summarize
-    - from: summarize
-      to: respond
+  display:
+    name: "DevOps"
+    emoji: "🔧"
+  agents:
+    - ref: library/k8s-agent.yaml
+    - ref: library/docker-agent.yaml
+    - ref: library/prometheus-agent.yaml
+  coordination:
+    mode: hierarchical
 ```
 
-### Node Types
-| Node Type | Purpose |
-|-----------|---------|
-| `Transform` | Extract/transform data with scripts |
-| `Agent` | Execute an AI agent |
-| `Conditional` | Branch based on conditions |
-| `Parallel` | Fan-out to multiple branches |
-| `Join` | Merge parallel branches (all/any/majority) |
-| `Slack` | Send Slack message |
-| `HTTP` | Make HTTP request |
-| `Wait` | Delay execution |
-| `Approval` | Wait for human approval |
-| `End` | Terminate flow |
-
-### Pros
-- Multi-step orchestration
-- Parallel execution
-- Conditional branching
-- Rich node types
-
-### Cons
-- More complex configuration
-- Trigger embedded in flow (less reusable)
-- Single-tenant oriented
+### CLI Usage
+```bash
+aofctl run fleet fleets/devops-fleet.yaml -i "why are pods crashing?"
+```
 
 ---
 
-## Option 3: FlowBinding (Composable Architecture)
+## Option 3: AgentFlow (Workflow)
 
-**Best for:** Enterprise deployments, multi-tenant, maximum reusability
+**Best for:** Multi-step processes with approval gates
 
 ### When to Use
-- Same agent/flow used across multiple environments
-- Need strict context boundaries (prod vs staging)
-- Multi-tenant SaaS deployment
-- Complex approval policies per context
-- Maximum DRY (Don't Repeat Yourself)
+- Sequential steps (validate → approve → deploy)
+- Conditional branching based on results
+- Human approval gates
+- Complex orchestration
 
-### Architecture
-```
-┌─────────────────────────────────────────────────────┐
-│ Standalone Resources (Define Once)                  │
-├─────────────────────────────────────────────────────┤
-│ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
-│ │ Trigger:     │ │ Agent:       │ │ AgentFlow:   │ │
-│ │ slack-prod   │ │ k8s-ops      │ │ k8s-flow     │ │
-│ └──────────────┘ └──────────────┘ └──────────────┘ │
-│ ┌──────────────┐ ┌──────────────┐                  │
-│ │ Context:     │ │ Context:     │                  │
-│ │ prod         │ │ staging      │                  │
-│ └──────────────┘ └──────────────┘                  │
-└─────────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────┐
-│ FlowBindings (Compose Resources)                    │
-├─────────────────────────────────────────────────────┤
-│ ┌─────────────────────────────────────────────────┐ │
-│ │ FlowBinding: prod-k8s-binding                   │ │
-│ │ ├─ trigger: slack-prod                          │ │
-│ │ ├─ context: prod                                │ │
-│ │ ├─ flow: k8s-flow (or agent: k8s-ops)          │ │
-│ │ └─ match: patterns: ["kubectl", "k8s"]         │ │
-│ └─────────────────────────────────────────────────┘ │
-│ ┌─────────────────────────────────────────────────┐ │
-│ │ FlowBinding: staging-k8s-binding                │ │
-│ │ ├─ trigger: slack-staging                       │ │
-│ │ ├─ context: staging                             │ │
-│ │ ├─ flow: k8s-flow (SAME flow!)                 │ │
-│ │ └─ match: patterns: ["kubectl", "k8s"]         │ │
-│ └─────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────┘
-```
-
-### Example Resources
-
-**Trigger (standalone):**
+### Example
 ```yaml
-# triggers/slack-prod.yaml
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: deploy-flow
+spec:
+  description: "Deployment with approval"
+  nodes:
+    - id: validate
+      type: Agent
+      config:
+        agent: validator-agent
+    - id: approval
+      type: HumanApproval
+      config:
+        message: "Approve deployment?"
+    - id: deploy
+      type: Agent
+      config:
+        agent: k8s-agent
+  connections:
+    - from: start
+      to: validate
+    - from: validate
+      to: approval
+    - from: approval
+      to: deploy
+      condition: approved
+```
+
+### CLI Usage
+```bash
+aofctl run flow flows/deploy-flow.yaml -i "deploy v2.1.0"
+```
+
+---
+
+## Option 4: Trigger (Platform Routing)
+
+**Best for:** Connecting chat platforms to handlers
+
+### When to Use
+- Chat bots (Slack, Telegram, Discord)
+- Webhook integrations (PagerDuty, GitHub)
+- Command routing (/kubectl, /diagnose, /deploy)
+- Platform-specific configuration
+
+### Example
+```yaml
 apiVersion: aof.dev/v1
 kind: Trigger
 metadata:
-  name: slack-prod
+  name: slack-production
 spec:
   type: Slack
   config:
     bot_token: ${SLACK_BOT_TOKEN}
     signing_secret: ${SLACK_SIGNING_SECRET}
-    channels:
-      - production
-      - prod-alerts
+
+  commands:
+    /kubectl:
+      agent: k8s-agent
+      description: "Kubernetes operations"
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis"
+    /deploy:
+      flow: deploy-flow
+      description: "Deployment workflow"
+
+  default_agent: devops
 ```
 
-**Context (environment boundary):**
-```yaml
-# contexts/prod.yaml
-apiVersion: aof.dev/v1
-kind: Context
-metadata:
-  name: prod
-spec:
-  kubeconfig: ${KUBECONFIG_PROD}
-  namespace: production
-  env:
-    AWS_PROFILE: prod
-  approval:
-    required_for:
-      - "kubectl delete"
-      - "kubectl scale"
-      - "helm uninstall"
-    allowed_users:
-      - U12345678  # SRE Lead
-```
+### Command Targets
 
-**FlowBinding (composition):**
-```yaml
-# bindings/prod-k8s.yaml
-apiVersion: aof.dev/v1
-kind: FlowBinding
-metadata:
-  name: prod-k8s-binding
-spec:
-  trigger: slack-prod      # Reference to Trigger
-  context: prod            # Reference to Context
-  flow: k8s-ops-flow       # Reference to AgentFlow
-  # OR for simple single-agent:
-  # agent: k8s-ops         # Reference to Agent
-  match:
-    patterns:
-      - "kubectl"
-      - "k8s"
-    priority: 100
-  enabled: true
-```
+Each command routes to exactly one target:
 
-### Multi-Tenant Example
-```yaml
-# Same agent, different contexts for different customers
-
-# Customer A binding
-apiVersion: aof.dev/v1
-kind: FlowBinding
-metadata:
-  name: customer-a-k8s
-spec:
-  trigger: slack-customer-a
-  context: customer-a-prod
-  agent: k8s-ops           # Same agent!
+| Target | When to Use | Example |
+|--------|-------------|---------|
+| `agent` | Single-purpose task | `/kubectl → k8s-agent` |
+| `fleet` | Multi-agent coordination | `/diagnose → rca-fleet` |
+| `flow` | Multi-step workflow | `/deploy → deploy-flow` |
 
 ---
-# Customer B binding
-apiVersion: aof.dev/v1
-kind: FlowBinding
-metadata:
-  name: customer-b-k8s
-spec:
-  trigger: slack-customer-b
-  context: customer-b-prod
-  agent: k8s-ops           # Same agent!
+
+## Comparison Table
+
+| Feature | Agent | Fleet | Flow | Trigger |
+|---------|-------|-------|------|---------|
+| **Purpose** | Single task | Multi-agent | Workflow | Platform routing |
+| **Complexity** | Simple | Medium | Medium | Simple |
+| **Reusability** | High | High | Medium | Per-platform |
+| **Multi-step** | No | No | Yes | Routes to others |
+| **Approval gates** | No | No | Yes | Via flow |
+| **Multi-model** | No | Yes | Via fleet | Via fleet |
+
+---
+
+## Architecture Summary
+
 ```
-
-### Pros
-- Maximum reusability (DRY)
-- Clear separation of concerns
-- Multi-tenant support
-- Context-based approval policies
-- Enterprise-scale
-
-### Cons
-- More resources to manage
-- Higher learning curve
-- Requires BindingRouter integration (not yet in handler)
+┌──────────────────────────────────────────────────────────────────────┐
+│                       Complete Architecture                           │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  AGENTS              FLEETS              FLOWS        TRIGGERS        │
+│  (building blocks)   (compositions)      (workflows)  (routing)       │
+│                                                                        │
+│  ┌─────────────┐   ┌─────────────┐   ┌───────────┐  ┌────────────┐   │
+│  │ k8s-agent   │──▶│devops-fleet │   │deploy-flow│◀─│slack-prod  │   │
+│  ├─────────────┤   └─────────────┘   └───────────┘  ├────────────┤   │
+│  │docker-agent │                                    │            │   │
+│  ├─────────────┤   ┌─────────────┐                  │ /deploy    │──▶│
+│  │ git-agent   │──▶│  rca-fleet  │◀────────────────│ /diagnose  │   │
+│  ├─────────────┤   └─────────────┘                  │ /kubectl   │   │
+│  │prometheus   │                                    └────────────┘   │
+│  └─────────────┘                                                      │
+│                                                                        │
+└──────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Migration Path
 
-### Start Simple (DaemonConfig)
+### Start Simple
 ```bash
-# Day 1: Simple bot
-aofctl serve --config daemon.yaml --agents-dir ./agents
+# Test a single agent
+aofctl run agent library/k8s-agent.yaml -i "list pods"
 ```
 
-### Add Workflows (AgentFlow)
+### Add Fleet Composition
 ```bash
-# Week 2: Add multi-step flows
-aofctl serve --config daemon.yaml --agents-dir ./agents --flows-dir ./flows
+# Use a fleet for complex tasks
+aofctl run fleet fleets/devops-fleet.yaml -i "diagnose pod crash"
 ```
 
-### Go Enterprise (FlowBinding)
+### Add Workflows
 ```bash
-# Month 2: Full composable architecture
-aofctl serve --config daemon.yaml \
-  --agents-dir ./agents \
-  --flows-dir ./flows \
-  --triggers-dir ./triggers \
-  --contexts-dir ./contexts \
-  --bindings-dir ./bindings
+# Use flows for approval workflows
+aofctl run flow flows/deploy-flow.yaml -i "deploy v2.1.0"
+```
+
+### Connect to Chat
+```bash
+# Start daemon with triggers
+aofctl serve --config daemon.yaml
 ```
 
 ---
 
 ## Summary
 
-| Approach | Setup Time | Flexibility | Best For |
-|----------|------------|-------------|----------|
-| **DaemonConfig** | 5 min | Low | MVPs, simple bots |
-| **AgentFlow** | 30 min | Medium | Workflows, parallel execution |
-| **FlowBinding** | 1 hour | High | Enterprise, multi-tenant |
+| Approach | Setup Time | Use Case |
+|----------|------------|----------|
+| **Agent** | 2 min | Single tool testing |
+| **Fleet** | 10 min | Multi-agent tasks |
+| **Flow** | 15 min | Approval workflows |
+| **Trigger** | 5 min | Chat platform bots |
 
-**Recommendation:** Start with DaemonConfig. Add AgentFlow when you need workflows. Use FlowBinding when you need multi-tenant or strict context separation.
+**Recommendation:** Build focused agents → Compose into fleets → Define workflows as flows → Connect to chat via triggers.
 
 ---
 
 ## See Also
 
-- [DaemonConfig Reference](../reference/daemon-config.md)
+- [Core Concepts](../introduction/concepts.md) - Mental model
 - [Agent Spec Reference](../reference/agent-spec.md)
-- [AgentFlow Spec Reference](../reference/agentflow-spec.md)
 - [Fleet Spec Reference](../reference/fleet-spec.md)
+- [AgentFlow Spec Reference](../reference/agentflow-spec.md)
 - [Trigger Reference](../reference/trigger-spec.md)
-- [Context Reference](../reference/context-spec.md)
-- [FlowBinding Reference](../reference/flowbinding-spec.md)
+- [DaemonConfig Reference](../reference/daemon-config.md)

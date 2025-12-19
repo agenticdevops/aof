@@ -391,12 +391,15 @@ DaemonConfig references environment variables for sensitive data. Never hardcode
 **Example startup:**
 ```bash
 export TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
+export SLACK_BOT_TOKEN=xoxb-your-slack-token
+export SLACK_SIGNING_SECRET=your-signing-secret
 export GOOGLE_API_KEY=your-google-api-key
 
-aofctl serve \
-  --config config/telegram-bot.yaml \
-  --agents-dir agents/ \
-  --fleets-dir fleets/
+# Use the built-in example config
+aofctl serve --config examples/config/daemon.yaml
+
+# Or with a custom config
+aofctl serve --config config/daemon.yaml
 ```
 
 ---
