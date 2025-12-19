@@ -189,6 +189,28 @@ cargo build --release
 - **Test-First**: Write tests before implementation
 - **Clean Architecture**: Separate concerns
 - **Documentation**: Keep updated
+- **Helpful Error Messages**: Use `serde_path_to_error` for YAML/JSON parsing to show exact field paths on errors
+
+### YAML/JSON Parsing Best Practice
+
+Always use `serde_path_to_error` when deserializing user-provided config files. This gives precise error locations instead of vague "didn't match" errors.
+
+```rust
+// Bad: Generic error messages
+let config: Config = serde_yaml::from_str(&content)?;
+// Error: "data did not match any variant of untagged enum"
+
+// Good: Precise field path errors
+let deserializer = serde_yaml::Deserializer::from_str(&content);
+let config: Config = serde_path_to_error::deserialize(deserializer)
+    .map_err(|e| anyhow!("Field: {}\nError: {}", e.path(), e.inner()))?;
+// Error: "Field: spec.memory\nError: invalid type: map, expected string"
+```
+
+Add to Cargo.toml:
+```toml
+serde_path_to_error = "0.1"
+```
 
 ## 🧪 Testing Options (Rust/Cargo Projects)
 
