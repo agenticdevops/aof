@@ -1,0 +1,62 @@
+# Slack Starter Trigger
+#
+# Minimal Slack bot configuration to get started quickly.
+# Copy this file and customize for your needs.
+#
+# Setup:
+#   1. Create Slack App: https://api.slack.com/apps → Create New App
+#   2. Enable Socket Mode (for development) or Event Subscriptions (for production)
+#   3. Add Bot User with scopes: app_mentions:read, chat:write, im:history
+#   4. Install to workspace
+#   5. Set environment variables:
+#      export SLACK_BOT_TOKEN="xoxb-your-bot-token"
+#      export SLACK_SIGNING_SECRET="your-signing-secret"
+#
+# Webhook URL (for production):
+#   https://your-server/webhook/slack
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: slack-starter
+  labels:
+    platform: slack
+    environment: development
+
+spec:
+  type: Slack
+  config:
+    # Authentication (required)
+    bot_token: ${SLACK_BOT_TOKEN}
+    signing_secret: ${SLACK_SIGNING_SECRET}
+
+    # Events to listen for
+    events:
+      - app_mention       # Responds to @bot mentions
+      - message           # Responds to DMs
+
+    # Optional: Restrict to specific channels
+    # channels:
+    #   - general
+    #   - devops
+
+  # Slash commands - maps /command to handlers
+  commands:
+    /help:
+      agent: devops
+      description: "Show available commands"
+
+    /status:
+      agent: devops
+      description: "Check system status"
+
+    /k8s:
+      agent: k8s-ops
+      description: "Kubernetes operations"
+
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis"
+
+  # Default agent for @mentions and natural language
+  default_agent: devops

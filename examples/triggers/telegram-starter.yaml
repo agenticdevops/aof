@@ -1,0 +1,77 @@
+# Telegram Starter Trigger
+#
+# Minimal Telegram bot configuration to get started quickly.
+# Copy this file and customize for your needs.
+#
+# Setup:
+#   1. Message @BotFather on Telegram
+#   2. Send /newbot and follow prompts
+#   3. Copy the bot token provided
+#   4. Set environment variable:
+#      export TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+#
+# Set webhook (for production):
+#   curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-server/webhook/telegram"
+#
+# Optional: Set commands menu in BotFather:
+#   /setcommands
+#   help - Show available commands
+#   status - Check system status
+#   k8s - Kubernetes operations
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: telegram-starter
+  labels:
+    platform: telegram
+    environment: development
+
+spec:
+  type: Telegram
+  config:
+    # Authentication (required)
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+
+    # Events to listen for
+    events:
+      - message
+      - command
+
+    # Optional: Restrict to specific chats
+    # chat_ids:
+    #   - -1001234567890  # Group chat (negative for groups)
+
+    # Optional: Restrict to specific users
+    # users:
+    #   - "123456789"     # User ID as string
+
+  # Slash commands - maps /command to handlers
+  # These also appear in Telegram's command menu
+  commands:
+    /help:
+      agent: devops
+      description: "Show available commands"
+
+    /status:
+      agent: devops
+      description: "Check system status"
+
+    /k8s:
+      agent: k8s-ops
+      description: "Kubernetes operations"
+
+    /pods:
+      agent: k8s-ops
+      description: "List pods in namespace"
+
+    /logs:
+      agent: k8s-ops
+      description: "View pod logs"
+
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis"
+
+  # Default agent for natural language messages
+  default_agent: devops
