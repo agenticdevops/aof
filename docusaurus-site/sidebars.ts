@@ -61,6 +61,7 @@ const sidebars: SidebarsConfig = {
         'reference/agent-spec',
         'reference/agentflow-spec',
         'reference/fleet-spec',
+        'reference/daemon-config',
         'reference/aofctl',
       ],
     },
@@ -74,6 +75,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'tutorials/first-agent',
         'tutorials/slack-bot',
+        'tutorials/telegram-ops-bot',
         'tutorials/incident-response',
         'tutorials/rca-fleet',
         'tutorials/multi-model-rca-quickstart',
