@@ -194,6 +194,84 @@ pub struct ContextConfig {
 
     /// Environment variables set when this context is active
     pub env: std::collections::HashMap<String, String>,
+
+    /// Read-only mode - blocks write/delete/dangerous operations
+    /// Default: true for mobile platforms (Telegram, WhatsApp), false for CLI/Slack
+    pub read_only: bool,
+}
+
+/// Simple write operation detection for MVP safety layer
+/// Returns true if the input looks like a write/delete/dangerous operation
+fn is_write_operation(input: &str) -> bool {
+    let input_lower = input.to_lowercase();
+
+    // kubectl write operations
+    let kubectl_writes = [
+        "kubectl apply", "kubectl create", "kubectl delete", "kubectl patch",
+        "kubectl edit", "kubectl replace", "kubectl set", "kubectl scale",
+        "kubectl rollout", "kubectl drain", "kubectl cordon", "kubectl taint",
+        "kubectl label", "kubectl annotate", "kubectl expose",
+    ];
+
+    // docker write operations
+    let docker_writes = [
+        "docker rm", "docker rmi", "docker stop", "docker kill", "docker prune",
+        "docker push", "docker build", "docker run", "docker exec",
+    ];
+
+    // helm write operations
+    let helm_writes = [
+        "helm install", "helm upgrade", "helm delete", "helm uninstall",
+        "helm rollback",
+    ];
+
+    // terraform write operations
+    let terraform_writes = [
+        "terraform apply", "terraform destroy", "terraform import",
+    ];
+
+    // aws write operations
+    let aws_writes = [
+        "aws ec2 terminate", "aws ec2 stop", "aws ec2 start", "aws ec2 run",
+        "aws s3 rm", "aws s3 cp", "aws s3 mv", "aws s3 sync",
+        "aws ecs update", "aws ecs delete", "aws lambda delete",
+    ];
+
+    // git write operations
+    let git_writes = [
+        "git push", "git commit", "git reset", "git revert", "git merge",
+        "git rebase", "git checkout", "git branch -d", "git branch -D",
+    ];
+
+    // Generic dangerous patterns
+    let dangerous = [
+        "rm -rf", "rm -r", "rmdir", "drop database", "truncate table",
+        "delete from", "update ", "insert into",
+    ];
+
+    // Natural language write intents
+    let nl_writes = [
+        "create ", "deploy ", "delete ", "remove ", "scale ", "restart ",
+        "update ", "apply ", "install ", "uninstall ", "rollback ",
+        "push ", "commit ", "terminate ", "stop ", "kill ",
+    ];
+
+    // Check all patterns
+    for pattern in kubectl_writes.iter()
+        .chain(docker_writes.iter())
+        .chain(helm_writes.iter())
+        .chain(terraform_writes.iter())
+        .chain(aws_writes.iter())
+        .chain(git_writes.iter())
+        .chain(dangerous.iter())
+        .chain(nl_writes.iter())
+    {
+        if input_lower.contains(pattern) {
+            return true;
+        }
+    }
+
+    false
 }
 
 impl TriggerHandler {
@@ -242,6 +320,7 @@ impl TriggerHandler {
         // Development K8s context (full stack with Prometheus, Loki, Argo, AWS)
         // This is the recommended default for testing
         // Uses "devops" agent which has: kubectl, docker, helm, terraform, git, shell
+        // read_only: true by default - write ops blocked on Telegram
         self.available_contexts.insert("dev-k8s".to_string(), ContextConfig {
             display_name: "Dev K8s (Full Stack)".to_string(),
             emoji: "🚀".to_string(),
@@ -265,6 +344,7 @@ impl TriggerHandler {
                 ("AWS_PROFILE".to_string(), "development".to_string()),
                 ("AWS_REGION".to_string(), "us-west-2".to_string()),
             ].into_iter().collect(),
+            read_only: true,  // MVP safety: block writes on Telegram
         });
 
         // Kubernetes Cluster A context (production EKS)
@@ -284,6 +364,7 @@ impl TriggerHandler {
                 ("KUBECONFIG".to_string(), "~/.kube/config".to_string()),
                 ("AWS_PROFILE".to_string(), "production".to_string()),
             ].into_iter().collect(),
+            read_only: true,  // Production: always read-only from Telegram
         });
 
         // AWS Dev Account context
@@ -303,6 +384,7 @@ impl TriggerHandler {
                 ("AWS_PROFILE".to_string(), "development".to_string()),
                 ("AWS_REGION".to_string(), "us-west-2".to_string()),
             ].into_iter().collect(),
+            read_only: true,  // MVP safety: block writes on Telegram
         });
 
         // Database context - uses general assistant (no specific db agent yet)
@@ -318,6 +400,7 @@ impl TriggerHandler {
             agent_ref: Some("assistant".to_string()),  // examples/agents/assistant.yaml
             tools: vec!["psql".to_string()],
             env: std::collections::HashMap::new(),
+            read_only: true,  // Database: always read-only
         });
 
         // Prometheus/Monitoring context
@@ -334,6 +417,7 @@ impl TriggerHandler {
             agent_ref: Some("sre-agent".to_string()),  // examples/agents/sre-agent.yaml
             tools: vec!["prometheus_query".to_string(), "loki_query".to_string()],
             env: std::collections::HashMap::new(),
+            read_only: true,  // Monitoring: read-only by nature
         });
     }
 
@@ -1160,6 +1244,16 @@ Once you select a context, just type naturally. The agent for that context will 
             .or_else(|| self.config.default_agent.clone())
     }
 
+    /// Check if user's current context is read-only
+    /// Used by handle_natural_language to block write operations on Telegram
+    pub fn is_user_context_read_only(&self, user_id: &str) -> bool {
+        let ctx_name = self.get_user_context(user_id);
+        self.available_contexts
+            .get(&ctx_name)
+            .map(|ctx| ctx.read_only)
+            .unwrap_or(true)  // Default to read-only for safety
+    }
+
     /// Handle callback from inline keyboard (context/flow selection)
     ///
     /// Callback data format:
@@ -1375,6 +1469,31 @@ Once you select a context, just type naturally. The agent for that context will 
         }
 
         info!("Processing natural language input for agent {}: {}", agent_name, input);
+
+        // MVP Safety Layer: Block write operations in read-only contexts
+        // This is the simplest possible safety check for Telegram/mobile platforms
+        let is_read_only = self.is_user_context_read_only(&message.user.id);
+        if is_read_only && is_write_operation(&input) {
+            let ctx_name = self.get_user_context(&message.user.id);
+            warn!("Blocked write operation in read-only context '{}': {}", ctx_name, input);
+
+            let response = TriggerResponseBuilder::new()
+                .text(format!(
+                    "🚫 *Write operation blocked*\n\n\
+                    This context (`{}`) is read-only. Write, delete, and dangerous operations are not allowed.\n\n\
+                    *What you can do:*\n\
+                    • Use read-only commands (get, list, describe, logs)\n\
+                    • Switch to a write-enabled context\n\
+                    • Use Slack or CLI for write operations\n\n\
+                    _Detected write intent: `{}`_",
+                    ctx_name,
+                    if input.len() > 50 { &input[..50] } else { &input }
+                ))
+                .error()
+                .build();
+            let _ = platform_impl.send_response(&message.channel_id, response).await;
+            return Ok(());
+        }
 
         let thread_id = message.thread_id.as_deref();
 

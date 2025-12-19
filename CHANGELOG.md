@@ -39,13 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/flows` command with inline keyboard selection for triggering flows
   - Session-based agent tracking per user
   - Callback handling for Telegram inline buttons
-- **Safety Layer** - Tool classification and platform-aware policies
-  - `aof-triggers::safety` module with classifier, policy, and context
-  - Action classes: read, write, delete, dangerous
-  - Default policies: CLI (permissive), Slack (approval for writes), Telegram/WhatsApp (read-only)
-  - Tool-specific verb classifications (kubectl, docker, helm, git, aws, gcloud, terraform)
-  - Generic regex patterns for unknown tools
-  - Fail-secure defaults (unknown = write)
+- **MVP Safety Layer** - Simple read-only mode for mobile platforms
+  - `read_only: bool` field in Context spec - blocks write operations when true
+  - Pattern-based write detection for kubectl, docker, helm, terraform, aws, git
+  - Natural language intent detection (create, deploy, delete, scale, etc.)
+  - Clear error messages explaining why operation was blocked
+  - All default contexts set to `read_only: true` for Telegram safety
+  - Fail-secure: unknown operations blocked in read-only mode
 - **ASCII Visualization Crate** - `aof-viz` for mobile-friendly output
   - Status rendering with emoji and ASCII styles
   - Flow visualization (linear, inline, branching)
