@@ -172,17 +172,17 @@ triggers:
 
 input:
   from_event:
-    pr_number: "{{ event.pull_request.number }}"
-    repo: "{{ event.repository.full_name }}"
-    head_sha: "{{ event.pull_request.head.sha }}"
-    base_branch: "{{ event.pull_request.base.ref }}"
-    author: "{{ event.pull_request.user.login }}"
-    files_changed: "{{ event.pull_request.changed_files }}"
+    pr_number: "\{\{ event.pull_request.number \}\}"
+    repo: "\{\{ event.repository.full_name \}\}"
+    head_sha: "\{\{ event.pull_request.head.sha \}\}"
+    base_branch: "\{\{ event.pull_request.base.ref \}\}"
+    author: "\{\{ event.pull_request.user.login \}\}"
+    files_changed: "\{\{ event.pull_request.changed_files \}\}"
 
 # Skip if PR is from bot or draft
 conditions:
-  - "{{ not event.pull_request.draft }}"
-  - "{{ event.pull_request.user.type != 'Bot' }}"
+  - "\{\{ not event.pull_request.draft \}\}"
+  - "\{\{ event.pull_request.user.type != 'Bot' \}\}"
 
 steps:
   # Create initial check run
@@ -190,8 +190,8 @@ steps:
     agent: github
     action: create_check_run
     input:
-      repo: "{{ input.repo }}"
-      head_sha: "{{ input.head_sha }}"
+      repo: "\{\{ input.repo \}\}"
+      head_sha: "\{\{ input.head_sha \}\}"
       name: "AOF Code Review"
       status: "in_progress"
       output:
@@ -203,8 +203,8 @@ steps:
     agent: github
     action: get_pr_files
     input:
-      repo: "{{ input.repo }}"
-      pr_number: "{{ input.pr_number }}"
+      repo: "\{\{ input.repo \}\}"
+      pr_number: "\{\{ input.pr_number \}\}"
 
   # Parallel analysis
   - name: analyze
@@ -215,9 +215,9 @@ steps:
         agent: security-scanner
         action: scan
         input:
-          repo: "{{ input.repo }}"
-          ref: "{{ input.head_sha }}"
-          files: "{{ steps.get-files.output.files }}"
+          repo: "\{\{ input.repo \}\}"
+          ref: "\{\{ input.head_sha \}\}"
+          files: "\{\{ steps.get-files.output.files \}\}"
         checks:
           - type: secrets
             severity: critical
@@ -233,7 +233,7 @@ steps:
         agent: perf-analyzer
         action: analyze
         input:
-          files: "{{ steps.get-files.output.files }}"
+          files: "\{\{ steps.get-files.output.files \}\}"
         checks:
           - type: n_plus_one
           - type: missing_indexes
@@ -245,7 +245,7 @@ steps:
         agent: code-quality
         action: check
         input:
-          files: "{{ steps.get-files.output.files }}"
+          files: "\{\{ steps.get-files.output.files \}\}"
           config:
             max_complexity: 10
             max_file_length: 500
@@ -255,10 +255,10 @@ steps:
       # Kubernetes manifest validation (if applicable)
       - name: k8s-validation
         agent: kubernetes-validator
-        condition: "{{ steps.get-files.output.files | selectattr('filename', 'match', '.*\\.ya?ml$') | list | length > 0 }}"
+        condition: "\{\{ steps.get-files.output.files | selectattr('filename', 'match', '.*\\.ya?ml$') | list | length > 0 \}\}"
         action: validate
         input:
-          files: "{{ steps.get-files.output.files | selectattr('filename', 'match', '.*\\.ya?ml$') | list }}"
+          files: "\{\{ steps.get-files.output.files | selectattr('filename', 'match', '.*\\.ya?ml$') | list \}\}"
         checks:
           - type: schema
           - type: security_context
@@ -270,28 +270,28 @@ steps:
     agent: review-aggregator
     action: aggregate
     input:
-      security: "{{ steps.analyze.security-scan.output }}"
-      performance: "{{ steps.analyze.perf-analysis.output }}"
-      quality: "{{ steps.analyze.quality-check.output }}"
-      k8s: "{{ steps.analyze.k8s-validation.output | default({}) }}"
+      security: "\{\{ steps.analyze.security-scan.output \}\}"
+      performance: "\{\{ steps.analyze.perf-analysis.output \}\}"
+      quality: "\{\{ steps.analyze.quality-check.output \}\}"
+      k8s: "\{\{ steps.analyze.k8s-validation.output | default({}) \}\}"
 
   # Determine approval status
   - name: determine-status
     agent: decision-maker
     action: evaluate
     input:
-      results: "{{ steps.aggregate-results.output }}"
+      results: "\{\{ steps.aggregate-results.output \}\}"
     rules:
-      - condition: "{{ results.security.critical_count > 0 }}"
+      - condition: "\{\{ results.security.critical_count > 0 \}\}"
         status: "failure"
         message: "Critical security issues found"
-      - condition: "{{ results.security.high_count > 0 }}"
+      - condition: "\{\{ results.security.high_count > 0 \}\}"
         status: "failure"
         message: "High severity security issues found"
-      - condition: "{{ results.quality.coverage < 80 }}"
+      - condition: "\{\{ results.quality.coverage < 80 \}\}"
         status: "failure"
         message: "Test coverage below 80%"
-      - condition: "{{ results.performance.issues | length > 5 }}"
+      - condition: "\{\{ results.performance.issues | length > 5 \}\}"
         status: "warning"
         message: "Multiple performance issues detected"
       - default:
@@ -303,76 +303,76 @@ steps:
     agent: github
     action: post_review
     input:
-      repo: "{{ input.repo }}"
-      pr_number: "{{ input.pr_number }}"
-      commit_id: "{{ input.head_sha }}"
-      event: "{{ 'APPROVE' if steps.determine-status.output.status == 'success' else 'REQUEST_CHANGES' }}"
+      repo: "\{\{ input.repo \}\}"
+      pr_number: "\{\{ input.pr_number \}\}"
+      commit_id: "\{\{ input.head_sha \}\}"
+      event: "\{\{ 'APPROVE' if steps.determine-status.output.status == 'success' else 'REQUEST_CHANGES' \}\}"
       body: |
         ## 🤖 Automated Code Review
 
-        {{ '✅' if steps.determine-status.output.status == 'success' else '❌' }} **{{ steps.determine-status.output.message }}**
+        \{\{ '✅' if steps.determine-status.output.status == 'success' else '❌' \}\} **\{\{ steps.determine-status.output.message \}\}**
 
         ### Security Scan
-        {{ '✅' if steps.aggregate-results.output.security.passed else '❌' }} {{ steps.aggregate-results.output.security.summary }}
+        \{\{ '✅' if steps.aggregate-results.output.security.passed else '❌' \}\} \{\{ steps.aggregate-results.output.security.summary \}\}
         {% if steps.aggregate-results.output.security.issues %}
         <details>
-        <summary>Security Issues ({{ steps.aggregate-results.output.security.issues | length }})</summary>
+        <summary>Security Issues (\{\{ steps.aggregate-results.output.security.issues | length \}\})</summary>
 
         {% for issue in steps.aggregate-results.output.security.issues %}
-        - **{{ issue.severity }}**: {{ issue.message }} (`{{ issue.file }}:{{ issue.line }}`)
+        - **\{\{ issue.severity \}\}**: \{\{ issue.message \}\} (`\{\{ issue.file \}\}:\{\{ issue.line \}\}`)
         {% endfor %}
         </details>
         {% endif %}
 
         ### Performance Analysis
-        {{ '✅' if steps.aggregate-results.output.performance.passed else '⚠️' }} {{ steps.aggregate-results.output.performance.summary }}
+        \{\{ '✅' if steps.aggregate-results.output.performance.passed else '⚠️' \}\} \{\{ steps.aggregate-results.output.performance.summary \}\}
         {% if steps.aggregate-results.output.performance.issues %}
         <details>
-        <summary>Performance Issues ({{ steps.aggregate-results.output.performance.issues | length }})</summary>
+        <summary>Performance Issues (\{\{ steps.aggregate-results.output.performance.issues | length \}\})</summary>
 
         {% for issue in steps.aggregate-results.output.performance.issues %}
-        - **{{ issue.type }}**: {{ issue.message }} (`{{ issue.file }}:{{ issue.line }}`)
+        - **\{\{ issue.type \}\}**: \{\{ issue.message \}\} (`\{\{ issue.file \}\}:\{\{ issue.line \}\}`)
         {% endfor %}
         </details>
         {% endif %}
 
         ### Code Quality
-        - Complexity: {{ '✅' if steps.aggregate-results.output.quality.complexity_ok else '❌' }} (max: {{ steps.aggregate-results.output.quality.max_complexity }})
-        - Test Coverage: {{ '✅' if steps.aggregate-results.output.quality.coverage >= 80 else '❌' }} {{ steps.aggregate-results.output.quality.coverage }}%
-        - Lint: {{ '✅' if steps.aggregate-results.output.quality.lint_passed else '❌' }}
+        - Complexity: \{\{ '✅' if steps.aggregate-results.output.quality.complexity_ok else '❌' \}\} (max: \{\{ steps.aggregate-results.output.quality.max_complexity \}\})
+        - Test Coverage: \{\{ '✅' if steps.aggregate-results.output.quality.coverage >= 80 else '❌' \}\} \{\{ steps.aggregate-results.output.quality.coverage \}\}%
+        - Lint: \{\{ '✅' if steps.aggregate-results.output.quality.lint_passed else '❌' \}\}
 
         {% if steps.aggregate-results.output.k8s %}
         ### Kubernetes Validation
-        {{ '✅' if steps.aggregate-results.output.k8s.passed else '❌' }} {{ steps.aggregate-results.output.k8s.summary }}
+        \{\{ '✅' if steps.aggregate-results.output.k8s.passed else '❌' \}\} \{\{ steps.aggregate-results.output.k8s.summary \}\}
         {% endif %}
 
         ---
-        <sub>🤖 Review by [AOF](https://docs.aof.sh) | [Re-run review]({{ trigger.event.pull_request.html_url }}/checks)</sub>
-      comments: "{{ steps.aggregate-results.output.inline_comments }}"
+        <sub>🤖 Review by [AOF](https://docs.aof.sh) | [Re-run review](\{\{ trigger.event.pull_request.html_url \}\}/checks)</sub>
+      comments: "\{\{ steps.aggregate-results.output.inline_comments \}\}"
 
   # Update check run
   - name: update-check
     agent: github
     action: update_check_run
     input:
-      repo: "{{ input.repo }}"
-      check_run_id: "{{ steps.create-check.output.id }}"
-      conclusion: "{{ steps.determine-status.output.status }}"
+      repo: "\{\{ input.repo \}\}"
+      check_run_id: "\{\{ steps.create-check.output.id \}\}"
+      conclusion: "\{\{ steps.determine-status.output.status \}\}"
       output:
-        title: "{{ steps.determine-status.output.message }}"
+        title: "\{\{ steps.determine-status.output.message \}\}"
         summary: |
-          **Security**: {{ steps.aggregate-results.output.security.summary }}
-          **Performance**: {{ steps.aggregate-results.output.performance.summary }}
-          **Quality**: Coverage {{ steps.aggregate-results.output.quality.coverage }}%
+          **Security**: \{\{ steps.aggregate-results.output.security.summary \}\}
+          **Performance**: \{\{ steps.aggregate-results.output.performance.summary \}\}
+          **Quality**: Coverage \{\{ steps.aggregate-results.output.quality.coverage \}\}%
 
   # Add labels based on content
   - name: add-labels
     agent: github
     action: add_labels
     input:
-      repo: "{{ input.repo }}"
-      issue_number: "{{ input.pr_number }}"
-      labels: "{{ steps.aggregate-results.output.suggested_labels }}"
+      repo: "\{\{ input.repo \}\}"
+      issue_number: "\{\{ input.pr_number \}\}"
+      labels: "\{\{ steps.aggregate-results.output.suggested_labels \}\}"
 ```
 
 ### 3.2 PR Size & Risk Labels
@@ -397,17 +397,17 @@ steps:
     agent: pr-analyzer
     action: analyze_size
     input:
-      additions: "{{ event.pull_request.additions }}"
-      deletions: "{{ event.pull_request.deletions }}"
-      files_changed: "{{ event.pull_request.changed_files }}"
+      additions: "\{\{ event.pull_request.additions \}\}"
+      deletions: "\{\{ event.pull_request.deletions \}\}"
+      files_changed: "\{\{ event.pull_request.changed_files \}\}"
     rules:
-      - condition: "{{ additions + deletions < 50 }}"
+      - condition: "\{\{ additions + deletions < 50 \}\}"
         label: "size/XS"
-      - condition: "{{ additions + deletions < 200 }}"
+      - condition: "\{\{ additions + deletions < 200 \}\}"
         label: "size/S"
-      - condition: "{{ additions + deletions < 500 }}"
+      - condition: "\{\{ additions + deletions < 500 \}\}"
         label: "size/M"
-      - condition: "{{ additions + deletions < 1000 }}"
+      - condition: "\{\{ additions + deletions < 1000 \}\}"
         label: "size/L"
       - default:
         label: "size/XL"
@@ -416,7 +416,7 @@ steps:
     agent: pr-analyzer
     action: analyze_risk
     input:
-      files: "{{ event.pull_request.files }}"
+      files: "\{\{ event.pull_request.files \}\}"
     rules:
       # High risk areas
       - pattern: "^.*/(auth|security|crypto)/"
@@ -439,20 +439,20 @@ steps:
     agent: github
     action: add_labels
     input:
-      repo: "{{ event.repository.full_name }}"
-      issue_number: "{{ event.pull_request.number }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.pull_request.number \}\}"
       labels:
-        - "{{ steps.analyze-size.output.label }}"
-        - "{{ steps.analyze-risk.output.labels }}"
+        - "\{\{ steps.analyze-size.output.label \}\}"
+        - "\{\{ steps.analyze-risk.output.labels \}\}"
 
   - name: request-reviewers
-    condition: "{{ steps.analyze-risk.output.required_reviewers | length > 0 }}"
+    condition: "\{\{ steps.analyze-risk.output.required_reviewers | length > 0 \}\}"
     agent: github
     action: request_reviewers
     input:
-      repo: "{{ event.repository.full_name }}"
-      pr_number: "{{ event.pull_request.number }}"
-      teams: "{{ steps.analyze-risk.output.required_reviewers }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      pr_number: "\{\{ event.pull_request.number \}\}"
+      teams: "\{\{ steps.analyze-risk.output.required_reviewers \}\}"
 ```
 
 ## Step 4: Deployment Automation
@@ -477,14 +477,14 @@ triggers:
 
 conditions:
   # Only run if this is a merge (not a direct push)
-  - "{{ event.head_commit.message | regex_search('Merge pull request') }}"
+  - "\{\{ event.head_commit.message | regex_search('Merge pull request') \}\}"
 
 input:
   from_event:
-    repo: "{{ event.repository.full_name }}"
-    commit_sha: "{{ event.head_commit.id }}"
-    commit_message: "{{ event.head_commit.message }}"
-    author: "{{ event.head_commit.author.username }}"
+    repo: "\{\{ event.repository.full_name \}\}"
+    commit_sha: "\{\{ event.head_commit.id \}\}"
+    commit_message: "\{\{ event.head_commit.message \}\}"
+    author: "\{\{ event.head_commit.author.username \}\}"
 
 steps:
   # Extract PR number from merge commit
@@ -492,27 +492,27 @@ steps:
     agent: parser
     action: extract
     input:
-      text: "{{ input.commit_message }}"
+      text: "\{\{ input.commit_message \}\}"
       pattern: "Merge pull request #(\\d+)"
     output:
-      pr_number: "{{ match.1 }}"
+      pr_number: "\{\{ match.1 \}\}"
 
   # Get deployment info from PR labels
   - name: get-pr
     agent: github
     action: get_pull_request
     input:
-      repo: "{{ input.repo }}"
-      pr_number: "{{ steps.get-pr-info.output.pr_number }}"
+      repo: "\{\{ input.repo \}\}"
+      pr_number: "\{\{ steps.get-pr-info.output.pr_number \}\}"
 
   # Check if deployment is allowed
   - name: check-deployment-gate
     agent: deployment-gate
     action: check
     input:
-      repo: "{{ input.repo }}"
+      repo: "\{\{ input.repo \}\}"
       environment: "production"
-      commit_sha: "{{ input.commit_sha }}"
+      commit_sha: "\{\{ input.commit_sha \}\}"
     checks:
       - type: all_checks_passed
         required: true
@@ -530,20 +530,20 @@ steps:
     agent: github
     action: create_deployment
     input:
-      repo: "{{ input.repo }}"
-      ref: "{{ input.commit_sha }}"
+      repo: "\{\{ input.repo \}\}"
+      ref: "\{\{ input.commit_sha \}\}"
       environment: "production"
       auto_merge: false
       required_contexts: []
-      description: "Deploying from PR #{{ steps.get-pr-info.output.pr_number }}"
+      description: "Deploying from PR #\{\{ steps.get-pr-info.output.pr_number \}\}"
 
   # Update deployment status
   - name: start-deployment
     agent: github
     action: create_deployment_status
     input:
-      repo: "{{ input.repo }}"
-      deployment_id: "{{ steps.create-deployment.output.id }}"
+      repo: "\{\{ input.repo \}\}"
+      deployment_id: "\{\{ steps.create-deployment.output.id \}\}"
       state: "in_progress"
       description: "Deployment started"
 
@@ -553,8 +553,8 @@ steps:
     action: deploy
     input:
       cluster: "production"
-      namespace: "{{ input.repo | split('/') | last }}"
-      image: "ghcr.io/{{ input.repo }}:{{ input.commit_sha | truncate(7) }}"
+      namespace: "\{\{ input.repo | split('/') | last \}\}"
+      image: "ghcr.io/\{\{ input.repo \}\}:\{\{ input.commit_sha | truncate(7) \}\}"
       strategy: "rolling"
       health_check:
         path: "/health"
@@ -568,10 +568,10 @@ steps:
     agent: github
     action: create_deployment_status
     input:
-      repo: "{{ input.repo }}"
-      deployment_id: "{{ steps.create-deployment.output.id }}"
+      repo: "\{\{ input.repo \}\}"
+      deployment_id: "\{\{ steps.create-deployment.output.id \}\}"
       state: "success"
-      environment_url: "https://{{ input.repo | split('/') | last }}.example.com"
+      environment_url: "https://\{\{ input.repo | split('/') | last \}\}.example.com"
       description: "Deployed successfully"
 
   # Post deployment comment
@@ -579,22 +579,22 @@ steps:
     agent: github
     action: post_comment
     input:
-      repo: "{{ input.repo }}"
-      issue_number: "{{ steps.get-pr-info.output.pr_number }}"
+      repo: "\{\{ input.repo \}\}"
+      issue_number: "\{\{ steps.get-pr-info.output.pr_number \}\}"
       body: |
         ## 🚀 Deployed to Production
 
         | | |
         |---|---|
-        | **Commit** | [`{{ input.commit_sha | truncate(7) }}`](https://github.com/{{ input.repo }}/commit/{{ input.commit_sha }}) |
-        | **Environment** | [production](https://{{ input.repo | split('/') | last }}.example.com) |
-        | **Deployed by** | @{{ input.author }} |
-        | **Time** | {{ now() | format_time }} |
+        | **Commit** | [`\{\{ input.commit_sha | truncate(7) \}\}`](https://github.com/\{\{ input.repo \}\}/commit/\{\{ input.commit_sha \}\}) |
+        | **Environment** | [production](https://\{\{ input.repo | split('/') | last \}\}.example.com) |
+        | **Deployed by** | @\{\{ input.author \}\} |
+        | **Time** | \{\{ now() | format_time \}\} |
 
         ### Verification Links
-        - [Application](https://{{ input.repo | split('/') | last }}.example.com)
-        - [Logs](https://logs.example.com/{{ input.repo | split('/') | last }}/production)
-        - [Metrics](https://grafana.example.com/d/{{ input.repo | split('/') | last }})
+        - [Application](https://\{\{ input.repo | split('/') | last \}\}.example.com)
+        - [Logs](https://logs.example.com/\{\{ input.repo | split('/') | last \}\}/production)
+        - [Metrics](https://grafana.example.com/d/\{\{ input.repo | split('/') | last \}\})
 
   # Notify Slack
   - name: notify-slack
@@ -603,20 +603,20 @@ steps:
     input:
       channel: "#deployments"
       text: |
-        :rocket: *{{ input.repo }}* deployed to production
-        Commit: {{ input.commit_sha | truncate(7) }}
-        Author: {{ input.author }}
-        <https://{{ input.repo | split('/') | last }}.example.com|View Application>
+        :rocket: *\{\{ input.repo \}\}* deployed to production
+        Commit: \{\{ input.commit_sha | truncate(7) \}\}
+        Author: \{\{ input.author \}\}
+        <https://\{\{ input.repo | split('/') | last \}\}.example.com|View Application>
 
 on_error:
   - name: fail-deployment
     agent: github
     action: create_deployment_status
     input:
-      repo: "{{ input.repo }}"
-      deployment_id: "{{ steps.create-deployment.output.id }}"
+      repo: "\{\{ input.repo \}\}"
+      deployment_id: "\{\{ steps.create-deployment.output.id \}\}"
       state: "failure"
-      description: "{{ error.message }}"
+      description: "\{\{ error.message \}\}"
 
   - name: notify-failure
     agent: multi-channel
@@ -625,9 +625,9 @@ on_error:
       channels: ["slack:#deployments", "pagerduty"]
       message: |
         ❌ Production deployment failed
-        Repo: {{ input.repo }}
-        Commit: {{ input.commit_sha }}
-        Error: {{ error.message }}
+        Repo: \{\{ input.repo \}\}
+        Commit: \{\{ input.commit_sha \}\}
+        Error: \{\{ error.message \}\}
 ```
 
 ### 4.2 Staging Deploy on PR
@@ -648,8 +648,8 @@ triggers:
       - pull_request.synchronize
 
 conditions:
-  - "{{ not event.pull_request.draft }}"
-  - "{{ 'no-preview' not in event.pull_request.labels | map(attribute='name') }}"
+  - "\{\{ not event.pull_request.draft \}\}"
+  - "\{\{ 'no-preview' not in event.pull_request.labels | map(attribute='name') \}\}"
 
 steps:
   # Create deployment
@@ -657,9 +657,9 @@ steps:
     agent: github
     action: create_deployment
     input:
-      repo: "{{ event.repository.full_name }}"
-      ref: "{{ event.pull_request.head.sha }}"
-      environment: "preview-pr-{{ event.pull_request.number }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      ref: "\{\{ event.pull_request.head.sha \}\}"
+      environment: "preview-pr-\{\{ event.pull_request.number \}\}"
       transient_environment: true
       production_environment: false
 
@@ -669,9 +669,9 @@ steps:
     action: deploy
     input:
       cluster: "staging"
-      namespace: "preview-{{ event.pull_request.number }}"
+      namespace: "preview-\{\{ event.pull_request.number \}\}"
       create_namespace: true
-      image: "ghcr.io/{{ event.repository.full_name }}:pr-{{ event.pull_request.number }}"
+      image: "ghcr.io/\{\{ event.repository.full_name \}\}:pr-\{\{ event.pull_request.number \}\}"
       resources:
         requests:
           cpu: "100m"
@@ -687,32 +687,32 @@ steps:
     action: create_ingress
     input:
       cluster: "staging"
-      namespace: "preview-{{ event.pull_request.number }}"
-      host: "pr-{{ event.pull_request.number }}.preview.example.com"
+      namespace: "preview-\{\{ event.pull_request.number \}\}"
+      host: "pr-\{\{ event.pull_request.number \}\}.preview.example.com"
 
   # Update deployment status
   - name: update-status
     agent: github
     action: create_deployment_status
     input:
-      repo: "{{ event.repository.full_name }}"
-      deployment_id: "{{ steps.create-deployment.output.id }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      deployment_id: "\{\{ steps.create-deployment.output.id \}\}"
       state: "success"
-      environment_url: "https://pr-{{ event.pull_request.number }}.preview.example.com"
+      environment_url: "https://pr-\{\{ event.pull_request.number \}\}.preview.example.com"
 
   # Post comment with preview URL
   - name: post-comment
     agent: github
     action: post_comment
     input:
-      repo: "{{ event.repository.full_name }}"
-      issue_number: "{{ event.pull_request.number }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.pull_request.number \}\}"
       body: |
         ## 🔍 Preview Environment Ready
 
         | Environment | URL |
         |-------------|-----|
-        | Preview | https://pr-{{ event.pull_request.number }}.preview.example.com |
+        | Preview | https://pr-\{\{ event.pull_request.number \}\}.preview.example.com |
 
         This preview will be automatically deleted 72 hours after the PR is closed.
 
@@ -744,8 +744,8 @@ steps:
     agent: issue-analyzer
     action: analyze
     input:
-      title: "{{ event.issue.title }}"
-      body: "{{ event.issue.body }}"
+      title: "\{\{ event.issue.title \}\}"
+      body: "\{\{ event.issue.body \}\}"
     rules:
       # Bug detection
       - patterns: ["bug", "error", "crash", "not working", "broken"]
@@ -770,7 +770,7 @@ steps:
     agent: classifier
     action: classify
     input:
-      text: "{{ event.issue.title }} {{ event.issue.body }}"
+      text: "\{\{ event.issue.title \}\} \{\{ event.issue.body \}\}"
     categories:
       - name: "api"
         patterns: ["api", "endpoint", "rest", "graphql"]
@@ -788,12 +788,12 @@ steps:
     agent: github
     action: add_labels
     input:
-      repo: "{{ event.repository.full_name }}"
-      issue_number: "{{ event.issue.number }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.issue.number \}\}"
       labels:
-        - "{{ steps.analyze-issue.output.label }}"
-        - "priority/{{ steps.analyze-issue.output.priority }}"
-        - "component/{{ steps.determine-component.output.category }}"
+        - "\{\{ steps.analyze-issue.output.label \}\}"
+        - "priority/\{\{ steps.analyze-issue.output.priority \}\}"
+        - "component/\{\{ steps.determine-component.output.category \}\}"
         - "needs-triage"
 
   # Assign to team
@@ -801,9 +801,9 @@ steps:
     agent: github
     action: add_assignees
     input:
-      repo: "{{ event.repository.full_name }}"
-      issue_number: "{{ event.issue.number }}"
-      assignees: "{{ team_mapping[steps.determine-component.output.category] }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.issue.number \}\}"
+      assignees: "\{\{ team_mapping[steps.determine-component.output.category] \}\}"
     variables:
       team_mapping:
         api: ["backend-team"]
@@ -817,15 +817,15 @@ steps:
     agent: github
     action: post_comment
     input:
-      repo: "{{ event.repository.full_name }}"
-      issue_number: "{{ event.issue.number }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.issue.number \}\}"
       body: |
-        Thanks for opening this issue, @{{ event.issue.user.login }}! 👋
+        Thanks for opening this issue, @\{\{ event.issue.user.login \}\}! 👋
 
         I've automatically classified this as:
-        - **Type**: {{ steps.analyze-issue.output.label }}
-        - **Priority**: {{ steps.analyze-issue.output.priority }}
-        - **Component**: {{ steps.determine-component.output.category }}
+        - **Type**: \{\{ steps.analyze-issue.output.label \}\}
+        - **Priority**: \{\{ steps.analyze-issue.output.priority \}\}
+        - **Component**: \{\{ steps.determine-component.output.category \}\}
 
         {% if steps.analyze-issue.output.label == 'bug' %}
         To help us investigate, please ensure you've provided:
@@ -844,7 +844,7 @@ steps:
 
   # Notify on critical issues
   - name: notify-critical
-    condition: "{{ steps.analyze-issue.output.priority == 'critical' }}"
+    condition: "\{\{ steps.analyze-issue.output.priority == 'critical' \}\}"
     agent: multi-channel
     action: notify
     input:
@@ -854,11 +854,11 @@ steps:
       message: |
         🚨 Critical security issue opened
 
-        Repo: {{ event.repository.full_name }}
-        Issue: #{{ event.issue.number }} - {{ event.issue.title }}
-        Author: @{{ event.issue.user.login }}
+        Repo: \{\{ event.repository.full_name \}\}
+        Issue: #\{\{ event.issue.number \}\} - \{\{ event.issue.title \}\}
+        Author: @\{\{ event.issue.user.login \}\}
 
-        {{ event.issue.html_url }}
+        \{\{ event.issue.html_url \}\}
 ```
 
 ## Step 6: Release Management
@@ -885,46 +885,46 @@ steps:
     agent: parser
     action: parse
     input:
-      tag: "{{ event.release.tag_name }}"
-      body: "{{ event.release.body }}"
+      tag: "\{\{ event.release.tag_name \}\}"
+      body: "\{\{ event.release.body \}\}"
     extract:
-      version: "{{ tag | regex_replace('^v', '') }}"
-      is_prerelease: "{{ event.release.prerelease }}"
-      changelog: "{{ body }}"
+      version: "\{\{ tag | regex_replace('^v', '') \}\}"
+      is_prerelease: "\{\{ event.release.prerelease \}\}"
+      changelog: "\{\{ body \}\}"
 
   # Build and push container images
   - name: build-images
     agent: docker-builder
     action: build_and_push
     input:
-      repo: "{{ event.repository.full_name }}"
-      tag: "{{ event.release.tag_name }}"
+      repo: "\{\{ event.repository.full_name \}\}"
+      tag: "\{\{ event.release.tag_name \}\}"
       platforms: ["linux/amd64", "linux/arm64"]
       registries:
-        - "ghcr.io/{{ event.repository.full_name }}"
-        - "docker.io/{{ event.repository.name }}"
+        - "ghcr.io/\{\{ event.repository.full_name \}\}"
+        - "docker.io/\{\{ event.repository.name \}\}"
 
   # Update Helm chart
   - name: update-helm
     agent: helm-manager
     action: update_chart
     input:
-      repo: "{{ event.repository.owner.login }}/helm-charts"
-      chart: "{{ event.repository.name }}"
-      app_version: "{{ steps.parse-release.output.version }}"
+      repo: "\{\{ event.repository.owner.login \}\}/helm-charts"
+      chart: "\{\{ event.repository.name \}\}"
+      app_version: "\{\{ steps.parse-release.output.version \}\}"
       values:
         image:
-          tag: "{{ event.release.tag_name }}"
+          tag: "\{\{ event.release.tag_name \}\}"
 
   # Update documentation
   - name: update-docs
     agent: docs-manager
     action: update_version
     input:
-      repo: "{{ event.repository.owner.login }}/docs"
-      product: "{{ event.repository.name }}"
-      version: "{{ steps.parse-release.output.version }}"
-      changelog: "{{ steps.parse-release.output.changelog }}"
+      repo: "\{\{ event.repository.owner.login \}\}/docs"
+      product: "\{\{ event.repository.name \}\}"
+      version: "\{\{ steps.parse-release.output.version \}\}"
+      changelog: "\{\{ steps.parse-release.output.changelog \}\}"
 
   # Notify channels
   - name: announce-release
@@ -938,44 +938,44 @@ steps:
           message:
             blocks:
               - type: header
-                text: "🎉 {{ event.repository.name }} {{ event.release.tag_name }} Released"
+                text: "🎉 \{\{ event.repository.name \}\} \{\{ event.release.tag_name \}\} Released"
               - type: section
-                text: "{{ steps.parse-release.output.changelog | truncate(500) }}"
+                text: "\{\{ steps.parse-release.output.changelog | truncate(500) \}\}"
               - type: actions
                 elements:
                   - type: button
                     text: "View Release"
-                    url: "{{ event.release.html_url }}"
+                    url: "\{\{ event.release.html_url \}\}"
                   - type: button
                     text: "Changelog"
-                    url: "{{ event.repository.html_url }}/blob/main/CHANGELOG.md"
+                    url: "\{\{ event.repository.html_url \}\}/blob/main/CHANGELOG.md"
 
         - type: twitter
-          condition: "{{ not steps.parse-release.output.is_prerelease }}"
+          condition: "\{\{ not steps.parse-release.output.is_prerelease \}\}"
           message: |
-            🚀 {{ event.repository.name }} {{ event.release.tag_name }} is out!
+            🚀 \{\{ event.repository.name \}\} \{\{ event.release.tag_name \}\} is out!
 
-            {{ steps.parse-release.output.changelog | summarize(200) }}
+            \{\{ steps.parse-release.output.changelog | summarize(200) \}\}
 
-            {{ event.release.html_url }}
+            \{\{ event.release.html_url \}\}
 
         - type: discord
           channel: "releases"
           embed:
-            title: "{{ event.repository.name }} {{ event.release.tag_name }}"
-            description: "{{ steps.parse-release.output.changelog }}"
-            url: "{{ event.release.html_url }}"
+            title: "\{\{ event.repository.name \}\} \{\{ event.release.tag_name \}\}"
+            description: "\{\{ steps.parse-release.output.changelog \}\}"
+            url: "\{\{ event.release.html_url \}\}"
             color: 0x00ff00
 
   # Auto-deploy to staging
   - name: deploy-staging
-    condition: "{{ not steps.parse-release.output.is_prerelease }}"
+    condition: "\{\{ not steps.parse-release.output.is_prerelease \}\}"
     agent: kubernetes-deployer
     action: deploy
     input:
       cluster: "staging"
-      namespace: "{{ event.repository.name }}"
-      image: "ghcr.io/{{ event.repository.full_name }}:{{ event.release.tag_name }}"
+      namespace: "\{\{ event.repository.name \}\}"
+      image: "ghcr.io/\{\{ event.repository.full_name \}\}:\{\{ event.release.tag_name \}\}"
 ```
 
 ## Step 7: Multi-Repo Synchronization
@@ -1004,46 +1004,46 @@ steps:
     agent: dependency-scanner
     action: find_dependents
     input:
-      package: "{{ event.repository.name }}"
-      version: "{{ event.release.tag_name }}"
+      package: "\{\{ event.repository.name \}\}"
+      version: "\{\{ event.release.tag_name \}\}"
       registries:
         - type: npm
           scope: "@myorg"
         - type: go
-          module: "github.com/{{ event.repository.full_name }}"
+          module: "github.com/\{\{ event.repository.full_name \}\}"
 
   # Create PRs in each repo
   - name: update-dependents
     agent: pr-creator
     action: create_update_pr
-    foreach: "{{ steps.find-dependents.output.repos }}"
+    foreach: "\{\{ steps.find-dependents.output.repos \}\}"
     input:
-      repo: "{{ item.repo }}"
-      branch: "deps/update-{{ event.repository.name }}-{{ event.release.tag_name }}"
+      repo: "\{\{ item.repo \}\}"
+      branch: "deps/update-\{\{ event.repository.name \}\}-\{\{ event.release.tag_name \}\}"
       updates:
-        - file: "{{ item.manifest_file }}"
-          package: "{{ event.repository.name }}"
-          from_version: "{{ item.current_version }}"
-          to_version: "{{ event.release.tag_name }}"
+        - file: "\{\{ item.manifest_file \}\}"
+          package: "\{\{ event.repository.name \}\}"
+          from_version: "\{\{ item.current_version \}\}"
+          to_version: "\{\{ event.release.tag_name \}\}"
       pr:
-        title: "chore(deps): update {{ event.repository.name }} to {{ event.release.tag_name }}"
+        title: "chore(deps): update \{\{ event.repository.name \}\} to \{\{ event.release.tag_name \}\}"
         body: |
           ## Dependency Update
 
-          Updates `{{ event.repository.name }}` from `{{ item.current_version }}` to `{{ event.release.tag_name }}`.
+          Updates `\{\{ event.repository.name \}\}` from `\{\{ item.current_version \}\}` to `\{\{ event.release.tag_name \}\}`.
 
           ### Changelog
-          {{ event.release.body }}
+          \{\{ event.release.body \}\}
 
           ### Release
-          {{ event.release.html_url }}
+          \{\{ event.release.html_url \}\}
 
           ---
           <sub>🤖 Automated by [AOF Dependency Sync](https://docs.aof.sh)</sub>
         labels:
           - "dependencies"
           - "automated"
-        auto_merge: "{{ item.auto_merge_allowed }}"
+        auto_merge: "\{\{ item.auto_merge_allowed \}\}"
 ```
 
 ## Step 8: Set Up Webhook
@@ -1123,8 +1123,8 @@ on_error:
   # Retry transient failures
   retry:
     conditions:
-      - "{{ error.status in [502, 503, 504] }}"
-      - "{{ 'rate limit' in error.message }}"
+      - "\{\{ error.status in [502, 503, 504] \}\}"
+      - "\{\{ 'rate limit' in error.message \}\}"
     max_attempts: 3
     backoff: exponential
 

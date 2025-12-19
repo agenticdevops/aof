@@ -181,45 +181,45 @@ steps:
     agent: validator
     action: validate
     input:
-      runbook: "{{ input.runbook_name }}"
-      available: "{{ variables.runbooks | keys }}"
+      runbook: "\{\{ input.runbook_name \}\}"
+      available: "\{\{ variables.runbooks | keys \}\}"
     on_error:
       response:
         text: |
-          Unknown runbook: {{ input.runbook_name }}
+          Unknown runbook: \{\{ input.runbook_name \}\}
 
           Available runbooks:
-          {{ variables.runbooks | keys | join('\n- ') }}
+          \{\{ variables.runbooks | keys | join('\n- ') \}\}
 
   - name: check-approval
     agent: router
-    condition: "{{ variables.runbooks[input.runbook_name].requires_approval }}"
+    condition: "\{\{ variables.runbooks[input.runbook_name].requires_approval \}\}"
     action: request_approval
     input:
-      request_id: "{{ uuid() }}"
-      runbook: "{{ input.runbook_name }}"
-      requester: "{{ trigger.user.username }}"
-      channel: "{{ trigger.channel_id }}"
+      request_id: "\{\{ uuid() \}\}"
+      runbook: "\{\{ input.runbook_name \}\}"
+      requester: "\{\{ trigger.user.username \}\}"
+      channel: "\{\{ trigger.channel_id \}\}"
     response:
       text: |
         🔐 **Approval Required**
 
-        Runbook: `{{ input.runbook_name }}`
-        Requested by: @{{ trigger.user.username }}
+        Runbook: `\{\{ input.runbook_name \}\}`
+        Requested by: @\{\{ trigger.user.username \}\}
 
         Waiting for approval...
       buttons:
         - text: "✅ Approve"
-          callback: "/approve {{ steps.check-approval.output.request_id }}"
+          callback: "/approve \{\{ steps.check-approval.output.request_id \}\}"
         - text: "❌ Reject"
-          callback: "/reject {{ steps.check-approval.output.request_id }}"
+          callback: "/reject \{\{ steps.check-approval.output.request_id \}\}"
     next: wait-for-approval
 
   - name: execute-runbook
     agent: shell-executor
     action: run
     input:
-      commands: "{{ variables.runbooks[input.runbook_name].steps }}"
+      commands: "\{\{ variables.runbooks[input.runbook_name].steps \}\}"
       timeout: 300
       env:
         KUBECONFIG: "/etc/kubernetes/admin.conf"
@@ -227,18 +227,18 @@ steps:
       text: |
         ✅ **Runbook Completed**
 
-        Runbook: `{{ input.runbook_name }}`
-        Duration: {{ steps.execute-runbook.duration }}s
+        Runbook: `\{\{ input.runbook_name \}\}`
+        Duration: \{\{ steps.execute-runbook.duration \}\}s
 
         ```
-        {{ steps.execute-runbook.output | truncate(500) }}
+        \{\{ steps.execute-runbook.output | truncate(500) \}\}
         ```
 
   - name: wait-for-approval
     agent: approval-waiter
     action: wait
     input:
-      request_id: "{{ steps.check-approval.output.request_id }}"
+      request_id: "\{\{ steps.check-approval.output.request_id \}\}"
       timeout: 1800  # 30 minutes
     on_approved:
       next: execute-runbook
@@ -247,21 +247,21 @@ steps:
         text: |
           ❌ **Request Rejected**
 
-          Runbook: `{{ input.runbook_name }}`
-          Rejected by: @{{ steps.wait-for-approval.output.approver }}
+          Runbook: `\{\{ input.runbook_name \}\}`
+          Rejected by: @\{\{ steps.wait-for-approval.output.approver \}\}
     on_timeout:
       response:
         text: |
           ⏰ **Request Expired**
 
-          Approval request for `{{ input.runbook_name }}` has timed out.
+          Approval request for `\{\{ input.runbook_name \}\}` has timed out.
 
 on_error:
   response:
     text: |
       ❌ **Runbook Failed**
 
-      Error: {{ error.message }}
+      Error: \{\{ error.message \}\}
 
       Check logs for details.
 ```
@@ -303,7 +303,7 @@ steps:
     agent: router
     action: switch
     input:
-      value: "{{ input.action }}"
+      value: "\{\{ input.action \}\}"
     cases:
       create: create-incident
       update: update-incident
@@ -314,36 +314,36 @@ steps:
     agent: incident-creator
     action: create
     input:
-      severity: "{{ input.severity | default('P3') }}"
-      title: "{{ input.title }}"
-      description: "{{ input.description }}"
-      reporter: "{{ trigger.user.username }}"
-      channel: "{{ trigger.channel_id }}"
+      severity: "\{\{ input.severity | default('P3') \}\}"
+      title: "\{\{ input.title \}\}"
+      description: "\{\{ input.description \}\}"
+      reporter: "\{\{ trigger.user.username \}\}"
+      channel: "\{\{ trigger.channel_id \}\}"
     post_actions:
       - name: notify-oncall
-        condition: "{{ input.severity in ['P1', 'P2'] }}"
+        condition: "\{\{ input.severity in ['P1', 'P2'] \}\}"
         agent: pagerduty
         action: trigger
         input:
           service_key: "${PAGERDUTY_SERVICE_KEY}"
-          description: "{{ input.title }}"
-          severity: "{{ input.severity }}"
+          description: "\{\{ input.title \}\}"
+          severity: "\{\{ input.severity \}\}"
 
       - name: create-war-room
-        condition: "{{ input.severity == 'P1' }}"
+        condition: "\{\{ input.severity == 'P1' \}\}"
         agent: telegram
         action: create_group
         input:
-          title: "🚨 INC-{{ steps.create-incident.output.id }}"
-          users: "{{ oncall.current_team }}"
+          title: "🚨 INC-\{\{ steps.create-incident.output.id \}\}"
+          users: "\{\{ oncall.current_team \}\}"
     response:
       text: |
         🚨 **Incident Created**
 
-        ID: `INC-{{ steps.create-incident.output.id }}`
-        Severity: {{ input.severity }}
-        Title: {{ input.title }}
-        Reporter: @{{ trigger.user.username }}
+        ID: `INC-\{\{ steps.create-incident.output.id \}\}`
+        Severity: \{\{ input.severity \}\}
+        Title: \{\{ input.title \}\}
+        Reporter: @\{\{ trigger.user.username \}\}
         Status: Open
 
         {% if input.severity in ['P1', 'P2'] %}
@@ -361,29 +361,29 @@ steps:
         📋 **Open Incidents**
 
         {% for inc in steps.list-incidents.output.incidents %}
-        • `{{ inc.id }}` [{{ inc.severity }}] {{ inc.title }}
-          Status: {{ inc.status }} | Age: {{ inc.age }}
+        • `\{\{ inc.id \}\}` [\{\{ inc.severity \}\}] \{\{ inc.title \}\}
+          Status: \{\{ inc.status \}\} | Age: \{\{ inc.age \}\}
         {% endfor %}
 
         {% if steps.list-incidents.output.total > 10 %}
-        _Showing 10 of {{ steps.list-incidents.output.total }}_
+        _Showing 10 of \{\{ steps.list-incidents.output.total \}\}_
         {% endif %}
 
   - name: resolve-incident
     agent: incident-resolver
     action: resolve
     input:
-      incident_id: "{{ input.incident_id }}"
-      resolution: "{{ input.resolution }}"
-      resolver: "{{ trigger.user.username }}"
+      incident_id: "\{\{ input.incident_id \}\}"
+      resolution: "\{\{ input.resolution \}\}"
+      resolver: "\{\{ trigger.user.username \}\}"
     response:
       text: |
         ✅ **Incident Resolved**
 
-        ID: `{{ input.incident_id }}`
-        Resolution: {{ input.resolution }}
-        Resolved by: @{{ trigger.user.username }}
-        Duration: {{ steps.resolve-incident.output.duration }}
+        ID: `\{\{ input.incident_id \}\}`
+        Resolution: \{\{ input.resolution \}\}
+        Resolved by: @\{\{ trigger.user.username \}\}
+        Duration: \{\{ steps.resolve-incident.output.duration \}\}
 ```
 
 ### 3.3 Infrastructure Status Flow
@@ -445,24 +445,24 @@ steps:
     input:
       components: |
         {% if input.component == 'all' %}
-        {{ variables.components }}
+        \{\{ variables.components \}\}
         {% else %}
-        {{ { input.component: variables.components[input.component] } }}
+        \{\{ { input.component: variables.components[input.component] } \}\}
         {% endif %}
     response:
       text: |
         📊 **Infrastructure Status**
 
         {% for name, status in steps.check-status.output.items() %}
-        {{ '✅' if status.healthy else '❌' }} **{{ name }}**
-           Status: {{ status.status }}
-           {% if status.replicas %}Replicas: {{ status.ready }}/{{ status.replicas }}{% endif %}
-           {% if status.latency %}Latency: {{ status.latency }}ms{% endif %}
-           {% if status.error %}Error: {{ status.error }}{% endif %}
+        \{\{ '✅' if status.healthy else '❌' \}\} **\{\{ name \}\}**
+           Status: \{\{ status.status \}\}
+           {% if status.replicas %}Replicas: \{\{ status.ready \}\}/\{\{ status.replicas \}\}{% endif %}
+           {% if status.latency %}Latency: \{\{ status.latency \}\}ms{% endif %}
+           {% if status.error %}Error: \{\{ status.error \}\}{% endif %}
 
         {% endfor %}
 
-        _Last checked: {{ now() | format_time }}_
+        _Last checked: \{\{ now() | format_time \}\}_
 ```
 
 ### 3.4 Deployment Flow with Approvals
@@ -503,60 +503,60 @@ steps:
     agent: deployment-validator
     action: validate
     input:
-      service: "{{ input.service }}"
-      version: "{{ input.version }}"
-      environment: "{{ input.environment }}"
+      service: "\{\{ input.service \}\}"
+      version: "\{\{ input.version \}\}"
+      environment: "\{\{ input.environment \}\}"
     checks:
       - name: version-exists
         type: docker-image
-        image: "ghcr.io/myorg/{{ input.service }}:{{ input.version }}"
+        image: "ghcr.io/myorg/\{\{ input.service \}\}:\{\{ input.version \}\}"
       - name: tests-passed
         type: github-checks
-        repo: "myorg/{{ input.service }}"
-        ref: "{{ input.version }}"
+        repo: "myorg/\{\{ input.service \}\}"
+        ref: "\{\{ input.version \}\}"
       - name: not-already-deployed
         type: kubernetes
-        deployment: "{{ input.service }}"
-        namespace: "{{ input.environment }}"
-        current_version_ne: "{{ input.version }}"
+        deployment: "\{\{ input.service \}\}"
+        namespace: "\{\{ input.environment \}\}"
+        current_version_ne: "\{\{ input.version \}\}"
 
   - name: request-approval
-    condition: "{{ input.environment == 'production' }}"
+    condition: "\{\{ input.environment == 'production' \}\}"
     agent: approval-requester
     action: request
     input:
       type: deployment
-      service: "{{ input.service }}"
-      version: "{{ input.version }}"
-      environment: "{{ input.environment }}"
-      requester: "{{ trigger.user.username }}"
+      service: "\{\{ input.service \}\}"
+      version: "\{\{ input.version \}\}"
+      environment: "\{\{ input.environment \}\}"
+      requester: "\{\{ trigger.user.username \}\}"
       required_approvers: 1
       allowed_approvers: ["@sre-team", "@platform-team"]
     response:
       text: |
         🚀 **Deployment Request**
 
-        Service: `{{ input.service }}`
-        Version: `{{ input.version }}`
-        Environment: **{{ input.environment }}**
-        Requested by: @{{ trigger.user.username }}
+        Service: `\{\{ input.service \}\}`
+        Version: `\{\{ input.version \}\}`
+        Environment: **\{\{ input.environment \}\}**
+        Requested by: @\{\{ trigger.user.username \}\}
 
         ⏳ Waiting for approval from SRE or Platform team...
       buttons:
         - text: "✅ Approve"
-          callback: "/approve deploy:{{ steps.request-approval.output.request_id }}"
+          callback: "/approve deploy:\{\{ steps.request-approval.output.request_id \}\}"
         - text: "❌ Reject"
-          callback: "/reject deploy:{{ steps.request-approval.output.request_id }}"
+          callback: "/reject deploy:\{\{ steps.request-approval.output.request_id \}\}"
         - text: "📋 View Changes"
-          url: "https://github.com/myorg/{{ input.service }}/compare/{{ current_version }}...{{ input.version }}"
+          url: "https://github.com/myorg/\{\{ input.service \}\}/compare/\{\{ current_version \}\}...\{\{ input.version \}\}"
 
   - name: execute-deployment
     agent: kubernetes-deployer
     action: deploy
     input:
-      service: "{{ input.service }}"
-      version: "{{ input.version }}"
-      namespace: "{{ input.environment }}"
+      service: "\{\{ input.service \}\}"
+      version: "\{\{ input.version \}\}"
+      namespace: "\{\{ input.environment \}\}"
       strategy: rolling
       max_unavailable: "25%"
       max_surge: "25%"
@@ -565,43 +565,43 @@ steps:
       message: |
         🔄 Deployment in progress...
 
-        {{ steps.execute-deployment.progress.ready }}/{{ steps.execute-deployment.progress.total }} pods ready
+        \{\{ steps.execute-deployment.progress.ready \}\}/\{\{ steps.execute-deployment.progress.total \}\} pods ready
     response:
       text: |
         ✅ **Deployment Complete**
 
-        Service: `{{ input.service }}`
-        Version: `{{ input.version }}`
-        Environment: {{ input.environment }}
-        Duration: {{ steps.execute-deployment.duration }}s
+        Service: `\{\{ input.service \}\}`
+        Version: `\{\{ input.version \}\}`
+        Environment: \{\{ input.environment \}\}
+        Duration: \{\{ steps.execute-deployment.duration \}\}s
 
-        All {{ steps.execute-deployment.output.replicas }} replicas healthy.
+        All \{\{ steps.execute-deployment.output.replicas \}\} replicas healthy.
 
   - name: notify-rollback
     agent: telegram
     trigger: on_error
     action: send
     input:
-      channel: "{{ trigger.channel_id }}"
+      channel: "\{\{ trigger.channel_id \}\}"
       text: |
         ❌ **Deployment Failed**
 
-        Service: `{{ input.service }}`
-        Version: `{{ input.version }}`
-        Error: {{ error.message }}
+        Service: `\{\{ input.service \}\}`
+        Version: `\{\{ input.version \}\}`
+        Error: \{\{ error.message \}\}
 
         🔄 Initiating automatic rollback...
       buttons:
         - text: "📋 View Logs"
-          url: "https://logs.example.com/deploy/{{ steps.execute-deployment.output.deployment_id }}"
+          url: "https://logs.example.com/deploy/\{\{ steps.execute-deployment.output.deployment_id \}\}"
 
   - name: auto-rollback
     agent: kubernetes-deployer
     trigger: on_error
     action: rollback
     input:
-      service: "{{ input.service }}"
-      namespace: "{{ input.environment }}"
+      service: "\{\{ input.service \}\}"
+      namespace: "\{\{ input.environment \}\}"
 ```
 
 ## Step 4: Set Up Webhook
@@ -786,25 +786,25 @@ steps:
       channel: "-1001234567890"  # #ops channel
       text: |
         📊 **Daily Infrastructure Report**
-        _{{ now() | format_date }}_
+        _\{\{ now() | format_date \}\}_
 
         **Uptime (24h)**
-        • API: {{ metrics.api.uptime }}%
-        • Web: {{ metrics.web.uptime }}%
-        • Workers: {{ metrics.workers.uptime }}%
+        • API: \{\{ metrics.api.uptime \}\}%
+        • Web: \{\{ metrics.web.uptime \}\}%
+        • Workers: \{\{ metrics.workers.uptime \}\}%
 
         **Incidents**
-        • P1: {{ metrics.incidents.p1 }}
-        • P2: {{ metrics.incidents.p2 }}
-        • P3+: {{ metrics.incidents.other }}
+        • P1: \{\{ metrics.incidents.p1 \}\}
+        • P2: \{\{ metrics.incidents.p2 \}\}
+        • P3+: \{\{ metrics.incidents.other \}\}
 
         **Deployments**
-        • Successful: {{ metrics.deploys.success }}
-        • Failed: {{ metrics.deploys.failed }}
+        • Successful: \{\{ metrics.deploys.success \}\}
+        • Failed: \{\{ metrics.deploys.failed \}\}
 
         **Alerts**
-        • Critical: {{ metrics.alerts.critical }}
-        • Warning: {{ metrics.alerts.warning }}
+        • Critical: \{\{ metrics.alerts.critical \}\}
+        • Warning: \{\{ metrics.alerts.warning \}\}
 ```
 
 ## Troubleshooting

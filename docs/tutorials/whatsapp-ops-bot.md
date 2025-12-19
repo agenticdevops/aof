@@ -54,11 +54,11 @@ WhatsApp requires pre-approved templates for proactive messages. Create these in
 
 **Template: ops_alert**
 ```
-🚨 *{{1}} Alert*
+🚨 *\{\{1\}\} Alert*
 
-Service: {{2}}
-Message: {{3}}
-Time: {{4}}
+Service: \{\{2\}\}
+Message: \{\{3\}\}
+Time: \{\{4\}\}
 
 Reply with:
 • ACK - Acknowledge
@@ -70,10 +70,10 @@ Reply with:
 ```
 🚀 *Deployment Request*
 
-Service: {{1}}
-Version: {{2}}
-Environment: {{3}}
-Requested by: {{4}}
+Service: \{\{1\}\}
+Version: \{\{2\}\}
+Environment: \{\{3\}\}
+Requested by: \{\{4\}\}
 
 Reply:
 • APPROVE - Approve deployment
@@ -85,11 +85,11 @@ Reply:
 ```
 📋 *Incident Update*
 
-ID: {{1}}
-Status: {{2}}
-Severity: {{3}}
+ID: \{\{1\}\}
+Status: \{\{2\}\}
+Severity: \{\{3\}\}
 
-{{4}}
+\{\{4\}\}
 
 Reply RESOLVE to close.
 ```
@@ -207,7 +207,7 @@ steps:
     agent: alert-manager
     action: find_pending
     input:
-      user_phone: "{{ trigger.user.phone }}"
+      user_phone: "\{\{ trigger.user.phone \}\}"
       status: "firing"
     on_empty:
       response:
@@ -220,26 +220,26 @@ steps:
     agent: alert-manager
     action: acknowledge
     input:
-      alert_id: "{{ steps.find-active-alert.output.alert_id }}"
-      acknowledged_by: "{{ trigger.user.phone }}"
-      acknowledged_at: "{{ now() }}"
+      alert_id: "\{\{ steps.find-active-alert.output.alert_id \}\}"
+      acknowledged_by: "\{\{ trigger.user.phone \}\}"
+      acknowledged_at: "\{\{ now() \}\}"
 
   - name: update-pagerduty
     agent: pagerduty
     action: acknowledge
     input:
-      incident_id: "{{ steps.find-active-alert.output.pagerduty_incident_id }}"
+      incident_id: "\{\{ steps.find-active-alert.output.pagerduty_incident_id \}\}"
 
   - name: notify-team
     agent: whatsapp
     action: send_to_group
     input:
-      group_id: "{{ config.oncall.team_group }}"
+      group_id: "\{\{ config.oncall.team_group \}\}"
       text: |
-        ✅ Alert acknowledged by {{ trigger.user.name }}
+        ✅ Alert acknowledged by \{\{ trigger.user.name \}\}
 
-        Alert: {{ steps.find-active-alert.output.title }}
-        Time: {{ now() | format_time }}
+        Alert: \{\{ steps.find-active-alert.output.title \}\}
+        Time: \{\{ now() | format_time \}\}
 
   - name: respond
     agent: whatsapp
@@ -248,7 +248,7 @@ steps:
       text: |
         ✅ Alert acknowledged
 
-        *{{ steps.find-active-alert.output.title }}*
+        *\{\{ steps.find-active-alert.output.title \}\}*
 
         You're now the incident commander.
 
@@ -279,40 +279,40 @@ steps:
     agent: alert-manager
     action: get_active
     input:
-      user_phone: "{{ trigger.user.phone }}"
+      user_phone: "\{\{ trigger.user.phone \}\}"
 
   - name: get-escalation-target
     agent: oncall-manager
     action: get_next_oncall
     input:
-      current_user: "{{ trigger.user.phone }}"
-      schedule_id: "{{ config.oncall.schedule_id }}"
+      current_user: "\{\{ trigger.user.phone \}\}"
+      schedule_id: "\{\{ config.oncall.schedule_id \}\}"
 
   - name: escalate-pagerduty
     agent: pagerduty
     action: escalate
     input:
-      incident_id: "{{ steps.get-current-alert.output.pagerduty_incident_id }}"
-      escalation_level: "{{ steps.get-escalation-target.output.level }}"
+      incident_id: "\{\{ steps.get-current-alert.output.pagerduty_incident_id \}\}"
+      escalation_level: "\{\{ steps.get-escalation-target.output.level \}\}"
 
   - name: notify-escalation-target
     agent: whatsapp
     action: send_template
     input:
-      to: "{{ steps.get-escalation-target.output.phone }}"
+      to: "\{\{ steps.get-escalation-target.output.phone \}\}"
       template: "ops_alert"
       parameters:
         - "ESCALATED"
-        - "{{ steps.get-current-alert.output.service }}"
-        - "{{ steps.get-current-alert.output.message }}"
-        - "{{ now() | format_time }}"
+        - "\{\{ steps.get-current-alert.output.service \}\}"
+        - "\{\{ steps.get-current-alert.output.message \}\}"
+        - "\{\{ now() | format_time \}\}"
 
   - name: confirm-escalation
     agent: whatsapp
     action: reply
     input:
       text: |
-        📤 Alert escalated to {{ steps.get-escalation-target.output.name }}
+        📤 Alert escalated to \{\{ steps.get-escalation-target.output.name \}\}
 
         They have been notified and will respond shortly.
 
@@ -360,28 +360,28 @@ steps:
     agent: oncall-manager
     action: get_current
     input:
-      schedule_id: "{{ config.oncall.schedule_id }}"
+      schedule_id: "\{\{ config.oncall.schedule_id \}\}"
 
   - name: create-alert-record
     agent: alert-manager
     action: create
     input:
-      severity: "{{ input.severity }}"
-      service: "{{ input.service }}"
-      message: "{{ input.message }}"
-      oncall_user: "{{ steps.get-oncall.output.phone }}"
+      severity: "\{\{ input.severity \}\}"
+      service: "\{\{ input.service \}\}"
+      message: "\{\{ input.message \}\}"
+      oncall_user: "\{\{ steps.get-oncall.output.phone \}\}"
 
   - name: send-whatsapp-alert
     agent: whatsapp
     action: send_template
     input:
-      to: "{{ steps.get-oncall.output.phone }}"
+      to: "\{\{ steps.get-oncall.output.phone \}\}"
       template: "ops_alert"
       parameters:
-        - "{{ input.severity | upper }}"
-        - "{{ input.service }}"
-        - "{{ input.message }}"
-        - "{{ now() | format_time }}"
+        - "\{\{ input.severity | upper \}\}"
+        - "\{\{ input.service \}\}"
+        - "\{\{ input.message \}\}"
+        - "\{\{ now() | format_time \}\}"
 
   - name: start-escalation-timer
     agent: scheduler
@@ -390,19 +390,19 @@ steps:
       delay: 300  # 5 minutes
       flow: "auto-escalate-flow"
       input:
-        alert_id: "{{ steps.create-alert-record.output.alert_id }}"
-    condition: "{{ input.severity == 'critical' }}"
+        alert_id: "\{\{ steps.create-alert-record.output.alert_id \}\}"
+    condition: "\{\{ input.severity == 'critical' \}\}"
 
   - name: log-alert
     agent: logger
     action: log
     input:
-      level: "{{ input.severity }}"
+      level: "\{\{ input.severity \}\}"
       message: "Alert sent to on-call"
       metadata:
-        alert_id: "{{ steps.create-alert-record.output.alert_id }}"
-        oncall: "{{ steps.get-oncall.output.name }}"
-        service: "{{ input.service }}"
+        alert_id: "\{\{ steps.create-alert-record.output.alert_id \}\}"
+        oncall: "\{\{ steps.get-oncall.output.name \}\}"
+        service: "\{\{ input.service \}\}"
 ```
 
 ### 3.4 Status Check Flow
@@ -438,7 +438,7 @@ steps:
         {% if input.service == 'all' %}
         ["api", "web", "workers", "database", "cache"]
         {% else %}
-        ["{{ input.service }}"]
+        ["\{\{ input.service \}\}"]
         {% endif %}
 
   - name: get-active-incidents
@@ -456,22 +456,22 @@ steps:
         📊 *System Status*
 
         {% for svc in steps.check-services.output %}
-        {{ '✅' if svc.healthy else '❌' }} *{{ svc.name }}*: {{ svc.status }}
-        {% if svc.latency %}  ⏱ {{ svc.latency }}ms{% endif %}
+        \{\{ '✅' if svc.healthy else '❌' \}\} *\{\{ svc.name \}\}*: \{\{ svc.status \}\}
+        {% if svc.latency %}  ⏱ \{\{ svc.latency \}\}ms{% endif %}
         {% endfor %}
 
         {% if steps.get-active-incidents.output | length > 0 %}
         ━━━━━━━━━━━━
         🚨 *Active Incidents*
         {% for inc in steps.get-active-incidents.output %}
-        • {{ inc.id }}: {{ inc.title }} [{{ inc.severity }}]
+        • \{\{ inc.id \}\}: \{\{ inc.title \}\} [\{\{ inc.severity \}\}]
         {% endfor %}
         {% else %}
 
         ✨ No active incidents
         {% endif %}
 
-        _{{ now() | format_time }}_
+        _\{\{ now() | format_time \}\}_
 ```
 
 ### 3.5 Deployment Approval Flow
@@ -514,59 +514,59 @@ steps:
     agent: approval-manager
     action: get_approvers
     input:
-      environment: "{{ input.environment }}"
-      service: "{{ input.service }}"
+      environment: "\{\{ input.environment \}\}"
+      service: "\{\{ input.service \}\}"
 
   - name: create-approval-request
     agent: approval-manager
     action: create
     input:
       type: "deployment"
-      service: "{{ input.service }}"
-      version: "{{ input.version }}"
-      environment: "{{ input.environment }}"
-      requester: "{{ input.requester }}"
-      approvers: "{{ steps.get-approvers.output.users }}"
-      expires_at: "{{ now() | add_hours(4) }}"
+      service: "\{\{ input.service \}\}"
+      version: "\{\{ input.version \}\}"
+      environment: "\{\{ input.environment \}\}"
+      requester: "\{\{ input.requester \}\}"
+      approvers: "\{\{ steps.get-approvers.output.users \}\}"
+      expires_at: "\{\{ now() | add_hours(4) \}\}"
 
   - name: send-approval-requests
     agent: whatsapp
     action: send_template
-    foreach: "{{ steps.get-approvers.output.users }}"
+    foreach: "\{\{ steps.get-approvers.output.users \}\}"
     input:
-      to: "{{ item.phone }}"
+      to: "\{\{ item.phone \}\}"
       template: "deployment_approval"
       parameters:
-        - "{{ input.service }}"
-        - "{{ input.version }}"
-        - "{{ input.environment }}"
-        - "{{ input.requester }}"
+        - "\{\{ input.service \}\}"
+        - "\{\{ input.version \}\}"
+        - "\{\{ input.environment \}\}"
+        - "\{\{ input.requester \}\}"
 
   - name: notify-requester
     agent: notifier
     action: notify
     input:
       channel: "slack"
-      user: "{{ input.requester }}"
+      user: "\{\{ input.requester \}\}"
       message: |
         Deployment approval requested via WhatsApp.
-        Waiting for: {{ steps.get-approvers.output.users | map('name') | join(', ') }}
-        Request ID: {{ steps.create-approval-request.output.request_id }}
+        Waiting for: \{\{ steps.get-approvers.output.users | map('name') | join(', ') \}\}
+        Request ID: \{\{ steps.create-approval-request.output.request_id \}\}
 
 on_response:
   - pattern: "^APPROVE$"
     flow: "process-approval-flow"
     input:
-      request_id: "{{ steps.create-approval-request.output.request_id }}"
+      request_id: "\{\{ steps.create-approval-request.output.request_id \}\}"
       action: "approve"
-      approver_phone: "{{ trigger.user.phone }}"
+      approver_phone: "\{\{ trigger.user.phone \}\}"
 
   - pattern: "^REJECT$"
     flow: "process-approval-flow"
     input:
-      request_id: "{{ steps.create-approval-request.output.request_id }}"
+      request_id: "\{\{ steps.create-approval-request.output.request_id \}\}"
       action: "reject"
-      approver_phone: "{{ trigger.user.phone }}"
+      approver_phone: "\{\{ trigger.user.phone \}\}"
 ```
 
 ### 3.6 Process Approval Flow
@@ -591,8 +591,8 @@ steps:
     agent: approval-manager
     action: validate_approver
     input:
-      request_id: "{{ input.request_id }}"
-      approver_phone: "{{ input.approver_phone }}"
+      request_id: "\{\{ input.request_id \}\}"
+      approver_phone: "\{\{ input.approver_phone \}\}"
     on_error:
       response:
         text: "❌ You are not authorized to approve this request."
@@ -601,65 +601,65 @@ steps:
     agent: approval-manager
     action: get
     input:
-      request_id: "{{ input.request_id }}"
+      request_id: "\{\{ input.request_id \}\}"
 
   - name: check-expired
     agent: validator
     action: check
     input:
-      condition: "{{ steps.get-request.output.expires_at > now() }}"
+      condition: "\{\{ steps.get-request.output.expires_at > now() \}\}"
     on_error:
       response:
         text: "❌ This approval request has expired."
 
   - name: process-approval
     agent: approval-manager
-    action: "{{ input.action }}"
+    action: "\{\{ input.action \}\}"
     input:
-      request_id: "{{ input.request_id }}"
-      approver: "{{ input.approver_phone }}"
-      timestamp: "{{ now() }}"
+      request_id: "\{\{ input.request_id \}\}"
+      approver: "\{\{ input.approver_phone \}\}"
+      timestamp: "\{\{ now() \}\}"
 
   - name: trigger-deployment
-    condition: "{{ input.action == 'approve' }}"
+    condition: "\{\{ input.action == 'approve' \}\}"
     agent: deployment-manager
     action: deploy
     input:
-      service: "{{ steps.get-request.output.service }}"
-      version: "{{ steps.get-request.output.version }}"
-      environment: "{{ steps.get-request.output.environment }}"
-      approved_by: "{{ input.approver_phone }}"
+      service: "\{\{ steps.get-request.output.service \}\}"
+      version: "\{\{ steps.get-request.output.version \}\}"
+      environment: "\{\{ steps.get-request.output.environment \}\}"
+      approved_by: "\{\{ input.approver_phone \}\}"
 
   - name: notify-requester-approved
-    condition: "{{ input.action == 'approve' }}"
+    condition: "\{\{ input.action == 'approve' \}\}"
     agent: notifier
     action: notify
     input:
       channels: ["slack", "whatsapp"]
-      user: "{{ steps.get-request.output.requester }}"
+      user: "\{\{ steps.get-request.output.requester \}\}"
       message: |
         ✅ Deployment approved!
 
-        Service: {{ steps.get-request.output.service }}
-        Version: {{ steps.get-request.output.version }}
-        Environment: {{ steps.get-request.output.environment }}
-        Approved by: {{ steps.validate-approver.output.approver_name }}
+        Service: \{\{ steps.get-request.output.service \}\}
+        Version: \{\{ steps.get-request.output.version \}\}
+        Environment: \{\{ steps.get-request.output.environment \}\}
+        Approved by: \{\{ steps.validate-approver.output.approver_name \}\}
 
         Deployment starting now...
 
   - name: notify-requester-rejected
-    condition: "{{ input.action == 'reject' }}"
+    condition: "\{\{ input.action == 'reject' \}\}"
     agent: notifier
     action: notify
     input:
       channels: ["slack", "whatsapp"]
-      user: "{{ steps.get-request.output.requester }}"
+      user: "\{\{ steps.get-request.output.requester \}\}"
       message: |
         ❌ Deployment rejected
 
-        Service: {{ steps.get-request.output.service }}
-        Version: {{ steps.get-request.output.version }}
-        Rejected by: {{ steps.validate-approver.output.approver_name }}
+        Service: \{\{ steps.get-request.output.service \}\}
+        Version: \{\{ steps.get-request.output.version \}\}
+        Rejected by: \{\{ steps.validate-approver.output.approver_name \}\}
 
   - name: respond-to-approver
     agent: whatsapp
@@ -669,11 +669,11 @@ steps:
         {% if input.action == 'approve' %}
         ✅ Deployment approved
 
-        {{ steps.get-request.output.service }} v{{ steps.get-request.output.version }} is now deploying to {{ steps.get-request.output.environment }}.
+        \{\{ steps.get-request.output.service \}\} v\{\{ steps.get-request.output.version \}\} is now deploying to \{\{ steps.get-request.output.environment \}\}.
         {% else %}
         ❌ Deployment rejected
 
-        {{ steps.get-request.output.requester }} has been notified.
+        \{\{ steps.get-request.output.requester \}\} has been notified.
         {% endif %}
 ```
 
@@ -842,9 +842,9 @@ on_error:
   # Fallback to other channels
   fallback:
     - channel: slack
-      user: "{{ trigger.user.slack_id }}"
+      user: "\{\{ trigger.user.slack_id \}\}"
     - channel: email
-      address: "{{ trigger.user.email }}"
+      address: "\{\{ trigger.user.email \}\}"
 ```
 
 ## Troubleshooting

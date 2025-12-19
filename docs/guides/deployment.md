@@ -1393,7 +1393,7 @@ groups:
       severity: critical
     annotations:
       summary: "AOF agent is down"
-      description: "AOF agent {{ $labels.instance }} has been down for 5 minutes"
+      description: "AOF agent \{\{ $labels.instance \}\} has been down for 5 minutes"
 
   - alert: AOFHighErrorRate
     expr: rate(aof_agent_errors_total[5m]) > 0.1
@@ -1402,7 +1402,7 @@ groups:
       severity: warning
     annotations:
       summary: "High error rate in AOF agent"
-      description: "Error rate is {{ $value }} errors/sec on {{ $labels.instance }}"
+      description: "Error rate is \{\{ $value \}\} errors/sec on \{\{ $labels.instance \}\}"
 
   - alert: AOFHighLatency
     expr: histogram_quantile(0.95, aof_execution_duration_seconds_bucket) > 30
@@ -1411,7 +1411,7 @@ groups:
       severity: warning
     annotations:
       summary: "High execution latency"
-      description: "P95 latency is {{ $value }}s on {{ $labels.instance }}"
+      description: "P95 latency is \{\{ $value \}\}s on \{\{ $labels.instance \}\}"
 
   - alert: AOFHighTokenUsage
     expr: rate(aof_llm_tokens_total[1h]) > 100000
@@ -1420,7 +1420,7 @@ groups:
       severity: info
     annotations:
       summary: "High LLM token usage"
-      description: "Token usage is {{ $value }} tokens/sec"
+      description: "Token usage is \{\{ $value \}\} tokens/sec"
 ```
 
 **AlertManager Config:**
@@ -1456,13 +1456,13 @@ receivers:
   slack_configs:
   - api_url: 'https://hooks.slack.com/services/xxx'
     channel: '#alerts'
-    title: 'AOF Alert: {{ .GroupLabels.alertname }}'
-    text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    title: 'AOF Alert: \{\{ .GroupLabels.alertname \}\}'
+    text: '\{\{ range .Alerts \}\}\{\{ .Annotations.description \}\}\{\{ end \}\}'
 
 - name: 'pagerduty'
   pagerduty_configs:
   - service_key: 'xxx'
-    description: '{{ .GroupLabels.alertname }}'
+    description: '\{\{ .GroupLabels.alertname \}\}'
 ```
 
 ### Health Checks
@@ -1964,7 +1964,7 @@ jq 'select(.timestamp > "2024-01-01T00:00:00Z")' /var/log/aof/agent.log
   |= "ERROR"
   | json
   | level="ERROR"
-  | line_format "{{.timestamp}} {{.error_type}}: {{.message}}"
+  | line_format "\{\{.timestamp\}\} \{\{.error_type\}\}: \{\{.message\}\}"
 ```
 
 ### Performance Tuning
