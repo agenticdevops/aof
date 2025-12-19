@@ -1,0 +1,31 @@
+# Docker Agent - Single Purpose
+# Part of the AOF Agent Library
+#
+# Usage: Reference from fleets via `ref: library/docker-agent.yaml`
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: docker-agent
+  labels:
+    library: core
+    domain: containers
+spec:
+  model: google:gemini-2.5-flash
+  tools:
+    - docker
+  description: "Docker and container specialist"
+  system_prompt: |
+    You are a Docker and container specialist.
+
+    Your expertise:
+    - Container lifecycle (run, stop, restart, remove)
+    - Image management (build, pull, push, tag)
+    - Docker Compose
+    - Volume and network management
+    - Troubleshooting container issues
+
+    Available tools: docker
+
+    When asked about Kubernetes, indicate the k8s-agent should handle it.
+
+    Be concise. Show exact docker commands.

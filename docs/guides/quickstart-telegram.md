@@ -8,9 +8,9 @@ Get your AOF Telegram bot running in 5 minutes.
 
 ```
 your-project/
-├── config.yaml      # Bot configuration
-└── agents/
-    └── k8s-ops.yaml # Your agent (or use built-in)
+├── config.yaml           # Bot configuration
+└── fleets/
+    └── devops-fleet.yaml # Your fleet (or use built-in)
 ```
 
 ## Step 1: Create Bot Config
@@ -33,11 +33,11 @@ spec:
       enabled: true
       bot_token_env: "TELEGRAM_BOT_TOKEN"
 
-  agents:
-    directory: "./agents"
+  fleets:
+    directory: "./fleets"
 
   runtime:
-    default_agent: "k8s-ops"
+    default_fleet: "devops-fleet"
 ```
 
 ## Step 2: Get Telegram Bot Token
@@ -57,10 +57,10 @@ export GOOGLE_API_KEY="your-google-ai-key"  # or ANTHROPIC_API_KEY
 ## Step 4: Run the Bot
 
 ```bash
-# Using built-in agents
-aofctl serve --config config.yaml --agents-dir /path/to/aof/examples/agents
+# Using built-in fleets
+aofctl serve --config config.yaml --fleets-dir /path/to/aof/examples/fleets
 
-# Or with your own agents directory
+# Or with your own fleets directory
 aofctl serve --config config.yaml
 ```
 
@@ -80,19 +80,39 @@ Open your bot in Telegram and try:
 
 ```
 /help                    # Show commands
-/agent                   # Switch agents (k8s, aws, docker, devops)
+/fleet                   # Switch fleets
+/fleet devops            # Switch to DevOps fleet
 list pods                # Natural language query
 kubectl get deployments  # Direct commands
 ```
 
-## Built-in Agents
+## Built-in Fleets
 
-| Command | Agent | Tools |
-|---------|-------|-------|
-| `/agent k8s` | k8s-ops | kubectl, helm |
-| `/agent aws` | aws-agent | aws cli |
-| `/agent docker` | docker-ops | docker, shell |
-| `/agent devops` | devops | kubectl, docker, helm, terraform, git, shell |
+| Command | Fleet | Agents |
+|---------|-------|--------|
+| `/fleet devops` | devops-fleet | k8s, docker, git, prometheus |
+| `/fleet k8s` | k8s-fleet | k8s, prometheus, loki |
+| `/fleet aws` | aws-fleet | aws, terraform |
+| `/fleet database` | database-fleet | postgres, redis |
+| `/fleet rca` | rca-fleet | collectors + multi-model analysts |
+
+## How Fleets Work
+
+Fleets are teams of single-purpose agents. When you ask a question, the fleet routes to the right specialist:
+
+```
+You: "why are pods crashing?"
+         │
+         ▼
+    DevOps Fleet
+    (coordinator)
+         │
+         ▼
+    k8s-agent  ← kubectl specialist
+         │
+         ▼
+    Response with analysis
+```
 
 ## Safety
 
@@ -106,9 +126,9 @@ kubectl get deployments  # Direct commands
 - Check webhook is set: `curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo"`
 - Check server logs: look for "Registered platform: telegram"
 
-**Agent has no tools?**
-- Ensure `--agents-dir` points to directory with agent YAML files
-- Check agent file has correct `metadata.name`
+**Fleet has no agents?**
+- Ensure `--fleets-dir` points to directory with fleet YAML files
+- Check fleet file has correct `metadata.name`
 
 **"Write operation blocked"?**
 - This is expected! Telegram is read-only for safety

@@ -5,12 +5,26 @@ Documentation for the Agentic Ops Framework (AOF).
 ## Quick Start
 
 - **[README.md](../README.md)** - Project overview and installation
+- **[Core Concepts](introduction/concepts.md)** - Agent → Fleet → Flow architecture
 - **[Telegram Quickstart](guides/quickstart-telegram.md)** - Set up a Telegram bot in 5 minutes
+
+## Core Concepts
+
+AOF uses a simple, composable model:
+
+| Concept | What It Is | Example |
+|---------|------------|---------|
+| **Agent** | Single-purpose specialist | `k8s-agent`, `prometheus-agent` |
+| **Fleet** | Team of agents for a purpose | `devops-fleet`, `rca-fleet` |
+| **Flow** | Event routing to agents/fleets | Telegram → Fleet → Response |
+
+**One way to do it**: Build focused agents → Compose into fleets → Connect via flows.
 
 ## User Guides
 
 ### Essential
-- **[Agent Switching](guides/agent-switching.md)** - Switch between agents (k8s, aws, docker, devops)
+- **[Core Concepts](introduction/concepts.md)** - Agent, Fleet, Flow explained
+- **[Fleet Switching](guides/agent-switching.md)** - Switch between fleets in chat
 - **[Safety Layer](guides/safety-layer.md)** - Platform safety (Telegram read-only, Slack full access)
 - **[Telegram Mobile](guides/telegram-mobile.md)** - Mobile companion guide
 
@@ -23,6 +37,7 @@ Documentation for the Agentic Ops Framework (AOF).
 
 - **[aofctl CLI](reference/aofctl.md)** - Command reference
 - **[Agent Spec](reference/agent-spec.md)** - Agent YAML specification
+- **[Fleet Spec](reference/fleet-spec.md)** - Fleet YAML specification
 - **[Platform Policies](reference/platform-policies.md)** - Safety rules per platform
 
 ## Tutorials
@@ -30,15 +45,35 @@ Documentation for the Agentic Ops Framework (AOF).
 1. **[Build Your First Agent](tutorials/first-agent.md)** - 15 minutes
 2. **[Create a Slack Bot](tutorials/slack-bot.md)** - 20 minutes
 3. **[Telegram Ops Bot](tutorials/telegram-ops-bot.md)** - Mobile DevOps
+4. **[Multi-Model RCA](tutorials/multi-model-rca-quickstart.md)** - Consensus analysis
 
-## Built-in Agents
+## Agent Library
 
-| Agent | Tools | Use For |
+Single-purpose building blocks in `examples/agents/library/`:
+
+| Agent | Tools | Purpose |
 |-------|-------|---------|
-| k8s | kubectl, helm | Kubernetes operations |
-| aws | aws cli | AWS cloud operations |
-| docker | docker, shell | Container management |
-| devops | kubectl, docker, helm, terraform, git | Full-stack DevOps |
+| `k8s-agent` | kubectl, helm | Kubernetes operations |
+| `docker-agent` | docker | Container management |
+| `git-agent` | git | Version control |
+| `aws-agent` | aws cli | AWS cloud operations |
+| `terraform-agent` | terraform | Infrastructure as Code |
+| `prometheus-agent` | prometheus_query | Metrics analysis |
+| `loki-agent` | loki_query | Log analysis |
+| `postgres-agent` | psql | PostgreSQL operations |
+| `redis-agent` | redis-cli | Redis operations |
+
+## Built-in Fleets
+
+Composed teams in `examples/fleets/`:
+
+| Fleet | Agents | Purpose |
+|-------|--------|---------|
+| **DevOps** | k8s + docker + git + prometheus | Full-stack DevOps |
+| **Kubernetes** | k8s + prometheus + loki | K8s cluster operations |
+| **AWS** | aws + terraform | AWS cloud infrastructure |
+| **Database** | postgres + redis | Database operations |
+| **RCA** | collectors + multi-model analysts | Root cause analysis |
 
 ## Platform Safety
 
@@ -52,13 +87,13 @@ Documentation for the Agentic Ops Framework (AOF).
 ## Commands
 
 ```
-/help                # Show help and switch agents
-/agent               # List and switch agents
-/agent k8s           # Switch to Kubernetes agent
-/agent info          # Show current agent details
+/fleet               # List and switch fleets
+/fleet devops        # Switch to DevOps fleet
+/fleet info          # Show current fleet details
+/help                # Show help
 ```
 
-After selecting an agent, just type naturally:
+After selecting a fleet, just type naturally:
 ```
 list pods in production
 show deployment status
@@ -67,15 +102,17 @@ what's the memory usage?
 
 ## Architecture (Advanced)
 
+- **[Fleets Deep Dive](concepts/fleets.md)** - Coordination modes and consensus
 - **[AgentFlow Routing](guides/agentflow-routing.md)** - Message routing patterns
 - **[Multi-Tenant Architecture](architecture/multi-tenant-agentflows.md)** - Enterprise patterns
 - **[Multi-Model Consensus](architecture/multi-model-consensus.md)** - Multi-AI coordination
 
 ## Examples
 
+- `examples/agents/library/` - Single-purpose agent library
+- `examples/fleets/` - Fleet compositions
 - `examples/configs/telegram-bot.yaml` - Telegram bot config
 - `examples/configs/slack-k8s-bot.yaml` - Slack bot config
-- `examples/agents/` - Agent YAML files
 
 ## Support
 

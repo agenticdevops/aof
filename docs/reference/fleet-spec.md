@@ -98,6 +98,7 @@ spec:
     distribution: round-robin       # Optional: Task distribution strategy
     consensus: {}                   # Optional: Consensus configuration
     tiered: {}                      # Optional: Tiered mode configuration
+    deep: {}                        # Optional: Deep mode configuration
 ```
 
 #### Coordination Modes
@@ -109,6 +110,7 @@ spec:
 | `pipeline` | Sequential processing | Data transformation, ETL |
 | `swarm` | Dynamic load-balanced coordination | High-volume task processing |
 | `tiered` | Tier-based parallel execution | Multi-model RCA, staged workflows |
+| `deep` | Iterative planning + execution loop | Complex investigations, RCA |
 
 #### Peer Mode
 
@@ -183,6 +185,24 @@ coordination:
         min_votes: 2
       "3":
         algorithm: first_wins
+```
+
+#### Deep Mode
+
+Deep mode adds an agentic loop: planning → execution → re-planning until goal achieved.
+
+```yaml
+coordination:
+  mode: deep
+  deep:
+    max_iterations: 10          # Safety limit
+    planning: true              # Enable planning phase
+    memory: true                # Persist findings across iterations
+    planner_model: anthropic:claude-sonnet-4-20250514  # Optional: model for planning
+    planner_prompt: |           # Optional: custom planning prompt
+      Generate investigation steps to find root cause.
+    synthesizer_prompt: |       # Optional: custom synthesis prompt
+      Synthesize findings into a report with evidence.
 ```
 
 ### Distribution Strategies
@@ -269,6 +289,42 @@ coordination:
 | `consensus` | Apply global consensus algorithm |
 | `merge` | Merge all results into single output |
 | `manager_synthesis` | Manager agent synthesizes final output |
+
+### Deep Configuration
+
+For `mode: deep`, additional configuration is available:
+
+```yaml
+coordination:
+  deep:
+    max_iterations: 10              # Safety limit - stop after N iterations
+    planning: true                  # Enable planning phase
+    memory: true                    # Persist findings across iterations
+    planner_model: anthropic:claude-sonnet-4-20250514  # Override model for planning
+    planner_prompt: |               # Custom planning system prompt
+      Generate investigation steps to find root cause.
+    synthesizer_prompt: |           # Custom synthesis system prompt
+      Synthesize findings into a report with evidence.
+```
+
+#### Deep Properties
+
+| Property | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `max_iterations` | integer | No | `10` | Safety limit - maximum iterations before stopping |
+| `planning` | boolean | No | `true` | Enable planning phase (LLM generates investigation steps) |
+| `memory` | boolean | No | `true` | Persist findings across iterations |
+| `planner_model` | string | No | - | Override model for planning phase |
+| `planner_prompt` | string | No | - | Custom system prompt for planning phase |
+| `synthesizer_prompt` | string | No | - | Custom system prompt for synthesis phase |
+
+#### Deep Mode Workflow
+
+1. **Plan** - LLM generates investigation steps based on the query
+2. **Execute** - Each step is executed using available tools
+3. **Iterate** - Continue until goal achieved or max_iterations reached
+4. **Re-plan** - Adjust plan based on findings (if needed)
+5. **Synthesize** - Produce final answer with evidence and recommendations
 
 ### Shared Resources
 

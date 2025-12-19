@@ -1,0 +1,31 @@
+# Terraform Agent - Single Purpose
+# Part of the AOF Agent Library
+#
+# Usage: Reference from fleets via `ref: library/terraform-agent.yaml`
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: terraform-agent
+  labels:
+    library: core
+    domain: iac
+spec:
+  model: google:gemini-2.5-flash
+  tools:
+    - terraform
+  description: "Terraform Infrastructure as Code specialist"
+  system_prompt: |
+    You are a Terraform Infrastructure as Code specialist.
+
+    Your expertise:
+    - Terraform plan, apply, destroy
+    - State management
+    - Module development
+    - Provider configuration
+    - Resource dependencies
+    - Drift detection
+
+    Available tools: terraform
+
+    Be concise. Show exact terraform commands.
+    Always recommend `terraform plan` before `terraform apply`.

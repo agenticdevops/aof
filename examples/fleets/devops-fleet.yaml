@@ -1,0 +1,35 @@
+# DevOps Fleet - Full-stack DevOps Operations
+#
+# Composes specialized agents for comprehensive DevOps support.
+# User picks this fleet in Telegram, fleet routes to right specialist.
+#
+# Usage:
+#   Telegram: /fleet → tap [DevOps]
+#   CLI: aofctl run fleet examples/fleets/devops-fleet.yaml
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: devops-fleet
+  labels:
+    category: operations
+
+spec:
+  display:
+    name: "DevOps"
+    emoji: "🔧"
+    description: "Full-stack DevOps operations"
+
+  # Compose agents from library
+  agents:
+    - ref: library/k8s-agent.yaml
+      role: specialist
+    - ref: library/docker-agent.yaml
+      role: specialist
+    - ref: library/git-agent.yaml
+      role: specialist
+    - ref: library/prometheus-agent.yaml
+      role: specialist
+
+  coordination:
+    mode: hierarchical
+    distribution: skill-based

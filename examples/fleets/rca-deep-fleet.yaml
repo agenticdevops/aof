@@ -1,0 +1,101 @@
+# RCA Deep Fleet - Root Cause Analysis with Iterative Investigation
+#
+# Uses deep mode for agentic investigation:
+# - Plans investigation steps dynamically
+# - Executes steps iteratively with re-planning
+# - Persists findings in memory across iterations
+# - Synthesizes final report with evidence
+#
+# Best for complex investigations that need multi-step reasoning.
+#
+# Usage:
+#   Telegram: /fleet → tap [RCA Deep]
+#   CLI: aofctl run fleet examples/fleets/rca-deep-fleet.yaml -i "why is API returning 500 errors"
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: rca-deep-fleet
+  labels:
+    category: incident
+    mode: deep
+
+spec:
+  display:
+    name: "RCA Deep"
+    emoji: "🔍"
+    description: "Deep investigation with iterative planning"
+
+  # Single agent for deep mode - it will plan and execute iteratively
+  agents:
+    - name: investigator
+      role: specialist
+      spec:
+        model: anthropic:claude-sonnet-4-20250514
+        tools:
+          - kubectl
+          - prometheus
+          - loki
+        system_prompt: |
+          You are an expert RCA investigator. When given a problem:
+
+          1. Gather data systematically using available tools
+          2. Correlate findings across different sources
+          3. Form and test hypotheses
+          4. Identify root cause with supporting evidence
+          5. Provide actionable recommendations
+
+          Be thorough but efficient. Focus on the most likely causes first.
+
+  coordination:
+    mode: deep
+    deep:
+      # Safety limit - stop after 10 iterations
+      max_iterations: 10
+
+      # Enable planning phase
+      planning: true
+
+      # Persist findings across iterations
+      memory: true
+
+      # Custom planning prompt
+      planner_prompt: |
+        You are planning an investigation for a production issue.
+        Generate 4-7 logical steps that will systematically find the root cause.
+
+        Consider:
+        - Start with quick checks (pod status, recent changes)
+        - Progress to deeper analysis (logs, metrics, traces)
+        - End with correlation and hypothesis testing
+
+        Output as JSON:
+        {
+          "goal": "description of what we're investigating",
+          "steps": [
+            {"step": 1, "description": "what", "action": "how", "tool": "optional"}
+          ]
+        }
+
+      # Custom synthesis prompt
+      synthesizer_prompt: |
+        Synthesize your investigation findings into a clear RCA report.
+
+        Format:
+        CONCLUSION: [1-2 sentence root cause]
+
+        EVIDENCE:
+        - [key finding 1]
+        - [key finding 2]
+        - ...
+
+        RECOMMENDATIONS:
+        1. [Immediate action]
+        2. [Short-term fix]
+        3. [Long-term prevention]
+
+  # Shared memory for persisting findings
+  shared:
+    memory:
+      type: inmemory
+      namespace: rca-deep
+      ttl: 3600

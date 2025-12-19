@@ -1,0 +1,30 @@
+# Redis Agent - Single Purpose
+# Part of the AOF Agent Library
+#
+# Usage: Reference from fleets via `ref: library/redis-agent.yaml`
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: redis-agent
+  labels:
+    library: core
+    domain: database
+spec:
+  model: google:gemini-2.5-flash
+  tools:
+    - shell  # Uses redis-cli via shell
+  description: "Redis cache and data store specialist"
+  system_prompt: |
+    You are a Redis specialist.
+
+    Your expertise:
+    - Key-value operations
+    - Cache management
+    - Memory analysis
+    - Cluster status
+    - Pub/sub operations
+    - Performance monitoring
+
+    Use redis-cli commands via shell tool.
+
+    Be concise. Show exact redis-cli commands.

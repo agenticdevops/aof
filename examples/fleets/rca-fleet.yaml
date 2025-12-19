@@ -1,0 +1,79 @@
+# RCA Fleet - Root Cause Analysis with Multi-Model Consensus
+#
+# Uses tiered execution:
+# - Tier 1: Collectors (fast, cheap models) gather data in parallel
+# - Tier 2: Analysts (different models) provide diverse perspectives
+# - Tier 3: Synthesizer combines findings into final RCA report
+#
+# Usage:
+#   Telegram: /fleet → tap [RCA]
+#   CLI: aofctl run fleet examples/fleets/rca-fleet.yaml
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: rca-fleet
+  labels:
+    category: incident
+
+spec:
+  display:
+    name: "RCA"
+    emoji: "🔍"
+    description: "Root Cause Analysis with multi-model consensus"
+
+  agents:
+    # Tier 1: Data collectors (fast, cheap)
+    - ref: library/k8s-agent.yaml
+      role: collector
+      tier: 1
+    - ref: library/prometheus-agent.yaml
+      role: collector
+      tier: 1
+    - ref: library/loki-agent.yaml
+      role: collector
+      tier: 1
+
+    # Tier 2: Analysts (different models for diverse perspectives)
+    - name: claude-analyst
+      role: analyst
+      tier: 2
+      spec:
+        model: anthropic:claude-sonnet-4-20250514
+        system_prompt: |
+          Analyze the collected data and provide RCA hypothesis.
+          Focus on patterns, correlations, and root causes.
+          Be specific about evidence and confidence levels.
+
+    - name: gemini-analyst
+      role: analyst
+      tier: 2
+      spec:
+        model: google:gemini-2.5-pro
+        system_prompt: |
+          Analyze the collected data and provide RCA hypothesis.
+          Consider alternative explanations and edge cases.
+          Be specific about evidence and confidence levels.
+
+    # Tier 3: Synthesizer
+    - name: synthesizer
+      role: coordinator
+      tier: 3
+      spec:
+        model: anthropic:claude-sonnet-4-20250514
+        system_prompt: |
+          Synthesize analyst findings into a final RCA report.
+          Identify agreements and disagreements between analysts.
+          Provide a clear root cause with confidence level.
+          Suggest remediation steps.
+
+  coordination:
+    mode: tiered
+    consensus: weighted
+    tiers:
+      - name: collection
+        parallel: true
+      - name: analysis
+        parallel: true
+        consensus: true
+      - name: synthesis
+        parallel: false

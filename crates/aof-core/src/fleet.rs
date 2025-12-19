@@ -176,6 +176,10 @@ pub struct CoordinationConfig {
     /// Tiered execution configuration (for tiered mode)
     #[serde(default)]
     pub tiered: Option<TieredConfig>,
+
+    /// Deep execution configuration (for deep mode)
+    #[serde(default)]
+    pub deep: Option<DeepConfig>,
 }
 
 /// Configuration for tiered coordination mode
@@ -193,6 +197,65 @@ pub struct TieredConfig {
     /// Final tier aggregation strategy
     #[serde(default)]
     pub final_aggregation: FinalAggregation,
+}
+
+/// Configuration for deep coordination mode (iterative planning + execution)
+///
+/// # Example
+/// ```yaml
+/// coordination:
+///   mode: deep
+///   deep:
+///     max_iterations: 10
+///     planning: true
+///     memory: true
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeepConfig {
+    /// Maximum iterations before stopping (safety limit)
+    #[serde(default = "default_max_iterations")]
+    pub max_iterations: u32,
+
+    /// Enable planning phase (LLM generates investigation steps)
+    #[serde(default = "default_true")]
+    pub planning: bool,
+
+    /// Enable memory persistence across iterations
+    #[serde(default = "default_true")]
+    pub memory: bool,
+
+    /// Model to use for planning (defaults to fleet's model)
+    #[serde(default)]
+    pub planner_model: Option<String>,
+
+    /// System prompt for the planning phase
+    #[serde(default)]
+    pub planner_prompt: Option<String>,
+
+    /// System prompt for the synthesis phase
+    #[serde(default)]
+    pub synthesizer_prompt: Option<String>,
+}
+
+fn default_max_iterations() -> u32 {
+    10
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for DeepConfig {
+    fn default() -> Self {
+        Self {
+            max_iterations: default_max_iterations(),
+            planning: default_true(),
+            memory: default_true(),
+            planner_model: None,
+            planner_prompt: None,
+            synthesizer_prompt: None,
+        }
+    }
 }
 
 /// How to aggregate results from the final tier
@@ -216,6 +279,7 @@ impl Default for CoordinationConfig {
             distribution: TaskDistribution::RoundRobin,
             consensus: None,
             tiered: None,
+            deep: None,
         }
     }
 }
@@ -233,6 +297,8 @@ impl Default for CoordinationConfig {
 ///   parallel processing with adaptive load balancing.
 /// - **Tiered**: Tier-based parallel execution with consensus. Best for multi-model
 ///   RCA where cheap data-collectors feed reasoning models.
+/// - **Deep**: Iterative planning and execution loop. Best for complex investigations
+///   that require multi-step reasoning with re-planning based on findings.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CoordinationMode {
@@ -249,6 +315,9 @@ pub enum CoordinationMode {
     /// Agents are grouped by tier (e.g., tier 1 = data collectors, tier 2 = reasoners)
     /// Each tier runs in parallel, results flow to next tier
     Tiered,
+    /// Deep: Iterative planning and execution loop (like Claude Code)
+    /// Plans investigation steps, executes iteratively, re-plans based on findings
+    Deep,
 }
 
 /// Task distribution strategy
@@ -1120,6 +1189,7 @@ spec:
             ("pipeline", CoordinationMode::Pipeline),
             ("swarm", CoordinationMode::Swarm),
             ("tiered", CoordinationMode::Tiered),
+            ("deep", CoordinationMode::Deep),
         ];
 
         for (yaml_value, expected) in modes {
@@ -1273,5 +1343,70 @@ spec:
         let fleet = AgentFleet::from_yaml(yaml).unwrap();
         assert_eq!(fleet.spec.coordination.mode, CoordinationMode::Pipeline);
         assert!(fleet.validate().is_ok());
+    }
+
+    #[test]
+    fn test_deep_mode_config() {
+        let yaml = r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: deep-fleet
+spec:
+  agents:
+    - name: investigator
+      spec:
+        model: openai:gpt-4
+        instructions: "Deep investigator"
+        tools: []
+  coordination:
+    mode: deep
+    deep:
+      max_iterations: 15
+      planning: true
+      memory: true
+      planner_model: anthropic:claude-sonnet-4
+      planner_prompt: "Generate investigation steps."
+      synthesizer_prompt: "Synthesize findings into a report."
+"#;
+
+        let fleet = AgentFleet::from_yaml(yaml).unwrap();
+        assert_eq!(fleet.spec.coordination.mode, CoordinationMode::Deep);
+
+        let deep_config = fleet.spec.coordination.deep.as_ref().unwrap();
+        assert_eq!(deep_config.max_iterations, 15);
+        assert!(deep_config.planning);
+        assert!(deep_config.memory);
+        assert_eq!(deep_config.planner_model.as_deref(), Some("anthropic:claude-sonnet-4"));
+        assert!(deep_config.planner_prompt.is_some());
+        assert!(deep_config.synthesizer_prompt.is_some());
+    }
+
+    #[test]
+    fn test_deep_mode_defaults() {
+        let yaml = r#"
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: deep-fleet-defaults
+spec:
+  agents:
+    - name: agent
+      config: ./agent.yaml
+  coordination:
+    mode: deep
+"#;
+
+        let fleet = AgentFleet::from_yaml(yaml).unwrap();
+        assert_eq!(fleet.spec.coordination.mode, CoordinationMode::Deep);
+
+        // Deep config should have defaults when not specified
+        let deep_config = fleet.spec.coordination.deep.unwrap_or_default();
+        assert_eq!(deep_config.max_iterations, 10); // default
+        assert!(deep_config.planning); // default true
+        assert!(deep_config.memory); // default true
+        assert!(deep_config.planner_model.is_none());
+        assert!(deep_config.planner_prompt.is_none());
+        assert!(deep_config.synthesizer_prompt.is_none());
     }
 }

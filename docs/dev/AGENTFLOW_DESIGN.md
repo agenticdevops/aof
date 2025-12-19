@@ -334,7 +334,7 @@ spec:
 
   # Coordination mode
   coordination:
-    mode: hierarchical  # hierarchical | peer | swarm
+    mode: hierarchical  # hierarchical | peer | tiered | pipeline | swarm | deep
     manager: detector
 
   # Shared resources

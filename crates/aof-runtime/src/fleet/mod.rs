@@ -7,10 +7,13 @@
 //! - Swarm: Self-organizing dynamic coordination
 //! - Pipeline: Sequential handoff between agents
 //! - Tiered: Tier-based parallel execution with consensus (for multi-model RCA)
+//! - Deep: Iterative planning and execution loop (agentic pattern)
 
 pub mod consensus;
+pub mod deep;
 
 pub use consensus::{AgentResult, ConsensusEngine, ConsensusResult};
+pub use deep::{DeepFleetExecutor, DeepResult, Finding, InvestigationPlan, InvestigationStep};
 
 use aof_core::{
     AgentConfig, AgentFleet, AgentInstanceState, AgentInstanceStatus, AgentRole, AofError,
@@ -347,6 +350,9 @@ impl FleetCoordinator {
             CoordinationMode::Tiered => {
                 self.execute_tiered(task).await
             }
+            CoordinationMode::Deep => {
+                self.execute_deep(task).await
+            }
         }
     }
 
@@ -634,6 +640,62 @@ impl FleetCoordinator {
             let mut state = self.state.write().await;
             state.metrics.completed_tasks += 1;
             state.metrics.consensus_rounds += tiers.len() as u64;
+            state.completed_tasks.push(task.clone());
+        }
+
+        Ok(Some(task))
+    }
+
+    /// Execute task in deep mode (iterative planning + execution loop)
+    async fn execute_deep(&self, mut task: FleetTask) -> AofResult<Option<FleetTask>> {
+        task.status = FleetTaskStatus::Running;
+        task.started_at = Some(chrono::Utc::now());
+
+        info!("Starting deep mode execution");
+
+        // Create deep executor
+        let mut executor = DeepFleetExecutor::new(self.fleet.clone(), self.runtime.clone());
+
+        // Extract query from input
+        let query = task
+            .input
+            .get("query")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| task.input.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| serde_json::to_string(&task.input).unwrap_or_default());
+
+        // Execute deep investigation
+        let result = executor.execute(&query).await;
+
+        match result {
+            Ok(deep_result) => {
+                task.result = Some(serde_json::json!({
+                    "mode": "deep",
+                    "conclusion": deep_result.conclusion,
+                    "evidence": deep_result.evidence,
+                    "recommendations": deep_result.recommendations,
+                    "iterations": deep_result.iterations,
+                    "goal_achieved": deep_result.goal_achieved,
+                }));
+                task.status = FleetTaskStatus::Completed;
+            }
+            Err(e) => {
+                task.status = FleetTaskStatus::Failed;
+                task.error = Some(format!("Deep mode execution failed: {}", e));
+            }
+        }
+
+        task.completed_at = Some(chrono::Utc::now());
+
+        // Update metrics
+        {
+            let mut state = self.state.write().await;
+            if task.status == FleetTaskStatus::Completed {
+                state.metrics.completed_tasks += 1;
+            } else {
+                state.metrics.failed_tasks += 1;
+            }
             state.completed_tasks.push(task.clone());
         }
 

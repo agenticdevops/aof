@@ -190,7 +190,10 @@ AgentFleet enables multi-agent coordination with different modes:
 |------|-------------|----------|
 | `hierarchical` | Manager coordinates workers | Complex workflows |
 | `peer` | All agents as equals | Distributed analysis |
+| `tiered` | Collectors → Analysts → Synthesizer | Multi-model RCA |
+| `pipeline` | Sequential processing | Data transformation |
 | `swarm` | Self-organizing | Dynamic workloads |
+| `deep` | Iterative planning + execution loop | Complex investigations |
 
 ### Fleet Example
 

@@ -55,7 +55,12 @@ pub enum CommandType {
 
     /// Switch or show agent (with associated tools and connection)
     /// /agent command for switching between configured agents
+    /// DEPRECATED: Use /fleet instead
     Agent,
+
+    /// Switch or show fleet (team of agents)
+    /// /fleet command for switching between configured fleets
+    Fleet,
 }
 
 impl CommandType {
@@ -69,8 +74,10 @@ impl CommandType {
             "list" | "ls" | "show" => Ok(Self::List),
             "help" | "h" => Ok(Self::Help),
             "flows" => Ok(Self::Flows),
-            // /agent command for switching agents
+            // /agent command for switching agents (DEPRECATED: use /fleet)
             "agent" | "agents" | "context" | "ctx" => Ok(Self::Agent),
+            // /fleet command for switching fleets
+            "fleet" | "fleets" | "team" => Ok(Self::Fleet),
             _ => Err(CommandError::UnknownCommand(s.to_string())),
         }
     }
@@ -86,13 +93,14 @@ impl CommandType {
             Self::Help => "Show help information",
             Self::Info => "Show system information",
             Self::Flows => "Show available flows for selection",
-            Self::Agent => "Switch or show agent",
+            Self::Agent => "Switch or show agent (deprecated: use /fleet)",
+            Self::Fleet => "Switch or show fleet (team of agents)",
         }
     }
 
     /// Check if this command type requires no target argument
     pub fn is_targetless(&self) -> bool {
-        matches!(self, Self::Help | Self::Flows | Self::Agent)
+        matches!(self, Self::Help | Self::Flows | Self::Agent | Self::Fleet)
     }
 }
 

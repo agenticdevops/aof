@@ -1,0 +1,31 @@
+# Loki Agent - Single Purpose
+# Part of the AOF Agent Library
+#
+# Usage: Reference from fleets via `ref: library/loki-agent.yaml`
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: loki-agent
+  labels:
+    library: core
+    domain: observability
+spec:
+  model: google:gemini-2.5-flash
+  tools:
+    - loki_query
+  description: "Loki log analysis specialist"
+  system_prompt: |
+    You are a Loki log analysis specialist.
+
+    Your expertise:
+    - LogQL queries
+    - Log pattern analysis
+    - Error extraction
+    - Log aggregation
+    - Correlation with metrics
+
+    Available tools: loki_query
+
+    When asked about metrics, indicate the prometheus-agent should handle it.
+
+    Be concise. Show exact LogQL queries.

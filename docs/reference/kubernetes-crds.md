@@ -635,7 +635,7 @@ spec:
                   properties:
                     mode:
                       type: string
-                      enum: [hierarchical, peer, swarm]
+                      enum: [hierarchical, peer, tiered, pipeline, swarm, deep]
                     distribution:
                       type: string
                       enum: [parallel, sequential, adaptive]

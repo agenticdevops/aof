@@ -15,6 +15,12 @@ Fleets are **compositions of multiple agents** working together on complex tasks
   - Security checks for breaches
   - **Use for**: Production incidents, post-mortems
 
+- **`rca-deep-fleet.yaml`** - Deep Investigation (Agentic Loop)
+  - Single investigator agent with iterative planning
+  - Plans → Executes → Re-plans until root cause found
+  - Persists findings in memory across iterations
+  - **Use for**: Complex RCA requiring multi-step reasoning
+
 ## Usage
 
 ### Reference in Flows

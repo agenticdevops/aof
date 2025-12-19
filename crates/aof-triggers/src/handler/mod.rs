@@ -158,7 +158,16 @@ pub struct TriggerHandler {
     /// Available contexts (name -> config)
     /// Configured contexts that users can switch between
     /// Each context bundles: agent, connection params, env vars, tools
+    /// DEPRECATED: Use fleets instead
     available_contexts: Arc<DashMap<String, ContextConfig>>,
+
+    /// User fleet sessions (user_id -> fleet name)
+    /// Tracks which fleet each user has selected
+    user_fleet_sessions: Arc<DashMap<String, String>>,
+
+    /// Available fleets (name -> config)
+    /// Fleet = team of single-purpose agents with LLM-based routing
+    available_fleets: Arc<DashMap<String, FleetConfig>>,
 }
 
 /// Context configuration bundling agent + connection + environment
@@ -198,6 +207,43 @@ pub struct ContextConfig {
     /// Read-only mode - blocks write/delete/dangerous operations
     /// Default: true for mobile platforms (Telegram, WhatsApp), false for CLI/Slack
     pub read_only: bool,
+}
+
+/// Fleet configuration - team of agents for a purpose
+/// Fleets compose single-purpose agents and route requests via LLM
+#[derive(Debug, Clone)]
+pub struct FleetConfig {
+    /// Display name (e.g., "DevOps", "Kubernetes")
+    pub display_name: String,
+    /// Emoji for visual identification
+    pub emoji: String,
+    /// Description of what this fleet handles
+    pub description: String,
+
+    /// Agent references in this fleet (e.g., ["k8s-agent", "docker-agent"])
+    /// Each agent is a single-purpose specialist
+    pub agents: Vec<FleetAgentRef>,
+
+    /// Router model for intent-based agent selection
+    /// Uses a cheap/fast model to determine which agent handles each request
+    /// e.g., "google:gemini-2.0-flash-lite" or "anthropic:claude-3-haiku"
+    pub router_model: String,
+
+    /// Read-only mode - blocks write/delete/dangerous operations
+    pub read_only: bool,
+}
+
+/// Reference to an agent within a fleet
+#[derive(Debug, Clone)]
+pub struct FleetAgentRef {
+    /// Agent reference path (e.g., "library/k8s-agent.yaml")
+    pub ref_path: String,
+    /// Agent name (derived from filename, e.g., "k8s-agent")
+    pub name: String,
+    /// Agent description for router context
+    pub description: String,
+    /// Keywords that help the router identify this agent's domain
+    pub keywords: Vec<String>,
 }
 
 /// Simple write operation detection for MVP safety layer
@@ -289,8 +335,11 @@ impl TriggerHandler {
             conversation_memory: Arc::new(DashMap::new()),
             user_context_sessions: Arc::new(DashMap::new()),
             available_contexts: Arc::new(DashMap::new()),
+            user_fleet_sessions: Arc::new(DashMap::new()),
+            available_fleets: Arc::new(DashMap::new()),
         };
         handler.init_default_contexts();
+        handler.init_default_fleets();
         handler
     }
 
@@ -308,8 +357,11 @@ impl TriggerHandler {
             conversation_memory: Arc::new(DashMap::new()),
             user_context_sessions: Arc::new(DashMap::new()),
             available_contexts: Arc::new(DashMap::new()),
+            user_fleet_sessions: Arc::new(DashMap::new()),
+            available_fleets: Arc::new(DashMap::new()),
         };
         handler.init_default_contexts();
+        handler.init_default_fleets();
         handler
     }
 
@@ -390,6 +442,167 @@ impl TriggerHandler {
             env: std::collections::HashMap::new(),
             read_only: true,
         });
+    }
+
+    /// Initialize default fleets
+    /// Fleets are teams of single-purpose agents with LLM-based routing
+    fn init_default_fleets(&self) {
+        // DevOps Fleet - DEFAULT
+        // Composes k8s, docker, git, prometheus specialists
+        self.available_fleets.insert("devops".to_string(), FleetConfig {
+            display_name: "DevOps".to_string(),
+            emoji: "🚀".to_string(),
+            description: "Full-stack DevOps operations".to_string(),
+            agents: vec![
+                FleetAgentRef {
+                    ref_path: "library/k8s-agent.yaml".to_string(),
+                    name: "k8s-agent".to_string(),
+                    description: "Kubernetes cluster operations".to_string(),
+                    keywords: vec!["pod".to_string(), "deployment".to_string(), "service".to_string(), "namespace".to_string(), "kubectl".to_string(), "helm".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/docker-agent.yaml".to_string(),
+                    name: "docker-agent".to_string(),
+                    description: "Container management".to_string(),
+                    keywords: vec!["container".to_string(), "image".to_string(), "docker".to_string(), "build".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/git-agent.yaml".to_string(),
+                    name: "git-agent".to_string(),
+                    description: "Git operations".to_string(),
+                    keywords: vec!["git".to_string(), "commit".to_string(), "branch".to_string(), "merge".to_string(), "pr".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/prometheus-agent.yaml".to_string(),
+                    name: "prometheus-agent".to_string(),
+                    description: "Metrics and monitoring".to_string(),
+                    keywords: vec!["metric".to_string(), "alert".to_string(), "prometheus".to_string(), "grafana".to_string()],
+                },
+            ],
+            router_model: "google:gemini-2.0-flash-lite".to_string(),
+            read_only: true,
+        });
+
+        // Kubernetes Fleet
+        // Focused K8s operations with observability
+        self.available_fleets.insert("k8s".to_string(), FleetConfig {
+            display_name: "Kubernetes".to_string(),
+            emoji: "☸️".to_string(),
+            description: "Kubernetes cluster operations".to_string(),
+            agents: vec![
+                FleetAgentRef {
+                    ref_path: "library/k8s-agent.yaml".to_string(),
+                    name: "k8s-agent".to_string(),
+                    description: "Kubernetes cluster operations".to_string(),
+                    keywords: vec!["pod".to_string(), "deployment".to_string(), "service".to_string(), "namespace".to_string(), "kubectl".to_string(), "helm".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/prometheus-agent.yaml".to_string(),
+                    name: "prometheus-agent".to_string(),
+                    description: "Metrics and monitoring".to_string(),
+                    keywords: vec!["metric".to_string(), "alert".to_string(), "cpu".to_string(), "memory".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/loki-agent.yaml".to_string(),
+                    name: "loki-agent".to_string(),
+                    description: "Log aggregation and search".to_string(),
+                    keywords: vec!["log".to_string(), "error".to_string(), "warning".to_string(), "trace".to_string()],
+                },
+            ],
+            router_model: "google:gemini-2.0-flash-lite".to_string(),
+            read_only: true,
+        });
+
+        // AWS Fleet
+        // AWS cloud operations
+        self.available_fleets.insert("aws".to_string(), FleetConfig {
+            display_name: "AWS".to_string(),
+            emoji: "☁️".to_string(),
+            description: "AWS cloud infrastructure".to_string(),
+            agents: vec![
+                FleetAgentRef {
+                    ref_path: "library/aws-agent.yaml".to_string(),
+                    name: "aws-agent".to_string(),
+                    description: "AWS cloud operations".to_string(),
+                    keywords: vec!["ec2".to_string(), "s3".to_string(), "rds".to_string(), "lambda".to_string(), "ecs".to_string(), "aws".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/terraform-agent.yaml".to_string(),
+                    name: "terraform-agent".to_string(),
+                    description: "Infrastructure as code".to_string(),
+                    keywords: vec!["terraform".to_string(), "plan".to_string(), "apply".to_string(), "state".to_string()],
+                },
+            ],
+            router_model: "google:gemini-2.0-flash-lite".to_string(),
+            read_only: true,
+        });
+
+        // Database Fleet
+        // Database operations
+        self.available_fleets.insert("database".to_string(), FleetConfig {
+            display_name: "Database".to_string(),
+            emoji: "🗄️".to_string(),
+            description: "Database operations".to_string(),
+            agents: vec![
+                FleetAgentRef {
+                    ref_path: "library/postgres-agent.yaml".to_string(),
+                    name: "postgres-agent".to_string(),
+                    description: "PostgreSQL operations".to_string(),
+                    keywords: vec!["postgres".to_string(), "psql".to_string(), "query".to_string(), "table".to_string(), "database".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/redis-agent.yaml".to_string(),
+                    name: "redis-agent".to_string(),
+                    description: "Redis cache operations".to_string(),
+                    keywords: vec!["redis".to_string(), "cache".to_string(), "key".to_string(), "ttl".to_string()],
+                },
+            ],
+            router_model: "google:gemini-2.0-flash-lite".to_string(),
+            read_only: true,
+        });
+
+        // RCA Fleet
+        // Root cause analysis with multi-model consensus
+        self.available_fleets.insert("rca".to_string(), FleetConfig {
+            display_name: "RCA".to_string(),
+            emoji: "🔍".to_string(),
+            description: "Root Cause Analysis with multi-agent investigation".to_string(),
+            agents: vec![
+                FleetAgentRef {
+                    ref_path: "library/k8s-agent.yaml".to_string(),
+                    name: "k8s-agent".to_string(),
+                    description: "Kubernetes state collector".to_string(),
+                    keywords: vec!["pod".to_string(), "event".to_string(), "restart".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/prometheus-agent.yaml".to_string(),
+                    name: "prometheus-agent".to_string(),
+                    description: "Metrics collector".to_string(),
+                    keywords: vec!["metric".to_string(), "cpu".to_string(), "memory".to_string()],
+                },
+                FleetAgentRef {
+                    ref_path: "library/loki-agent.yaml".to_string(),
+                    name: "loki-agent".to_string(),
+                    description: "Log collector".to_string(),
+                    keywords: vec!["log".to_string(), "error".to_string()],
+                },
+            ],
+            router_model: "anthropic:claude-sonnet-4-20250514".to_string(),  // Smarter model for RCA orchestration
+            read_only: true,
+        });
+    }
+
+    /// Get current fleet for a user (defaults to "devops")
+    fn get_user_fleet(&self, user_id: &str) -> String {
+        self.user_fleet_sessions
+            .get(user_id)
+            .map(|v| v.clone())
+            .unwrap_or_else(|| "devops".to_string())
+    }
+
+    /// Set fleet for a user
+    fn set_user_fleet(&self, user_id: &str, fleet_name: &str) {
+        self.user_fleet_sessions.insert(user_id.to_string(), fleet_name.to_string());
     }
 
     /// Get pending approvals (for external access like reaction handlers)
@@ -701,6 +914,7 @@ impl TriggerHandler {
             CommandType::Info => Ok(self.handle_info_command(cmd).await),
             CommandType::Flows => Ok(self.handle_flows_command(cmd).await),
             CommandType::Agent => Ok(self.handle_agent_command(cmd).await),
+            CommandType::Fleet => Ok(self.handle_fleet_command(cmd).await),
         }
     }
 
@@ -918,36 +1132,44 @@ impl TriggerHandler {
             .map(|c| format!("{} {}", c.emoji, c.display_name))
             .unwrap_or_else(|| current_context.clone());
 
+        // Get current fleet info
+        let current_fleet = self.get_user_fleet(&cmd.context.user_id);
+        let fleet_display = self.available_fleets
+            .get(&current_fleet)
+            .map(|f| format!("{} {}", f.emoji, f.display_name))
+            .unwrap_or_else(|| current_fleet.clone());
+
         let help_text = format!(
             "AOF Bot - DevOps from mobile\n\n\
-            Current agent: {}\n\n\
+            Current fleet: {}\n\n\
             Commands:\n\
-            /agent - Switch agent\n\
+            /fleet - Switch fleet (recommended)\n\
+            /agent - Switch agent (legacy)\n\
             /help - Show this help\n\n\
-            Just type naturally after selecting an agent.\n\n\
-            Select agent:",
-            current_display
+            Just type naturally after selecting a fleet.\n\n\
+            Select fleet:",
+            fleet_display
         );
 
         let mut builder = TriggerResponseBuilder::new()
             .text(help_text);
 
-        // Add agent buttons
-        for entry in self.available_contexts.iter() {
-            let ctx_name = entry.key();
-            let ctx_config = entry.value();
-            let is_current = ctx_name == &current_context;
+        // Add fleet buttons (preferred over legacy agent buttons)
+        for entry in self.available_fleets.iter() {
+            let fleet_name = entry.key();
+            let fleet_config = entry.value();
+            let is_current = fleet_name == &current_fleet;
 
             let label = if is_current {
-                format!("{} {} ✓", ctx_config.emoji, ctx_config.display_name)
+                format!("{} {} ✓", fleet_config.emoji, fleet_config.display_name)
             } else {
-                format!("{} {}", ctx_config.emoji, ctx_config.display_name)
+                format!("{} {}", fleet_config.emoji, fleet_config.display_name)
             };
 
             builder = builder.action(Action {
-                id: format!("ctx_{}", ctx_name),
+                id: format!("fleet_{}", fleet_name),
                 label,
-                value: format!("callback:context:{}", ctx_name),
+                value: format!("callback:fleet:{}", fleet_name),
                 style: if is_current { ActionStyle::Primary } else { ActionStyle::Secondary },
             });
         }
@@ -1111,6 +1333,124 @@ impl TriggerHandler {
         }
     }
 
+    /// Handle /fleet command - show or switch fleets
+    ///
+    /// Usage:
+    /// - `/fleet` - List available fleets with inline selection
+    /// - `/fleet <name>` - Switch to the specified fleet
+    /// - `/fleet info` - Show detailed current fleet info
+    ///
+    /// Fleets are teams of single-purpose agents with LLM-based routing.
+    async fn handle_fleet_command(&self, cmd: TriggerCommand) -> TriggerResponse {
+        let fleet_arg = cmd.args.first().map(|s| s.as_str());
+        let current_fleet = self.get_user_fleet(&cmd.context.user_id);
+
+        match fleet_arg {
+            None => {
+                // List all fleets with inline keyboard
+                let mut builder = TriggerResponseBuilder::new();
+
+                let current_display = self.available_fleets
+                    .get(&current_fleet)
+                    .map(|f| format!("{} {}", f.emoji, f.display_name))
+                    .unwrap_or_else(|| current_fleet.clone());
+
+                builder = builder.text(format!(
+                    "Select Fleet\n\nCurrent: {}\n\nTap to switch:",
+                    current_display
+                ));
+
+                // Add fleet buttons
+                for entry in self.available_fleets.iter() {
+                    let fleet_name = entry.key();
+                    let fleet_config = entry.value();
+                    let is_current = fleet_name == &current_fleet;
+
+                    let label = if is_current {
+                        format!("{} {} ✓", fleet_config.emoji, fleet_config.display_name)
+                    } else {
+                        format!("{} {}", fleet_config.emoji, fleet_config.display_name)
+                    };
+
+                    builder = builder.action(Action {
+                        id: format!("fleet_{}", fleet_name),
+                        label,
+                        value: format!("callback:fleet:{}", fleet_name),
+                        style: if is_current { ActionStyle::Primary } else { ActionStyle::Secondary },
+                    });
+                }
+
+                builder.build()
+            }
+            Some("info") => {
+                // Show detailed info about current fleet
+                if let Some(fleet_config) = self.available_fleets.get(&current_fleet) {
+                    let agents_display: Vec<String> = fleet_config.agents
+                        .iter()
+                        .map(|a| format!("• {}: {}", a.name, a.description))
+                        .collect();
+
+                    let info_text = format!(
+                        "{} {}\n\n{}\n\nAgents:\n{}\n\nRouter: {}\n\nUse /fleet to switch.",
+                        fleet_config.emoji,
+                        fleet_config.display_name,
+                        fleet_config.description,
+                        agents_display.join("\n"),
+                        fleet_config.router_model
+                    );
+                    TriggerResponseBuilder::new()
+                        .text(info_text)
+                        .build()
+                } else {
+                    TriggerResponseBuilder::new()
+                        .text(format!("Fleet '{}' not found.", current_fleet))
+                        .error()
+                        .build()
+                }
+            }
+            Some(fleet_name) => {
+                // Switch to the specified fleet
+                if self.available_fleets.contains_key(fleet_name) {
+                    self.set_user_fleet(&cmd.context.user_id, fleet_name);
+
+                    let fleet_config = self.available_fleets.get(fleet_name).unwrap();
+                    let agents_list: Vec<String> = fleet_config.agents
+                        .iter()
+                        .map(|a| a.name.clone())
+                        .collect();
+
+                    let response_text = format!(
+                        "Switched to {} {}\n\nAgents: {}\n\n{}",
+                        fleet_config.emoji,
+                        fleet_config.display_name,
+                        agents_list.join(", "),
+                        fleet_config.description
+                    );
+
+                    TriggerResponseBuilder::new()
+                        .text(response_text)
+                        .success()
+                        .build()
+                } else {
+                    // Unknown fleet
+                    let available: Vec<String> = self.available_fleets
+                        .iter()
+                        .map(|e| e.key().clone())
+                        .collect();
+
+                    TriggerResponseBuilder::new()
+                        .text(format!(
+                            "Unknown fleet: '{}'\n\nAvailable: {}",
+                            fleet_name,
+                            available.join(", ")
+                        ))
+                        .error()
+                        .build()
+                }
+            }
+        }
+    }
+
     /// Handle /flows command - show available flows with inline keyboard
     ///
     /// Returns a response with action buttons for each available flow.
@@ -1221,7 +1561,7 @@ impl TriggerHandler {
         let (callback_type, callback_value) = if parts.len() >= 3 && parts[0] == "callback" {
             // Format: callback:context:name or callback:flow:name
             (parts[1], parts[2])
-        } else if parts.len() >= 2 && (parts[0] == "context" || parts[0] == "flow") {
+        } else if parts.len() >= 2 && (parts[0] == "context" || parts[0] == "flow" || parts[0] == "fleet") {
             // Format: context:name or flow:name (direct format)
             (parts[0], parts[1])
         } else {
@@ -1266,6 +1606,39 @@ impl TriggerHandler {
                 } else {
                     let response = TriggerResponseBuilder::new()
                         .text(format!("Context not found: {}", callback_value))
+                        .error()
+                        .build();
+                    let _ = platform_impl.send_response(&message.channel_id, response).await;
+                }
+            }
+            "fleet" => {
+                // Switch to the selected fleet
+                if self.available_fleets.contains_key(callback_value) {
+                    self.set_user_fleet(&message.user.id, callback_value);
+
+                    let fleet_config = self.available_fleets.get(callback_value).unwrap();
+                    let agents_list: Vec<String> = fleet_config.agents
+                        .iter()
+                        .map(|a| a.name.clone())
+                        .collect();
+
+                    // Simple, clean response - text only for mobile
+                    let response_text = format!(
+                        "Switched to {} {}\n\nAgents: {}\n\n{}",
+                        fleet_config.emoji,
+                        fleet_config.display_name,
+                        agents_list.join(", "),
+                        fleet_config.description
+                    );
+
+                    let response = TriggerResponseBuilder::new()
+                        .text(response_text)
+                        .success()
+                        .build();
+                    let _ = platform_impl.send_response(&message.channel_id, response).await;
+                } else {
+                    let response = TriggerResponseBuilder::new()
+                        .text(format!("Fleet not found: {}", callback_value))
                         .error()
                         .build();
                     let _ = platform_impl.send_response(&message.channel_id, response).await;

@@ -1,0 +1,29 @@
+# AWS Fleet - AWS Cloud Operations
+#
+# Composes AWS and infrastructure specialists.
+#
+# Usage:
+#   Telegram: /fleet → tap [AWS]
+#   CLI: aofctl run fleet examples/fleets/aws-fleet.yaml
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: aws-fleet
+  labels:
+    category: cloud
+
+spec:
+  display:
+    name: "AWS"
+    emoji: "☁️"
+    description: "AWS cloud infrastructure operations"
+
+  agents:
+    - ref: library/aws-agent.yaml
+      role: specialist
+    - ref: library/terraform-agent.yaml
+      role: specialist
+
+  coordination:
+    mode: hierarchical
+    distribution: skill-based

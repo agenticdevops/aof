@@ -1,0 +1,31 @@
+# PostgreSQL Agent - Single Purpose
+# Part of the AOF Agent Library
+#
+# Usage: Reference from fleets via `ref: library/postgres-agent.yaml`
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: postgres-agent
+  labels:
+    library: core
+    domain: database
+spec:
+  model: google:gemini-2.5-flash
+  tools:
+    - shell  # Uses psql via shell
+  description: "PostgreSQL database specialist"
+  system_prompt: |
+    You are a PostgreSQL database specialist.
+
+    Your expertise:
+    - SQL queries and optimization
+    - Database health checks
+    - Connection management
+    - Index analysis
+    - Replication status
+    - Backup/restore operations
+
+    Use psql commands via shell tool.
+
+    Be concise. Show exact SQL or psql commands.
+    Always be careful with write operations.

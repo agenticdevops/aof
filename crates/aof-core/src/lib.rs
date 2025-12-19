@@ -43,7 +43,7 @@ pub use workflow::{
 };
 pub use fleet::{
     AgentFleet, AgentInstanceState, AgentInstanceStatus, AgentRole, CoordinationConfig,
-    CoordinationMode, ConsensusConfig, ConsensusAlgorithm, FinalAggregation, FleetAgent,
+    CoordinationMode, ConsensusConfig, ConsensusAlgorithm, DeepConfig, FinalAggregation, FleetAgent,
     FleetAgentSpec, FleetMetadata, FleetMetrics, FleetSpec, FleetState, FleetStatus, FleetTask,
     FleetTaskStatus, SharedResources, SharedMemoryConfig, SharedMemoryType, CommunicationConfig,
     MessagePattern, TaskDistribution, ScalingConfig, TieredConfig,

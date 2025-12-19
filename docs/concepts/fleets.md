@@ -2,7 +2,50 @@
 
 AgentFleet enables multiple AI agents to work together on complex tasks. Think of it like a Kubernetes Deployment - multiple specialized pods working in parallel toward a common goal.
 
-## Why Use Fleets in DevOps?
+## Quick Reference: Coordination Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `peer` | All agents parallel + consensus | Code review, voting |
+| `hierarchical` | Manager coordinates workers | Complex orchestration |
+| `pipeline` | Sequential handoff | Data transformation |
+| `swarm` | Self-organizing, load balanced | High-volume parallel |
+| `tiered` | Tier-based parallel | Multi-model RCA |
+| `deep` | **NEW** Iterative planning + execution | Complex investigations |
+
+## Agent-First Architecture
+
+AOF uses a simple, composable model - **Agent for 95% of tasks, Fleet when sophisticated reasoning is needed**:
+
+| Concept | What It Is | Example |
+|---------|------------|---------|
+| **Agent** | Single-purpose specialist | `k8s-agent`, `prometheus-agent` |
+| **Fleet** | Team of agents for a purpose | `devops-fleet`, `rca-fleet` |
+| **Flow** | Event routing to fleets | Telegram → Fleet → Response |
+
+**The key insight**: Don't build "super agents" with many tools. Build focused agents, then compose them into fleets.
+
+```yaml
+# ✅ GOOD: Fleet composes single-purpose agents
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: devops-fleet
+spec:
+  agents:
+    - ref: library/k8s-agent.yaml      # kubectl, helm only
+    - ref: library/docker-agent.yaml   # docker only
+    - ref: library/git-agent.yaml      # git only
+```
+
+```yaml
+# ❌ BAD: One agent with too many tools
+spec:
+  tools: [kubectl, docker, git, terraform, aws, helm]
+  # Hard to maintain, not reusable, unfocused
+```
+
+## Why Use Fleets?
 
 ### The Single Agent Problem
 
@@ -82,7 +125,7 @@ Fleet of 3 Gemini Flash:
 
 ## Coordination Modes
 
-AOF supports five coordination modes for different use cases:
+AOF supports six coordination modes for different use cases:
 
 ### 1. Peer Mode (Default)
 
@@ -340,6 +383,120 @@ tiered:
       algorithm: weighted    # Multi-model consensus
       min_votes: 2
 ```
+
+### 6. Deep Mode (Iterative Planning + Execution)
+
+Deep mode adds an agentic loop pattern: planning → execution → re-planning. Unlike other modes that execute once and return, deep mode iterates until the goal is achieved or max iterations reached.
+
+```yaml
+coordination:
+  mode: deep
+  deep:
+    max_iterations: 10
+    planning: true
+    memory: true
+```
+
+**Best for**: Complex investigations, root cause analysis, multi-step reasoning tasks
+
+**What Deep Mode Adds**:
+1. **Planning** - LLM generates investigation steps before execution
+2. **Iteration** - Execute steps until goal achieved (not just once)
+3. **Re-planning** - Adjust plan based on findings mid-execution
+4. **Memory** - Persist findings across iterations for context
+
+**How it works**:
+```
+User: /fleet rca "why is API returning 500 errors"
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  DEEP MODE = Agentic Loop (like Claude Code)                │
+│                                                              │
+│  1. PLAN: Generate investigation steps                      │
+│     → Check pods, fetch logs, query metrics, correlate      │
+│                                                              │
+│  2. EXECUTE: Run each step using appropriate tools          │
+│     → kubectl get pods → kubectl logs → promql query        │
+│                                                              │
+│  3. ITERATE: Continue until goal achieved                   │
+│     → Found OOM? Check memory limits. Still unclear? Dig.   │
+│                                                              │
+│  4. SYNTHESIZE: Produce final answer with evidence          │
+│     → Root cause + evidence + recommendations               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Example Output**:
+```
+🔍 RCA Fleet - Investigating...
+
+📋 Plan:
+1. Check pod status
+2. Fetch error logs
+3. Query metrics
+4. Correlate findings
+
+⏳ Step 1/4: Checking pods...
+   → 2/3 pods in CrashLoopBackOff
+
+⏳ Step 2/4: Fetching logs...
+   → OutOfMemoryError at 14:32
+
+⏳ Step 3/4: Querying metrics...
+   → Memory at 98% before crash
+
+⏳ Step 4/4: Correlating...
+
+✅ Root Cause: Memory leak in API service
+
+Evidence:
+• Pods crashing with OOMKilled
+• Memory at 98% before crash
+• 3x traffic spike at 14:30
+
+Recommendations:
+1. Increase memory limits (immediate)
+2. Profile for memory leak (long-term)
+```
+
+**Deep Configuration Options**:
+
+```yaml
+coordination:
+  mode: deep
+  deep:
+    # Safety limit - stop after N iterations
+    max_iterations: 10
+
+    # Enable planning phase (LLM generates steps)
+    planning: true
+
+    # Persist findings in memory across iterations
+    memory: true
+
+    # Optional: Override model for planning
+    planner_model: anthropic:claude-sonnet-4-20250514
+
+    # Optional: Custom planning prompt
+    planner_prompt: |
+      You are planning an investigation. Generate steps to find the root cause.
+
+    # Optional: Custom synthesis prompt
+    synthesizer_prompt: |
+      Synthesize findings into a clear report with evidence.
+```
+
+**When to Use Deep vs Other Modes**:
+
+| Scenario | Recommended Mode |
+|----------|-----------------|
+| Multiple perspectives on same task | Peer + Consensus |
+| Manager delegates to workers | Hierarchical |
+| Sequential data transformation | Pipeline |
+| High-volume parallel processing | Swarm |
+| Multi-model analysis (cheap → expensive) | Tiered |
+| **Complex investigation needing iteration** | **Deep** |
 
 ## Consensus Algorithms
 

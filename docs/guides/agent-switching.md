@@ -1,72 +1,161 @@
-# Agent Switching Guide
+# Fleet Switching Guide
 
-Switch between different agents via the `/agent` command.
+Switch between different fleets via the `/fleet` command.
 
 ## Quick Start
 
 ```
-/agent              # Show available agents (inline buttons)
-/agent k8s          # Switch to Kubernetes agent
-/agent info         # Show current agent details
+/fleet              # Show available fleets (inline buttons)
+/fleet devops       # Switch to DevOps fleet
+/fleet info         # Show current fleet details
 ```
 
-## Available Agents
+## Available Fleets
 
-| Command | Agent | Tools |
-|---------|-------|-------|
-| `/agent k8s` | k8s-ops | kubectl, helm |
-| `/agent aws` | aws-agent | aws |
-| `/agent docker` | docker-ops | docker, shell |
-| `/agent devops` | devops | kubectl, docker, helm, terraform, git, shell |
+| Fleet | Agents | Purpose |
+|-------|--------|---------|
+| **DevOps** | k8s + docker + git + prometheus | Full-stack DevOps |
+| **Kubernetes** | k8s + prometheus + loki | K8s cluster operations |
+| **AWS** | aws + terraform | AWS cloud infrastructure |
+| **Database** | postgres + redis | Database operations |
+| **RCA** | collectors + multi-model analysts | Root cause analysis (tiered mode) |
+| **RCA Deep** | single investigator + tools | Deep investigation (iterative planning) |
 
 ## User Experience
 
 ```
-User: /agent
+User: /fleet
 
-Bot: Select Agent
-     Current: Kubernetes
+Bot: Select Fleet
+     Current: DevOps
 
-     [Kubernetes] [AWS]
-     [Docker]     [DevOps]
+     [DevOps]     [Kubernetes]
+     [AWS]        [Database]
+     [RCA]
 
-User: *taps AWS*
+User: *taps Kubernetes*
 
-Bot: Switched to AWS
+Bot: Switched to Kubernetes
 
-     Tools: aws
+     Agents: k8s, prometheus, loki
 
-     AWS cloud operations.
+     Kubernetes cluster operations with monitoring.
 
-User: list ec2 instances
+User: why are pods crashing?
 
-Bot: [AWS CLI output...]
+Bot: [Fleet routes to k8s-agent, which analyzes...]
 ```
 
-## Adding Custom Agents
+## How Fleets Work
 
-Create agent YAML files in your agents directory:
+Fleets compose single-purpose agents and route requests to the right specialist:
+
+```
+User: "check pod logs"
+         │
+         ▼
+    ┌─────────────┐
+    │ DevOps Fleet│
+    │(coordinator)│
+    └──────┬──────┘
+           │ routes to k8s-agent
+           ▼
+    ┌─────────────┐
+    │  k8s-agent  │ ← focuses on kubectl
+    └─────────────┘
+           │
+           ▼
+    Response with logs
+```
+
+## Adding Custom Fleets
+
+### 1. Create Single-Purpose Agents
 
 ```yaml
-# agents/my-agent.yaml
+# agents/library/my-agent.yaml
 apiVersion: aof.dev/v1alpha1
 kind: Agent
 metadata:
   name: my-agent
+  labels:
+    library: custom
+    domain: mytools
 spec:
   model: google:gemini-2.5-flash
   tools:
-    - kubectl
-    - docker
+    - mytool
   system_prompt: |
-    You are a helpful DevOps assistant.
+    You are a specialist for mytool.
+    Focus ONLY on mytool operations.
 ```
 
-Then start the server with your agents:
+### 2. Compose Agents into a Fleet
+
+```yaml
+# fleets/my-fleet.yaml
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: my-fleet
+spec:
+  display:
+    name: "My Fleet"
+    emoji: "🚀"
+    description: "Custom operations"
+
+  agents:
+    - ref: library/my-agent.yaml
+      role: specialist
+    - ref: library/k8s-agent.yaml
+      role: specialist
+
+  coordination:
+    mode: hierarchical
+    distribution: skill-based
+```
+
+### 3. Run the Fleet
 
 ```bash
-aofctl serve --config config.yaml --agents-dir ./agents
+# CLI
+aofctl run fleet fleets/my-fleet.yaml -i "do something"
+
+# Serve with Telegram
+aofctl serve --config config.yaml --fleets-dir ./fleets
 ```
+
+## Fleet Coordination Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `hierarchical` | Routes to right specialist | Default for most fleets |
+| `peer` | All agents work in parallel | Code review, voting |
+| `tiered` | Collectors → Analysts → Synthesizer | Multi-model RCA |
+| `pipeline` | Sequential processing | Data transformation |
+| `swarm` | Self-organizing, load balanced | High-volume parallel |
+| `deep` | Iterative planning + execution loop | Complex investigations |
+
+### Deep Mode (Agentic Investigation)
+
+Deep mode enables iterative, planning-based execution similar to how Claude Code works:
+
+```yaml
+coordination:
+  mode: deep
+  deep:
+    max_iterations: 10   # Safety limit
+    planning: true       # Enable planning phase
+    memory: true         # Persist findings across iterations
+```
+
+**How it works:**
+1. **Plan** - LLM generates investigation steps
+2. **Execute** - Run each step using available tools
+3. **Re-plan** - Adjust plan based on findings
+4. **Synthesize** - Produce final answer with evidence
+
+**Example:** See `examples/fleets/rca-deep-fleet.yaml`
 
 ## Platform Behavior
 
@@ -78,3 +167,9 @@ aofctl serve --config config.yaml --agents-dir ./agents
 | WhatsApp | Read-only |
 
 See [Safety Layer Guide](safety-layer.md) for details.
+
+## See Also
+
+- [Core Concepts](../introduction/concepts.md) - Agent → Fleet → Flow model
+- [Fleets Deep Dive](../concepts/fleets.md) - Coordination modes and consensus
+- [Example Fleets](../../examples/fleets/) - Ready-to-use fleet compositions

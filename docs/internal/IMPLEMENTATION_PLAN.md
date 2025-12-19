@@ -60,7 +60,7 @@ crates/
 The `FleetCoordinator` in `aof-runtime/src/fleet/mod.rs` already implements:
 - Fleet loading from YAML
 - Agent instance management
-- Coordination modes (hierarchical, peer, swarm, pipeline)
+- Coordination modes (hierarchical, peer, tiered, pipeline, swarm, deep)
 - Task distribution strategies
 
 **Add to aofctl (kubectl-style verb-noun syntax):**

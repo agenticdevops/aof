@@ -1,0 +1,32 @@
+# Kubernetes Fleet - Kubernetes-Focused Operations
+#
+# Simpler fleet for Kubernetes-only environments.
+# Includes K8s + observability for complete cluster management.
+#
+# Usage:
+#   Telegram: /fleet → tap [Kubernetes]
+#   CLI: aofctl run fleet examples/fleets/k8s-fleet.yaml
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: k8s-fleet
+  labels:
+    category: kubernetes
+
+spec:
+  display:
+    name: "Kubernetes"
+    emoji: "☸️"
+    description: "Kubernetes cluster operations"
+
+  agents:
+    - ref: library/k8s-agent.yaml
+      role: specialist
+    - ref: library/prometheus-agent.yaml
+      role: specialist
+    - ref: library/loki-agent.yaml
+      role: specialist
+
+  coordination:
+    mode: hierarchical
+    distribution: skill-based

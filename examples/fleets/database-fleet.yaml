@@ -1,0 +1,29 @@
+# Database Fleet - Database Operations
+#
+# Composes database specialists for multi-database environments.
+#
+# Usage:
+#   Telegram: /fleet → tap [Database]
+#   CLI: aofctl run fleet examples/fleets/database-fleet.yaml
+apiVersion: aof.dev/v1alpha1
+kind: AgentFleet
+metadata:
+  name: database-fleet
+  labels:
+    category: database
+
+spec:
+  display:
+    name: "Database"
+    emoji: "🗄️"
+    description: "Database operations (PostgreSQL, Redis)"
+
+  agents:
+    - ref: library/postgres-agent.yaml
+      role: specialist
+    - ref: library/redis-agent.yaml
+      role: specialist
+
+  coordination:
+    mode: hierarchical
+    distribution: skill-based
