@@ -1,0 +1,353 @@
+# GitLab Merge Request Automation with Slash Commands
+# 🧪 EXPERIMENTAL: GitLab integration is untested
+#
+# Real-World Use Case:
+# Automate GitLab MR reviews, approvals, and pipeline management with
+# slash commands in MR comments. Same pattern as GitHub but GitLab-specific.
+#
+# Slash Commands (in MR comments):
+#   /review          - Full MR code review
+#   /approve         - Approve the MR
+#   /pipeline retry  - Retry failed CI/CD pipeline
+#   /merge           - Merge when pipeline passes
+#   /label ~bug      - Add label (GitLab uses ~ prefix)
+#   /assign @username - Assign reviewer
+#   /close           - Close MR with summary
+#
+# Automatic Triggers:
+#   merge_request.open   → Auto-review new MRs
+#   merge_request.update → Re-review on new commits
+#   pipeline.failed      → Notify and suggest fixes
+#
+# Setup:
+#   1. Set GITLAB_TOKEN in environment (Personal Access Token with api scope)
+#   2. Set GITLAB_WEBHOOK_SECRET for webhook verification
+#   3. Configure webhook in GitLab project settings:
+#      - URL: https://your-domain.com/webhooks/gitlab
+#      - Secret Token: ${GITLAB_WEBHOOK_SECRET}
+#      - Events: Merge requests, Comments, Pipeline events
+#   4. For self-hosted: Update api_url to your GitLab instance
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: gitlab-mr-bot
+  labels:
+    platform: gitlab
+    type: merge-request-automation
+    status: experimental
+    use-case: code-review
+
+spec:
+  type: GitLab
+
+  config:
+    # GitLab API Configuration
+    token: ${GITLAB_TOKEN}
+    webhook_secret: ${GITLAB_WEBHOOK_SECRET}
+
+    # API endpoint (change for self-hosted GitLab)
+    api_url: https://gitlab.com/api/v4
+
+    # GitLab webhook events to listen for
+    gitlab_events:
+      - merge_request  # MR opened, updated, closed
+      - note          # Comments on MRs (for slash commands)
+      - pipeline      # CI/CD pipeline status
+
+    # Projects to monitor (supports wildcards)
+    projects:
+      - mygroup/*
+      - myorg/important-repo
+
+  # Command mappings
+  commands:
+    # Automatic triggers (no slash command needed)
+    merge_request.open:
+      fleet: pr-review-fleet
+      params:
+        review_type: initial
+        check_conventions: true
+        suggest_improvements: true
+
+    merge_request.update:
+      fleet: pr-review-fleet
+      params:
+        review_type: incremental
+        focus_on_changes: true
+
+    pipeline.failed:
+      agent: devops
+      params:
+        action: analyze_failure
+        suggest_fixes: true
+        notify_author: true
+
+    # Slash commands (triggered by MR comments)
+    /review:
+      fleet: pr-review-fleet
+      params:
+        review_type: full
+        depth: comprehensive
+
+    /approve:
+      agent: approval-agent
+      params:
+        verify_tests_pass: true
+        check_required_approvals: true
+
+    "/pipeline retry":
+      agent: devops
+      params:
+        action: retry_pipeline
+        wait_for_completion: true
+
+    /merge:
+      agent: merge-agent
+      params:
+        strategy: when_pipeline_succeeds
+        delete_source_branch: true
+        squash_commits: false
+
+    "/label ~bug":
+      agent: label-manager
+      params:
+        labels: ["bug"]
+        action: add
+
+    "/label ~enhancement":
+      agent: label-manager
+      params:
+        labels: ["enhancement"]
+        action: add
+
+    "/assign @":
+      agent: reviewer-assigner
+      params:
+        action: assign_reviewers
+        # Username extracted from comment
+
+    /close:
+      agent: mr-closer
+      params:
+        add_summary: true
+        notify_participants: true
+
+    # Advanced commands
+    /security-scan:
+      agent: security-scanner
+      params:
+        scan_dependencies: true
+        check_secrets: true
+        sast_analysis: true
+
+    /performance-check:
+      agent: performance-analyzer
+      params:
+        run_benchmarks: true
+        compare_with_main: true
+
+    /docs-check:
+      agent: docs-validator
+      params:
+        check_api_docs: true
+        verify_changelog: true
+        check_examples: true
+
+  # Default agent for unmatched commands
+  default_agent: devops
+
+---
+# Supporting Agent Fleet for GitLab MR Reviews
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: pr-review-fleet
+  labels:
+    platform: gitlab
+    purpose: merge-request-review
+
+spec:
+  agents:
+    - name: code-reviewer
+      type: code-analysis
+      model: google:gemini-2.5-flash
+      capabilities:
+        - code_review
+        - best_practices
+        - security_audit
+
+    - name: test-validator
+      type: testing
+      model: google:gemini-2.5-flash
+      capabilities:
+        - test_coverage
+        - test_quality
+        - edge_cases
+
+    - name: docs-checker
+      type: documentation
+      model: google:gemini-2.5-flash
+      capabilities:
+        - api_docs
+        - changelog
+        - code_comments
+
+---
+# Approval Agent
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: approval-agent
+  labels:
+    role: approver
+
+spec:
+  model: google:gemini-2.5-flash
+  system_prompt: |
+    You are a GitLab MR approval bot.
+
+    Approval Checklist:
+    1. All CI/CD pipelines must pass
+    2. Required approvals met
+    3. No merge conflicts
+    4. Security scans clean
+    5. Test coverage acceptable
+
+    If all checks pass:
+    - Add thumbs up emoji to MR
+    - Post approval comment
+    - Use GitLab API to approve MR
+
+    If checks fail:
+    - List failed checks in comment
+    - Tag MR author
+    - Suggest next steps
+
+---
+# DevOps Agent for Pipeline Management
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: devops
+  labels:
+    role: pipeline-manager
+
+spec:
+  model: google:gemini-2.5-flash
+  system_prompt: |
+    You are a GitLab CI/CD pipeline management bot.
+
+    For pipeline failures:
+    1. Analyze failure logs
+    2. Identify root cause
+    3. Suggest fixes (link to docs if applicable)
+    4. Post actionable comment on MR
+
+    For /pipeline retry:
+    1. Check if issue is transient (flaky test, timeout)
+    2. Retry pipeline via GitLab API
+    3. Monitor retry status
+    4. Report success/failure
+
+    Always provide:
+    - Clear error explanations
+    - Links to relevant logs
+    - Suggested fixes with code snippets
+
+---
+# Merge Agent
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: merge-agent
+  labels:
+    role: merger
+
+spec:
+  model: google:gemini-2.5-flash
+  system_prompt: |
+    You are a GitLab MR merge automation bot.
+
+    Merge Requirements:
+    1. All pipelines pass
+    2. Required approvals obtained
+    3. No merge conflicts
+    4. No blocking discussions
+    5. Branch is up-to-date with target
+
+    Actions:
+    - Wait for pipeline if still running
+    - Auto-rebase if needed
+    - Merge when safe
+    - Delete source branch (if configured)
+    - Post merge confirmation
+
+    GitLab Merge Options:
+    - merge_when_pipeline_succeeds: true
+    - should_remove_source_branch: true
+    - squash: false (preserve commit history)
+
+---
+# Label Manager Agent
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: label-manager
+  labels:
+    role: labeler
+
+spec:
+  model: google:gemini-2.5-flash
+  system_prompt: |
+    You manage GitLab MR labels.
+
+    GitLab Label Syntax:
+    - Use ~ prefix: ~bug, ~enhancement, ~documentation
+    - Scoped labels: workflow::review, priority::high
+
+    Common Labels:
+    - ~bug - Bug fixes
+    - ~enhancement - New features
+    - ~documentation - Doc updates
+    - ~security - Security fixes
+    - ~performance - Performance improvements
+    - ~breaking-change - Breaking API changes
+
+    Auto-label based on:
+    - File paths (docs/* → ~documentation)
+    - MR title keywords (fix, feat, docs)
+    - Modified lines count (large changes)
+
+---
+# Security Scanner Agent
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: security-scanner
+  labels:
+    role: security
+
+spec:
+  model: google:gemini-2.5-flash
+  mcp_servers:
+    - security-tools
+
+  system_prompt: |
+    You perform security scans on GitLab MRs.
+
+    Security Checks:
+    1. Dependency vulnerabilities (npm audit, cargo audit)
+    2. Secret detection (API keys, passwords in code)
+    3. SAST (Static Application Security Testing)
+    4. Code injection risks
+    5. Authentication/authorization issues
+
+    Report Format:
+    - Severity: Critical/High/Medium/Low
+    - Vulnerability type
+    - Affected files/lines
+    - Remediation steps
+    - CVE references (if applicable)
+
+    Block merge if Critical vulnerabilities found.

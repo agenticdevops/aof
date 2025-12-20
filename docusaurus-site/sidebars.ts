@@ -36,6 +36,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'concepts/fleets',
         'concepts/resource-selection',
+        'concepts/github-integration',
       ],
     },
     {
@@ -83,6 +84,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'reference/daemon-config',
         'reference/aofctl',
+        'reference/github-integration',
       ],
     },
   ],
@@ -96,6 +98,14 @@ const sidebars: SidebarsConfig = {
         'tutorials/first-agent',
         'tutorials/slack-bot',
         'tutorials/telegram-ops-bot',
+        {
+          type: 'category',
+          label: 'GitHub Automation',
+          items: [
+            'tutorials/pr-review-automation',
+            'tutorials/github-automation',
+          ],
+        },
         'tutorials/incident-response',
         'tutorials/rca-fleet',
         'tutorials/deep-analysis-fleet',

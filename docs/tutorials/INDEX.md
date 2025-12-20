@@ -18,6 +18,15 @@ Hands-on tutorials for building AI-powered DevOps bots with AOF.
   - Quick status checks from your phone
   - `/agent` and `/fleet` commands
 
+### GitHub Automation
+
+- **[Automated PR Review](./pr-review-automation.md)** - Set up AI-powered PR review automation
+  - Multi-agent review fleet (security, performance, quality)
+  - GitHub webhook trigger integration
+  - Consensus-based review with weighted votes
+  - Automatic PR comments and labeling
+  - Complete step-by-step setup guide
+
 ### Getting Started
 
 - **[Your First Agent](./first-agent.md)** - Create and run your first agent

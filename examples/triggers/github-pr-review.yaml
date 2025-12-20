@@ -1,0 +1,561 @@
+# GitHub PR Review Bot - Comprehensive Example
+# This example demonstrates a production-ready GitHub bot that:
+# 1. Automatically reviews PRs when opened/updated
+# 2. Responds to slash commands in PR comments
+# 3. Orchestrates deployments, labels, and approvals
+# 4. Provides multi-stage review workflows
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: github-pr-bot
+  labels:
+    platform: github
+    purpose: pr-automation
+    environment: production
+spec:
+  # GitHub webhook trigger type
+  type: GitHub
+
+  config:
+    # Webhook secret for validating GitHub requests
+    # Set via: export GITHUB_WEBHOOK_SECRET="your-secret-here"
+    webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+
+    # GitHub events to listen for
+    github_events:
+      - pull_request           # PR lifecycle events (opened, closed, etc.)
+      - pull_request_review    # Review submitted/edited
+      - issue_comment          # Comments on PRs (for /commands)
+      - pull_request_review_comment  # Comments on specific lines
+
+    # Repository filters (supports wildcards)
+    repositories:
+      - myorg/*                # All repos in myorg
+      - anotherorg/backend-*   # Specific pattern
+
+    # Branch filters (optional)
+    branches:
+      target:
+        - main
+        - develop
+        - release/*
+
+    # PR state filters (optional)
+    pr_states:
+      - open
+      - ready_for_review
+
+  # Command mappings - Map events/commands to agents, fleets, or flows
+  commands:
+    # ============================================================
+    # AUTOMATIC PR EVENT TRIGGERS
+    # ============================================================
+
+    # Trigger when a new PR is opened
+    pull_request.opened:
+      fleet: pr-review-fleet
+      params:
+        review_type: comprehensive
+        auto_comment: true
+        check_ci: true
+
+    # Trigger when PR is updated (new commits pushed)
+    pull_request.synchronize:
+      fleet: pr-review-fleet
+      params:
+        review_type: incremental  # Only review changed files
+        auto_comment: true
+
+    # Trigger when PR moves from draft to ready
+    pull_request.ready_for_review:
+      fleet: pr-review-fleet
+      params:
+        review_type: comprehensive
+        auto_comment: true
+        notify_reviewers: true
+
+    # Trigger when PR is approved
+    pull_request_review.submitted:
+      agent: pr-approval-handler
+      params:
+        track_approvals: true
+        auto_merge_threshold: 2  # Auto-merge after 2 approvals
+
+    # ============================================================
+    # SLASH COMMANDS - Comment-triggered actions
+    # ============================================================
+
+    # Full code review command
+    # Usage: Comment "/review" on a PR
+    /review:
+      fleet: pr-review-fleet
+      params:
+        review_type: comprehensive
+        post_summary: true
+      response: |
+        🔍 Starting comprehensive code review...
+        - Code quality analysis
+        - Security scanning
+        - Performance review
+        - Best practices check
+
+    # Security-focused review
+    # Usage: "/review security"
+    /review security:
+      agent: security-reviewer
+      params:
+        scan_dependencies: true
+        check_secrets: true
+        analyze_permissions: true
+      response: |
+        🔒 Running security review...
+        - Dependency vulnerability scan
+        - Secret detection
+        - Permission analysis
+        - OWASP compliance check
+
+    # Performance review
+    # Usage: "/review performance"
+    /review performance:
+      agent: performance-reviewer
+      params:
+        benchmark: true
+        profile_memory: true
+        analyze_queries: true
+      response: |
+        ⚡ Running performance review...
+        - Benchmark analysis
+        - Memory profiling
+        - Database query optimization
+        - Load testing recommendations
+
+    # Code style/linting review
+    # Usage: "/review style"
+    /review style:
+      agent: style-checker
+      params:
+        auto_fix: true
+        commit_fixes: false  # Just suggest, don't auto-commit
+      response: |
+        ✨ Running style/linting review...
+        - Code formatting check
+        - Linting rules validation
+        - Style guide compliance
+
+    # ============================================================
+    # APPROVAL & MERGE COMMANDS
+    # ============================================================
+
+    # LGTM (Looks Good To Me) - Approve PR
+    # Usage: "/lgtm" or "/approve"
+    /lgtm:
+      agent: approval-agent
+      params:
+        require_checks: true
+        auto_merge: false
+      response: |
+        ✅ LGTM! Adding approval...
+        Checking required status checks before merge.
+
+    /approve:
+      agent: approval-agent
+      params:
+        require_checks: true
+        auto_merge: false
+      response: "✅ PR approved! Waiting for required checks."
+
+    # Conditional approval with auto-merge
+    # Usage: "/lgtm merge"
+    /lgtm merge:
+      agent: approval-agent
+      params:
+        require_checks: true
+        auto_merge: true
+        merge_method: squash
+      response: |
+        ✅ LGTM! Will auto-merge when all checks pass.
+        Merge method: squash
+
+    # ============================================================
+    # DEPLOYMENT COMMANDS
+    # ============================================================
+
+    # Deploy to staging environment
+    # Usage: "/deploy staging"
+    /deploy staging:
+      flow: deploy-staging-flow
+      params:
+        environment: staging
+        notify_slack: true
+        run_smoke_tests: true
+      response: |
+        🚀 Deploying to staging...
+        - Building Docker image
+        - Running migrations
+        - Deploying to k8s cluster
+        - Running smoke tests
+
+    # Deploy to production (requires approval)
+    # Usage: "/deploy production"
+    /deploy production:
+      flow: deploy-production-flow
+      params:
+        environment: production
+        require_approval: true
+        approvers:
+          - tech-lead
+          - devops-lead
+        rollback_on_failure: true
+      response: |
+        🚀 Production deployment requested.
+        ⚠️  Requires approval from: @tech-lead, @devops-lead
+        Will auto-rollback on failure.
+
+    # Deploy to preview environment
+    # Usage: "/deploy preview"
+    /deploy preview:
+      flow: deploy-preview-flow
+      params:
+        environment: preview
+        ttl: 7d  # Auto-delete after 7 days
+      response: |
+        🔗 Deploying preview environment...
+        Preview will be available at: https://pr-{pr_number}.preview.example.com
+        Auto-deletes in 7 days.
+
+    # ============================================================
+    # GIT OPERATIONS
+    # ============================================================
+
+    # Rebase PR on main branch
+    # Usage: "/rebase"
+    /rebase:
+      agent: git-operations-agent
+      params:
+        target_branch: main
+        auto_push: true
+        resolve_conflicts: false
+      response: |
+        🔄 Rebasing PR on main...
+        Will update this PR if rebase succeeds.
+        Conflicts will need manual resolution.
+
+    # Update PR from main
+    # Usage: "/update"
+    /update:
+      agent: git-operations-agent
+      params:
+        operation: merge
+        target_branch: main
+      response: "🔄 Merging latest changes from main..."
+
+    # ============================================================
+    # LABEL MANAGEMENT
+    # ============================================================
+
+    # Add label to PR
+    # Usage: "/label bug" or "/label enhancement"
+    /label:
+      agent: label-manager
+      params:
+        action: add
+      response: "🏷️  Adding label to PR..."
+
+    # Remove label
+    # Usage: "/unlabel bug"
+    /unlabel:
+      agent: label-manager
+      params:
+        action: remove
+      response: "🏷️  Removing label from PR..."
+
+    # Auto-label based on files changed
+    # Usage: "/auto-label"
+    /auto-label:
+      agent: label-manager
+      params:
+        analyze_files: true
+        rules:
+          - pattern: "*.go"
+            label: "backend"
+          - pattern: "*.tsx"
+            label: "frontend"
+          - pattern: "**/docs/**"
+            label: "documentation"
+      response: |
+        🏷️  Analyzing changed files for auto-labeling...
+        Will add relevant labels based on file patterns.
+
+    # ============================================================
+    # TESTING COMMANDS
+    # ============================================================
+
+    # Run specific test suite
+    # Usage: "/test unit" or "/test e2e"
+    /test:
+      agent: test-runner
+      params:
+        report_results: true
+        post_comment: true
+      response: |
+        🧪 Running tests...
+        Results will be posted as a comment.
+
+    # Run all tests
+    # Usage: "/test all"
+    /test all:
+      fleet: test-fleet
+      params:
+        suites:
+          - unit
+          - integration
+          - e2e
+        parallel: true
+      response: |
+        🧪 Running all test suites...
+        - Unit tests
+        - Integration tests
+        - E2E tests
+
+    # Benchmark performance
+    # Usage: "/benchmark"
+    /benchmark:
+      agent: performance-reviewer
+      params:
+        compare_to: main
+        post_results: true
+      response: |
+        📊 Running benchmarks...
+        Comparing performance against main branch.
+
+    # ============================================================
+    # DOCUMENTATION & HELP
+    # ============================================================
+
+    # Show available commands
+    # Usage: "/help"
+    /help:
+      agent: help-bot
+      response: |
+        🤖 **Available Commands:**
+
+        **Review:**
+        - `/review` - Comprehensive code review
+        - `/review security` - Security-focused review
+        - `/review performance` - Performance analysis
+        - `/review style` - Style/linting check
+
+        **Approval:**
+        - `/lgtm` or `/approve` - Approve PR
+        - `/lgtm merge` - Approve and auto-merge
+
+        **Deployment:**
+        - `/deploy staging` - Deploy to staging
+        - `/deploy production` - Deploy to production (requires approval)
+        - `/deploy preview` - Create preview environment
+
+        **Git Operations:**
+        - `/rebase` - Rebase on main
+        - `/update` - Merge latest from main
+
+        **Labels:**
+        - `/label <name>` - Add label
+        - `/unlabel <name>` - Remove label
+        - `/auto-label` - Auto-label based on files
+
+        **Testing:**
+        - `/test <suite>` - Run specific test suite
+        - `/test all` - Run all tests
+        - `/benchmark` - Run performance benchmarks
+
+        **Other:**
+        - `/help` - Show this help message
+        - `/assign <user>` - Assign PR to user
+        - `/cc <user>` - Request review from user
+
+    # Assign PR to user
+    # Usage: "/assign @username"
+    /assign:
+      agent: pr-manager
+      params:
+        action: assign
+      response: "👤 Assigning PR..."
+
+    # Request review from user
+    # Usage: "/cc @username"
+    /cc:
+      agent: pr-manager
+      params:
+        action: request_review
+      response: "👀 Requesting review..."
+
+  # Default agent for unmatched commands
+  default_agent: devops
+
+  # Error handling
+  on_error:
+    post_comment: true
+    notify_maintainers: true
+    message: |
+      ❌ Command failed. Please check the logs or contact @devops-team.
+
+---
+# Example Fleet: pr-review-fleet
+# Referenced by /review commands above
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: pr-review-fleet
+spec:
+  agents:
+    - name: code-quality
+      model: google:gemini-2.5-flash
+      role: "Code quality reviewer - check readability, maintainability, best practices"
+      tools:
+        - github
+
+    - name: security-scanner
+      model: google:gemini-2.5-flash
+      role: "Security reviewer - scan for vulnerabilities, secrets, CVEs"
+      tools:
+        - github
+        - security-tools
+
+    - name: performance-analyst
+      model: google:gemini-2.5-flash
+      role: "Performance reviewer - analyze complexity, memory, bottlenecks"
+      tools:
+        - github
+        - profiler
+
+    - name: test-coverage
+      model: google:gemini-2.5-flash
+      role: "Test coverage reviewer - ensure adequate test coverage"
+      tools:
+        - github
+        - test-runner
+
+  coordination:
+    pattern: parallel
+    consensus:
+      type: majority
+      threshold: 0.75
+
+    aggregation:
+      merge_reports: true
+      post_summary: true
+
+---
+# Example Agent: security-reviewer
+# Referenced by /review security command
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: security-reviewer
+spec:
+  model: google:gemini-2.5-flash
+
+  system_prompt: |
+    You are a security-focused code reviewer specializing in:
+    - Dependency vulnerability scanning
+    - Secret detection (API keys, passwords, tokens)
+    - Authentication/authorization flaws
+    - SQL injection, XSS, CSRF vulnerabilities
+    - Insecure cryptography
+    - Permission/access control issues
+
+    Provide actionable recommendations with severity levels (critical, high, medium, low).
+
+  tools:
+    - name: github
+      config:
+        permissions:
+          - read:code
+          - write:comments
+
+    - name: security-scanner
+      type: MCP
+      server: security-tools
+
+  parameters:
+    temperature: 0.2
+    max_tokens: 4096
+
+---
+# Example Flow: deploy-staging-flow
+# Referenced by /deploy staging command
+apiVersion: aof.dev/v1
+kind: Flow
+metadata:
+  name: deploy-staging-flow
+spec:
+  steps:
+    - name: build-image
+      agent: build-agent
+      task: "Build Docker image from PR branch"
+      outputs:
+        - image_tag
+
+    - name: run-migrations
+      agent: db-agent
+      task: "Run database migrations"
+      depends_on:
+        - build-image
+
+    - name: deploy-k8s
+      agent: k8s-agent
+      task: "Deploy to staging Kubernetes cluster"
+      inputs:
+        image_tag: "{{ steps.build-image.outputs.image_tag }}"
+      depends_on:
+        - run-migrations
+
+    - name: smoke-tests
+      agent: test-agent
+      task: "Run smoke tests against staging"
+      depends_on:
+        - deploy-k8s
+
+    - name: notify
+      agent: notification-agent
+      task: "Post deployment status to PR and Slack"
+      depends_on:
+        - smoke-tests
+
+  on_failure:
+    rollback: true
+    notify:
+      - slack: "#deployments"
+      - github: comment
+
+---
+# Usage Examples:
+#
+# 1. Start the daemon with GitHub trigger:
+#    aofctl daemon start --triggers examples/triggers/github-pr-review.yaml
+#
+# 2. Configure GitHub webhook:
+#    URL: https://your-server.com/api/webhooks/github
+#    Content type: application/json
+#    Secret: (value from GITHUB_WEBHOOK_SECRET)
+#    Events:
+#      - Pull requests
+#      - Issue comments
+#      - Pull request reviews
+#
+# 3. Use commands in PR comments:
+#    - Comment "/review" to trigger comprehensive review
+#    - Comment "/deploy staging" to deploy to staging
+#    - Comment "/lgtm merge" to approve and auto-merge
+#    - Comment "/help" to see all available commands
+#
+# 4. Automatic triggers:
+#    - Opening a PR → auto-review
+#    - Pushing new commits → incremental review
+#    - Moving from draft to ready → comprehensive review
+#
+# 5. Environment variables needed:
+#    export GITHUB_WEBHOOK_SECRET="your-webhook-secret"
+#    export GITHUB_TOKEN="ghp_your_personal_access_token"
+#    export SLACK_WEBHOOK_URL="https://hooks.slack.com/..." (optional)

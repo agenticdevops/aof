@@ -1,0 +1,640 @@
+# PR Review Workflow with Conditional Routing and Approval Gates
+# Demonstrates: parallel execution, state reducers, conditional routing, GitHub integration
+apiVersion: aof.dev/v1
+kind: Workflow
+metadata:
+  name: pr-review-workflow
+  labels:
+    category: github
+    type: code-review
+    automation: pr-lifecycle
+  annotations:
+    description: "Full PR lifecycle automation with triage, review, labeling, and approval gates"
+    version: "1.0.0"
+
+spec:
+  # State schema - tracks PR information and review results
+  state:
+    type: object
+    properties:
+      # PR Information
+      pr_number:
+        type: integer
+        description: "GitHub PR number"
+      pr_url:
+        type: string
+        description: "Full PR URL"
+      pr_title:
+        type: string
+      pr_author:
+        type: string
+      pr_type:
+        type: string
+        enum: [feature, bugfix, refactor, docs, chore, hotfix]
+        description: "Classified PR type"
+
+      # Code Changes
+      files_changed:
+        type: array
+        items:
+          type: string
+        description: "List of files modified in PR"
+      lines_added:
+        type: integer
+      lines_deleted:
+        type: integer
+      total_lines_changed:
+        type: integer
+        description: "Sum of lines added + deleted"
+
+      # Review Results
+      review_results:
+        type: object
+        properties:
+          security:
+            type: object
+            properties:
+              findings: { type: array }
+              severity: { type: string }
+              passed: { type: boolean }
+          code_quality:
+            type: object
+            properties:
+              findings: { type: array }
+              score: { type: number }
+              passed: { type: boolean }
+          performance:
+            type: object
+            properties:
+              findings: { type: array }
+              issues_found: { type: integer }
+              passed: { type: boolean }
+          tests:
+            type: object
+            properties:
+              coverage_percent: { type: number }
+              passed: { type: boolean }
+
+      # Aggregated Findings
+      findings:
+        type: object
+        properties:
+          critical:
+            type: integer
+            description: "Count of critical issues"
+          high:
+            type: integer
+            description: "Count of high severity issues"
+          medium:
+            type: integer
+            description: "Count of medium severity issues"
+          low:
+            type: integer
+            description: "Count of low severity issues"
+          total:
+            type: integer
+
+      # Labels to Apply
+      labels_to_add:
+        type: array
+        items:
+          type: string
+        description: "GitHub labels to add based on review"
+
+      # Final Verdict
+      final_verdict:
+        type: string
+        enum: [approved, changes_requested, escalated, auto_approved]
+        description: "Final review decision"
+
+      all_passed:
+        type: boolean
+        description: "True if all review checks passed"
+
+  # Entry point
+  entrypoint: fetch-pr-info
+
+  # State reducers for merging parallel results
+  reducers:
+    review_results:
+      type: merge
+      description: "Merge review results from parallel reviewers"
+    findings:
+      type: merge
+      description: "Aggregate findings counts"
+    labels_to_add:
+      type: append
+      description: "Collect all labels to add"
+
+  # Global error handler
+  errorHandler: error-handler
+
+  # Retry configuration for resilient GitHub API calls
+  retry:
+    maxAttempts: 3
+    backoff: exponential
+    initialDelay: 2s
+    maxDelay: 30s
+
+  # Workflow steps
+  steps:
+    # Step 1: Fetch PR information from GitHub
+    - name: fetch-pr-info
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: pr-info-fetcher
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.1
+            max_tokens: 2000
+          instructions: |
+            You are a GitHub PR information fetcher.
+
+            Extract and structure PR metadata:
+            - PR number, title, author
+            - Files changed (list all file paths)
+            - Lines added/deleted
+            - PR body/description
+
+            Output as JSON matching the state schema.
+          tools:
+            - name: github_api
+              source: mcp
+              server: github
+      next: triage
+
+    # Step 2: Triage - Classify PR type and add initial labels
+    - name: triage
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: pr-triager
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.2
+            max_tokens: 1500
+          instructions: |
+            You are a PR triage specialist.
+
+            Analyze the PR and classify it:
+            - feature: New functionality
+            - bugfix: Bug fixes
+            - refactor: Code refactoring without feature changes
+            - docs: Documentation updates
+            - chore: Maintenance, dependencies
+            - hotfix: Urgent production fixes
+
+            Also suggest initial labels based on:
+            - Files changed (e.g., "backend", "frontend", "infra")
+            - PR size: "size/XS" (<10 lines), "size/S" (<100), "size/M" (<500), "size/L" (<1000), "size/XL" (1000+)
+
+            Update state:
+            - pr_type: classification
+            - labels_to_add: array of labels
+          tools:
+            - shell
+      next: parallel-review
+
+    # Step 3: Parallel Review - Run multiple reviewers concurrently
+    - name: parallel-review
+      type: parallel
+      description: "Run security, code quality, performance, and test reviewers in parallel"
+      branches:
+        # Security Review Branch
+        - name: security-review
+          steps:
+            - agent:
+                apiVersion: aof.dev/v1
+                kind: Agent
+                metadata:
+                  name: security-reviewer
+                spec:
+                  model: google:gemini-2.5-flash
+                  model_config:
+                    temperature: 0.1
+                    max_tokens: 3000
+                  instructions: |
+                    You are a security code reviewer.
+
+                    Scan for security vulnerabilities:
+                    - SQL injection risks
+                    - XSS vulnerabilities
+                    - Authentication/authorization issues
+                    - Secrets in code
+                    - Insecure dependencies
+                    - OWASP Top 10 issues
+
+                    For each finding:
+                    - Severity: critical/high/medium/low
+                    - File and line number
+                    - Issue description
+                    - Remediation advice
+
+                    Update state.review_results.security:
+                    - findings: array of issues
+                    - severity: highest severity found
+                    - passed: true if no critical/high issues
+                  tools:
+                    - git
+                    - shell
+
+        # Code Quality Review Branch
+        - name: code-quality-review
+          steps:
+            - agent:
+                apiVersion: aof.dev/v1
+                kind: Agent
+                metadata:
+                  name: code-quality-reviewer
+                spec:
+                  model: google:gemini-2.5-flash
+                  model_config:
+                    temperature: 0.2
+                    max_tokens: 3000
+                  instructions: |
+                    You are a code quality expert reviewer.
+
+                    Review for:
+                    - Code style and formatting
+                    - Best practices violations
+                    - Code complexity (cyclomatic complexity)
+                    - Naming conventions
+                    - DRY principle violations
+                    - SOLID principles
+                    - Documentation quality
+                    - Error handling
+
+                    Assign quality score (0-100):
+                    - 90-100: Excellent
+                    - 70-89: Good
+                    - 50-69: Needs improvement
+                    - <50: Poor
+
+                    Update state.review_results.code_quality:
+                    - findings: array of issues
+                    - score: quality score
+                    - passed: true if score >= 70
+                  tools:
+                    - git
+                    - shell
+
+        # Performance Review Branch
+        - name: performance-review
+          steps:
+            - agent:
+                apiVersion: aof.dev/v1
+                kind: Agent
+                metadata:
+                  name: performance-reviewer
+                spec:
+                  model: google:gemini-2.5-flash
+                  model_config:
+                    temperature: 0.2
+                    max_tokens: 2500
+                  instructions: |
+                    You are a performance optimization expert.
+
+                    Look for performance issues:
+                    - N+1 queries
+                    - Inefficient loops
+                    - Memory leaks
+                    - Blocking I/O in async code
+                    - Missing indexes
+                    - Inefficient algorithms
+                    - Resource leaks
+
+                    Update state.review_results.performance:
+                    - findings: array of issues
+                    - issues_found: count
+                    - passed: true if no critical performance issues
+                  tools:
+                    - git
+                    - shell
+
+        # Test Coverage Review Branch
+        - name: test-coverage-review
+          steps:
+            - agent:
+                apiVersion: aof.dev/v1
+                kind: Agent
+                metadata:
+                  name: test-reviewer
+                spec:
+                  model: google:gemini-2.5-flash
+                  model_config:
+                    temperature: 0.1
+                    max_tokens: 2000
+                  instructions: |
+                    You are a test coverage analyzer.
+
+                    Check:
+                    - Test files present for changed code
+                    - Unit test coverage
+                    - Integration test coverage
+                    - Edge cases covered
+                    - Test quality (assertions, mocking)
+
+                    Estimate coverage percentage based on:
+                    - Ratio of test files to code files
+                    - Test completeness
+
+                    Update state.review_results.tests:
+                    - coverage_percent: estimated coverage
+                    - passed: true if coverage >= 70%
+                  tools:
+                    - git
+                    - shell
+
+      # Join strategy: Wait for all parallel branches to complete
+      join:
+        strategy: all
+        timeout: 15m
+
+      next: evaluate-results
+
+    # Step 4: Evaluate Results - Aggregate findings and determine next action
+    - name: evaluate-results
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: review-evaluator
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.1
+            max_tokens: 2000
+          instructions: |
+            You are a review results evaluator.
+
+            Aggregate findings from all reviewers:
+            - Count critical, high, medium, low severity issues
+            - Determine if all_passed (all reviewers passed their checks)
+            - Add result-based labels:
+              - "needs-security-review" if security issues found
+              - "needs-performance-optimization" if perf issues found
+              - "needs-tests" if coverage < 70%
+              - "approved" if all passed
+              - "changes-requested" if critical/high issues
+
+            Update state:
+            - findings.critical/high/medium/low/total
+            - all_passed: boolean
+            - labels_to_add: additional labels based on results
+          tools:
+            - shell
+      next:
+        # Conditional routing based on findings
+        - condition: "state.findings.critical > 0"
+          target: request-changes
+        - condition: "state.findings.high > 3"
+          target: escalate-to-human
+        - condition: "state.all_passed && state.total_lines_changed < 100"
+          target: auto-approve
+        - target: add-labels-and-comment
+
+    # Step 5a: Request Changes (Critical issues found)
+    - name: request-changes
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: change-requester
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.3
+            max_tokens: 3000
+          instructions: |
+            You are a PR review commentator.
+
+            Create a comprehensive "Request Changes" review comment:
+            - Summary of critical issues
+            - Detailed findings by category (security, quality, performance, tests)
+            - Actionable recommendations for each issue
+            - Files and line numbers where applicable
+
+            Use GitHub API to:
+            1. Post review comment with REQUEST_CHANGES status
+            2. Add label "changes-requested"
+            3. Add severity-specific labels
+
+            Update state.final_verdict = "changes_requested"
+          tools:
+            - name: github_api
+              source: mcp
+              server: github
+      next: add-labels
+
+    # Step 5b: Escalate to Human (Too many high-severity issues)
+    - name: escalate-to-human
+      type: approval
+      config:
+        message: |
+          🚨 PR Review Alert: High number of issues found
+
+          PR: {{state.pr_url}}
+          Findings: {{state.findings.high}} high severity, {{state.findings.medium}} medium
+
+          Manual review required. Approve to proceed with automated feedback,
+          or deny to handle manually.
+        approvers:
+          - role: tech-leads
+          - role: senior-engineers
+        timeout: 2h
+        requiredApprovals: 1
+      next:
+        - condition: approved
+          target: add-labels-and-comment
+        - target: manual-review-notification
+
+    # Step 5c: Auto-Approve (Small PR, all checks passed)
+    - name: auto-approve
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: auto-approver
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.2
+            max_tokens: 1500
+          instructions: |
+            You are an auto-approval agent.
+
+            Create an approval review comment:
+            - Congratulate on clean code
+            - Summarize review results (all passed)
+            - Note that this is an automated approval
+
+            Use GitHub API to:
+            1. Post review with APPROVE status
+            2. Add "auto-approved" label
+            3. Add "lgtm" label
+
+            Update state.final_verdict = "auto_approved"
+          tools:
+            - name: github_api
+              source: mcp
+              server: github
+      next: add-labels
+
+    # Step 6: Add Labels and Comment (Standard path)
+    - name: add-labels-and-comment
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: labeler-commentor
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.3
+            max_tokens: 2500
+          instructions: |
+            You are a GitHub PR labeler and commentator.
+
+            1. Add all labels from state.labels_to_add to the PR
+            2. Post a comprehensive review summary comment:
+               - Overall verdict
+               - Findings by category
+               - Statistics (lines changed, files affected)
+               - Next steps
+
+            Update state.final_verdict = "approved" if all_passed, else "changes_requested"
+          tools:
+            - name: github_api
+              source: mcp
+              server: github
+      next: notify-completion
+
+    # Step 7: Add Labels (After approval/rejection)
+    - name: add-labels
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: label-applier
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.1
+            max_tokens: 1000
+          instructions: |
+            Apply all labels from state.labels_to_add to the PR.
+            Use GitHub API to add labels.
+          tools:
+            - name: github_api
+              source: mcp
+              server: github
+      next: notify-completion
+
+    # Step 8: Manual Review Notification
+    - name: manual-review-notification
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: manual-notifier
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.2
+            max_tokens: 1000
+          instructions: |
+            Post a comment on the PR requesting manual review.
+
+            Include:
+            - Reason for escalation
+            - Summary of findings
+            - Mention @tech-leads for attention
+
+            Add label "needs-manual-review"
+          tools:
+            - name: github_api
+              source: mcp
+              server: github
+      next: complete-escalated
+
+    # Step 9: Notify Completion
+    - name: notify-completion
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: completion-notifier
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.2
+            max_tokens: 1000
+          instructions: |
+            Send completion notification:
+            - Post final summary comment
+            - Optionally notify via Slack/Teams (if configured)
+            - Log workflow completion
+
+            Include workflow metrics:
+            - Total time taken
+            - Number of reviewers used
+            - Final verdict
+          tools:
+            - shell
+      next: complete
+
+    # Terminal Steps
+    - name: complete
+      type: terminal
+      status: completed
+      message: "PR review workflow completed: {{state.final_verdict}}"
+
+    - name: complete-escalated
+      type: terminal
+      status: completed
+      message: "PR review escalated to manual review"
+
+    # Error Handler
+    - name: error-handler
+      type: agent
+      agent:
+        apiVersion: aof.dev/v1
+        kind: Agent
+        metadata:
+          name: error-handler
+        spec:
+          model: google:gemini-2.5-flash
+          model_config:
+            temperature: 0.2
+            max_tokens: 1000
+          instructions: |
+            Handle workflow errors gracefully:
+            - Log error details
+            - Post comment on PR about the failure
+            - Add "workflow-error" label
+            - Notify maintainers
+          tools:
+            - name: github_api
+              source: mcp
+              server: github
+            - shell
+      next: complete-failed
+
+    - name: complete-failed
+      type: terminal
+      status: failed
+      message: "PR review workflow failed - see error logs"

@@ -4,14 +4,19 @@
 #
 # Prerequisites:
 #   Set environment variables for enabled platforms:
-#   - Slack:    SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET
-#   - Telegram: TELEGRAM_BOT_TOKEN
-#   - LLM:      GOOGLE_API_KEY (or ANTHROPIC_API_KEY/OPENAI_API_KEY)
+#   - Slack:      SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET
+#   - Telegram:   TELEGRAM_BOT_TOKEN
+#   - GitHub:     GITHUB_TOKEN, GITHUB_WEBHOOK_SECRET
+#   - GitLab:     GITLAB_TOKEN, GITLAB_WEBHOOK_SECRET (experimental)
+#   - Bitbucket:  BITBUCKET_USERNAME, BITBUCKET_APP_PASSWORD, BITBUCKET_WEBHOOK_SECRET (experimental)
+#   - LLM:        GOOGLE_API_KEY (or ANTHROPIC_API_KEY/OPENAI_API_KEY)
 #
 # Usage:
 #   export SLACK_BOT_TOKEN=xoxb-xxxxx
 #   export SLACK_SIGNING_SECRET=xxxxx
 #   export TELEGRAM_BOT_TOKEN=xxxxx
+#   export GITHUB_TOKEN=ghp_xxxxx
+#   export GITHUB_WEBHOOK_SECRET=xxxxx
 #   export GOOGLE_API_KEY=xxxxx
 #
 #   aofctl serve --config examples/config/daemon.yaml
@@ -25,8 +30,11 @@
 #   ngrok http 3000
 #
 # Webhook URLs:
-#   Slack:    https://your-tunnel-url/webhook/slack
-#   Telegram: https://your-tunnel-url/webhook/telegram
+#   Slack:     https://your-tunnel-url/webhook/slack
+#   Telegram:  https://your-tunnel-url/webhook/telegram
+#   GitHub:    https://your-tunnel-url/webhook/github
+#   GitLab:    https://your-tunnel-url/webhook/gitlab
+#   Bitbucket: https://your-tunnel-url/webhook/bitbucket
 
 apiVersion: aof.dev/v1
 kind: DaemonConfig
@@ -65,6 +73,42 @@ spec:
     telegram:
       enabled: true
       bot_token_env: TELEGRAM_BOT_TOKEN
+
+    # =========================================================================
+    # Git Platform Integrations (PR/MR Automation)
+    # =========================================================================
+
+    # GitHub ✅ Stable
+    # Setup: https://github.com/settings/tokens → Generate new token (classic)
+    #        Repo Settings → Webhooks → Add webhook
+    # Scopes: repo, write:discussion (for PR comments/reviews)
+    github:
+      enabled: true
+      token_env: GITHUB_TOKEN
+      webhook_secret_env: GITHUB_WEBHOOK_SECRET
+      # Optional: Bot name for @mentions
+      bot_name: aofbot
+
+    # GitLab 🧪 Experimental (untested - contributions welcome)
+    # Setup: User Settings → Access Tokens → Create token (api scope)
+    #        Project Settings → Webhooks → Add webhook
+    gitlab:
+      enabled: false  # Set to true when ready to test
+      token_env: GITLAB_TOKEN
+      webhook_secret_env: GITLAB_WEBHOOK_SECRET
+      # Optional: Self-hosted GitLab instance
+      # api_url: https://gitlab.example.com/api/v4
+
+    # Bitbucket 🧪 Experimental (untested - contributions welcome)
+    # Setup: Personal settings → App passwords → Create
+    #        Repository settings → Webhooks → Add webhook
+    bitbucket:
+      enabled: false  # Set to true when ready to test
+      username_env: BITBUCKET_USERNAME
+      app_password_env: BITBUCKET_APP_PASSWORD
+      webhook_secret_env: BITBUCKET_WEBHOOK_SECRET
+      # Optional: Bitbucket Server/Data Center
+      # api_url: https://bitbucket.example.com/rest/api/1.0
 
   # =============================================================================
   # Triggers Configuration

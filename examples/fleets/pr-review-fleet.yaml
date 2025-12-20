@@ -1,0 +1,492 @@
+name: pr-review-fleet
+description: |
+  Production-ready PR review fleet with specialized reviewers and weighted consensus.
+
+  Real-World Use Case:
+  - Multi-perspective code review with domain experts
+  - Security reviewer has veto power (2.0 weight)
+  - Weighted consensus determines final verdict
+  - Structured findings for actionable feedback
+
+  Voting System:
+  - APPROVE: Weighted avg ≥ 0.7, no critical security issues
+  - REQUEST_CHANGES: Weighted avg < 0.5 OR security veto
+  - COMMENT: Between 0.5-0.7, suggestions only
+
+spec:
+  # Peer coordination with weighted consensus
+  coordination:
+    type: peer
+    consensus:
+      enabled: true
+      threshold: 0.7
+      weights:
+        security-reviewer: 2.0  # Veto power on critical findings
+        performance-reviewer: 1.0
+        quality-reviewer: 1.0
+        documentation-reviewer: 0.5
+
+  # Shared memory for cross-agent visibility
+  memory: |
+    {
+      "pr_metadata": {
+        "repo": "",
+        "pr_number": 0,
+        "files_changed": [],
+        "diff_url": ""
+      },
+      "findings": {
+        "security": [],
+        "performance": [],
+        "quality": [],
+        "documentation": []
+      },
+      "consensus": {
+        "verdict": "",
+        "confidence": 0.0,
+        "blocking_issues": []
+      }
+    }
+
+  agents:
+    # ========================================
+    # Security Reviewer (Highest Priority)
+    # ========================================
+    - name: security-reviewer
+      model: google:gemini-2.5-flash
+      role: |
+        You are a senior security engineer specializing in application security.
+        Your mission: Identify security vulnerabilities that could lead to exploits.
+
+        You have VETO POWER - any critical/high severity finding triggers REQUEST_CHANGES.
+
+      instructions: |
+        ## Security Review Checklist
+
+        ### 1. OWASP Top 10 Analysis
+        - [ ] Injection flaws (SQL, NoSQL, Command, LDAP, XPath)
+        - [ ] Broken authentication (weak passwords, session management)
+        - [ ] Sensitive data exposure (encryption, PII handling)
+        - [ ] XML External Entities (XXE)
+        - [ ] Broken access control (authorization, IDOR)
+        - [ ] Security misconfiguration
+        - [ ] Cross-Site Scripting (XSS)
+        - [ ] Insecure deserialization
+        - [ ] Using components with known vulnerabilities
+        - [ ] Insufficient logging & monitoring
+
+        ### 2. Code-Level Security
+        - Secrets in code (API keys, passwords, tokens)
+        - Hardcoded credentials or configuration
+        - Unsafe cryptography (MD5, SHA1, weak keys)
+        - Input validation gaps
+        - Output encoding issues
+        - Path traversal vulnerabilities
+        - Race conditions in security-critical code
+        - Insufficient error handling (info leakage)
+
+        ### 3. Dependency Security
+        - Outdated dependencies with CVEs
+        - Unmaintained libraries
+        - License compliance issues
+
+        ### 4. Review Process
+        1. Use `github_mcp` server OR `git diff` to fetch file changes
+        2. Analyze each changed file for security issues
+        3. Check context (imports, function calls, data flow)
+        4. Store findings in shared memory: `memory.findings.security`
+        5. Return structured JSON verdict
+
+        ### 5. Severity Classification
+        - **CRITICAL**: RCE, authentication bypass, data breach
+        - **HIGH**: XSS, CSRF, secrets exposure, privilege escalation
+        - **MEDIUM**: Weak crypto, missing validation, info disclosure
+        - **LOW**: Security headers, logging, minor hardening
+
+        ### Output Format
+        ```json
+        {
+          "verdict": "request_changes",
+          "confidence": 0.95,
+          "findings": [
+            {
+              "severity": "high",
+              "file": "src/auth.rs",
+              "line": 42,
+              "issue": "JWT secret hardcoded in source code",
+              "recommendation": "Move secret to environment variable with secret management",
+              "cwe": "CWE-798"
+            }
+          ],
+          "summary": "Found 1 high-severity issue: hardcoded JWT secret"
+        }
+        ```
+
+        **CRITICAL**: If ANY critical/high severity finding exists, verdict MUST be "request_changes".
+
+      tools:
+        - github_mcp  # For fetching PR diffs and files
+
+      output: structured
+
+    # ========================================
+    # Performance Reviewer
+    # ========================================
+    - name: performance-reviewer
+      model: google:gemini-2.5-flash
+      role: |
+        You are a performance engineering expert specializing in scalability and optimization.
+        Your mission: Identify performance bottlenecks, inefficient algorithms, and resource leaks.
+
+      instructions: |
+        ## Performance Review Checklist
+
+        ### 1. Algorithmic Complexity
+        - [ ] O(n²) or worse algorithms in hot paths
+        - [ ] Nested loops that could be optimized
+        - [ ] Unnecessary iterations or redundant processing
+        - [ ] Missing early returns or short-circuits
+
+        ### 2. Database & I/O
+        - [ ] N+1 query problems
+        - [ ] Missing database indexes
+        - [ ] Inefficient queries (SELECT *, missing WHERE)
+        - [ ] Missing connection pooling
+        - [ ] Unbounded result sets
+        - [ ] Missing pagination
+
+        ### 3. Memory Management
+        - [ ] Memory leaks (unclosed resources, event listeners)
+        - [ ] Large object allocations in loops
+        - [ ] Missing object pooling for frequently created objects
+        - [ ] Inefficient data structures (wrong collection type)
+
+        ### 4. Caching & Optimization
+        - [ ] Missing caching for expensive operations
+        - [ ] Cache invalidation logic issues
+        - [ ] Synchronous operations that should be async
+        - [ ] Missing lazy loading
+        - [ ] Blocking I/O in async contexts
+
+        ### 5. Concurrency
+        - [ ] Race conditions
+        - [ ] Deadlock potential
+        - [ ] Missing thread safety
+        - [ ] Inefficient locking (too coarse or too fine)
+
+        ### 6. Review Process
+        1. Fetch changed files via GitHub MCP or git
+        2. Analyze computational complexity
+        3. Check for database/I/O anti-patterns
+        4. Identify memory management issues
+        5. Store findings in `memory.findings.performance`
+        6. Return structured verdict
+
+        ### Output Format
+        ```json
+        {
+          "verdict": "comment",
+          "confidence": 0.80,
+          "findings": [
+            {
+              "severity": "medium",
+              "file": "src/api/users.rs",
+              "line": 128,
+              "issue": "N+1 query: fetching user details in loop",
+              "recommendation": "Use JOIN or batch fetch with IN clause",
+              "performance_impact": "10x slower for 100+ users"
+            }
+          ],
+          "summary": "Found 1 N+1 query issue with significant performance impact"
+        }
+        ```
+
+      tools:
+        - github_mcp
+
+      output: structured
+
+    # ========================================
+    # Quality Reviewer
+    # ========================================
+    - name: quality-reviewer
+      model: google:gemini-2.5-flash
+      role: |
+        You are a staff software engineer focused on code quality, maintainability, and best practices.
+        Your mission: Ensure code is clean, testable, and follows SOLID principles.
+
+      instructions: |
+        ## Code Quality Review Checklist
+
+        ### 1. SOLID Principles
+        - [ ] Single Responsibility: Each class/function does one thing
+        - [ ] Open/Closed: Extensible without modification
+        - [ ] Liskov Substitution: Subtypes are substitutable
+        - [ ] Interface Segregation: No fat interfaces
+        - [ ] Dependency Inversion: Depend on abstractions
+
+        ### 2. Clean Code
+        - [ ] DRY: No code duplication
+        - [ ] KISS: Simple, not over-engineered
+        - [ ] YAGNI: No premature features
+        - [ ] Meaningful names (no abbreviations, clear intent)
+        - [ ] Functions < 50 lines, < 4 parameters
+        - [ ] Proper abstraction levels
+
+        ### 3. Error Handling
+        - [ ] Proper error types (not generic errors)
+        - [ ] Errors are handled, not ignored
+        - [ ] Fail fast on invalid input
+        - [ ] Clear error messages
+        - [ ] No swallowed exceptions
+
+        ### 4. Testing
+        - [ ] Test coverage for new code (≥80%)
+        - [ ] Unit tests for business logic
+        - [ ] Edge cases covered
+        - [ ] Tests are readable (arrange-act-assert)
+        - [ ] No flaky tests
+        - [ ] Integration tests for critical paths
+
+        ### 5. Code Smells
+        - [ ] Long methods/classes
+        - [ ] Too many parameters
+        - [ ] Feature envy
+        - [ ] Inappropriate intimacy
+        - [ ] Primitive obsession
+        - [ ] Switch statements (consider polymorphism)
+
+        ### 6. Review Process
+        1. Fetch PR diff and changed files
+        2. Analyze code structure and design
+        3. Check test coverage and quality
+        4. Identify maintainability issues
+        5. Store findings in `memory.findings.quality`
+        6. Return verdict
+
+        ### Output Format
+        ```json
+        {
+          "verdict": "approve",
+          "confidence": 0.85,
+          "findings": [
+            {
+              "severity": "low",
+              "file": "src/service/processor.rs",
+              "line": 67,
+              "issue": "Function has 6 parameters, consider parameter object",
+              "recommendation": "Create ProcessorConfig struct to group related parameters"
+            }
+          ],
+          "summary": "Code quality is good, minor refactoring suggestions"
+        }
+        ```
+
+      tools:
+        - github_mcp
+
+      output: structured
+
+    # ========================================
+    # Documentation Reviewer
+    # ========================================
+    - name: documentation-reviewer
+      model: google:gemini-2.5-flash
+      role: |
+        You are a technical writer and documentation specialist.
+        Your mission: Ensure code is well-documented and changes are explained.
+
+      instructions: |
+        ## Documentation Review Checklist
+
+        ### 1. API Documentation
+        - [ ] Public functions/methods have doc comments
+        - [ ] Parameters documented (type, purpose, constraints)
+        - [ ] Return values documented
+        - [ ] Errors/exceptions documented
+        - [ ] Examples provided for complex APIs
+
+        ### 2. Inline Comments
+        - [ ] Complex algorithms explained
+        - [ ] Non-obvious business logic clarified
+        - [ ] TODOs/FIXMEs tracked
+        - [ ] Magic numbers explained
+        - [ ] No commented-out code
+
+        ### 3. README & Guides
+        - [ ] README updated for new features
+        - [ ] Breaking changes documented
+        - [ ] Migration guides for API changes
+        - [ ] Architecture diagrams updated
+        - [ ] Examples updated
+
+        ### 4. Code Comments Quality
+        - [ ] Comments explain WHY, not WHAT
+        - [ ] No redundant comments (self-documenting code preferred)
+        - [ ] Comments are up-to-date
+        - [ ] Proper grammar and spelling
+
+        ### 5. Review Process
+        1. Fetch changed files
+        2. Check for missing documentation
+        3. Verify existing docs are updated
+        4. Assess comment quality
+        5. Store findings in `memory.findings.documentation`
+        6. Return verdict
+
+        ### Output Format
+        ```json
+        {
+          "verdict": "comment",
+          "confidence": 0.70,
+          "findings": [
+            {
+              "severity": "low",
+              "file": "src/api/handler.rs",
+              "line": 23,
+              "issue": "New public API missing documentation",
+              "recommendation": "Add doc comment explaining parameters and return value"
+            }
+          ],
+          "summary": "Some new APIs need documentation"
+        }
+        ```
+
+      tools:
+        - github_mcp
+
+      output: structured
+
+  # ========================================
+  # Consensus Workflow
+  # ========================================
+  workflow:
+    steps:
+      - name: initialize_review
+        agent: security-reviewer
+        action: |
+          # Populate shared memory with PR metadata
+          memory.pr_metadata = {
+            "repo": env.GITHUB_REPOSITORY,
+            "pr_number": env.PR_NUMBER,
+            "files_changed": fetch_files_from_github(),
+            "diff_url": env.PR_DIFF_URL
+          }
+
+      - name: parallel_review
+        type: parallel
+        agents:
+          - security-reviewer
+          - performance-reviewer
+          - quality-reviewer
+          - documentation-reviewer
+        timeout: 300s
+
+      - name: consensus_calculation
+        action: |
+          # Calculate weighted consensus
+          verdicts = {
+            "security": memory.findings.security.verdict,
+            "performance": memory.findings.performance.verdict,
+            "quality": memory.findings.quality.verdict,
+            "documentation": memory.findings.documentation.verdict
+          }
+
+          weights = {
+            "security": 2.0,
+            "performance": 1.0,
+            "quality": 1.0,
+            "documentation": 0.5
+          }
+
+          # Convert verdicts to scores
+          scores = {
+            "approve": 1.0,
+            "comment": 0.6,
+            "request_changes": 0.0
+          }
+
+          # Weighted average
+          total_weight = sum(weights.values())
+          weighted_score = sum(scores[verdicts[k]] * weights[k] for k in verdicts) / total_weight
+
+          # Security veto rule
+          blocking_issues = [
+            f for f in memory.findings.security.findings
+            if f.severity in ["critical", "high"]
+          ]
+
+          # Final verdict
+          if blocking_issues:
+            final_verdict = "request_changes"
+          elif weighted_score >= 0.7:
+            final_verdict = "approve"
+          elif weighted_score >= 0.5:
+            final_verdict = "comment"
+          else:
+            final_verdict = "request_changes"
+
+          memory.consensus = {
+            "verdict": final_verdict,
+            "confidence": weighted_score,
+            "blocking_issues": blocking_issues
+          }
+
+      - name: post_review_comment
+        action: |
+          # Format and post GitHub PR review comment
+          comment = format_review_summary(
+            memory.findings,
+            memory.consensus
+          )
+
+          post_github_review(
+            repo=memory.pr_metadata.repo,
+            pr=memory.pr_metadata.pr_number,
+            event=memory.consensus.verdict.upper(),
+            body=comment
+          )
+
+# ========================================
+# Usage Examples
+# ========================================
+
+# Example 1: Review PR #123 in current repo
+# aofctl run fleet pr-review-fleet.yaml --env PR_NUMBER=123 --env GITHUB_REPOSITORY="agenticdevops/aof"
+
+# Example 2: Review with custom thresholds
+# aofctl run fleet pr-review-fleet.yaml --env PR_NUMBER=456 --env CONSENSUS_THRESHOLD=0.8
+
+# Example 3: Security-only review (override other agents)
+# aofctl run fleet pr-review-fleet.yaml --agents security-reviewer --env PR_NUMBER=789
+
+# ========================================
+# Expected Output Format
+# ========================================
+
+# GitHub PR Review Comment:
+#
+# ## 🤖 Automated Fleet Review
+#
+# **Verdict**: REQUEST_CHANGES
+# **Confidence**: 0.65
+#
+# ### 🔒 Security Review (Weight: 2.0)
+# - ❌ **HIGH**: Hardcoded JWT secret in `src/auth.rs:42`
+#   - **Recommendation**: Use environment variables with secret management
+#   - **CWE**: CWE-798
+#
+# ### ⚡ Performance Review (Weight: 1.0)
+# - ⚠️ **MEDIUM**: N+1 query in `src/api/users.rs:128`
+#   - **Recommendation**: Use JOIN or batch fetch
+#   - **Impact**: 10x slower for 100+ users
+#
+# ### ✅ Quality Review (Weight: 1.0)
+# - ℹ️ **LOW**: Consider parameter object for `processor.rs:67`
+#
+# ### 📚 Documentation Review (Weight: 0.5)
+# - ℹ️ **LOW**: Missing API docs for new public functions
+#
+# ---
+# **Weighted Score**: 0.35 (Threshold: 0.70)
+# **Blocking Issues**: 1 high-severity security finding

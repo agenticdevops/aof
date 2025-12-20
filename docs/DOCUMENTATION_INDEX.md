@@ -36,6 +36,7 @@ AOF uses a simple, composable model:
 
 ## Reference
 
+### Core Specifications
 - **[aofctl CLI](reference/aofctl.md)** - Command reference
 - **[Agent Spec](reference/agent-spec.md)** - Agent YAML specification
 - **[Fleet Spec](reference/fleet-spec.md)** - Fleet YAML specification
@@ -44,6 +45,9 @@ AOF uses a simple, composable model:
 - **[Context Spec](reference/context-spec.md)** - Execution environment specification
 - **[DaemonConfig](reference/daemon-config.md)** - Server configuration
 - **[Platform Policies](reference/platform-policies.md)** - Safety rules per platform
+
+### Platform Integrations
+- **[GitHub Integration](reference/github-integration.md)** - GitHub webhooks, events, API actions
 
 ## Tutorials
 

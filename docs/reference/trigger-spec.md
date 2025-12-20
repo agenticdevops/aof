@@ -61,11 +61,13 @@ Real-time messaging platforms for interactive ops bots.
 ### Webhooks & Integrations
 Event-driven triggers from external systems.
 
-| Type | Description | Use Case |
-|------|-------------|----------|
-| `HTTP` | Generic HTTP endpoint | CI/CD, custom integrations |
-| `GitHub` | GitHub repository events | PR automation, deployments |
-| `Jira` | Jira issue events | Issue-to-incident workflow |
+| Type | Status | Description | Use Case |
+|------|--------|-------------|----------|
+| `HTTP` | ✅ Stable | Generic HTTP endpoint | CI/CD, custom integrations |
+| `GitHub` | ✅ Stable | GitHub repository events | PR automation, deployments |
+| `GitLab` | 🧪 Experimental | GitLab repository events | PR automation (untested) |
+| `Bitbucket` | 🧪 Experimental | Bitbucket repository events | PR automation (untested) |
+| `Jira` | ✅ Stable | Jira issue events | Issue-to-incident workflow |
 
 ### Incident Management
 Alert and incident handling triggers.
@@ -444,14 +446,93 @@ When a PagerDuty incident triggers, the following context is available:
 
 ### GitHub Trigger
 
-Responds to GitHub repository events for PR automation, CI/CD integration, and issue management.
+**Status: ✅ Stable (Production Ready)**
+
+GitHub webhooks for repository events including PRs, issues, pushes, and workflow runs. AOF verifies webhook signatures and routes events to the appropriate agents, fleets, or flows.
+
+**Webhook URL:** `https://your-aof-server/webhook/github`
 
 **Setup Requirements:**
 1. Go to repository **Settings → Webhooks → Add webhook**
-2. Set Payload URL to your AOF server endpoint
+2. Set Payload URL to `https://your-aof-server/webhook/github` (or custom path)
 3. Set Content type to `application/json`
-4. Create a webhook secret and save it
-5. Select events to trigger on (or "Send me everything")
+4. Create a webhook secret and save it securely
+5. Select individual events or "Send me everything"
+6. Ensure webhook is active
+
+**Configuration Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `webhook_secret` | string | Yes | HMAC-SHA256 secret for signature verification |
+| `github_events` | array | No | Events to handle (default: all) |
+| `repositories` | array | No | Repository filter (owner/repo format, supports wildcards) |
+| `branches` | array | No | Branch filter (supports wildcards like `release/*`) |
+| `path` | string | No | Custom webhook path (default: `/webhook/github`) |
+
+**Supported Events:**
+
+| Event | Description | Common Actions |
+|-------|-------------|----------------|
+| `pull_request` | PR lifecycle events | `opened`, `synchronize`, `closed`, `reopened`, `edited`, `assigned`, `labeled`, `ready_for_review` |
+| `pull_request_review` | PR review submitted | `submitted`, `edited`, `dismissed` |
+| `pull_request_review_comment` | Comment on PR review | `created`, `edited`, `deleted` |
+| `push` | Code pushed to branch/tag | N/A (no action field) |
+| `issues` | Issue lifecycle events | `opened`, `edited`, `closed`, `reopened`, `assigned`, `labeled`, `transferred` |
+| `issue_comment` | Comment on issue/PR | `created`, `edited`, `deleted` |
+| `workflow_run` | GitHub Actions workflow | `requested`, `in_progress`, `completed` |
+| `workflow_job` | GitHub Actions job | `queued`, `in_progress`, `completed` |
+| `check_run` | CI check status | `created`, `completed`, `rerequested` |
+| `check_suite` | CI check suite | `completed`, `requested`, `rerequested` |
+| `release` | Release published | `published`, `created`, `edited`, `deleted`, `released` |
+| `deployment` | Deployment created/updated | `created` |
+| `deployment_status` | Deployment status change | `created` |
+| `status` | Commit status updated | N/A (no action field) |
+| `create` | Branch/tag created | N/A (no action field) |
+| `delete` | Branch/tag deleted | N/A (no action field) |
+
+**Command Bindings:**
+
+Commands can be bound to specific `event.action` combinations for fine-grained routing:
+
+```yaml
+commands:
+  # Event.action format (most common)
+  pull_request.opened:
+    fleet: pr-review-fleet
+    description: "Auto-review new PRs"
+
+  pull_request.synchronize:
+    fleet: pr-review-fleet
+    description: "Re-review on push"
+
+  pull_request.closed:
+    agent: pr-cleanup-agent
+    description: "Clean up PR resources"
+
+  # Event-only format (matches all actions)
+  push:
+    agent: ci-agent
+    description: "Trigger CI pipeline"
+
+  issues.opened:
+    agent: triage-agent
+    description: "Triage new issues"
+
+  issue_comment.created:
+    agent: comment-handler-agent
+    description: "Process issue comments"
+
+  workflow_run.completed:
+    agent: ci-status-agent
+    description: "Report CI results"
+
+  release.published:
+    flow: release-deployment-flow
+    description: "Deploy release to production"
+```
+
+**Basic Example:**
 
 ```yaml
 apiVersion: aof.dev/v1
@@ -465,61 +546,133 @@ spec:
     github_events:
       - pull_request
       - push
-      - issues
-      - issue_comment
-      - pull_request_review
     repositories:
       - myorg/myrepo
       - myorg/other-repo
-    branches:
-      - main
-      - "release/*"
 
   commands:
-    /deploy:
-      flow: deploy-flow
-      description: "Deploy changes"
-    /review:
-      agent: code-review-agent
-      description: "AI code review"
-    /test:
-      agent: test-runner-agent
-      description: "Run test suite"
+    pull_request.opened:
+      fleet: pr-review-fleet
+      description: "Auto-review new PRs"
+    pull_request.synchronize:
+      fleet: pr-review-fleet
+      description: "Re-review on push"
+    push:
+      agent: ci-agent
+      description: "Trigger CI pipeline"
 
   default_agent: github-ops-agent
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `webhook_secret` | string | No | HMAC secret for signature verification |
-| `github_events` | array | No | Event types to listen for |
-| `repositories` | array | No | Repository filter (owner/repo) |
-| `branches` | array | No | Branch filter (supports wildcards) |
+**Advanced Example with Filters:**
+
+```yaml
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: github-release-automation
+spec:
+  type: GitHub
+  config:
+    webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+    path: /webhook/github-releases  # Custom path
+    github_events:
+      - pull_request
+      - push
+      - release
+      - workflow_run
+    repositories:
+      - myorg/backend-*  # Wildcard matching
+      - myorg/frontend
+    branches:
+      - main
+      - "release/*"  # Match release/v1.0, release/v2.0, etc.
+
+  commands:
+    # PR automation
+    pull_request.opened:
+      fleet: pr-review-fleet
+      description: "Auto-review and test new PRs"
+
+    pull_request.ready_for_review:
+      agent: ci-trigger-agent
+      description: "Run full CI suite when PR ready"
+
+    pull_request.closed:
+      agent: cleanup-agent
+      description: "Clean up preview environments"
+
+    # Push events
+    push:
+      agent: ci-agent
+      description: "Run CI checks on push"
+
+    # Release automation
+    release.published:
+      flow: production-deploy-flow
+      description: "Deploy release to production"
+
+    # CI/CD monitoring
+    workflow_run.completed:
+      agent: ci-reporter-agent
+      description: "Report CI/CD results to Slack"
+
+    check_run.completed:
+      agent: status-checker-agent
+      description: "Update PR status checks"
+
+  default_agent: github-ops-agent
+```
 
 **Environment Variables:**
 ```bash
-export GITHUB_WEBHOOK_SECRET="your-webhook-secret"
+export GITHUB_WEBHOOK_SECRET="your-strong-webhook-secret"
 ```
 
-**Supported GitHub Events:**
-| Event | Description |
-|-------|-------------|
-| `push` | Code pushed to repository |
-| `pull_request` | PR opened, closed, merged, etc. |
-| `pull_request_review` | PR review submitted |
-| `issues` | Issue opened, closed, labeled, etc. |
-| `issue_comment` | Comment on issue or PR |
-| `release` | Release published or edited |
-| `workflow_run` | GitHub Actions workflow completed |
-| `deployment` | Deployment created or updated |
-
 **Event Context:**
-GitHub events provide rich context:
-- `github.event` - Event type (push, pull_request, etc.)
-- `github.repo` - Repository full name
-- `github.branch` - Branch name
+
+GitHub events provide rich context to agents:
+- `github.event` - Event type (e.g., `pull_request`, `push`)
+- `github.action` - Event action (e.g., `opened`, `closed`, `synchronize`)
+- `github.repo` - Repository full name (owner/repo)
+- `github.branch` - Branch name (for push/PR events)
 - `github.pr.number` - PR number (for PR events)
+- `github.pr.title` - PR title
+- `github.pr.author` - PR author username
 - `github.sender` - User who triggered the event
+- `github.ref` - Git ref (for push events)
+- `github.sha` - Commit SHA
+
+**Webhook Security:**
+
+AOF validates GitHub webhook signatures using HMAC-SHA256:
+1. GitHub signs each webhook with your secret
+2. AOF verifies the `X-Hub-Signature-256` header
+3. Requests with invalid signatures are rejected
+
+**GitLab and Bitbucket Support:**
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| **GitLab** | 🧪 Experimental | Implemented but untested - contributions welcome |
+| **Bitbucket** | 🧪 Experimental | Implemented but untested - contributions welcome |
+
+GitLab and Bitbucket webhook adapters exist in the codebase following the same patterns as GitHub, but have not been tested in production. The implementation includes:
+- Webhook signature verification
+- Event parsing for PRs, issues, pushes
+- API client stubs for posting comments and reviews
+
+**Community contributions needed:**
+- Real-world testing with GitLab/Bitbucket webhooks
+- API integration validation
+- Bug reports and fixes
+- Documentation improvements
+
+If you use GitLab or Bitbucket and would like to help validate these integrations, please open an issue or submit a PR with your findings.
+
+**See Also:**
+- [GitHub Webhooks Documentation](https://docs.github.com/en/webhooks)
+- [GitHub Webhook Events](https://docs.github.com/en/webhooks/webhook-events-and-payloads)
 
 ### WhatsApp Trigger
 

@@ -160,6 +160,10 @@ const config: Config = {
               to: '/docs/reference/agentflow-spec',
             },
             {
+              label: 'GitHub Integration',
+              to: '/docs/reference/github-integration',
+            },
+            {
               label: 'CLI Reference',
               to: '/docs/reference/aofctl',
             },

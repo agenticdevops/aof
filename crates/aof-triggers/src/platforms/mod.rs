@@ -202,6 +202,8 @@ pub mod discord;
 pub mod telegram;
 pub mod whatsapp;
 pub mod github;
+pub mod gitlab;
+pub mod bitbucket;
 
 // Re-export platform types
 pub use slack::{SlackConfig, SlackPlatform};
@@ -209,6 +211,8 @@ pub use discord::{DiscordConfig, DiscordPlatform};
 pub use telegram::{TelegramConfig, TelegramPlatform};
 pub use whatsapp::{WhatsAppConfig, WhatsAppPlatform};
 pub use github::{GitHubConfig, GitHubPlatform};
+pub use gitlab::{GitLabConfig, GitLabPlatform};
+pub use bitbucket::{BitbucketConfig, BitbucketPlatform};
 
 // Type aliases for easier use
 pub type Platform = Box<dyn TriggerPlatform>;
@@ -247,6 +251,8 @@ pub enum TypedPlatformConfig {
     Telegram(TelegramConfig),
     WhatsApp(WhatsAppConfig),
     GitHub(GitHubConfig),
+    GitLab(GitLabConfig),
+    Bitbucket(BitbucketConfig),
 }
 
 // ============================================================================
@@ -330,6 +336,20 @@ impl PlatformRegistry {
             let cfg: GitHubConfig = serde_json::from_value(config)
                 .map_err(|e| PlatformError::ParseError(format!("Invalid GitHub config: {}", e)))?;
             Ok(Box::new(GitHubPlatform::new(cfg)?))
+        }));
+
+        // GitLab
+        self.register("gitlab", Box::new(|config| {
+            let cfg: GitLabConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid GitLab config: {}", e)))?;
+            Ok(Box::new(GitLabPlatform::new(cfg)?))
+        }));
+
+        // Bitbucket
+        self.register("bitbucket", Box::new(|config| {
+            let cfg: BitbucketConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid Bitbucket config: {}", e)))?;
+            Ok(Box::new(BitbucketPlatform::new(cfg)?))
         }));
 
         // Discord
@@ -452,6 +472,22 @@ pub fn get_platform_capabilities(platform: &str) -> PlatformCapabilities {
             reactions: true,
             rich_text: true, // markdown
             approvals: true, // PR reviews
+        },
+        "gitlab" => PlatformCapabilities {
+            threading: true, // conversation threads on MRs/issues
+            interactive: true, // CI/CD pipelines, reactions
+            files: true, // artifacts, releases
+            reactions: true, // emojis on notes
+            rich_text: true, // markdown
+            approvals: true, // MR approvals
+        },
+        "bitbucket" => PlatformCapabilities {
+            threading: true, // PR conversations
+            interactive: false, // no interactive elements in comments
+            files: true, // attachments
+            reactions: false,
+            rich_text: true, // markdown
+            approvals: true, // PR approvals
         },
         "discord" => PlatformCapabilities {
             threading: true,

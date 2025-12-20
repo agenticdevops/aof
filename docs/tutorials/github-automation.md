@@ -1,3 +1,11 @@
+---
+id: github-automation
+title: GitHub Automation with AOF
+sidebar_label: GitHub Automation
+description: Build powerful GitHub automation for DevOps workflows including deployments, issue triage, and release management
+keywords: [github, automation, devops, deployment, workflow, trigger]
+---
+
 # GitHub Automation with AOF
 
 This tutorial shows you how to build powerful GitHub automation for DevOps, SRE, and Platform Engineering workflows using AOF's trigger system.

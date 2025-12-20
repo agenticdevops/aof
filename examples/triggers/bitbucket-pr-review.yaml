@@ -1,0 +1,317 @@
+# 🧪 EXPERIMENTAL: Bitbucket PR Review Bot
+#
+# This trigger demonstrates Bitbucket webhook integration for PR automation.
+# Note: Bitbucket support is currently experimental and untested.
+#
+# Features:
+# - Automatic PR review on creation/update
+# - PR comment commands (/review, /approve, /merge, /build)
+# - Build status reactions
+# - Multi-repository support with workspace patterns
+#
+# Setup:
+# 1. Create Bitbucket App Password with permissions:
+#    - Repositories: Read, Write
+#    - Pull Requests: Read, Write
+#    - Webhooks: Read, Write
+# 2. Set environment variables:
+#    export BITBUCKET_USERNAME="your-username"
+#    export BITBUCKET_APP_PASSWORD="your-app-password"
+#    export BITBUCKET_WEBHOOK_SECRET="random-secret-string"
+# 3. Configure webhook in Bitbucket repository settings:
+#    URL: https://your-server.com/bitbucket/webhook
+#    Secret: ${BITBUCKET_WEBHOOK_SECRET}
+#    Events: Pull Request (all), Repository (commit status updated)
+#
+# Usage:
+# - Comment `/review` on PR to trigger full review
+# - Comment `/approve` to approve PR
+# - Comment `/merge` to merge PR
+# - Comment `/build` to trigger build
+# - Automatic review on PR creation/update
+# - Automatic reaction to build status changes
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: bitbucket-pr-bot
+  labels:
+    platform: bitbucket
+    status: experimental
+    use-case: pr-automation
+
+spec:
+  # Trigger type: Bitbucket webhook integration
+  type: Bitbucket
+
+  # Bitbucket configuration
+  config:
+    # Authentication
+    username: ${BITBUCKET_USERNAME}
+    app_password: ${BITBUCKET_APP_PASSWORD}
+    webhook_secret: ${BITBUCKET_WEBHOOK_SECRET}
+
+    # Webhook events to listen for
+    bitbucket_events:
+      - pullrequest:created      # New PR opened
+      - pullrequest:updated      # PR updated (new commits)
+      - pullrequest:comment_created  # PR comment added
+      - repo:commit_status_updated   # Build status changed
+
+    # Repository patterns (workspace/repo)
+    repositories:
+      - myworkspace/*            # All repos in workspace
+      - myworkspace/backend      # Specific repo
+      - myworkspace/frontend     # Another specific repo
+
+  # Command mappings: PR events and comment commands → fleets
+  commands:
+    # Automatic triggers (webhook events)
+    pullrequest:created:
+      fleet: pr-review-fleet
+      description: "Auto-review new pull requests"
+
+    pullrequest:updated:
+      fleet: pr-review-fleet
+      description: "Re-review PR on new commits"
+
+    repo:commit_status_updated:
+      fleet: build-status-fleet
+      description: "React to build status changes"
+
+    # PR comment commands
+    /review:
+      fleet: pr-review-fleet
+      description: "Full PR review (code quality, security, tests)"
+
+    /approve:
+      fleet: pr-approve-fleet
+      description: "Approve PR after validation"
+
+    /merge:
+      fleet: pr-merge-fleet
+      description: "Merge PR with safety checks"
+
+    /build:
+      fleet: trigger-build-fleet
+      description: "Trigger CI/CD build"
+
+    /security:
+      fleet: security-scan-fleet
+      description: "Run security vulnerability scan"
+
+    /test:
+      fleet: run-tests-fleet
+      description: "Run full test suite"
+
+  # Default agent for non-fleet commands
+  default_agent: devops
+
+---
+# Fleet: Full PR Review
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: pr-review-fleet
+spec:
+  agents:
+    - name: code-reviewer
+      spec:
+        name: code-quality-reviewer
+        model: google:gemini-2.5-flash
+        systemPrompt: |
+          You are a code quality reviewer for Bitbucket PRs.
+
+          Tasks:
+          1. Review code changes for:
+             - Code quality and best practices
+             - Potential bugs and edge cases
+             - Performance issues
+             - Security vulnerabilities
+          2. Check test coverage
+          3. Validate documentation updates
+          4. Post detailed review comments
+
+          Output format:
+          - Line-specific comments for issues
+          - Summary comment with overall assessment
+          - Approval recommendation (approve/changes-requested)
+
+    - name: security-scanner
+      spec:
+        name: security-vulnerability-scanner
+        model: google:gemini-2.5-flash
+        systemPrompt: |
+          You are a security scanner for Bitbucket PRs.
+
+          Tasks:
+          1. Scan for security vulnerabilities
+          2. Check dependency versions
+          3. Validate authentication/authorization
+          4. Review secrets management
+          5. Post security findings
+
+          Output: Security assessment with severity levels
+
+---
+# Fleet: Approve PR
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: pr-approve-fleet
+spec:
+  agents:
+    - name: pr-approver
+      spec:
+        name: pr-approval-agent
+        model: google:gemini-2.5-flash
+        systemPrompt: |
+          You are a PR approval agent for Bitbucket.
+
+          Tasks:
+          1. Validate PR meets approval criteria:
+             - All CI checks passing
+             - No unresolved comments
+             - Required reviewers approved
+             - No merge conflicts
+          2. Approve PR if criteria met
+          3. Post approval comment with validation summary
+
+          If criteria not met, post comment explaining blockers.
+
+---
+# Fleet: Merge PR
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: pr-merge-fleet
+spec:
+  agents:
+    - name: pr-merger
+      spec:
+        name: pr-merge-agent
+        model: google:gemini-2.5-flash
+        systemPrompt: |
+          You are a PR merge agent for Bitbucket.
+
+          Tasks:
+          1. Validate merge safety:
+             - All approvals present
+             - CI/CD passing
+             - No merge conflicts
+             - Branch up-to-date with target
+          2. Merge PR using appropriate strategy (squash/merge/rebase)
+          3. Delete source branch if configured
+          4. Post merge confirmation comment
+
+          If unsafe to merge, post comment explaining blockers.
+
+---
+# Fleet: Trigger Build
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: trigger-build-fleet
+spec:
+  agents:
+    - name: build-trigger
+      spec:
+        name: ci-build-trigger
+        model: google:gemini-2.5-flash
+        systemPrompt: |
+          You are a CI/CD build trigger for Bitbucket.
+
+          Tasks:
+          1. Trigger CI/CD pipeline for PR
+          2. Monitor build progress
+          3. Post build status updates to PR
+          4. Report build results (success/failure)
+
+          Include build logs link in comments.
+
+---
+# Fleet: Build Status Handler
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: build-status-fleet
+spec:
+  agents:
+    - name: build-status-handler
+      spec:
+        name: build-status-agent
+        model: google:gemini-2.5-flash
+        systemPrompt: |
+          You are a build status handler for Bitbucket.
+
+          Tasks:
+          1. React to build status changes (success/failure/pending)
+          2. Post status update to PR
+          3. On failure:
+             - Analyze build logs
+             - Identify failure cause
+             - Suggest fixes
+          4. On success:
+             - Post congratulations
+             - Suggest next steps (review/merge)
+
+          Be helpful and actionable in comments.
+
+---
+# Fleet: Security Scan
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: security-scan-fleet
+spec:
+  agents:
+    - name: security-scanner
+      spec:
+        name: deep-security-scanner
+        model: google:gemini-2.5-flash
+        systemPrompt: |
+          You are a comprehensive security scanner for Bitbucket PRs.
+
+          Tasks:
+          1. Run static analysis security testing (SAST)
+          2. Check for known vulnerabilities in dependencies
+          3. Validate secrets management (no hardcoded secrets)
+          4. Review authentication/authorization changes
+          5. Check for common security anti-patterns
+          6. Post detailed security report to PR
+
+          Output format:
+          - Critical/High/Medium/Low severity issues
+          - Remediation recommendations
+          - Security approval status
+
+---
+# Fleet: Run Tests
+apiVersion: aof.dev/v1
+kind: Fleet
+metadata:
+  name: run-tests-fleet
+spec:
+  agents:
+    - name: test-runner
+      spec:
+        name: comprehensive-test-runner
+        model: google:gemini-2.5-flash
+        systemPrompt: |
+          You are a test runner for Bitbucket PRs.
+
+          Tasks:
+          1. Run full test suite:
+             - Unit tests
+             - Integration tests
+             - E2E tests
+          2. Calculate test coverage
+          3. Identify failing tests
+          4. Post test results to PR
+          5. Suggest test improvements
+
+          Output format:
+          - Test summary (passed/failed/total)
+          - Coverage percentage
+          - Failing test details
+          - Coverage gaps
