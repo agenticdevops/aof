@@ -204,6 +204,7 @@ pub mod whatsapp;
 pub mod github;
 pub mod gitlab;
 pub mod bitbucket;
+pub mod jira;
 
 // Re-export platform types
 pub use slack::{SlackConfig, SlackPlatform};
@@ -213,6 +214,7 @@ pub use whatsapp::{WhatsAppConfig, WhatsAppPlatform};
 pub use github::{GitHubConfig, GitHubPlatform};
 pub use gitlab::{GitLabConfig, GitLabPlatform};
 pub use bitbucket::{BitbucketConfig, BitbucketPlatform};
+pub use jira::{JiraConfig, JiraPlatform};
 
 // Type aliases for easier use
 pub type Platform = Box<dyn TriggerPlatform>;
@@ -253,6 +255,7 @@ pub enum TypedPlatformConfig {
     GitHub(GitHubConfig),
     GitLab(GitLabConfig),
     Bitbucket(BitbucketConfig),
+    Jira(JiraConfig),
 }
 
 // ============================================================================
@@ -357,6 +360,13 @@ impl PlatformRegistry {
             let cfg: DiscordConfig = serde_json::from_value(config)
                 .map_err(|e| PlatformError::ParseError(format!("Invalid Discord config: {}", e)))?;
             Ok(Box::new(DiscordPlatform::from_discord_config(cfg)?))
+        }));
+
+        // Jira
+        self.register("jira", Box::new(|config| {
+            let cfg: JiraConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid Jira config: {}", e)))?;
+            Ok(Box::new(JiraPlatform::new(cfg)?))
         }));
     }
 
@@ -496,6 +506,14 @@ pub fn get_platform_capabilities(platform: &str) -> PlatformCapabilities {
             reactions: true,
             rich_text: true,
             approvals: false,
+        },
+        "jira" => PlatformCapabilities {
+            threading: true, // conversation threads via comments
+            interactive: true, // transitions, workflows
+            files: true, // attachments
+            reactions: false,
+            rich_text: true, // Jira text format
+            approvals: true, // issue workflows
         },
         _ => PlatformCapabilities::default(),
     }

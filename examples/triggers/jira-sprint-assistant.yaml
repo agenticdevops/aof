@@ -1,0 +1,303 @@
+# Jira Sprint Assistant
+#
+# Automates sprint planning, retrospectives, and status reporting.
+# Helps teams manage sprint lifecycle with AI-powered insights.
+#
+# Setup:
+#   1. Create API Token: Jira → Profile → Security → API Tokens → Create
+#   2. Configure webhook: Board Settings → Automation → Webhooks
+#      URL: https://your-server/webhook/jira
+#      Events: Sprint Started, Sprint Closed
+#   3. Set environment variables:
+#      export JIRA_CLOUD_ID="your-cloud-id"
+#      export JIRA_API_TOKEN="your-api-token"
+#      export JIRA_USER_EMAIL="your-email@company.com"
+#
+# Features:
+#   - Sprint planning assistance
+#   - Daily standup reports
+#   - Sprint retrospectives
+#   - Progress tracking and burndown analysis
+#   - Risk and blocker detection
+#
+# Usage:
+#   - Automatic: Triggers on sprint_started, sprint_closed
+#   - Manual: Comment "/plan" for sprint planning
+#   - Reports: Comment "/standup" for daily update
+#   - Retrospective: Comment "/retro" at sprint end
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: jira-sprint-assistant
+  labels:
+    platform: jira
+    purpose: sprint-automation
+    team: agile
+
+spec:
+  type: Jira
+
+  config:
+    # Jira Cloud authentication
+    cloud_id: ${JIRA_CLOUD_ID}
+    user_email: ${JIRA_USER_EMAIL}
+    api_token: ${JIRA_API_TOKEN}
+
+    webhook_secret: ${JIRA_WEBHOOK_SECRET}
+
+    # Sprint-related events
+    jira_events:
+      - sprint_started
+      - sprint_closed
+      - issue_moved      # Issue moved in/out of sprint
+      - comment_created
+
+    # Board/project filters
+    boards:
+      - "Team Alpha Board"
+      - "Product Development"
+
+    projects:
+      - PROJ
+      - DEV
+
+  # Command mappings
+  commands:
+    # ============================================================
+    # AUTOMATIC SPRINT EVENTS
+    # ============================================================
+
+    # Trigger when sprint starts
+    sprint_started:
+      agent: jira-standup-agent
+      params:
+        action: sprint_kickoff
+        generate_plan: true
+        post_to_channel: true
+        setup_daily_reports: true
+      response: |
+        🚀 Sprint started! Setting up automation...
+
+    # Trigger when sprint closes
+    sprint_closed:
+      agent: jira-standup-agent
+      params:
+        action: sprint_retrospective
+        analyze_velocity: true
+        identify_patterns: true
+        suggest_improvements: true
+      response: |
+        🏁 Sprint completed! Generating retrospective...
+
+    # ============================================================
+    # SPRINT PLANNING COMMANDS
+    # ============================================================
+
+    # Sprint planning assistant
+    # Usage: "/plan" or "/plan next-sprint"
+    /plan:
+      agent: jira-standup-agent
+      description: "Sprint planning assistance"
+      params:
+        action: sprint_planning
+        analyze_backlog: true
+        suggest_capacity: true
+        estimate_velocity: true
+      response: |
+        📋 Assisting with sprint planning...
+        - Analyzing backlog priorities
+        - Estimating team capacity
+        - Recommending story points allocation
+        - Identifying dependencies
+
+    # Capacity planning
+    # Usage: "/capacity"
+    /capacity:
+      agent: jira-standup-agent
+      description: "Calculate team capacity for sprint"
+      params:
+        action: capacity_planning
+        consider_pto: true
+        historical_velocity: true
+      response: |
+        ⚖️  Calculating team capacity...
+        Based on team size, PTO, and historical velocity.
+
+    # ============================================================
+    # DAILY OPERATIONS
+    # ============================================================
+
+    # Daily standup report
+    # Usage: "/standup" or "/daily"
+    /standup:
+      agent: jira-standup-agent
+      description: "Generate daily standup report"
+      params:
+        action: daily_standup
+        include_blockers: true
+        include_risks: true
+        format: markdown
+      response: |
+        📊 Generating daily standup report...
+        - Completed yesterday
+        - Planned for today
+        - Blockers and risks
+        - Sprint progress
+
+    /daily:
+      agent: jira-standup-agent
+      description: "Daily status update"
+      params:
+        action: daily_standup
+
+    # Sprint progress report
+    # Usage: "/progress" or "/burndown"
+    /progress:
+      agent: jira-standup-agent
+      description: "Sprint progress and burndown analysis"
+      params:
+        action: sprint_progress
+        burndown_chart: true
+        velocity_trend: true
+        risk_assessment: true
+      response: |
+        📈 Analyzing sprint progress...
+        - Burndown analysis
+        - Velocity tracking
+        - Risk assessment
+        - Completion forecast
+
+    /burndown:
+      agent: jira-standup-agent
+      params:
+        action: sprint_progress
+        focus: burndown
+
+    # ============================================================
+    # RETROSPECTIVE & ANALYSIS
+    # ============================================================
+
+    # Sprint retrospective
+    # Usage: "/retro" at end of sprint
+    /retro:
+      agent: jira-standup-agent
+      description: "Generate sprint retrospective"
+      params:
+        action: sprint_retrospective
+        analyze_velocity: true
+        identify_blockers: true
+        suggest_improvements: true
+        compare_estimates: true
+      response: |
+        🔍 Generating sprint retrospective...
+        - Velocity analysis
+        - What went well
+        - What needs improvement
+        - Action items for next sprint
+
+    # Team metrics
+    # Usage: "/metrics"
+    /metrics:
+      agent: jira-standup-agent
+      description: "Team performance metrics"
+      params:
+        action: team_metrics
+        timeframe: "last_3_sprints"
+        include_trends: true
+      response: |
+        📊 Analyzing team metrics...
+        - Velocity trends
+        - Completion rates
+        - Estimation accuracy
+        - Cycle time
+
+    # ============================================================
+    # RISK & BLOCKER MANAGEMENT
+    # ============================================================
+
+    # Identify blockers
+    # Usage: "/blockers"
+    /blockers:
+      agent: jira-standup-agent
+      description: "Identify current blockers and risks"
+      params:
+        action: identify_blockers
+        suggest_solutions: true
+        auto_escalate: true
+      response: |
+        🚨 Scanning for blockers and risks...
+        - Active blockers
+        - Potential risks
+        - Suggested mitigations
+
+    # Sprint health check
+    # Usage: "/health"
+    /health:
+      agent: jira-standup-agent
+      description: "Sprint health assessment"
+      params:
+        action: health_check
+        check_burndown: true
+        check_scope_creep: true
+        check_team_capacity: true
+      response: |
+        🩺 Running sprint health check...
+        - Burndown trajectory
+        - Scope stability
+        - Team capacity utilization
+        - Risk indicators
+
+    # ============================================================
+    # REPORTING
+    # ============================================================
+
+    # Sprint report (stakeholder-friendly)
+    # Usage: "/report"
+    /report:
+      agent: jira-standup-agent
+      description: "Generate sprint status report for stakeholders"
+      params:
+        action: sprint_report
+        format: executive_summary
+        include_highlights: true
+        include_risks: true
+      response: |
+        📄 Generating sprint status report...
+        Executive summary for stakeholders.
+
+    # Help command
+    /help:
+      agent: devops
+      response: |
+        🤖 **Jira Sprint Assistant - Available Commands:**
+
+        **Planning:**
+        - `/plan` - Sprint planning assistance
+        - `/capacity` - Team capacity calculation
+
+        **Daily Operations:**
+        - `/standup` or `/daily` - Daily standup report
+        - `/progress` or `/burndown` - Sprint progress analysis
+
+        **Retrospective:**
+        - `/retro` - Sprint retrospective
+        - `/metrics` - Team performance metrics
+
+        **Risk Management:**
+        - `/blockers` - Identify blockers and risks
+        - `/health` - Sprint health assessment
+
+        **Reporting:**
+        - `/report` - Stakeholder status report
+
+        **Automatic Features:**
+        - Sprint kickoff automation
+        - Sprint close retrospective
+        - Daily progress tracking
+
+  default_agent: jira-standup-agent
+
+  on_error:
+    post_comment: true
+    message: "❌ Sprint automation failed. Please contact @scrum-master."

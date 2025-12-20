@@ -1,0 +1,201 @@
+# Jira Bug Triage Automation
+#
+# Automatically triages, prioritizes, and assigns bug tickets as they're created or updated.
+# Uses AI to analyze descriptions, suggest priorities, and recommend assignees.
+#
+# Setup:
+#   1. Create API Token: Jira → Profile → Security → API Tokens → Create
+#   2. Configure webhook: Project Settings → Automation → Webhooks
+#      URL: https://your-server/webhook/jira
+#      Events: Issue Created, Issue Updated
+#   3. Set environment variables:
+#      export JIRA_CLOUD_ID="your-cloud-id"
+#      export JIRA_API_TOKEN="your-api-token"
+#      export JIRA_USER_EMAIL="your-email@company.com"
+#
+# Features:
+#   - Auto-triage new bugs based on description
+#   - Suggest priority (P0/P1/P2/P3) based on severity keywords
+#   - Recommend assignee based on component/labels
+#   - Add relevant labels automatically
+#   - Detect duplicates and link them
+#
+# Usage:
+#   - Automatic: Triggers on issue_created, issue_updated
+#   - Manual: Comment "/triage" on a bug
+#   - Priority: Comment "/prioritize" to reassess priority
+#   - Assign: Comment "/assign" to get assignee recommendation
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: jira-bug-triage
+  labels:
+    platform: jira
+    purpose: bug-automation
+    environment: production
+
+spec:
+  type: Jira
+
+  config:
+    # Jira Cloud authentication
+    cloud_id: ${JIRA_CLOUD_ID}
+    user_email: ${JIRA_USER_EMAIL}
+    api_token: ${JIRA_API_TOKEN}
+
+    # Jira webhook secret (optional but recommended)
+    webhook_secret: ${JIRA_WEBHOOK_SECRET}
+
+    # Jira events to listen for
+    jira_events:
+      - issue_created
+      - issue_updated
+      - comment_created
+
+    # Filter by project keys
+    projects:
+      - PROJ          # Replace with your project key
+      - BUG           # Can filter multiple projects
+
+    # Filter by issue types
+    issue_types:
+      - Bug
+      - Task
+      - Story
+
+    # Optional: Filter by specific fields
+    filters:
+      # Only process bugs (not subtasks, epics, etc.)
+      - field: issuetype
+        value: Bug
+
+      # Optional: Only process unassigned bugs
+      # - field: assignee
+      #   value: null
+
+  # Command mappings - route events and slash commands
+  commands:
+    # ============================================================
+    # AUTOMATIC EVENT TRIGGERS
+    # ============================================================
+
+    # Trigger when new bug is created
+    issue_created:
+      agent: jira-bug-triage-agent
+      params:
+        action: full_triage
+        auto_comment: true
+        suggest_priority: true
+        suggest_assignee: true
+        detect_duplicates: true
+
+    # Trigger when bug is updated (but not every edit)
+    issue_updated:
+      agent: jira-bug-triage-agent
+      params:
+        action: incremental_review
+        auto_comment: false
+        # Only re-triage if description or severity changed
+        trigger_conditions:
+          - description_changed
+          - priority_changed
+          - labels_changed
+
+    # ============================================================
+    # SLASH COMMANDS
+    # ============================================================
+
+    # Full triage analysis
+    # Usage: Comment "/triage" on any bug
+    /triage:
+      agent: jira-bug-triage-agent
+      description: "Analyze bug and provide triage recommendations"
+      params:
+        action: full_triage
+        auto_comment: true
+      response: |
+        🔍 Analyzing bug for triage...
+        - Severity assessment
+        - Priority recommendation
+        - Component/team identification
+        - Assignee suggestion
+        - Duplicate detection
+
+    # Priority assessment
+    # Usage: "/prioritize" or "/prioritize P1"
+    /prioritize:
+      agent: jira-bug-triage-agent
+      description: "Assess and suggest bug priority"
+      params:
+        action: assess_priority
+        suggest_labels: true
+      response: |
+        📊 Assessing bug priority...
+        Analyzing impact, urgency, and severity indicators.
+
+    # Assignee recommendation
+    # Usage: "/assign"
+    /assign:
+      agent: jira-bug-triage-agent
+      description: "Recommend best assignee based on component and expertise"
+      params:
+        action: recommend_assignee
+        check_workload: true
+        consider_expertise: true
+      response: |
+        👤 Finding best assignee...
+        Considering component ownership, expertise, and current workload.
+
+    # Duplicate detection
+    # Usage: "/find-duplicates"
+    /find-duplicates:
+      agent: jira-bug-triage-agent
+      description: "Search for duplicate or related bugs"
+      params:
+        action: detect_duplicates
+        link_if_found: true
+      response: |
+        🔎 Searching for duplicate bugs...
+        Analyzing summary and description for similar issues.
+
+    # Add relevant labels
+    # Usage: "/label" or "/auto-label"
+    /label:
+      agent: jira-bug-triage-agent
+      description: "Suggest relevant labels based on bug content"
+      params:
+        action: suggest_labels
+        auto_apply: false
+      response: |
+        🏷️  Analyzing bug for relevant labels...
+
+    # Help command
+    /help:
+      agent: devops
+      response: |
+        🤖 **Jira Bug Triage Bot - Available Commands:**
+
+        **Triage:**
+        - `/triage` - Full bug analysis (priority, assignee, duplicates)
+        - `/prioritize` - Assess and suggest priority level
+        - `/assign` - Recommend best assignee
+        - `/find-duplicates` - Search for duplicate bugs
+        - `/label` - Suggest relevant labels
+
+        **Info:**
+        - `/help` - Show this help message
+
+        **Automatic Triggers:**
+        - New bugs are auto-triaged on creation
+        - Updates trigger incremental review
+
+  # Default agent for unmatched commands
+  default_agent: devops
+
+  # Error handling
+  on_error:
+    post_comment: true
+    notify_admins: true
+    message: |
+      ❌ Triage automation failed. Please review manually or contact @devops-team.

@@ -27,6 +27,16 @@ Hands-on tutorials for building AI-powered DevOps bots with AOF.
   - Automatic PR comments and labeling
   - Complete step-by-step setup guide
 
+### Jira Automation
+
+- **[Jira Automation](./jira-automation.md)** - Automate Jira workflows with AI
+  - Automatic bug triage with priority and assignee suggestions
+  - Sprint planning assistance and capacity calculation
+  - Daily standup reports and burndown analysis
+  - Sprint retrospectives with actionable insights
+  - Slash commands: `/triage`, `/standup`, `/retro`, `/blockers`
+  - Saves 5-10 hours per week for agile teams
+
 ### Getting Started
 
 - **[Your First Agent](./first-agent.md)** - Create and run your first agent

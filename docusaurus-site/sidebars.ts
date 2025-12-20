@@ -37,6 +37,7 @@ const sidebars: SidebarsConfig = {
         'concepts/fleets',
         'concepts/resource-selection',
         'concepts/github-integration',
+        'concepts/jira-integration',
       ],
     },
     {
@@ -85,6 +86,7 @@ const sidebars: SidebarsConfig = {
         'reference/daemon-config',
         'reference/aofctl',
         'reference/github-integration',
+        'reference/jira-integration',
       ],
     },
   ],
@@ -104,6 +106,13 @@ const sidebars: SidebarsConfig = {
           items: [
             'tutorials/pr-review-automation',
             'tutorials/github-automation',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Jira Automation',
+          items: [
+            'tutorials/jira-automation',
           ],
         },
         'tutorials/incident-response',
