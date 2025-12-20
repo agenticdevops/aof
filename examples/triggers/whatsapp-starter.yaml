@@ -1,0 +1,74 @@
+# WhatsApp Starter Trigger
+#
+# Minimal WhatsApp Business Cloud API configuration to get started quickly.
+# Copy this file and customize for your needs.
+#
+# Setup:
+#   1. Create Meta Business Account at business.facebook.com
+#   2. Create WhatsApp Business App at developers.facebook.com
+#   3. Add WhatsApp product and note your credentials
+#   4. Set environment variables:
+#      export WHATSAPP_PHONE_NUMBER_ID="123456789012345"
+#      export WHATSAPP_ACCESS_TOKEN="EAAxxxxxxxx..."
+#      export WHATSAPP_VERIFY_TOKEN="my-secret-token"
+#      export WHATSAPP_APP_SECRET="abcdef123456"
+#
+# Set webhook in Meta Developer Console:
+#   1. WhatsApp → Configuration → Edit Webhook
+#   2. Callback URL: https://your-server/webhook/whatsapp
+#   3. Verify Token: same as WHATSAPP_VERIFY_TOKEN
+#   4. Subscribe to "messages" field
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: whatsapp-starter
+  labels:
+    platform: whatsapp
+    environment: development
+
+spec:
+  type: WhatsApp
+  config:
+    # Authentication (required)
+    phone_number_id: ${WHATSAPP_PHONE_NUMBER_ID}
+    access_token: ${WHATSAPP_ACCESS_TOKEN}
+    verify_token: ${WHATSAPP_VERIFY_TOKEN}
+    app_secret: ${WHATSAPP_APP_SECRET}
+
+    # API version (optional, default v18.0)
+    api_version: "v18.0"
+
+    # Events to listen for
+    events:
+      - message
+      - interactive  # Button/list responses
+
+    # Optional: Restrict to specific phone numbers
+    # allowed_numbers:
+    #   - "14155551234"   # Specific phone
+
+  # Slash commands - users type these directly
+  commands:
+    /help:
+      agent: devops
+      description: "Show available commands"
+
+    /status:
+      agent: devops
+      description: "Check system status"
+
+    /agent:
+      agent: devops
+      description: "Switch agents"
+
+    /pods:
+      agent: k8s-ops
+      description: "List pods in namespace"
+
+    /logs:
+      agent: k8s-ops
+      description: "View pod logs"
+
+  # Default agent for natural language messages
+  default_agent: devops

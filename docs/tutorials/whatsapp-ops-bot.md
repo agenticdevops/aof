@@ -1,881 +1,495 @@
-# Building a WhatsApp Ops Bot with AOF
+# Tutorial: Build a WhatsApp Ops Bot with AOF
 
-This tutorial shows you how to build a WhatsApp bot for DevOps and on-call workflows using AOF's trigger system and the WhatsApp Business API.
+Build a mobile-first WhatsApp bot for DevOps operations using AOF. Ideal for on-call engineers who need AI-powered infrastructure access from their phone.
 
-## What You'll Build
+**What you'll learn:**
+- Set up Meta Business and WhatsApp Cloud API
+- Configure AOF with WhatsApp integration
+- Create agents optimized for mobile
+- Use interactive buttons and lists
+- Handle button and list responses
 
-A WhatsApp bot that enables:
-- On-call alerts and acknowledgments
-- Incident status updates via chat
-- Quick command execution for emergencies
-- Approval workflows for critical operations
-- Team coordination during incidents
+**Time:** 20 minutes
+
+## Quick Start
+
+```bash
+# Set environment variables
+export WHATSAPP_PHONE_NUMBER_ID=123456789012345
+export WHATSAPP_ACCESS_TOKEN=EAAxxxxxxxxxxxxxxxxxxxxxxx
+export WHATSAPP_VERIFY_TOKEN=my-secret-verify-token
+export WHATSAPP_APP_SECRET=abcdef1234567890
+export GOOGLE_API_KEY=xxxxx
+
+# Start AOF server
+aofctl serve \
+  --config examples/configs/whatsapp-bot.yaml \
+  --agents-dir examples/agents
+
+# Expose with ngrok
+ngrok http 3000
+# Configure webhook URL in Meta Developer Console
+```
 
 ## Prerequisites
 
 - AOF installed (`curl -sSL https://docs.aof.sh/install.sh | bash`)
-- Meta Business Account
-- WhatsApp Business API access
-- A server with public HTTPS endpoint
+- Meta Business Account (free at [business.facebook.com](https://business.facebook.com))
+- Google AI API key (or Anthropic)
 - Phone number for WhatsApp Business
 
-## Step 1: Set Up WhatsApp Business API
+## Step 1: Set Up Meta Business
 
-### 1.1 Create Meta Business Account
+### Create Meta Business Account
 
-1. Go to [Meta Business Suite](https://business.facebook.com)
-2. Create or select your business account
-3. Navigate to **WhatsApp** > **Getting Started**
+1. Go to [business.facebook.com](https://business.facebook.com)
+2. Click **Create Account**
+3. Follow the setup wizard
+4. Verify your business (optional for testing)
 
-### 1.2 Create WhatsApp Business App
+### Create WhatsApp Business App
 
-1. Go to [Meta Developers](https://developers.facebook.com)
-2. Click **Create App** > **Business** > **WhatsApp**
-3. Select your business account
-4. Note your **App ID** and **App Secret**
+1. Go to [developers.facebook.com](https://developers.facebook.com)
+2. Click **My Apps** → **Create App**
+3. Select **Business** type
+4. Choose your Meta Business Account
+5. Name your app (e.g., "AOF Ops Bot")
 
-### 1.3 Configure WhatsApp Business API
+### Add WhatsApp Product
 
-1. In App Dashboard, go to **WhatsApp** > **API Setup**
-2. Add a phone number (or use test number)
-3. Generate a **Permanent Access Token**:
-   - Go to **System Users** in Business Settings
-   - Create system user with `whatsapp_business_messaging` permission
-   - Generate token
+1. In your app dashboard, click **Add Product**
+2. Find **WhatsApp** and click **Set Up**
+3. This creates a test phone number for development
 
-Save these values:
-- **Phone Number ID**: `1234567890`
-- **Access Token**: `EAAxxxxxxx...`
-- **Verify Token**: Create a random string (e.g., `my-verify-token-123`)
+### Get Credentials
 
-### 1.4 Set Up Message Templates
+From **WhatsApp** → **API Setup**:
 
-WhatsApp requires pre-approved templates for proactive messages. Create these in Meta Business Manager:
-
-**Template: ops_alert**
 ```
-🚨 *\{\{1\}\} Alert*
-
-Service: \{\{2\}\}
-Message: \{\{3\}\}
-Time: \{\{4\}\}
-
-Reply with:
-• ACK - Acknowledge
-• ESC - Escalate
-• INFO - More details
+Phone Number ID: 123456789012345
+Access Token: EAAxxxxxxxx... (click Generate for permanent token)
 ```
 
-**Template: deployment_approval**
+From **App Settings** → **Basic**:
+
 ```
-🚀 *Deployment Request*
-
-Service: \{\{1\}\}
-Version: \{\{2\}\}
-Environment: \{\{3\}\}
-Requested by: \{\{4\}\}
-
-Reply:
-• APPROVE - Approve deployment
-• REJECT - Reject deployment
-• DETAILS - View changes
+App Secret: abcdef1234567890
 ```
 
-**Template: incident_update**
+Create your own verify token (any random string):
+
 ```
-📋 *Incident Update*
-
-ID: \{\{1\}\}
-Status: \{\{2\}\}
-Severity: \{\{3\}\}
-
-\{\{4\}\}
-
-Reply RESOLVE to close.
+Verify Token: my-secret-verify-token-2024
 ```
 
-## Step 2: Configure AOF Trigger Server
+## Step 2: Create Agent Configuration
 
-### 2.1 Create Configuration
+Create `agents/whatsapp-ops.yaml`:
+
+```yaml
+apiVersion: aof.dev/v1alpha1
+kind: Agent
+metadata:
+  name: whatsapp-ops
+  labels:
+    platform: whatsapp
+    capability: devops
+
+spec:
+  model: google:gemini-2.5-flash
+  temperature: 0
+  max_tokens: 1024
+
+  description: "Mobile DevOps assistant for WhatsApp"
+
+  tools:
+    - kubectl
+    - docker
+
+  system_prompt: |
+    You are a DevOps assistant on WhatsApp mobile.
+
+    ## Response Guidelines
+    - Be EXTREMELY concise (small mobile screens)
+    - Use emoji for status: ✅ ⚠️ ❌ 🔍
+    - Max 3-4 lines per response when possible
+    - Use code blocks sparingly (hard to read on mobile)
+    - Offer buttons for common follow-up actions
+
+    ## Action Buttons
+    When appropriate, suggest up to 3 actions:
+    - view_logs: View Logs
+    - describe_pod: Describe Pod
+    - check_events: Check Events
+    - list_pods: List Pods
+    - check_nodes: Check Nodes
+
+    ## Safety
+    This is a read-only platform. For write operations,
+    suggest using Slack or CLI instead.
+```
+
+## Step 3: Create Daemon Configuration
 
 Create `config/whatsapp-bot.yaml`:
 
 ```yaml
-version: v1
-kind: TriggerConfig
+apiVersion: aof.dev/v1
+kind: DaemonConfig
+metadata:
+  name: whatsapp-ops-bot
 
-server:
-  host: "0.0.0.0"
-  port: 8080
-  base_path: "/webhooks"
+spec:
+  server:
+    port: 3000
+    host: "0.0.0.0"
 
-platforms:
-  whatsapp:
-    type: whatsapp
-    phone_number_id: "${WHATSAPP_PHONE_NUMBER_ID}"
-    access_token: "${WHATSAPP_ACCESS_TOKEN}"
-    verify_token: "${WHATSAPP_VERIFY_TOKEN}"
-    app_secret: "${WHATSAPP_APP_SECRET}"
+  platforms:
+    whatsapp:
+      enabled: true
+      phone_number_id_env: WHATSAPP_PHONE_NUMBER_ID
+      access_token_env: WHATSAPP_ACCESS_TOKEN
+      verify_token_env: WHATSAPP_VERIFY_TOKEN
+      app_secret_env: WHATSAPP_APP_SECRET
 
-    # On-call configuration
-    oncall:
-      # PagerDuty integration for schedule lookup
-      pagerduty_token: "${PAGERDUTY_TOKEN}"
-      schedule_id: "PXXXXXX"
+  agents:
+    directory: "./agents"
 
-      # Or static on-call list
-      static_oncall:
-        - name: "Alice"
-          phone: "+1234567890"
-          hours: "09:00-18:00"
-          timezone: "America/New_York"
-        - name: "Bob"
-          phone: "+0987654321"
-          hours: "18:00-09:00"
-          timezone: "America/New_York"
-
-    # Allowed phone numbers (empty = allow all registered)
-    allowed_numbers:
-      - "+1234567890"  # Alice
-      - "+0987654321"  # Bob
-      - "+1122334455"  # SRE Team Lead
-
-# Command routing
-routing:
-  default_flow: "whatsapp-help-flow"
-
-  # Text commands (case-insensitive)
-  commands:
-    "ACK": "acknowledge-alert-flow"
-    "ESC": "escalate-alert-flow"
-    "INFO": "alert-info-flow"
-    "APPROVE": "approval-handler-flow"
-    "REJECT": "approval-handler-flow"
-    "RESOLVE": "resolve-incident-flow"
-    "STATUS": "status-check-flow"
-    "HELP": "whatsapp-help-flow"
-
-  # Keyword routing (for natural language)
-  keywords:
-    - pattern: "(?i)(deploy|release|ship)"
-      flow: "deployment-request-flow"
-    - pattern: "(?i)(incident|outage|down)"
-      flow: "incident-report-flow"
-    - pattern: "(?i)(scale|replicas)"
-      flow: "scale-service-flow"
-
-flows:
-  directory: "./flows/whatsapp"
-  watch: true
+  runtime:
+    default_agent: whatsapp-ops
+    max_concurrent_tasks: 5
+    task_timeout_secs: 60
 ```
 
-### 2.2 Environment Variables
+## Step 4: Start the Server
 
 ```bash
-export WHATSAPP_PHONE_NUMBER_ID="1234567890"
-export WHATSAPP_ACCESS_TOKEN="EAAxxxxxxx..."
-export WHATSAPP_VERIFY_TOKEN="my-verify-token-123"
-export WHATSAPP_APP_SECRET="abcdef123456"
-export PAGERDUTY_TOKEN="y_NbAkKc66ryYTWUXYEu"
+# Set environment variables
+export WHATSAPP_PHONE_NUMBER_ID="123456789012345"
+export WHATSAPP_ACCESS_TOKEN="EAAxxxxxxxxxxxxxxxxxxxxxxx"
+export WHATSAPP_VERIFY_TOKEN="my-secret-verify-token"
+export WHATSAPP_APP_SECRET="abcdef1234567890"
+export GOOGLE_API_KEY="your-google-api-key"
+
+# Start server
+aofctl serve \
+  --config config/whatsapp-bot.yaml \
+  --agents-dir agents/
+
+# In another terminal, start ngrok
+ngrok http 3000
+# Note the HTTPS URL: https://abc123.ngrok.io
 ```
 
-## Step 3: Create AgentFlows
+## Step 5: Configure Webhook
 
-### 3.1 Alert Acknowledgment Flow
+In Meta Developer Console:
 
-Create `flows/whatsapp/acknowledge-alert-flow.yaml`:
+1. Go to **WhatsApp** → **Configuration**
+2. Click **Edit** on Webhook
+3. Set **Callback URL**: `https://abc123.ngrok.io/webhook/whatsapp`
+4. Set **Verify Token**: `my-secret-verify-token` (same as env var)
+5. Click **Verify and Save**
+6. Under **Webhook Fields**, subscribe to **messages**
 
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: acknowledge-alert
-  description: Acknowledge incoming alerts
+## Step 6: Add Test Phone Number
 
-triggers:
-  - platform: whatsapp
-    type: message
-    pattern: "^ACK$"
+1. Go to **WhatsApp** → **API Setup**
+2. Under **Send and receive messages**, add your phone number
+3. You'll receive a verification code via WhatsApp
+4. Enter the code to verify
 
-context:
-  # Get the alert being acknowledged from conversation context
-  source: conversation
-  lookback: 5  # Look at last 5 messages for alert context
+## Step 7: Test the Bot
 
-steps:
-  - name: find-active-alert
-    agent: alert-manager
-    action: find_pending
-    input:
-      user_phone: "\{\{ trigger.user.phone \}\}"
-      status: "firing"
-    on_empty:
-      response:
-        template: "ops_notification"
-        parameters:
-          - "Info"
-          - "No pending alerts to acknowledge"
+Send a message to the test phone number from WhatsApp:
 
-  - name: acknowledge-alert
-    agent: alert-manager
-    action: acknowledge
-    input:
-      alert_id: "\{\{ steps.find-active-alert.output.alert_id \}\}"
-      acknowledged_by: "\{\{ trigger.user.phone \}\}"
-      acknowledged_at: "\{\{ now() \}\}"
-
-  - name: update-pagerduty
-    agent: pagerduty
-    action: acknowledge
-    input:
-      incident_id: "\{\{ steps.find-active-alert.output.pagerduty_incident_id \}\}"
-
-  - name: notify-team
-    agent: whatsapp
-    action: send_to_group
-    input:
-      group_id: "\{\{ config.oncall.team_group \}\}"
-      text: |
-        ✅ Alert acknowledged by \{\{ trigger.user.name \}\}
-
-        Alert: \{\{ steps.find-active-alert.output.title \}\}
-        Time: \{\{ now() | format_time \}\}
-
-  - name: respond
-    agent: whatsapp
-    action: reply
-    input:
-      text: |
-        ✅ Alert acknowledged
-
-        *\{\{ steps.find-active-alert.output.title \}\}*
-
-        You're now the incident commander.
-
-        Reply:
-        • RESOLVE - When fixed
-        • ESC - To escalate
-        • STATUS - For current status
-```
-
-### 3.2 Escalation Flow
-
-Create `flows/whatsapp/escalate-alert-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: escalate-alert
-  description: Escalate alert to next on-call
-
-triggers:
-  - platform: whatsapp
-    type: message
-    pattern: "^ESC$"
-
-steps:
-  - name: get-current-alert
-    agent: alert-manager
-    action: get_active
-    input:
-      user_phone: "\{\{ trigger.user.phone \}\}"
-
-  - name: get-escalation-target
-    agent: oncall-manager
-    action: get_next_oncall
-    input:
-      current_user: "\{\{ trigger.user.phone \}\}"
-      schedule_id: "\{\{ config.oncall.schedule_id \}\}"
-
-  - name: escalate-pagerduty
-    agent: pagerduty
-    action: escalate
-    input:
-      incident_id: "\{\{ steps.get-current-alert.output.pagerduty_incident_id \}\}"
-      escalation_level: "\{\{ steps.get-escalation-target.output.level \}\}"
-
-  - name: notify-escalation-target
-    agent: whatsapp
-    action: send_template
-    input:
-      to: "\{\{ steps.get-escalation-target.output.phone \}\}"
-      template: "ops_alert"
-      parameters:
-        - "ESCALATED"
-        - "\{\{ steps.get-current-alert.output.service \}\}"
-        - "\{\{ steps.get-current-alert.output.message \}\}"
-        - "\{\{ now() | format_time \}\}"
-
-  - name: confirm-escalation
-    agent: whatsapp
-    action: reply
-    input:
-      text: |
-        📤 Alert escalated to \{\{ steps.get-escalation-target.output.name \}\}
-
-        They have been notified and will respond shortly.
-
-        You will be updated when they acknowledge.
-```
-
-### 3.3 On-Call Alert Sender Flow
-
-Create `flows/whatsapp/send-oncall-alert-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: send-oncall-alert
-  description: Send alert to current on-call engineer
-
-triggers:
-  # Triggered by external systems (PagerDuty, Prometheus, etc.)
-  - type: webhook
-    path: "/alert/oncall"
-    method: POST
-
-  # Or by Prometheus Alertmanager
-  - type: alertmanager
-
-input:
-  required:
-    - severity
-    - service
-    - message
-  schema:
-    severity:
-      type: string
-      enum: ["critical", "warning", "info"]
-    service:
-      type: string
-    message:
-      type: string
-    runbook_url:
-      type: string
-
-steps:
-  - name: get-oncall
-    agent: oncall-manager
-    action: get_current
-    input:
-      schedule_id: "\{\{ config.oncall.schedule_id \}\}"
-
-  - name: create-alert-record
-    agent: alert-manager
-    action: create
-    input:
-      severity: "\{\{ input.severity \}\}"
-      service: "\{\{ input.service \}\}"
-      message: "\{\{ input.message \}\}"
-      oncall_user: "\{\{ steps.get-oncall.output.phone \}\}"
-
-  - name: send-whatsapp-alert
-    agent: whatsapp
-    action: send_template
-    input:
-      to: "\{\{ steps.get-oncall.output.phone \}\}"
-      template: "ops_alert"
-      parameters:
-        - "\{\{ input.severity | upper \}\}"
-        - "\{\{ input.service \}\}"
-        - "\{\{ input.message \}\}"
-        - "\{\{ now() | format_time \}\}"
-
-  - name: start-escalation-timer
-    agent: scheduler
-    action: schedule
-    input:
-      delay: 300  # 5 minutes
-      flow: "auto-escalate-flow"
-      input:
-        alert_id: "\{\{ steps.create-alert-record.output.alert_id \}\}"
-    condition: "\{\{ input.severity == 'critical' \}\}"
-
-  - name: log-alert
-    agent: logger
-    action: log
-    input:
-      level: "\{\{ input.severity \}\}"
-      message: "Alert sent to on-call"
-      metadata:
-        alert_id: "\{\{ steps.create-alert-record.output.alert_id \}\}"
-        oncall: "\{\{ steps.get-oncall.output.name \}\}"
-        service: "\{\{ input.service \}\}"
-```
-
-### 3.4 Status Check Flow
-
-Create `flows/whatsapp/status-check-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: status-check
-  description: Quick status check via WhatsApp
-
-triggers:
-  - platform: whatsapp
-    type: message
-    pattern: "^STATUS\\s*(.*)$"
-
-input:
-  schema:
-    service:
-      type: string
-      source: "match.1"
-      default: "all"
-
-steps:
-  - name: check-services
-    agent: health-checker
-    action: check
-    parallel: true
-    input:
-      services: |
-        {% if input.service == 'all' %}
-        ["api", "web", "workers", "database", "cache"]
-        {% else %}
-        ["\{\{ input.service \}\}"]
-        {% endif %}
-
-  - name: get-active-incidents
-    agent: incident-manager
-    action: list
-    input:
-      status: "open"
-      limit: 3
-
-  - name: format-response
-    agent: whatsapp
-    action: reply
-    input:
-      text: |
-        📊 *System Status*
-
-        {% for svc in steps.check-services.output %}
-        \{\{ '✅' if svc.healthy else '❌' \}\} *\{\{ svc.name \}\}*: \{\{ svc.status \}\}
-        {% if svc.latency %}  ⏱ \{\{ svc.latency \}\}ms{% endif %}
-        {% endfor %}
-
-        {% if steps.get-active-incidents.output | length > 0 %}
-        ━━━━━━━━━━━━
-        🚨 *Active Incidents*
-        {% for inc in steps.get-active-incidents.output %}
-        • \{\{ inc.id \}\}: \{\{ inc.title \}\} [\{\{ inc.severity \}\}]
-        {% endfor %}
-        {% else %}
-
-        ✨ No active incidents
-        {% endif %}
-
-        _\{\{ now() | format_time \}\}_
-```
-
-### 3.5 Deployment Approval Flow
-
-Create `flows/whatsapp/deployment-approval-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: deployment-approval-whatsapp
-  description: Request deployment approval via WhatsApp
-
-triggers:
-  # Triggered by CI/CD pipeline
-  - type: webhook
-    path: "/deploy/request-approval"
-    method: POST
-
-input:
-  required:
-    - service
-    - version
-    - environment
-    - requester
-  schema:
-    service:
-      type: string
-    version:
-      type: string
-    environment:
-      type: string
-    requester:
-      type: string
-    changes_url:
-      type: string
-
-steps:
-  - name: get-approvers
-    agent: approval-manager
-    action: get_approvers
-    input:
-      environment: "\{\{ input.environment \}\}"
-      service: "\{\{ input.service \}\}"
-
-  - name: create-approval-request
-    agent: approval-manager
-    action: create
-    input:
-      type: "deployment"
-      service: "\{\{ input.service \}\}"
-      version: "\{\{ input.version \}\}"
-      environment: "\{\{ input.environment \}\}"
-      requester: "\{\{ input.requester \}\}"
-      approvers: "\{\{ steps.get-approvers.output.users \}\}"
-      expires_at: "\{\{ now() | add_hours(4) \}\}"
-
-  - name: send-approval-requests
-    agent: whatsapp
-    action: send_template
-    foreach: "\{\{ steps.get-approvers.output.users \}\}"
-    input:
-      to: "\{\{ item.phone \}\}"
-      template: "deployment_approval"
-      parameters:
-        - "\{\{ input.service \}\}"
-        - "\{\{ input.version \}\}"
-        - "\{\{ input.environment \}\}"
-        - "\{\{ input.requester \}\}"
-
-  - name: notify-requester
-    agent: notifier
-    action: notify
-    input:
-      channel: "slack"
-      user: "\{\{ input.requester \}\}"
-      message: |
-        Deployment approval requested via WhatsApp.
-        Waiting for: \{\{ steps.get-approvers.output.users | map('name') | join(', ') \}\}
-        Request ID: \{\{ steps.create-approval-request.output.request_id \}\}
-
-on_response:
-  - pattern: "^APPROVE$"
-    flow: "process-approval-flow"
-    input:
-      request_id: "\{\{ steps.create-approval-request.output.request_id \}\}"
-      action: "approve"
-      approver_phone: "\{\{ trigger.user.phone \}\}"
-
-  - pattern: "^REJECT$"
-    flow: "process-approval-flow"
-    input:
-      request_id: "\{\{ steps.create-approval-request.output.request_id \}\}"
-      action: "reject"
-      approver_phone: "\{\{ trigger.user.phone \}\}"
-```
-
-### 3.6 Process Approval Flow
-
-Create `flows/whatsapp/process-approval-flow.yaml`:
-
-```yaml
-apiVersion: aof.sh/v1alpha1
-kind: AgentFlow
-metadata:
-  name: process-approval
-  description: Process deployment approval/rejection
-
-input:
-  required:
-    - request_id
-    - action
-    - approver_phone
-
-steps:
-  - name: validate-approver
-    agent: approval-manager
-    action: validate_approver
-    input:
-      request_id: "\{\{ input.request_id \}\}"
-      approver_phone: "\{\{ input.approver_phone \}\}"
-    on_error:
-      response:
-        text: "❌ You are not authorized to approve this request."
-
-  - name: get-request
-    agent: approval-manager
-    action: get
-    input:
-      request_id: "\{\{ input.request_id \}\}"
-
-  - name: check-expired
-    agent: validator
-    action: check
-    input:
-      condition: "\{\{ steps.get-request.output.expires_at > now() \}\}"
-    on_error:
-      response:
-        text: "❌ This approval request has expired."
-
-  - name: process-approval
-    agent: approval-manager
-    action: "\{\{ input.action \}\}"
-    input:
-      request_id: "\{\{ input.request_id \}\}"
-      approver: "\{\{ input.approver_phone \}\}"
-      timestamp: "\{\{ now() \}\}"
-
-  - name: trigger-deployment
-    condition: "\{\{ input.action == 'approve' \}\}"
-    agent: deployment-manager
-    action: deploy
-    input:
-      service: "\{\{ steps.get-request.output.service \}\}"
-      version: "\{\{ steps.get-request.output.version \}\}"
-      environment: "\{\{ steps.get-request.output.environment \}\}"
-      approved_by: "\{\{ input.approver_phone \}\}"
-
-  - name: notify-requester-approved
-    condition: "\{\{ input.action == 'approve' \}\}"
-    agent: notifier
-    action: notify
-    input:
-      channels: ["slack", "whatsapp"]
-      user: "\{\{ steps.get-request.output.requester \}\}"
-      message: |
-        ✅ Deployment approved!
-
-        Service: \{\{ steps.get-request.output.service \}\}
-        Version: \{\{ steps.get-request.output.version \}\}
-        Environment: \{\{ steps.get-request.output.environment \}\}
-        Approved by: \{\{ steps.validate-approver.output.approver_name \}\}
-
-        Deployment starting now...
-
-  - name: notify-requester-rejected
-    condition: "\{\{ input.action == 'reject' \}\}"
-    agent: notifier
-    action: notify
-    input:
-      channels: ["slack", "whatsapp"]
-      user: "\{\{ steps.get-request.output.requester \}\}"
-      message: |
-        ❌ Deployment rejected
-
-        Service: \{\{ steps.get-request.output.service \}\}
-        Version: \{\{ steps.get-request.output.version \}\}
-        Rejected by: \{\{ steps.validate-approver.output.approver_name \}\}
-
-  - name: respond-to-approver
-    agent: whatsapp
-    action: reply
-    input:
-      text: |
-        {% if input.action == 'approve' %}
-        ✅ Deployment approved
-
-        \{\{ steps.get-request.output.service \}\} v\{\{ steps.get-request.output.version \}\} is now deploying to \{\{ steps.get-request.output.environment \}\}.
-        {% else %}
-        ❌ Deployment rejected
-
-        \{\{ steps.get-request.output.requester \}\} has been notified.
-        {% endif %}
-```
-
-## Step 4: Set Up Webhook
-
-### 4.1 Start AOF Server
-
-```bash
-aofctl trigger serve --config config/whatsapp-bot.yaml
-```
-
-### 4.2 Configure Webhook in Meta
-
-1. Go to Meta Developers > Your App > WhatsApp > Configuration
-2. Set Webhook URL: `https://your-domain.com/webhooks/whatsapp`
-3. Set Verify Token: Same as `WHATSAPP_VERIFY_TOKEN`
-4. Subscribe to fields:
-   - `messages`
-   - `messaging_postbacks`
-
-### 4.3 Verify Webhook
-
-Meta will send a verification request:
+### Basic Query
 
 ```
-GET /webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=your-token&hub.challenge=CHALLENGE
+You: show pods
+Bot: 🔍 Pods in default namespace:
+
+     api-server-abc12   ✅ Running
+     worker-xyz98       ✅ Running
+     db-primary-qrs45   ✅ Running
+
+     [List All] [Check Nodes] [View Events]
 ```
 
-AOF automatically handles this verification.
+### Interactive Buttons
 
-## Step 5: Integrate with Alerting Systems
+Tap a button to trigger follow-up action:
 
-### 5.1 Prometheus Alertmanager
+```
+You: *taps [Check Nodes]*
+Bot: 🖥️ Cluster Nodes:
 
-Add to `alertmanager.yml`:
+     node-1   Ready   8 CPU   32GB
+     node-2   Ready   8 CPU   32GB
+     node-3   Ready   8 CPU   32GB
 
-```yaml
-receivers:
-  - name: 'whatsapp-oncall'
-    webhook_configs:
-      - url: 'https://your-domain.com/webhooks/whatsapp/alert/oncall'
-        send_resolved: true
-        http_config:
-          bearer_token: '${AOF_WEBHOOK_TOKEN}'
-
-route:
-  receiver: 'whatsapp-oncall'
-  routes:
-    - match:
-        severity: critical
-      receiver: 'whatsapp-oncall'
-      continue: true
+     ✅ All nodes healthy
 ```
 
-### 5.2 PagerDuty Webhook
+### Agent Switching
 
-1. In PagerDuty, go to Services > Your Service > Integrations
-2. Add Webhook (Generic V3)
-3. URL: `https://your-domain.com/webhooks/whatsapp/pagerduty`
-4. Events: Incident triggered, acknowledged, resolved
+```
+You: /agent
+Bot: Select an agent:
 
-### 5.3 Datadog Integration
+     📋 View Agents
 
-```yaml
-# Datadog webhook payload template
-{
-  "severity": "$ALERT_STATUS",
-  "service": "$EVENT_TITLE",
-  "message": "$EVENT_MSG",
-  "runbook_url": "$RUNBOOK_URL"
+     [Tap to open list]
+```
+
+List shows:
+- ☸️ K8s Agent - Kubernetes operations
+- 🐳 Docker Agent - Container management
+- 🔧 DevOps Agent - Full-stack DevOps
+
+## Interactive Message Examples
+
+### Reply Buttons
+
+When agent suggests actions:
+
+```rust
+TriggerResponse {
+    text: "Pod api-server is in CrashLoopBackOff",
+    status: ResponseStatus::Warning,
+    actions: vec![
+        Action { id: "view_logs", label: "View Logs" },
+        Action { id: "describe_pod", label: "Describe" },
+        Action { id: "restart_pod", label: "Restart" },
+    ],
 }
 ```
 
-## Step 6: Testing
+User sees:
+```
+⚠️ Pod api-server is in CrashLoopBackOff
 
-### 6.1 Send Test Alert
-
-```bash
-# Trigger a test alert
-curl -X POST https://your-domain.com/webhooks/whatsapp/alert/oncall \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${AOF_WEBHOOK_TOKEN}" \
-  -d '{
-    "severity": "warning",
-    "service": "api-server",
-    "message": "High latency detected (>500ms)",
-    "runbook_url": "https://runbooks.example.com/api-latency"
-  }'
+[View Logs] [Describe] [Restart]
 ```
 
-### 6.2 Test Approval Flow
+### List Messages
 
-```bash
-# Request deployment approval
-curl -X POST https://your-domain.com/deploy/request-approval \
-  -H "Content-Type: application/json" \
-  -d '{
-    "service": "api",
-    "version": "v2.1.0",
-    "environment": "production",
-    "requester": "alice@example.com",
-    "changes_url": "https://github.com/org/api/compare/v2.0.0...v2.1.0"
-  }'
+For agent selection:
+
+```yaml
+# Message with list
+Header: "Select Agent"
+Body: "Choose an agent for your task"
+Button: "View Agents"
+
+Sections:
+  - title: "DevOps"
+    items:
+      - K8s Agent: "Kubernetes operations"
+      - Docker Agent: "Container management"
+  - title: "Monitoring"
+    items:
+      - Prometheus Agent: "Metrics and alerts"
+      - Loki Agent: "Log analysis"
 ```
 
-## Best Practices
+## Handling Button Responses
 
-### Rate Limiting
+When user taps a button, AOF receives:
 
-WhatsApp has strict rate limits:
-- 80 messages/second for business accounts
-- Template messages count against monthly quota
+```
+Text: button:view_logs
+```
+
+Configure agent to handle:
+
+```yaml
+system_prompt: |
+  ## Button Handling
+  When you receive a message starting with "button:",
+  it's a button tap. Handle these:
+
+  - button:view_logs → Show recent logs
+  - button:describe_pod → Show pod details
+  - button:restart_pod → Explain this requires Slack/CLI
+```
+
+## Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help and current agent |
+| `/agent` | List agents with interactive list |
+| `/agent <name>` | Switch to specific agent |
+| `/fleet` | List fleets with interactive list |
+| `/fleet <name>` | Switch to specific fleet |
+| `/status` | Check service status |
+
+## Built-in Agents
+
+| Agent | Tools | Use Case |
+|-------|-------|----------|
+| `k8s-ops` | kubectl, helm | Kubernetes operations |
+| `docker-ops` | docker, shell | Container management |
+| `devops` | kubectl, docker, terraform, git | Full-stack DevOps |
+
+## Safety: Read-Only Mode
+
+Like Telegram, WhatsApp is **read-only** by default:
+
+- ✅ Read operations work: `kubectl get`, `docker ps`
+- ❌ Write operations blocked: `kubectl delete`, `docker rm`
+
+This protects against accidental commands from mobile.
+
+## Production Setup
+
+### 1. Verify Business
+
+For production use:
+
+1. Go to Meta Business Suite
+2. Complete business verification
+3. Submit WhatsApp display name for approval
+4. Wait for Meta review (1-3 business days)
+
+### 2. Phone Number Whitelist
+
+Restrict access in config:
 
 ```yaml
 platforms:
   whatsapp:
-    rate_limits:
-      messages_per_second: 50
-      templates_per_day: 1000
+    enabled: true
+    phone_number_id_env: WHATSAPP_PHONE_NUMBER_ID
+    access_token_env: WHATSAPP_ACCESS_TOKEN
+    verify_token_env: WHATSAPP_VERIFY_TOKEN
+    app_secret_env: WHATSAPP_APP_SECRET
 
-    # Queue high-volume alerts
-    queue:
-      enabled: true
-      batch_size: 10
-      batch_delay: 1000  # ms
+    # Only allow these phone numbers
+    allowed_numbers:
+      - "14155551234"   # On-call lead
+      - "14155555678"   # Team member
 ```
 
-### Message Templates
+### 3. Use Permanent Token
 
-- Use templates for proactive messages (not replies)
-- Templates must be approved by Meta (24-72 hours)
-- Keep templates generic - use parameters for specifics
-- Test templates in sandbox first
+Test tokens expire. For production:
 
-### Security
+1. Go to **WhatsApp** → **API Setup**
+2. Click **Add system user** in Business Settings
+3. Generate permanent token for system user
+4. Use this token in production
 
-```yaml
-platforms:
-  whatsapp:
-    security:
-      # Verify all webhook signatures
-      verify_signatures: true
+### 4. Run as Service
 
-      # Only accept messages from allowed numbers
-      allowed_numbers:
-        - "+1234567890"
+```bash
+# systemd service
+sudo tee /etc/systemd/system/aof-whatsapp.service << 'EOF'
+[Unit]
+Description=AOF WhatsApp Bot
+After=network.target
 
-      # Require phone number verification
-      require_verified: true
+[Service]
+Type=simple
+User=aof
+Environment=WHATSAPP_PHONE_NUMBER_ID=xxx
+Environment=WHATSAPP_ACCESS_TOKEN=xxx
+Environment=WHATSAPP_VERIFY_TOKEN=xxx
+Environment=WHATSAPP_APP_SECRET=xxx
+Environment=GOOGLE_API_KEY=xxx
+ExecStart=/usr/local/bin/aofctl serve --config /etc/aof/whatsapp-bot.yaml
+Restart=always
 
-      # Audit all messages
-      audit:
-        enabled: true
-        include_content: false  # For privacy
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable --now aof-whatsapp
 ```
 
-### Error Handling
+### 5. Use Cloudflare Tunnel
 
-```yaml
-on_error:
-  # Retry transient failures
-  retry:
-    max_attempts: 3
-    backoff: exponential
+Free alternative to ngrok for production:
 
-  # Fallback to other channels
-  fallback:
-    - channel: slack
-      user: "\{\{ trigger.user.slack_id \}\}"
-    - channel: email
-      address: "\{\{ trigger.user.email \}\}"
+```bash
+brew install cloudflared
+
+# Create tunnel
+cloudflared tunnel create aof-whatsapp
+cloudflared tunnel route dns aof-whatsapp whatsapp-bot.yourdomain.com
+
+# Run tunnel
+cloudflared tunnel run aof-whatsapp
 ```
+
+## WhatsApp Limits
+
+Keep these in mind when building agents:
+
+| Limit | Value |
+|-------|-------|
+| Message body | 4096 characters |
+| Reply buttons | 3 maximum |
+| Button text | 20 characters |
+| List sections | 10 maximum |
+| Items per section | 10 maximum |
 
 ## Troubleshooting
 
-### Messages Not Delivering
-
-1. Check webhook is registered:
-   ```bash
-   curl "https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/webhooks"
-   ```
-
-2. Verify phone number is registered for messaging
-
-3. Check 24-hour window for non-template messages
-
-### Template Rejected
-
-- Review Meta's [message template guidelines](https://developers.facebook.com/docs/whatsapp/message-templates)
-- Avoid promotional content
-- Include clear opt-out instructions for marketing
-
-### Rate Limited
+### Webhook not verifying
 
 ```bash
-# Check current rate limit status
-curl "https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}?fields=messaging_limit_tier"
+# Check server is running
+curl http://localhost:3000/health
+
+# Check ngrok is forwarding
+curl https://your-ngrok-url.ngrok.io/health
+
+# Verify token matches
+echo $WHATSAPP_VERIFY_TOKEN
 ```
+
+### Messages not arriving
+
+1. Check webhook subscribed to **messages** field
+2. Verify phone number is added and verified
+3. Check server logs for signature errors
+
+```bash
+RUST_LOG=debug aofctl serve --config config/whatsapp-bot.yaml
+```
+
+### Invalid signature errors
+
+```bash
+# Verify app secret is correct
+echo $WHATSAPP_APP_SECRET
+
+# Check signature header in logs
+# Should be: X-Hub-Signature-256: sha256=...
+```
+
+### Buttons not showing
+
+- Max 3 buttons allowed
+- Button titles max 20 characters
+- Check response has `actions` array
+
+## Cost Considerations
+
+WhatsApp Business API has per-conversation pricing:
+
+| Conversation Type | Cost (approximate) |
+|-------------------|-------------------|
+| User-initiated | $0.005 - $0.08 |
+| Business-initiated | $0.01 - $0.15 |
+
+First 1,000 user-initiated conversations/month are free.
 
 ## Next Steps
 
-- [Telegram Bot Tutorial](./telegram-ops-bot.md)
-- [GitHub Automation Tutorial](./github-automation.md)
-- [Resource Selection Guide](../concepts/resource-selection.md)
-- [Trigger Reference](../reference/trigger-spec.md)
+- [WhatsApp Reference](../reference/whatsapp-integration.md) - Full API documentation
+- [Telegram Tutorial](./telegram-ops-bot.md) - Free alternative platform
+- [Slack Bot Tutorial](./slack-bot.md) - Full read/write with approvals
+- [Fleets Guide](../concepts/fleets.md) - Multi-agent routing

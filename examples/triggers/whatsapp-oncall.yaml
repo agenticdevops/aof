@@ -1,0 +1,72 @@
+# On-Call WhatsApp Trigger
+#
+# Complete WhatsApp configuration for on-call incident response.
+# Features phone number whitelist and incident response commands.
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: whatsapp-oncall
+  labels:
+    platform: whatsapp
+    purpose: oncall
+
+spec:
+  type: WhatsApp
+  config:
+    # Authentication
+    phone_number_id: ${WHATSAPP_PHONE_NUMBER_ID}
+    access_token: ${WHATSAPP_ACCESS_TOKEN}
+    verify_token: ${WHATSAPP_VERIFY_TOKEN}
+    app_secret: ${WHATSAPP_APP_SECRET}
+
+    # API version
+    api_version: "v18.0"
+
+    # Event types
+    events:
+      - message
+      - interactive  # Button taps and list selections
+
+    # Allowed phone numbers (on-call team only)
+    allowed_numbers:
+      - ${ONCALL_PHONE_1}   # Primary on-call
+      - ${ONCALL_PHONE_2}   # Secondary on-call
+      - ${SRE_LEAD_PHONE}   # SRE team lead
+
+  # Command bindings for on-call workflows
+  commands:
+    /help:
+      agent: devops
+      description: "Show on-call commands"
+
+    /status:
+      agent: k8s-ops
+      description: "Quick cluster status"
+
+    /incident:
+      flow: incident-flow
+      description: "Start incident response"
+
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis"
+
+    /ack:
+      agent: incident
+      description: "Acknowledge active alert"
+
+    /escalate:
+      agent: incident
+      description: "Escalate to next on-call"
+
+    /logs:
+      agent: k8s-ops
+      description: "View pod logs"
+
+    /pods:
+      agent: k8s-ops
+      description: "List pods"
+
+  # Default agent for natural language
+  default_agent: devops

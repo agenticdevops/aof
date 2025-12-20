@@ -38,6 +38,7 @@ const sidebars: SidebarsConfig = {
         'concepts/resource-selection',
         'concepts/github-integration',
         'concepts/jira-integration',
+        'concepts/whatsapp-integration',
       ],
     },
     {
@@ -62,6 +63,7 @@ const sidebars: SidebarsConfig = {
       label: 'Guides',
       items: [
         'guides/quickstart-telegram',
+        'guides/quickstart-whatsapp',
         'guides/approval-workflow',
         'guides/deployment',
         'guides/local-testing',
@@ -87,6 +89,7 @@ const sidebars: SidebarsConfig = {
         'reference/aofctl',
         'reference/github-integration',
         'reference/jira-integration',
+        'reference/whatsapp-integration',
       ],
     },
   ],
@@ -100,6 +103,7 @@ const sidebars: SidebarsConfig = {
         'tutorials/first-agent',
         'tutorials/slack-bot',
         'tutorials/telegram-ops-bot',
+        'tutorials/whatsapp-ops-bot',
         {
           type: 'category',
           label: 'GitHub Automation',
