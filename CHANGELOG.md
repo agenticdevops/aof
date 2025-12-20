@@ -7,36 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-beta] - 2025-12-20
+
 ### Added
-- **Simplified Agent Switching** - Easy agent switching via `/agent` and `/help` commands
-  - `/help` now shows agent selection buttons (tap to switch)
-  - `/agent` command with inline keyboard selection
-  - Built-in agents: Kubernetes, AWS, Docker, DevOps
-  - Greeting message shows current agent and usage info
-  - New quickstart guide: `docs/guides/quickstart-telegram.md`
-- **Platform-Based Safety Layer** - Simple read-only mode for mobile platforms
-  - Telegram/WhatsApp: Read-only (all writes blocked automatically)
-  - Slack: Full access with existing approval workflow
-  - CLI: Full access (no restrictions)
-  - Pattern-based write detection for kubectl, docker, helm, terraform, aws, git
-  - Plain text error messages (no markdown for better mobile display)
+
+#### Composable Architecture (Major Refactor)
+- **Simplified to 4 Core Concepts**: Agent, Fleet, Flow, Trigger
+- **Composable Design**: Mix and match agents, tools, and triggers
+- Removed complex FlowBinding in favor of direct trigger→agent mapping
+
+#### New Trigger Platforms (5 New)
+- **Microsoft Teams** - Bot Framework integration with Adaptive Cards
+  - JWT Bearer token authentication
+  - Tenant and channel restrictions
+  - Action.Submit handling for button clicks
+- **WhatsApp Business** - Cloud API integration
+  - HMAC-SHA256 signature verification
+  - Interactive buttons and lists
+  - Template message support
+- **GitHub** - Webhook integration for PR/Issue automation
+  - PR opened/updated/merged events
+  - Issue created/updated events
+  - Comment triggers with @mention detection
+- **GitLab** - Webhook integration for MR automation
+  - Merge request events
+  - Pipeline status triggers
+  - Note (comment) events
+- **Bitbucket** - Webhook integration for PR automation
+  - Pull request events
+  - Repository push events
+- **Jira** - Issue tracking platform abstraction
+  - Issue created/updated/transitioned events
+  - JQL query support
+  - Comment and attachment handling
+
+#### Comprehensive Documentation
+- **Concepts**: Teams, Discord, WhatsApp, Jira integration overviews
+- **Reference**: Full API reference for each platform
+- **Tutorials**: Step-by-step ops bot tutorials
+- **Quickstart Guides**: 10-15 minute setup guides
+
+#### Platform Capabilities System
+- Thread support detection
+- Interactive element support
+- File attachment support
+- Reaction support
+- Rich text support
+- Approval workflow support
 
 ### Changed
-- **Simplified Output** - Text-only responses for better Telegram display
-  - Removed markdown formatting from agent responses
-  - Cleaner, simpler messages without asterisks or backticks
-  - Agent info shows only relevant details (tools, description)
-- **Simplified Documentation** - MVP-focused docs
-  - Removed complex context/policy YAML examples
-  - Archived enterprise-setup.md to internal/future
-  - Updated DOCUMENTATION_INDEX.md with simple structure
-  - Cleaned up obsolete telegram-specific examples
+- **Simplified Agent Switching** - Easy agent switching via `/agent` and `/help` commands
+- **Platform-Based Safety Layer** - Read-only mode for mobile platforms
+- **Simplified Output** - Text-only responses for better mobile display
+- Daemon configuration simplified with direct platform webhook paths
 
-### Removed
-- Complex context YAML files (telegram-prod.yaml, telegram-dev.yaml, telegram-personal.yaml)
-- Complex telegram-k8s-flow.yaml example
-- mobile-read-only agent directory (platform safety makes this unnecessary)
-- Complex platform_policies configuration (now handled automatically by platform detection)
+### Fixed
+- Telegram inline keyboard callback handling
+- Agent loading when flows directory doesn't exist
+- System prompts correctly loaded from agent YAML
+- Model configuration from agent YAML (was hardcoded)
+
+### Technical Details
+- 9 trigger platforms: Slack, Discord, Telegram, WhatsApp, Teams, GitHub, GitLab, Bitbucket, Jira
+- 7 built-in tools: kubectl, docker, aws, terraform, git, shell, http
+- Platform registry with factory pattern for extensibility
+- Ed25519 (Discord) and HMAC-SHA256 (others) signature verification
+- ~60,000 lines of Rust code
 
 ## [0.1.15] - 2025-12-18
 

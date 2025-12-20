@@ -1,15 +1,15 @@
 [package]
 name = "aof-viz"
-version = "0.1.11"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "ASCII visualization for AOF agent execution and workflows"
-license = "Apache-2.0"
-repository = "https://github.com/agenticdevops/aof"
+license.workspace = true
+repository.workspace = true
 keywords = ["aof", "visualization", "ascii", "terminal"]
 categories = ["command-line-utilities", "visualization"]
 
 [dependencies]
-aof-core = { path = "../aof-core", version = "0.1.11" }
+aof-core = { path = "../aof-core" }
 
 # Terminal colors and styling
 colored = "2.1"
