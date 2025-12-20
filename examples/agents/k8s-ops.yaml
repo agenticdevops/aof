@@ -17,7 +17,7 @@
 #   - Helm chart deployments
 #   - GitOps workflows (ArgoCD, Flux)
 
-apiVersion: aof.dev/v1alpha1
+apiVersion: aof.dev/v1
 kind: Agent
 metadata:
   name: k8s-ops
@@ -28,20 +28,15 @@ metadata:
     tier: core
 
 spec:
-  # Using Gemini 2.5 Flash for fast, cost-effective operations
   model: google:gemini-2.5-flash
   max_tokens: 4096
-  temperature: 0  # Deterministic for operations
+  temperature: 0
 
-  description: "Kubernetes operations expert for cluster management, troubleshooting, and deployments"
-
-  # Available tools
   tools:
     - kubectl
     - helm
 
-  # Agent's system prompt
-  system_prompt: |
+  instructions: |
     You are an expert Kubernetes operations engineer. You help users with:
 
     ## Core Capabilities

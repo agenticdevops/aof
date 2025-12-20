@@ -7,8 +7,8 @@
 #   aofctl apply -f fleets/code-review-team.yaml
 #   aofctl run fleet code-review-team "review deployment manifest"
 
-apiVersion: aof.dev/v1alpha1
-kind: Fleet
+apiVersion: aof.dev/v1
+kind: AgentFleet
 metadata:
   name: code-review-team
   labels:
@@ -16,27 +16,25 @@ metadata:
     purpose: code-review
 
 spec:
-  description: "Security scanner + K8s ops for comprehensive code and manifest reviews"
-  
-  # Reference agents from agents/ directory
   agents:
-    - ref: agents/security.yaml
-    - ref: agents/k8s-ops.yaml
-  
-  # Fleet-level coordination
+    - name: security-reviewer
+      role: specialist
+      config: agents/security.yaml
+
+    - name: k8s-validator
+      role: validator
+      config: agents/k8s-ops.yaml
+
   coordination:
-    strategy: collaborative
-    # Security agent reviews first, then K8s agent validates deployment
-    workflow:
-      - agent: security
-        role: lead
-        tasks:
-          - scan_code
-          - check_dependencies
-          - validate_configs
-      - agent: k8s-ops
-        role: validator
-        tasks:
-          - validate_manifests
-          - check_resource_limits
-          - verify_security_contexts
+    mode: tiered
+    distribution: round-robin
+    tiered:
+      tiers:
+        "1":
+          agents: [security-reviewer]
+          consensus:
+            strategy: unanimous
+        "2":
+          agents: [k8s-validator]
+          consensus:
+            strategy: unanimous

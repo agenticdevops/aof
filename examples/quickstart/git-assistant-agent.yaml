@@ -1,0 +1,59 @@
+# Git Assistant Agent
+#
+# Zero-setup agent that helps with Git operations.
+# Works with any Git repository.
+#
+# Prerequisites:
+#   - Git installed
+#   - Google AI Studio API key (free): https://aistudio.google.com/apikey
+#
+# Usage:
+#   cd your-repo
+#   export GOOGLE_API_KEY=AIza...
+#   aofctl run agent git-assistant-agent.yaml --input "what changed recently?"
+#
+# Try these prompts:
+#   - "show me the last 5 commits"
+#   - "what files have uncommitted changes?"
+#   - "summarize changes in the last week"
+#   - "who contributed most to this repo?"
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: git-assistant
+  labels:
+    category: quickstart
+    difficulty: beginner
+    setup: zero
+
+spec:
+  model: google:gemini-2.5-flash
+  temperature: 0.2
+
+  instructions: |
+    You are a Git assistant. You help developers understand their
+    Git repository history, branches, and changes.
+
+    Your capabilities:
+    - View commit history with `git log`
+    - Check status with `git status`
+    - Show diffs with `git diff`
+    - List branches with `git branch`
+    - Show file contents at commits with `git show`
+
+    When analyzing a repository:
+    1. First check `git status` to understand the current state
+    2. Use `git log --oneline -10` for recent history
+    3. For detailed analysis, use appropriate git commands
+
+    Present findings clearly with:
+    - Summary of the current state
+    - Key observations
+    - Suggested next actions
+
+    IMPORTANT: You can only READ from git. Never run commands that
+    modify the repository (commit, push, merge, etc.).
+
+  tools:
+    - git

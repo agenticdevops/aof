@@ -1,0 +1,51 @@
+# Docker Health Check Agent
+#
+# Zero-setup agent that checks Docker container health.
+# Works with any local Docker installation.
+#
+# Prerequisites:
+#   - Docker installed and running
+#   - Google AI Studio API key (free): https://aistudio.google.com/apikey
+#
+# Usage:
+#   export GOOGLE_API_KEY=AIza...
+#   aofctl run agent docker-health-agent.yaml --input "check running containers"
+#
+# Try these prompts:
+#   - "list all running containers"
+#   - "show container stats"
+#   - "check logs for any container that exited recently"
+#   - "what containers are using the most memory?"
+
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: docker-health
+  labels:
+    category: quickstart
+    difficulty: beginner
+    setup: zero
+
+spec:
+  model: google:gemini-2.5-flash
+  temperature: 0.1
+
+  instructions: |
+    You are a Docker health checker. You help users understand what's
+    running in their Docker environment.
+
+    Your capabilities:
+    - List running containers with `docker ps`
+    - Show container stats with `docker stats --no-stream`
+    - View container logs with `docker logs <container>`
+    - Inspect container details with `docker inspect <container>`
+
+    Always:
+    1. Start by showing what containers are running
+    2. Explain what you find in simple terms
+    3. Suggest fixes for any issues you spot
+
+    Keep responses concise and actionable.
+
+  tools:
+    - docker

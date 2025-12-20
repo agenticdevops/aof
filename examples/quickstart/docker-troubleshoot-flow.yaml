@@ -1,0 +1,117 @@
+# Docker Troubleshooting Flow - Zero Setup
+#
+# A multi-step workflow that diagnoses Docker container issues:
+#   1. Check container status
+#   2. Analyze logs if container is unhealthy
+#   3. Recommend fixes
+#
+# Prerequisites:
+#   - Docker installed and running
+#   - Google AI Studio API key (free): https://aistudio.google.com/apikey
+#
+# Usage:
+#   export GOOGLE_API_KEY=AIza...
+#
+#   # Diagnose all containers
+#   aofctl run flow docker-troubleshoot-flow.yaml --input "diagnose"
+#
+#   # Diagnose specific container
+#   aofctl run flow docker-troubleshoot-flow.yaml --input "diagnose container nginx"
+#
+# This flow demonstrates:
+#   - Multi-step agent orchestration
+#   - Sequential node execution
+#   - Conditional branching (if issues found)
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: docker-troubleshoot-flow
+  labels:
+    category: quickstart
+    difficulty: beginner
+    setup: zero
+
+spec:
+  description: "Diagnose Docker container health issues"
+
+  nodes:
+    # Step 1: Check container status
+    - id: check-status
+      type: Agent
+      config:
+        inline:
+          name: status-checker
+          model: google:gemini-2.5-flash
+          temperature: 0
+          instructions: |
+            Run `docker ps -a` to list all containers.
+
+            Report:
+            1. Number of running containers
+            2. Number of stopped/exited containers
+            3. Any containers in unhealthy state
+
+            If there are stopped containers, list their names and exit codes.
+
+            Output format:
+            RUNNING: [count]
+            STOPPED: [count]
+            UNHEALTHY: [list of container names or "none"]
+          tools:
+            - docker
+
+    # Step 2: Analyze logs for unhealthy containers
+    - id: analyze-logs
+      type: Agent
+      config:
+        inline:
+          name: log-analyzer
+          model: google:gemini-2.5-flash
+          temperature: 0.1
+          instructions: |
+            Based on the container status, analyze logs for any unhealthy
+            or recently exited containers.
+
+            For each problematic container:
+            1. Run `docker logs --tail 50 <container>`
+            2. Look for error patterns
+            3. Identify the root cause
+
+            If no problematic containers, confirm all is healthy.
+          tools:
+            - docker
+
+    # Step 3: Recommend fixes
+    - id: recommend-fixes
+      type: Agent
+      config:
+        inline:
+          name: fix-recommender
+          model: google:gemini-2.5-flash
+          temperature: 0.3
+          instructions: |
+            Based on the log analysis, provide actionable recommendations.
+
+            For each issue found:
+            1. Explain the problem in simple terms
+            2. Provide the exact command to fix it
+            3. Explain any risks or considerations
+
+            Format:
+            ## Issue: [brief description]
+            **Cause:** [explanation]
+            **Fix:** `[exact command]`
+            **Notes:** [any warnings or tips]
+
+            If everything is healthy, confirm and suggest preventive measures.
+          tools:
+            - docker
+
+  connections:
+    - from: start
+      to: check-status
+    - from: check-status
+      to: analyze-logs
+    - from: analyze-logs
+      to: recommend-fixes

@@ -1,0 +1,115 @@
+# Code Review Fleet - Zero Setup
+#
+# A fleet of 2 agents that review code files in parallel:
+#   1. Security Reviewer - checks for vulnerabilities
+#   2. Quality Reviewer - checks for best practices
+#
+# Prerequisites:
+#   - Google AI Studio API key (free): https://aistudio.google.com/apikey
+#
+# Usage:
+#   export GOOGLE_API_KEY=AIza...
+#
+#   # Review a single file
+#   aofctl run fleet code-review-fleet.yaml --input "Review: $(cat main.py)"
+#
+#   # Review with file path context
+#   aofctl run fleet code-review-fleet.yaml --input "Review src/auth.py: $(cat src/auth.py)"
+#
+# Try these:
+#   - Review any Python, JavaScript, Go, or Rust file
+#   - Paste code directly: aofctl run fleet code-review-fleet.yaml --input "Review: function login(user, pass) { ... }"
+#
+# The fleet runs both reviewers in PARALLEL and combines their findings.
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: code-review-fleet
+  labels:
+    category: quickstart
+    difficulty: beginner
+    setup: zero
+
+spec:
+  agents:
+    # Security-focused reviewer
+    - name: security-reviewer
+      role: specialist
+      spec:
+        model: google:gemini-2.5-flash
+        temperature: 0.1
+        instructions: |
+          You are a security code reviewer. Analyze the provided code for:
+
+          CRITICAL (must fix):
+          - SQL injection vulnerabilities
+          - Command injection
+          - Hardcoded secrets/passwords
+          - Authentication bypasses
+
+          HIGH (should fix):
+          - XSS vulnerabilities
+          - Insecure direct object references
+          - Missing input validation
+          - Weak cryptography
+
+          MEDIUM (consider fixing):
+          - Missing rate limiting
+          - Verbose error messages
+          - Missing security headers
+
+          Format your response as:
+          ## Security Review
+
+          ### Critical Issues
+          [List or "None found"]
+
+          ### High Severity
+          [List or "None found"]
+
+          ### Medium Severity
+          [List or "None found"]
+
+          ### Summary
+          [1-2 sentence overall assessment]
+
+    # Quality-focused reviewer
+    - name: quality-reviewer
+      role: specialist
+      spec:
+        model: google:gemini-2.5-flash
+        temperature: 0.2
+        instructions: |
+          You are a code quality reviewer. Analyze the provided code for:
+
+          STRUCTURE:
+          - Function length (should be < 50 lines)
+          - Nesting depth (should be < 4 levels)
+          - Code duplication
+
+          READABILITY:
+          - Variable/function naming
+          - Comments where needed
+          - Consistent style
+
+          ROBUSTNESS:
+          - Error handling
+          - Edge case coverage
+          - Null/undefined checks
+
+          Format your response as:
+          ## Quality Review
+
+          ### Issues Found
+          [List specific issues with line references if possible]
+
+          ### Suggestions
+          [List improvements]
+
+          ### Score: X/10
+          [Brief justification]
+
+  coordination:
+    mode: peer
+    distribution: broadcast
