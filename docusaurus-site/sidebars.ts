@@ -47,7 +47,11 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Architecture',
       items: [
+        'architecture/index',
+        'architecture/composable-design',
+        'architecture/context-injection',
         'architecture/multi-model-consensus',
+        'architecture/multi-tenant-agentflows',
       ],
     },
     {
@@ -70,8 +74,6 @@ const sidebars: SidebarsConfig = {
         'guides/quickstart-discord',
         'guides/approval-workflow',
         'guides/deployment',
-        'guides/local-testing',
-        'guides/testing-mcp',
       ],
     },
     {

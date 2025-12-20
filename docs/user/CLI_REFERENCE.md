@@ -324,7 +324,7 @@ When `flows.enabled: true`, incoming messages are matched against AgentFlow file
 
 Each flow can specify its own execution context (kubeconfig, namespace, environment variables).
 
-See [AgentFlow Spec](../reference/agentflow-spec.md#trigger-filtering-multi-tenant-routing) for routing configuration.
+See [Multi-Tenant Flows](../architecture/multi-tenant-agentflows.md) for routing configuration.
 
 ### validate
 

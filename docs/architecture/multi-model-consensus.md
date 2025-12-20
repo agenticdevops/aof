@@ -1,3 +1,8 @@
+---
+sidebar_label: Multi-Model Consensus
+sidebar_position: 4
+---
+
 # Multi-Model Consensus Architecture
 
 ## Overview

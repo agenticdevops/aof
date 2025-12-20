@@ -1,3 +1,8 @@
+---
+sidebar_label: Multi-Tenant Flows
+sidebar_position: 5
+---
+
 # Multi-Tenant AgentFlow Architecture
 
 This document describes the architecture for running multiple AgentFlows simultaneously to support different projects, bots, organizations, and divisions within a single AOF deployment.

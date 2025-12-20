@@ -48,7 +48,9 @@ const config: Config = {
             'LLM_*.md',
             'RUVECTOR_*.md',
             'DOCUMENTATION_INDEX.md',
-            // Keep architecture/multi-model-consensus.md but exclude technical arch docs
+            'USER_README.md',
+            'README.md',
+            // Keep architecture docs but exclude technical internal docs
             'architecture/README.md',
             'architecture/ADR-*.md',
             'architecture/*-crd.yaml',
@@ -60,9 +62,15 @@ const config: Config = {
             'architecture/resource-type-specifications.md',
             'architecture/rust-implementation.md',
             'architecture/usage-examples.md',
+            // Developer/contributor docs (not user-facing)
+            'guides/local-testing.md',
+            'guides/testing-mcp.md',
+            // Internal directories
             'schemas/**',
             'agentflow/**',
             'internal/**',
+            'user/**',
+            'dev/**',
           ],
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.

@@ -1,3 +1,8 @@
+---
+sidebar_label: Composable Design
+sidebar_position: 2
+---
+
 # Composable Architecture
 
 AOF follows a simple, composable model with four core concepts.

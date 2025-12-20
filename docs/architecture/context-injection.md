@@ -1,3 +1,8 @@
+---
+sidebar_label: Context Injection
+sidebar_position: 3
+---
+
 # Context Injection Architecture
 
 This document provides a deep dive into AOF's context injection system, which enables the same agent to operate safely across different environments, clusters, and security boundaries.
