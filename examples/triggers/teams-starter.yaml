@@ -1,0 +1,63 @@
+# Teams Starter Trigger
+#
+# Minimal Microsoft Teams Bot Framework configuration to get started quickly.
+# Copy this file and customize for your needs.
+#
+# Setup:
+#   1. Create Azure Bot Service at portal.azure.com
+#   2. Note your Microsoft App ID and create a client secret
+#   3. Set environment variables:
+#      export TEAMS_APP_ID="your-app-id"
+#      export TEAMS_APP_PASSWORD="your-app-password"
+#
+# Set webhook in Azure Bot Service:
+#   1. Go to Bot Service → Configuration
+#   2. Messaging endpoint: https://your-server/webhook/teams
+#   3. Enable Teams channel under Channels
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: teams-starter
+  labels:
+    platform: teams
+    environment: development
+
+spec:
+  type: Teams
+  config:
+    # Authentication (required)
+    app_id: ${TEAMS_APP_ID}
+    app_password: ${TEAMS_APP_PASSWORD}
+
+    # Bot name for display
+    bot_name: "OpsBot"
+
+    # Optional: Restrict to specific Azure AD tenants
+    # allowed_tenants:
+    #   - "your-tenant-id"
+
+    # Optional: Restrict to specific channels
+    # allowed_channels:
+    #   - "19:channel-id@thread.tacv2"
+
+  # Slash commands - users type these directly
+  commands:
+    /help:
+      agent: devops
+      description: "Show available commands"
+
+    /status:
+      agent: devops
+      description: "Check system status"
+
+    /pods:
+      agent: k8s-ops
+      description: "List pods in namespace"
+
+    /logs:
+      agent: k8s-ops
+      description: "View pod logs"
+
+  # Default agent for natural language messages
+  default_agent: devops

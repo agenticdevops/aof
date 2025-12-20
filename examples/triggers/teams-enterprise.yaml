@@ -1,0 +1,90 @@
+# Enterprise Teams Trigger
+#
+# Complete Microsoft Teams configuration for enterprise DevOps.
+# Features tenant restrictions, approval workflows, and comprehensive commands.
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: teams-enterprise
+  labels:
+    platform: teams
+    environment: production
+    purpose: devops
+
+spec:
+  type: Teams
+  config:
+    # Authentication
+    app_id: ${TEAMS_APP_ID}
+    app_password: ${TEAMS_APP_PASSWORD}
+
+    # Bot name
+    bot_name: "OpsBot"
+
+    # Restrict to your organization
+    allowed_tenants:
+      - ${TEAMS_TENANT_ID}
+
+    # Approval configuration
+    approval_channel: "19:approvals-channel@thread.tacv2"
+    approval_allowed_users:
+      - "sre-lead@company.com"
+      - "devops-team@company.com"
+      - "platform-admin@company.com"
+
+  # Command bindings for enterprise workflows
+  commands:
+    /help:
+      agent: devops
+      description: "Show available commands"
+
+    /status:
+      agent: k8s-ops
+      description: "Cluster status dashboard"
+
+    /pods:
+      agent: k8s-ops
+      description: "List pods in namespace"
+
+    /logs:
+      agent: k8s-ops
+      description: "View pod logs"
+
+    /deploy:
+      agent: deployer
+      description: "Deploy application"
+      requires_approval: true
+
+    /rollback:
+      agent: deployer
+      description: "Rollback deployment"
+      requires_approval: true
+
+    /scale:
+      agent: k8s-ops
+      description: "Scale deployment"
+      requires_approval: true
+
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis"
+
+    /incident:
+      flow: incident-flow
+      description: "Start incident response"
+
+    /runbook:
+      agent: runbook
+      description: "Execute runbook"
+
+    /metrics:
+      agent: metrics
+      description: "View cluster metrics"
+
+    /alerts:
+      agent: alerting
+      description: "View active alerts"
+
+  # Default agent for natural language
+  default_agent: devops

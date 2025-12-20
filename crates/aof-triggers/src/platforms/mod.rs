@@ -201,6 +201,7 @@ pub mod slack;
 pub mod discord;
 pub mod telegram;
 pub mod whatsapp;
+pub mod teams;
 pub mod github;
 pub mod gitlab;
 pub mod bitbucket;
@@ -211,6 +212,7 @@ pub use slack::{SlackConfig, SlackPlatform};
 pub use discord::{DiscordConfig, DiscordPlatform};
 pub use telegram::{TelegramConfig, TelegramPlatform};
 pub use whatsapp::{WhatsAppConfig, WhatsAppPlatform};
+pub use teams::{TeamsConfig, TeamsPlatform};
 pub use github::{GitHubConfig, GitHubPlatform};
 pub use gitlab::{GitLabConfig, GitLabPlatform};
 pub use bitbucket::{BitbucketConfig, BitbucketPlatform};
@@ -252,6 +254,7 @@ pub enum TypedPlatformConfig {
     Discord(DiscordConfig),
     Telegram(TelegramConfig),
     WhatsApp(WhatsAppConfig),
+    Teams(TeamsConfig),
     GitHub(GitHubConfig),
     GitLab(GitLabConfig),
     Bitbucket(BitbucketConfig),
@@ -367,6 +370,13 @@ impl PlatformRegistry {
             let cfg: JiraConfig = serde_json::from_value(config)
                 .map_err(|e| PlatformError::ParseError(format!("Invalid Jira config: {}", e)))?;
             Ok(Box::new(JiraPlatform::new(cfg)?))
+        }));
+
+        // Teams
+        self.register("teams", Box::new(|config| {
+            let cfg: TeamsConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid Teams config: {}", e)))?;
+            Ok(Box::new(TeamsPlatform::new(cfg)?))
         }));
     }
 
@@ -514,6 +524,14 @@ pub fn get_platform_capabilities(platform: &str) -> PlatformCapabilities {
             reactions: false,
             rich_text: true, // Jira text format
             approvals: true, // issue workflows
+        },
+        "teams" => PlatformCapabilities {
+            threading: true, // reply chains
+            interactive: true, // Adaptive Cards
+            files: true, // attachments
+            reactions: true, // message reactions
+            rich_text: true, // markdown
+            approvals: true, // Adaptive Card actions
         },
         _ => PlatformCapabilities::default(),
     }
