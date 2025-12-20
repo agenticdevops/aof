@@ -1,0 +1,62 @@
+# Discord Starter Trigger
+#
+# Minimal Discord bot configuration to get started quickly.
+# Copy this file and customize for your needs.
+#
+# Setup:
+#   1. Create Discord application at discord.com/developers
+#   2. Create bot and copy token
+#   3. Set environment variables:
+#      export DISCORD_BOT_TOKEN="your-bot-token"
+#      export DISCORD_APPLICATION_ID="your-app-id"
+#      export DISCORD_PUBLIC_KEY="your-public-key"
+#
+# Set webhook in Developer Portal:
+#   1. General Information → Interactions Endpoint URL
+#   2. Enter: https://your-server/webhook/discord
+#   3. Discord will verify the endpoint
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: discord-starter
+  labels:
+    platform: discord
+    environment: development
+
+spec:
+  type: Discord
+  config:
+    # Bot credentials (required)
+    bot_token: ${DISCORD_BOT_TOKEN}
+    application_id: ${DISCORD_APPLICATION_ID}
+    public_key: ${DISCORD_PUBLIC_KEY}
+
+    # Optional: Restrict to specific servers
+    # guild_ids:
+    #   - "123456789012345678"
+
+    # Optional: Restrict to specific roles
+    # allowed_roles:
+    #   - "987654321098765432"
+
+  # Slash command bindings
+  commands:
+    /help:
+      agent: devops
+      description: "Show available commands"
+
+    /status:
+      agent: devops
+      description: "Check system status"
+
+    /agent:
+      agent: devops
+      description: "Manage agents"
+
+    /task:
+      agent: devops
+      description: "Manage tasks"
+
+  # Default agent for unrecognized commands
+  default_agent: devops

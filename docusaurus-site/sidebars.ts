@@ -40,6 +40,7 @@ const sidebars: SidebarsConfig = {
         'concepts/jira-integration',
         'concepts/whatsapp-integration',
         'concepts/teams-integration',
+        'concepts/discord-integration',
       ],
     },
     {
@@ -66,6 +67,7 @@ const sidebars: SidebarsConfig = {
         'guides/quickstart-telegram',
         'guides/quickstart-whatsapp',
         'guides/quickstart-teams',
+        'guides/quickstart-discord',
         'guides/approval-workflow',
         'guides/deployment',
         'guides/local-testing',
@@ -93,6 +95,7 @@ const sidebars: SidebarsConfig = {
         'reference/jira-integration',
         'reference/whatsapp-integration',
         'reference/teams-integration',
+        'reference/discord-integration',
       ],
     },
   ],
@@ -108,6 +111,7 @@ const sidebars: SidebarsConfig = {
         'tutorials/telegram-ops-bot',
         'tutorials/whatsapp-ops-bot',
         'tutorials/teams-ops-bot',
+        'tutorials/discord-ops-bot',
         {
           type: 'category',
           label: 'GitHub Automation',

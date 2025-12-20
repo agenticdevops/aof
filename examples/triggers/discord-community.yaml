@@ -1,0 +1,88 @@
+# Discord Community Trigger
+#
+# Complete Discord configuration for community/team DevOps.
+# Features role restrictions, comprehensive commands, and multi-agent workflows.
+
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: discord-community
+  labels:
+    platform: discord
+    environment: production
+    purpose: devops
+
+spec:
+  type: Discord
+  config:
+    # Bot credentials
+    bot_token: ${DISCORD_BOT_TOKEN}
+    application_id: ${DISCORD_APPLICATION_ID}
+    public_key: ${DISCORD_PUBLIC_KEY}
+
+    # Restrict to your server
+    guild_ids:
+      - ${DISCORD_GUILD_ID}
+
+    # Role-based access control
+    allowed_roles:
+      - ${DISCORD_ADMIN_ROLE}
+      - ${DISCORD_DEVOPS_ROLE}
+      - ${DISCORD_SRE_ROLE}
+
+  # Command bindings
+  commands:
+    /help:
+      agent: devops
+      description: "Show available commands"
+
+    /status:
+      agent: k8s-ops
+      description: "Cluster status dashboard"
+
+    /pods:
+      agent: k8s-ops
+      description: "List pods in namespace"
+
+    /logs:
+      agent: k8s-ops
+      description: "View pod logs"
+
+    /deploy:
+      agent: deployer
+      description: "Deploy application"
+
+    /rollback:
+      agent: deployer
+      description: "Rollback deployment"
+
+    /scale:
+      agent: k8s-ops
+      description: "Scale deployment"
+
+    /diagnose:
+      fleet: rca-fleet
+      description: "Root cause analysis"
+
+    /incident:
+      flow: incident-flow
+      description: "Start incident response"
+
+    /metrics:
+      agent: metrics
+      description: "View cluster metrics"
+
+    /alerts:
+      agent: alerting
+      description: "View active alerts"
+
+    /fleet:
+      agent: devops
+      description: "Manage agent fleets"
+
+    /flow:
+      agent: devops
+      description: "Execute workflows"
+
+  # Default agent for natural language
+  default_agent: devops
