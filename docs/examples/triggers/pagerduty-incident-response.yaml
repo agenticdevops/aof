@@ -1,0 +1,102 @@
+apiVersion: aof.sh/v1
+kind: Trigger
+metadata:
+  name: pagerduty-production-incidents
+  namespace: production
+  labels:
+    environment: production
+    team: sre
+    platform: pagerduty
+spec:
+  # Platform configuration
+  platform:
+    type: pagerduty
+    config:
+      # Webhook verification secret (from PagerDuty webhook settings)
+      webhook_secret: ${PAGERDUTY_WEBHOOK_SECRET}
+
+      # Optional: API token for response actions (adding notes to incidents)
+      api_token: ${PAGERDUTY_API_TOKEN}
+
+      # Bot name for display
+      bot_name: "aof-incident-bot"
+
+      # Filter by event types
+      event_types:
+        - incident.triggered
+        - incident.acknowledged
+        - incident.escalated
+        - incident.resolved
+        - incident.reassigned
+
+      # Filter by specific services (optional)
+      allowed_services:
+        - PXYZ123  # Production API
+        - PXYZ456  # Payment Service
+        - PXYZ789  # Database Service
+
+      # Filter by teams (optional)
+      allowed_teams:
+        - P456DEF  # Infrastructure Team
+        - P789GHI  # Platform Team
+
+      # Only process P1 and P2 incidents (optional)
+      min_priority: "P2"
+
+      # Only process high urgency incidents (optional)
+      min_urgency: "high"
+
+  # Agent to trigger
+  agent: incident-response-agent
+
+  # Trigger enabled
+  enabled: true
+
+  # Optional: Agent parameters
+  parameters:
+    auto_acknowledge: false
+    create_postmortem: true
+    notify_channels:
+      - "#incidents"
+      - "#ops-alerts"
+---
+apiVersion: aof.sh/v1
+kind: Agent
+metadata:
+  name: incident-response-agent
+  namespace: production
+spec:
+  llm:
+    provider: google
+    model: gemini-2.5-flash
+    temperature: 0.2
+
+  system_prompt: |
+    You are an SRE incident response agent integrated with PagerDuty.
+
+    When an incident is triggered, you should:
+    1. Analyze the incident metadata
+    2. Check recent logs and metrics
+    3. Determine if this is a known issue
+    4. Suggest remediation steps
+    5. Update the incident with findings
+
+    Available context:
+    - Incident ID: {{incident_id}}
+    - Service: {{service_name}}
+    - Status: {{status}}
+    - Urgency: {{urgency}}
+    - Priority: {{priority}}
+    - Title: {{title}}
+
+  tools:
+    - name: kubectl
+      enabled: true
+    - name: prometheus
+      enabled: true
+    - name: elasticsearch
+      enabled: true
+
+  memory:
+    enabled: true
+    persistence: redis

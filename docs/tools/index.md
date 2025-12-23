@@ -9,7 +9,8 @@ AOF provides a comprehensive tools system that enables agents to interact with i
 | **CLI Tools** | Unified command-line wrappers | `kubectl`, `git`, `docker`, `terraform`, `aws`, `helm` |
 | **File Tools** | File system operations | `read_file`, `write_file`, `list_directory`, `search_files` |
 | **Execution Tools** | Shell and HTTP execution | `shell`, `http_request` |
-| **Observability Tools** | Metrics and logs queries | `prometheus_query`, `loki_query`, `elasticsearch_query` |
+| **Observability Tools** | Metrics and logs queries | `prometheus_query`, `loki_query`, `elasticsearch_query`, `grafana_*`, `datadog_*` |
+| **CI/CD Tools** | Pipeline and deployment management | `github_*`, `gitlab_*`, `argocd_*`, `flux_*` |
 | **MCP Tools** | External MCP server tools | Any tool from configured MCP servers |
 
 ## Quick Start
@@ -100,6 +101,9 @@ tools:
 ## Next Steps
 
 - [Built-in Tools Reference](./builtin-tools.md) - Complete list of built-in tools
+- [CI/CD Tools](./cicd.md) - GitHub Actions, GitLab CI, ArgoCD, and Flux integration
+- [Grafana Tools](./grafana.md) - Native Grafana integration for metrics and dashboards
+- [Datadog Tools](./datadog.md) - Native Datadog integration for observability
 - [MCP Integration](./mcp-integration.md) - Using MCP servers with agents
 - [Custom Tools](./custom-tools.md) - Creating custom tool implementations
 

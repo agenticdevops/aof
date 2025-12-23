@@ -206,6 +206,8 @@ pub mod github;
 pub mod gitlab;
 pub mod bitbucket;
 pub mod jira;
+pub mod pagerduty;
+pub mod opsgenie;
 
 // Re-export platform types
 pub use slack::{SlackConfig, SlackPlatform};
@@ -217,6 +219,8 @@ pub use github::{GitHubConfig, GitHubPlatform};
 pub use gitlab::{GitLabConfig, GitLabPlatform};
 pub use bitbucket::{BitbucketConfig, BitbucketPlatform};
 pub use jira::{JiraConfig, JiraPlatform};
+pub use opsgenie::{OpsgenieConfig, OpsgeniePlatform};
+pub use pagerduty::{PagerDutyConfig, PagerDutyPlatform};
 
 // Type aliases for easier use
 pub type Platform = Box<dyn TriggerPlatform>;
@@ -259,6 +263,8 @@ pub enum TypedPlatformConfig {
     GitLab(GitLabConfig),
     Bitbucket(BitbucketConfig),
     Jira(JiraConfig),
+    Opsgenie(OpsgenieConfig),
+    PagerDuty(PagerDutyConfig),
 }
 
 // ============================================================================
@@ -372,11 +378,25 @@ impl PlatformRegistry {
             Ok(Box::new(JiraPlatform::new(cfg)?))
         }));
 
+
+        // Opsgenie
+        self.register("opsgenie", Box::new(|config| {
+            let cfg: OpsgenieConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid Opsgenie config: {}", e)))?;
+            Ok(Box::new(OpsgeniePlatform::new(cfg)?))
+        }));
         // Teams
         self.register("teams", Box::new(|config| {
             let cfg: TeamsConfig = serde_json::from_value(config)
                 .map_err(|e| PlatformError::ParseError(format!("Invalid Teams config: {}", e)))?;
             Ok(Box::new(TeamsPlatform::new(cfg)?))
+        }));
+
+        // PagerDuty
+        self.register("pagerduty", Box::new(|config| {
+            let cfg: PagerDutyConfig = serde_json::from_value(config)
+                .map_err(|e| PlatformError::ParseError(format!("Invalid PagerDuty config: {}", e)))?;
+            Ok(Box::new(PagerDutyPlatform::new(cfg)?))
         }));
     }
 
@@ -525,6 +545,14 @@ pub fn get_platform_capabilities(platform: &str) -> PlatformCapabilities {
             rich_text: true, // Jira text format
             approvals: true, // issue workflows
         },
+        "opsgenie" => PlatformCapabilities {
+            threading: true, // all actions on same alert are threaded
+            interactive: true, // custom actions
+            files: false, // no file attachments in notes
+            reactions: false,
+            rich_text: true, // markdown in notes
+            approvals: true, // alert acknowledgment and close
+        },
         "teams" => PlatformCapabilities {
             threading: true, // reply chains
             interactive: true, // Adaptive Cards
@@ -532,6 +560,14 @@ pub fn get_platform_capabilities(platform: &str) -> PlatformCapabilities {
             reactions: true, // message reactions
             rich_text: true, // markdown
             approvals: true, // Adaptive Card actions
+        },
+        "pagerduty" => PlatformCapabilities {
+            threading: true, // incident notes form threads
+            interactive: false, // no interactive components in webhooks
+            files: false, // no file attachments in webhooks
+            reactions: false, // no reaction support
+            rich_text: true, // markdown in notes
+            approvals: false, // no approval workflow
         },
         _ => PlatformCapabilities::default(),
     }
