@@ -49,6 +49,11 @@ AOF uses a simple, composable model:
 ### Platform Integrations
 - **[GitHub Integration](reference/github-integration.md)** - GitHub webhooks, events, API actions
 
+### Trigger Platforms
+- **[Trigger Platforms Overview](user/triggers/index.md)** - All supported trigger platforms
+- **[PagerDuty](user/triggers/pagerduty.md)** - PagerDuty incident event integration
+- **[Opsgenie](user/triggers/opsgenie.md)** - Opsgenie alert event integration
+
 ## Tutorials
 
 1. **[Build Your First Agent](tutorials/first-agent.md)** - 15 minutes
@@ -58,19 +63,34 @@ AOF uses a simple, composable model:
 
 ## Agent Library
 
-Single-purpose building blocks in `examples/agents/library/`:
+Production-ready agents organized by domain in `library/`:
 
-| Agent | Tools | Purpose |
-|-------|-------|---------|
-| `k8s-agent` | kubectl, helm | Kubernetes operations |
-| `docker-agent` | docker | Container management |
-| `git-agent` | git | Version control |
-| `aws-agent` | aws cli | AWS cloud operations |
-| `terraform-agent` | terraform | Infrastructure as Code |
-| `prometheus-agent` | prometheus_query | Metrics analysis |
-| `loki-agent` | loki_query | Log analysis |
-| `postgres-agent` | psql | PostgreSQL operations |
-| `redis-agent` | redis-cli | Redis operations |
+### Domains
+
+| Domain | Agents | Documentation |
+|--------|--------|---------------|
+| **[Kubernetes](agent-library/kubernetes.md)** | pod-doctor, hpa-tuner, netpol-debugger, yaml-linter, resource-optimizer | Pod debugging, autoscaling, networking |
+| **[Observability](agent-library/observability.md)** | alert-manager, slo-guardian, dashboard-generator, log-analyzer, trace-investigator | Alerting, SLOs, dashboards, logs |
+| **[Incident](agent-library/incident.md)** | incident-commander, rca-agent, postmortem-writer, runbook-executor, escalation-manager | RCA, postmortems, runbooks |
+| **[CI/CD](agent-library/cicd.md)** | pipeline-doctor, test-analyzer, build-optimizer, release-manager, deploy-guardian | Pipelines, testing, releases |
+| **[Security](agent-library/security.md)** | security-scanner, compliance-auditor, secret-rotator, vulnerability-patcher, threat-hunter | Scanning, compliance, secrets |
+| **[Cloud](agent-library/cloud.md)** | cost-optimizer, iam-auditor, resource-rightsizer, cloud-migrator, drift-detector | Cost, IAM, right-sizing |
+
+### Quick Start
+
+```bash
+# List available agents
+aofctl get agents --library
+
+# Run an agent from the library
+aofctl run agent library://kubernetes/pod-doctor
+
+# Run with custom prompt
+aofctl run agent library://incident/rca-agent \
+  --prompt "Investigate the API latency spike at 14:30"
+```
+
+See **[Agent Library Documentation](agent-library/index.md)** for full details.
 
 ## Built-in Fleets
 
@@ -131,4 +151,4 @@ what's the memory usage?
 
 ---
 
-Last updated: 2025-12-20
+Last updated: 2025-12-23
