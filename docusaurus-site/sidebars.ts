@@ -129,6 +129,22 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'MCP Server Catalog',
+      items: [
+        'mcp-catalog/index',
+        'mcp-catalog/filesystem',
+        'mcp-catalog/github',
+        'mcp-catalog/postgres',
+        'mcp-catalog/sqlite',
+        'mcp-catalog/slack',
+        'mcp-catalog/fetch',
+        'mcp-catalog/puppeteer',
+        'mcp-catalog/brave-search',
+        'mcp-catalog/gitlab',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Guides',
       items: [
         'guides/quickstart-telegram',
