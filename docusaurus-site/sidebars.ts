@@ -60,8 +60,66 @@ const sidebars: SidebarsConfig = {
       items: [
         'tools/index',
         'tools/builtin-tools',
+        {
+          type: 'category',
+          label: 'CI/CD',
+          items: [
+            'tools/cicd',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Observability',
+          items: [
+            'tools/grafana',
+            'tools/datadog',
+          ],
+        },
         'tools/mcp-integration',
         'tools/custom-tools',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Security & Compliance',
+      items: [
+        'security/overview',
+        'security/vault',
+        'security/trivy',
+        'security/snyk',
+        'security/sonarqube',
+        'security/opa',
+        'security/tutorials',
+        'security/examples',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Cloud Providers',
+      items: [
+        'cloud/overview',
+        'cloud/aws',
+        'cloud/azure',
+        'cloud/gcp',
+        'cloud/tutorials',
+        'cloud/examples',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Triggers',
+      items: [
+        'triggers/index',
+        'triggers/pagerduty',
+        'triggers/opsgenie',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Agent Library',
+      items: [
+        'user-guide/agents/index',
+        'user-guide/agents/incident-management',
       ],
     },
     {
@@ -130,6 +188,7 @@ const sidebars: SidebarsConfig = {
           ],
         },
         'tutorials/incident-response',
+        'tutorials/incident-response-automation',
         'tutorials/rca-fleet',
         'tutorials/deep-analysis-fleet',
         'tutorials/multi-model-rca-quickstart',

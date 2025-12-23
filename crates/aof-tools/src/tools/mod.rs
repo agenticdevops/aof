@@ -42,6 +42,51 @@ pub mod http;
 #[cfg(feature = "observability")]
 pub mod observability;
 
+#[cfg(feature = "observability")]
+pub mod grafana;
+
+#[cfg(feature = "observability")]
+pub mod datadog;
+
+// CI/CD tools
+#[cfg(feature = "cicd")]
+pub mod github_actions;
+
+#[cfg(feature = "cicd")]
+pub mod gitlab_ci;
+
+#[cfg(feature = "cicd")]
+pub mod argocd;
+
+#[cfg(feature = "cicd")]
+pub mod flux;
+
+// Security tools
+#[cfg(feature = "security")]
+pub mod vault;
+
+#[cfg(feature = "security")]
+pub mod trivy;
+
+#[cfg(feature = "security")]
+pub mod snyk;
+
+#[cfg(feature = "security")]
+pub mod sonarqube;
+
+#[cfg(feature = "security")]
+pub mod opa;
+
+// Cloud provider tools
+#[cfg(feature = "cloud")]
+pub mod aws;
+
+#[cfg(feature = "cloud")]
+pub mod azure;
+
+#[cfg(feature = "cloud")]
+pub mod gcp;
+
 /// Common utilities for tool implementations
 pub mod common {
     use aof_core::ToolConfig;
