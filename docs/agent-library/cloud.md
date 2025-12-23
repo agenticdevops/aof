@@ -1,3 +1,8 @@
+---
+sidebar_position: 7
+sidebar_label: Cloud
+---
+
 # Cloud Agents
 
 Production-ready agents for cloud operations, cost optimization, and infrastructure management.

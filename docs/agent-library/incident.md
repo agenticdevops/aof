@@ -1,3 +1,8 @@
+---
+sidebar_position: 4
+sidebar_label: Incident Response
+---
+
 # Incident Agents
 
 Production-ready agents for incident response, investigation, and documentation.

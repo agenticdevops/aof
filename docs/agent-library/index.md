@@ -1,3 +1,8 @@
+---
+sidebar_position: 1
+sidebar_label: Overview
+---
+
 # Agent Library
 
 AOF includes a production-ready library of 30+ pre-built agents organized by operational domain. These agents are designed by DevOps and SRE experts to solve common operational challenges.

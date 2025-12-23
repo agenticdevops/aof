@@ -1,3 +1,8 @@
+---
+sidebar_position: 5
+sidebar_label: CI/CD
+---
+
 # CI/CD Agents
 
 Production-ready agents for pipeline management, testing, and release operations.

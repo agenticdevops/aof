@@ -1,3 +1,8 @@
+---
+sidebar_position: 3
+sidebar_label: Observability
+---
+
 # Observability Agents
 
 Production-ready agents for monitoring, alerting, and observability operations.

@@ -118,8 +118,13 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Agent Library',
       items: [
-        'user-guide/agents/index',
-        'user-guide/agents/incident-management',
+        'agent-library/index',
+        'agent-library/kubernetes',
+        'agent-library/observability',
+        'agent-library/incident',
+        'agent-library/cicd',
+        'agent-library/security',
+        'agent-library/cloud',
       ],
     },
     {

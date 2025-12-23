@@ -1,3 +1,8 @@
+---
+sidebar_position: 6
+sidebar_label: Security
+---
+
 # Security Agents
 
 Production-ready agents for security scanning, compliance, and threat detection.

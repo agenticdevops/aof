@@ -1,3 +1,8 @@
+---
+sidebar_position: 2
+sidebar_label: Kubernetes
+---
+
 # Kubernetes Agents
 
 Production-ready agents for Kubernetes operations and debugging.
