@@ -971,7 +971,7 @@ fn try_render_markdown_table(content: &str) -> Option<String> {
     }
 }
 
-/// Render bullet list with colors
+/// Render bullet list with colors and markdown formatting
 fn render_bullet_list(content: &str) -> String {
     use colored::Colorize;
 
@@ -979,13 +979,53 @@ fn render_bullet_list(content: &str) -> String {
         .map(|line| {
             let trimmed = line.trim();
             if trimmed.starts_with('*') || trimmed.starts_with('-') || trimmed.starts_with("•") {
-                format!("  {} {}", "•".bright_cyan(), trimmed[1..].trim())
+                let text = trimmed[1..].trim();
+                let formatted = format_inline_markdown_cli(text);
+                format!("  {} {}", "•".bright_cyan(), formatted)
             } else {
-                line.to_string()
+                let formatted = format_inline_markdown_cli(line);
+                formatted
             }
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Format inline markdown for CLI (bold, code, etc.)
+fn format_inline_markdown_cli(text: &str) -> String {
+    use colored::Colorize;
+
+    let mut result = text.to_string();
+
+    // Bold text **text** -> colored bold
+    while let Some(start) = result.find("**") {
+        if let Some(end) = result[start + 2..].find("**") {
+            let before = &result[..start];
+            let bold_text = &result[start + 2..start + 2 + end];
+            let after = &result[start + 2 + end + 2..];
+            // Format bold text
+            let formatted_bold = bold_text.to_string().bright_white().bold();
+            result = format!("{}{}{}", before, formatted_bold, after);
+        } else {
+            break;
+        }
+    }
+
+    // Inline code `text` -> cyan
+    while let Some(start) = result.find('`') {
+        if let Some(end) = result[start + 1..].find('`') {
+            let before = &result[..start];
+            let code_text = &result[start + 1..start + 1 + end];
+            let after = &result[start + 1 + end + 1..];
+            // Format code text
+            let formatted_code = code_text.to_string().cyan();
+            result = format!("{}{}{}", before, formatted_code, after);
+        } else {
+            break;
+        }
+    }
+
+    result
 }
 
 /// Try to render docker stats output
