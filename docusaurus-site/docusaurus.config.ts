@@ -43,6 +43,9 @@ const config: Config = {
           // Use main docs/ folder as single source of truth
           path: '../docs',
           sidebarPath: './sidebars.ts',
+          // Use standard markdown for all .md files (not MDX)
+          remarkPlugins: [],
+          rehypePlugins: [],
           // Exclude internal/technical docs not meant for public site
           exclude: [
             'LLM_*.md',

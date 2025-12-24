@@ -39,6 +39,11 @@ impl AwsTools {
             Box::new(AwsIamTool::new()),
             Box::new(AwsLambdaTool::new()),
             Box::new(AwsEcsTool::new()),
+            Box::new(AwsCloudFormationTool::new()),
+            Box::new(AwsRdsTool::new()),
+            Box::new(AwsSqsTool::new()),
+            Box::new(AwsSnsTool::new()),
+            Box::new(AwsCostTool::new()),
         ]
     }
 
@@ -864,6 +869,747 @@ impl Tool for AwsEcsTool {
                 } else {
                     Ok(ToolResult::error(format!(
                         "aws ecs {} failed: {}",
+                        command, output.stderr
+                    )))
+                }
+            }
+            Err(e) => Ok(ToolResult::error(e)),
+        }
+    }
+
+    fn config(&self) -> &ToolConfig {
+        &self.config
+    }
+}
+
+// ============================================================================
+// AWS CloudFormation Tool
+// ============================================================================
+
+/// CloudFormation operations
+pub struct AwsCloudFormationTool {
+    config: ToolConfig,
+}
+
+impl AwsCloudFormationTool {
+    pub fn new() -> Self {
+        let parameters = create_schema(
+            serde_json::json!({
+                "command": {
+                    "type": "string",
+                    "description": "CloudFormation subcommand",
+                    "enum": [
+                        "describe-stacks", "create-stack", "delete-stack",
+                        "list-stack-resources", "describe-stack-events"
+                    ]
+                },
+                "stack_name": {
+                    "type": "string",
+                    "description": "CloudFormation stack name"
+                },
+                "template_body": {
+                    "type": "string",
+                    "description": "CloudFormation template as JSON/YAML string"
+                },
+                "template_url": {
+                    "type": "string",
+                    "description": "S3 URL to CloudFormation template"
+                },
+                "parameters": {
+                    "type": "array",
+                    "description": "Stack parameters (ParameterKey=key,ParameterValue=value)",
+                    "items": { "type": "string" }
+                },
+                "capabilities": {
+                    "type": "array",
+                    "description": "IAM capabilities (CAPABILITY_IAM, CAPABILITY_NAMED_IAM)",
+                    "items": { "type": "string" }
+                },
+                "region": {
+                    "type": "string",
+                    "description": "AWS region"
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "AWS profile name"
+                }
+            }),
+            vec!["command"],
+        );
+
+        Self {
+            config: tool_config_with_timeout(
+                "aws_cloudformation",
+                "AWS CloudFormation: manage infrastructure stacks and resources.",
+                parameters,
+                300,
+            ),
+        }
+    }
+}
+
+impl Default for AwsCloudFormationTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Tool for AwsCloudFormationTool {
+    async fn execute(&self, input: ToolInput) -> AofResult<ToolResult> {
+        let command: String = input.get_arg("command")?;
+        let stack_name: Option<String> = input.get_arg("stack_name").ok();
+        let template_body: Option<String> = input.get_arg("template_body").ok();
+        let template_url: Option<String> = input.get_arg("template_url").ok();
+        let parameters: Vec<String> = input.get_arg("parameters").unwrap_or_default();
+        let capabilities: Vec<String> = input.get_arg("capabilities").unwrap_or_default();
+        let region: Option<String> = input.get_arg("region").ok();
+        let profile: Option<String> = input.get_arg("profile").ok();
+
+        let mut args = vec!["cloudformation".to_string(), command.clone()];
+
+        if let Some(ref sn) = stack_name {
+            args.push("--stack-name".to_string());
+            args.push(sn.clone());
+        }
+
+        if let Some(ref tb) = template_body {
+            args.push("--template-body".to_string());
+            args.push(tb.clone());
+        }
+
+        if let Some(ref tu) = template_url {
+            args.push("--template-url".to_string());
+            args.push(tu.clone());
+        }
+
+        if !parameters.is_empty() {
+            args.push("--parameters".to_string());
+            args.extend(parameters);
+        }
+
+        if !capabilities.is_empty() {
+            args.push("--capabilities".to_string());
+            args.extend(capabilities);
+        }
+
+        if let Some(ref r) = region {
+            args.push("--region".to_string());
+            args.push(r.clone());
+        }
+
+        if let Some(ref p) = profile {
+            args.push("--profile".to_string());
+            args.push(p.clone());
+        }
+
+        args.push("--output".to_string());
+        args.push("json".to_string());
+
+        debug!(args = ?args, "Executing aws cloudformation");
+
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let result = execute_command("aws", &args_str, None, 300).await;
+
+        match result {
+            Ok(output) => {
+                if output.success {
+                    let data = serde_json::from_str(&output.stdout).unwrap_or_else(|_| {
+                        serde_json::json!({ "raw": output.stdout })
+                    });
+
+                    Ok(ToolResult::success(serde_json::json!({
+                        "data": data,
+                        "command": command
+                    })))
+                } else {
+                    Ok(ToolResult::error(format!(
+                        "aws cloudformation {} failed: {}",
+                        command, output.stderr
+                    )))
+                }
+            }
+            Err(e) => Ok(ToolResult::error(e)),
+        }
+    }
+
+    fn config(&self) -> &ToolConfig {
+        &self.config
+    }
+}
+
+// ============================================================================
+// AWS RDS Tool
+// ============================================================================
+
+/// RDS operations
+pub struct AwsRdsTool {
+    config: ToolConfig,
+}
+
+impl AwsRdsTool {
+    pub fn new() -> Self {
+        let parameters = create_schema(
+            serde_json::json!({
+                "command": {
+                    "type": "string",
+                    "description": "RDS subcommand",
+                    "enum": [
+                        "describe-db-instances", "describe-db-clusters",
+                        "create-db-snapshot", "describe-db-snapshots",
+                        "stop-db-instance", "start-db-instance"
+                    ]
+                },
+                "db_instance_identifier": {
+                    "type": "string",
+                    "description": "DB instance identifier"
+                },
+                "db_cluster_identifier": {
+                    "type": "string",
+                    "description": "DB cluster identifier"
+                },
+                "snapshot_identifier": {
+                    "type": "string",
+                    "description": "Snapshot identifier"
+                },
+                "region": {
+                    "type": "string",
+                    "description": "AWS region"
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "AWS profile name"
+                }
+            }),
+            vec!["command"],
+        );
+
+        Self {
+            config: tool_config_with_timeout(
+                "aws_rds",
+                "AWS RDS: manage database instances, clusters, and snapshots.",
+                parameters,
+                120,
+            ),
+        }
+    }
+}
+
+impl Default for AwsRdsTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Tool for AwsRdsTool {
+    async fn execute(&self, input: ToolInput) -> AofResult<ToolResult> {
+        let command: String = input.get_arg("command")?;
+        let db_instance_identifier: Option<String> = input.get_arg("db_instance_identifier").ok();
+        let db_cluster_identifier: Option<String> = input.get_arg("db_cluster_identifier").ok();
+        let snapshot_identifier: Option<String> = input.get_arg("snapshot_identifier").ok();
+        let region: Option<String> = input.get_arg("region").ok();
+        let profile: Option<String> = input.get_arg("profile").ok();
+
+        let mut args = vec!["rds".to_string(), command.clone()];
+
+        if let Some(ref dbi) = db_instance_identifier {
+            args.push("--db-instance-identifier".to_string());
+            args.push(dbi.clone());
+        }
+
+        if let Some(ref dbc) = db_cluster_identifier {
+            args.push("--db-cluster-identifier".to_string());
+            args.push(dbc.clone());
+        }
+
+        if let Some(ref si) = snapshot_identifier {
+            if command == "create-db-snapshot" {
+                args.push("--db-snapshot-identifier".to_string());
+            } else {
+                args.push("--db-snapshot-identifier".to_string());
+            }
+            args.push(si.clone());
+        }
+
+        if let Some(ref r) = region {
+            args.push("--region".to_string());
+            args.push(r.clone());
+        }
+
+        if let Some(ref p) = profile {
+            args.push("--profile".to_string());
+            args.push(p.clone());
+        }
+
+        args.push("--output".to_string());
+        args.push("json".to_string());
+
+        debug!(args = ?args, "Executing aws rds");
+
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let result = execute_command("aws", &args_str, None, 120).await;
+
+        match result {
+            Ok(output) => {
+                if output.success {
+                    let data = serde_json::from_str(&output.stdout).unwrap_or_else(|_| {
+                        serde_json::json!({ "raw": output.stdout })
+                    });
+
+                    Ok(ToolResult::success(serde_json::json!({
+                        "data": data,
+                        "command": command
+                    })))
+                } else {
+                    Ok(ToolResult::error(format!(
+                        "aws rds {} failed: {}",
+                        command, output.stderr
+                    )))
+                }
+            }
+            Err(e) => Ok(ToolResult::error(e)),
+        }
+    }
+
+    fn config(&self) -> &ToolConfig {
+        &self.config
+    }
+}
+
+// ============================================================================
+// AWS SQS Tool
+// ============================================================================
+
+/// SQS operations
+pub struct AwsSqsTool {
+    config: ToolConfig,
+}
+
+impl AwsSqsTool {
+    pub fn new() -> Self {
+        let parameters = create_schema(
+            serde_json::json!({
+                "command": {
+                    "type": "string",
+                    "description": "SQS subcommand",
+                    "enum": [
+                        "list-queues", "send-message", "receive-message",
+                        "delete-message", "get-queue-attributes", "purge-queue"
+                    ]
+                },
+                "queue_url": {
+                    "type": "string",
+                    "description": "SQS queue URL"
+                },
+                "message_body": {
+                    "type": "string",
+                    "description": "Message body for send-message"
+                },
+                "receipt_handle": {
+                    "type": "string",
+                    "description": "Receipt handle for delete-message"
+                },
+                "max_messages": {
+                    "type": "integer",
+                    "description": "Maximum messages to receive (1-10)",
+                    "default": 1
+                },
+                "region": {
+                    "type": "string",
+                    "description": "AWS region"
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "AWS profile name"
+                }
+            }),
+            vec!["command"],
+        );
+
+        Self {
+            config: tool_config_with_timeout(
+                "aws_sqs",
+                "AWS SQS: manage message queues and send/receive messages.",
+                parameters,
+                60,
+            ),
+        }
+    }
+}
+
+impl Default for AwsSqsTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Tool for AwsSqsTool {
+    async fn execute(&self, input: ToolInput) -> AofResult<ToolResult> {
+        let command: String = input.get_arg("command")?;
+        let queue_url: Option<String> = input.get_arg("queue_url").ok();
+        let message_body: Option<String> = input.get_arg("message_body").ok();
+        let receipt_handle: Option<String> = input.get_arg("receipt_handle").ok();
+        let max_messages: i32 = input.get_arg("max_messages").unwrap_or(1);
+        let region: Option<String> = input.get_arg("region").ok();
+        let profile: Option<String> = input.get_arg("profile").ok();
+
+        let mut args = vec!["sqs".to_string(), command.clone()];
+
+        if let Some(ref qu) = queue_url {
+            args.push("--queue-url".to_string());
+            args.push(qu.clone());
+        }
+
+        if let Some(ref mb) = message_body {
+            args.push("--message-body".to_string());
+            args.push(mb.clone());
+        }
+
+        if let Some(ref rh) = receipt_handle {
+            args.push("--receipt-handle".to_string());
+            args.push(rh.clone());
+        }
+
+        if command == "receive-message" {
+            args.push("--max-number-of-messages".to_string());
+            args.push(max_messages.to_string());
+        }
+
+        if let Some(ref r) = region {
+            args.push("--region".to_string());
+            args.push(r.clone());
+        }
+
+        if let Some(ref p) = profile {
+            args.push("--profile".to_string());
+            args.push(p.clone());
+        }
+
+        args.push("--output".to_string());
+        args.push("json".to_string());
+
+        debug!(args = ?args, "Executing aws sqs");
+
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let result = execute_command("aws", &args_str, None, 60).await;
+
+        match result {
+            Ok(output) => {
+                if output.success {
+                    let data = serde_json::from_str(&output.stdout).unwrap_or_else(|_| {
+                        serde_json::json!({ "raw": output.stdout })
+                    });
+
+                    Ok(ToolResult::success(serde_json::json!({
+                        "data": data,
+                        "command": command
+                    })))
+                } else {
+                    Ok(ToolResult::error(format!(
+                        "aws sqs {} failed: {}",
+                        command, output.stderr
+                    )))
+                }
+            }
+            Err(e) => Ok(ToolResult::error(e)),
+        }
+    }
+
+    fn config(&self) -> &ToolConfig {
+        &self.config
+    }
+}
+
+// ============================================================================
+// AWS SNS Tool
+// ============================================================================
+
+/// SNS operations
+pub struct AwsSnsTool {
+    config: ToolConfig,
+}
+
+impl AwsSnsTool {
+    pub fn new() -> Self {
+        let parameters = create_schema(
+            serde_json::json!({
+                "command": {
+                    "type": "string",
+                    "description": "SNS subcommand",
+                    "enum": [
+                        "list-topics", "list-subscriptions", "publish",
+                        "create-topic", "subscribe"
+                    ]
+                },
+                "topic_arn": {
+                    "type": "string",
+                    "description": "SNS topic ARN"
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Message to publish"
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Message subject"
+                },
+                "protocol": {
+                    "type": "string",
+                    "description": "Subscription protocol (email, sms, https, etc.)"
+                },
+                "endpoint": {
+                    "type": "string",
+                    "description": "Subscription endpoint"
+                },
+                "region": {
+                    "type": "string",
+                    "description": "AWS region"
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "AWS profile name"
+                }
+            }),
+            vec!["command"],
+        );
+
+        Self {
+            config: tool_config_with_timeout(
+                "aws_sns",
+                "AWS SNS: manage topics, subscriptions, and publish messages.",
+                parameters,
+                60,
+            ),
+        }
+    }
+}
+
+impl Default for AwsSnsTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Tool for AwsSnsTool {
+    async fn execute(&self, input: ToolInput) -> AofResult<ToolResult> {
+        let command: String = input.get_arg("command")?;
+        let topic_arn: Option<String> = input.get_arg("topic_arn").ok();
+        let message: Option<String> = input.get_arg("message").ok();
+        let subject: Option<String> = input.get_arg("subject").ok();
+        let protocol: Option<String> = input.get_arg("protocol").ok();
+        let endpoint: Option<String> = input.get_arg("endpoint").ok();
+        let region: Option<String> = input.get_arg("region").ok();
+        let profile: Option<String> = input.get_arg("profile").ok();
+
+        let mut args = vec!["sns".to_string(), command.clone()];
+
+        if let Some(ref ta) = topic_arn {
+            args.push("--topic-arn".to_string());
+            args.push(ta.clone());
+        }
+
+        if let Some(ref m) = message {
+            args.push("--message".to_string());
+            args.push(m.clone());
+        }
+
+        if let Some(ref s) = subject {
+            args.push("--subject".to_string());
+            args.push(s.clone());
+        }
+
+        if let Some(ref prot) = protocol {
+            args.push("--protocol".to_string());
+            args.push(prot.clone());
+        }
+
+        if let Some(ref ep) = endpoint {
+            args.push("--endpoint".to_string());
+            args.push(ep.clone());
+        }
+
+        if let Some(ref r) = region {
+            args.push("--region".to_string());
+            args.push(r.clone());
+        }
+
+        if let Some(ref p) = profile {
+            args.push("--profile".to_string());
+            args.push(p.clone());
+        }
+
+        args.push("--output".to_string());
+        args.push("json".to_string());
+
+        debug!(args = ?args, "Executing aws sns");
+
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let result = execute_command("aws", &args_str, None, 60).await;
+
+        match result {
+            Ok(output) => {
+                if output.success {
+                    let data = serde_json::from_str(&output.stdout).unwrap_or_else(|_| {
+                        serde_json::json!({ "raw": output.stdout })
+                    });
+
+                    Ok(ToolResult::success(serde_json::json!({
+                        "data": data,
+                        "command": command
+                    })))
+                } else {
+                    Ok(ToolResult::error(format!(
+                        "aws sns {} failed: {}",
+                        command, output.stderr
+                    )))
+                }
+            }
+            Err(e) => Ok(ToolResult::error(e)),
+        }
+    }
+
+    fn config(&self) -> &ToolConfig {
+        &self.config
+    }
+}
+
+// ============================================================================
+// AWS Cost Explorer Tool
+// ============================================================================
+
+/// Cost Explorer operations
+pub struct AwsCostTool {
+    config: ToolConfig,
+}
+
+impl AwsCostTool {
+    pub fn new() -> Self {
+        let parameters = create_schema(
+            serde_json::json!({
+                "command": {
+                    "type": "string",
+                    "description": "Cost Explorer subcommand",
+                    "enum": ["get-cost-and-usage", "get-cost-forecast"]
+                },
+                "time_period_start": {
+                    "type": "string",
+                    "description": "Start date (YYYY-MM-DD format)"
+                },
+                "time_period_end": {
+                    "type": "string",
+                    "description": "End date (YYYY-MM-DD format)"
+                },
+                "granularity": {
+                    "type": "string",
+                    "description": "Time granularity",
+                    "enum": ["DAILY", "MONTHLY", "HOURLY"],
+                    "default": "MONTHLY"
+                },
+                "metrics": {
+                    "type": "array",
+                    "description": "Cost metrics (UnblendedCost, BlendedCost, UsageQuantity)",
+                    "items": { "type": "string" },
+                    "default": ["UnblendedCost"]
+                },
+                "group_by": {
+                    "type": "array",
+                    "description": "Group by dimensions (SERVICE, REGION, etc.)",
+                    "items": { "type": "string" }
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "AWS profile name"
+                }
+            }),
+            vec!["command"],
+        );
+
+        Self {
+            config: tool_config_with_timeout(
+                "aws_cost",
+                "AWS Cost Explorer: analyze and forecast AWS spending.",
+                parameters,
+                120,
+            ),
+        }
+    }
+}
+
+impl Default for AwsCostTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Tool for AwsCostTool {
+    async fn execute(&self, input: ToolInput) -> AofResult<ToolResult> {
+        let command: String = input.get_arg("command")?;
+        let time_period_start: Option<String> = input.get_arg("time_period_start").ok();
+        let time_period_end: Option<String> = input.get_arg("time_period_end").ok();
+        let granularity: String = input.get_arg("granularity").unwrap_or_else(|_| "MONTHLY".to_string());
+        let metrics: Vec<String> = input.get_arg("metrics").unwrap_or_else(|_| vec!["UnblendedCost".to_string()]);
+        let group_by: Vec<String> = input.get_arg("group_by").unwrap_or_default();
+        let profile: Option<String> = input.get_arg("profile").ok();
+
+        let mut args = vec!["ce".to_string(), command.clone()];
+
+        // Build time period JSON
+        if let (Some(ref start), Some(ref end)) = (&time_period_start, &time_period_end) {
+            let time_period = format!(r#"{{"Start":"{}","End":"{}"}}"#, start, end);
+            args.push("--time-period".to_string());
+            args.push(time_period);
+        }
+
+        args.push("--granularity".to_string());
+        args.push(granularity);
+
+        // Build metrics JSON array
+        let metrics_json = serde_json::to_string(&metrics).unwrap();
+        args.push("--metrics".to_string());
+        args.push(metrics_json);
+
+        // Build group-by JSON if provided
+        if !group_by.is_empty() {
+            let group_by_json: Vec<_> = group_by
+                .iter()
+                .map(|dim| format!(r#"{{"Type":"DIMENSION","Key":"{}"}}"#, dim))
+                .collect();
+            let group_by_str = format!("[{}]", group_by_json.join(","));
+            args.push("--group-by".to_string());
+            args.push(group_by_str);
+        }
+
+        if let Some(ref p) = profile {
+            args.push("--profile".to_string());
+            args.push(p.clone());
+        }
+
+        args.push("--output".to_string());
+        args.push("json".to_string());
+
+        debug!(args = ?args, "Executing aws ce");
+
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let result = execute_command("aws", &args_str, None, 120).await;
+
+        match result {
+            Ok(output) => {
+                if output.success {
+                    let data = serde_json::from_str(&output.stdout).unwrap_or_else(|_| {
+                        serde_json::json!({ "raw": output.stdout })
+                    });
+
+                    Ok(ToolResult::success(serde_json::json!({
+                        "data": data,
+                        "command": command
+                    })))
+                } else {
+                    Ok(ToolResult::error(format!(
+                        "aws ce {} failed: {}",
                         command, output.stderr
                     )))
                 }

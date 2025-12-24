@@ -46,6 +46,13 @@ Hands-on tutorials for building AI-powered DevOps bots with AOF.
 
 ### Advanced Topics
 
+- **[Incident Response Automation](./incident-response-automation.md)** - End-to-end incident automation
+  - PagerDuty/Opsgenie webhook integration
+  - Multi-agent incident response pipeline
+  - Automated triage, RCA, and postmortem generation
+  - Observability tool integration (Grafana/Prometheus/Loki)
+  - Production-ready with signature verification
+
 - **[Incident Response](./incident-response.md)** - Automated incident workflows
   - Multi-step incident handling
   - Integration with PagerDuty/Slack

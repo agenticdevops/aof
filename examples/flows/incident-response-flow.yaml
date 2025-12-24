@@ -1,0 +1,466 @@
+# Incident Response Flow - Complete Incident Lifecycle Management
+#
+# Orchestrates end-to-end incident response workflow from detection
+# through resolution, including RCA and post-mortem generation.
+#
+# Workflow:
+#   PagerDuty/Opsgenie Alert → Incident Detection → Triage → RCA → Remediation → Post-mortem
+#
+# Usage:
+#   aofctl apply -f examples/flows/incident-response-flow.yaml
+#
+# Triggers:
+#   - PagerDuty webhook (P1/P2 incidents)
+#   - Opsgenie webhook (critical alerts)
+#   - Manual execution: aofctl run flow incident-response-flow
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: incident-response-flow
+  labels:
+    category: operations
+    capability: incident-response
+    workflow: automated
+
+spec:
+  description: "Complete incident response workflow with automated triage, RCA, and remediation"
+
+  # Pattern matching for incident-related events
+  trigger:
+    patterns:
+      - "incident"
+      - "outage"
+      - "alert"
+      - "down"
+      - "critical"
+      - "p0"
+      - "p1"
+      - "p2"
+
+  # Workflow nodes
+  nodes:
+    # ========================================
+    # PHASE 1: INCIDENT DETECTION & TRIAGE
+    # ========================================
+
+    - id: parse-incident
+      type: Transform
+      description: "Extract incident metadata from trigger event"
+      config:
+        script: |
+          # Parse incident details from trigger
+          export INCIDENT_ID="${event.metadata.alert_id:-${event.metadata.incident_id}}"
+          export INCIDENT_TEXT="${event.text}"
+          export SEVERITY="${event.metadata.priority:-${event.metadata.urgency}}"
+          export SOURCE="${event.platform}"
+          export ENTITY="${event.metadata.entity:-unknown}"
+          export SERVICE="${event.metadata.service_name:-unknown}"
+          export TIMESTAMP="${event.timestamp}"
+
+          echo "Parsed incident: ID=$INCIDENT_ID, Severity=$SEVERITY, Entity=$ENTITY"
+
+    - id: acknowledge-incident
+      type: Agent
+      description: "Acknowledge incident in alerting platform"
+      depends_on: [parse-incident]
+      config:
+        agent: incident-responder
+        input: |
+          Acknowledge this incident immediately:
+
+          Incident ID: ${INCIDENT_ID}
+          Severity: ${SEVERITY}
+          Source: ${SOURCE}
+          Entity: ${ENTITY}
+
+          Add note: "🤖 AOF automated incident response initiated. Running diagnostics..."
+
+    - id: classify-incident
+      type: Agent
+      description: "Classify incident type and severity"
+      depends_on: [parse-incident]
+      config:
+        agent: incident-responder
+        input: |
+          Classify this incident:
+          ${INCIDENT_TEXT}
+
+          Entity: ${ENTITY}
+          Service: ${SERVICE}
+          Reported Severity: ${SEVERITY}
+
+          Determine:
+          1. Incident category (service_down, performance, error_rate, resource_exhaustion, security)
+          2. Actual severity (P0/P1/P2/P3/P4)
+          3. Affected components
+          4. Estimated blast radius (users/services impacted)
+          5. Business impact level (critical/high/medium/low)
+
+          Return JSON with classification.
+
+    # ========================================
+    # PHASE 2: ROOT CAUSE ANALYSIS
+    # ========================================
+
+    - id: investigate-rca
+      type: Agent
+      description: "Perform root cause analysis"
+      depends_on: [classify-incident, acknowledge-incident]
+      config:
+        fleet: rca-team  # Uses RCA specialist agents
+        input: |
+          Investigate this incident:
+          ${INCIDENT_TEXT}
+
+          Classification: ${classify-incident.output.category}
+          Severity: ${classify-incident.output.severity}
+          Affected Components: ${classify-incident.output.components}
+          Blast Radius: ${classify-incident.output.blast_radius}
+
+          Perform comprehensive RCA:
+          1. Check recent changes (deployments, configs, infrastructure)
+          2. Analyze metrics (CPU, memory, latency, error rate)
+          3. Review logs (errors, warnings, stack traces)
+          4. Identify correlations and patterns
+          5. Form and test hypotheses
+
+          Provide:
+          - Root cause hypothesis
+          - Supporting evidence
+          - Contributing factors
+          - Timeline of events
+          - Confidence level (0-100%)
+
+    - id: update-status-investigating
+      type: Response
+      description: "Post investigation status update"
+      depends_on: [investigate-rca]
+      config:
+        platform: ${SOURCE}
+        message: |
+          🔍 **Incident Investigation Update**
+
+          **Incident:** ${INCIDENT_TEXT}
+          **Severity:** ${classify-incident.output.severity}
+          **Status:** Investigating
+          **Impact:** ${classify-incident.output.blast_radius}
+
+          **Current Findings:**
+          ${investigate-rca.output.hypothesis}
+
+          **Evidence:**
+          ${investigate-rca.output.evidence}
+
+          **Timeline:**
+          ${investigate-rca.output.timeline}
+
+          **Confidence:** ${investigate-rca.output.confidence}%
+
+          **Next Steps:** Determining remediation approach...
+
+    # ========================================
+    # PHASE 3: REMEDIATION DECISION
+    # ========================================
+
+    - id: assess-remediation
+      type: Conditional
+      description: "Determine if auto-remediation is possible"
+      depends_on: [investigate-rca]
+      config:
+        # Auto-remediate if high confidence and known fix
+        condition: >
+          ${investigate-rca.output.confidence} >= 80 AND
+          ${investigate-rca.output.remediation_available} == true AND
+          ${investigate-rca.output.risk_level} == "low"
+
+    - id: request-approval
+      type: Approval
+      description: "Request human approval for remediation"
+      depends_on: [assess-remediation]
+      when: auto_remediate == false
+      config:
+        approvers:
+          - oncall-sre
+          - incident-commander
+        timeout: 300  # 5 minutes
+        message: |
+          🚨 **Remediation Approval Required**
+
+          **Incident:** ${INCIDENT_ID}
+          **Root Cause:** ${investigate-rca.output.hypothesis}
+          **Proposed Remediation:** ${investigate-rca.output.remediation_steps}
+          **Risk Level:** ${investigate-rca.output.risk_level}
+
+          Approve remediation?
+
+    # ========================================
+    # PHASE 4: REMEDIATION EXECUTION
+    # ========================================
+
+    - id: execute-remediation
+      type: Agent
+      description: "Execute remediation steps"
+      depends_on: [assess-remediation, request-approval]
+      when: auto_remediate == true OR approval_granted == true
+      config:
+        agent: k8s-ops  # Operations agent with kubectl access
+        input: |
+          Execute remediation for incident ${INCIDENT_ID}:
+
+          Root Cause: ${investigate-rca.output.hypothesis}
+
+          Remediation Steps:
+          ${investigate-rca.output.remediation_steps}
+
+          Execute each step carefully:
+          1. Document action in incident notes BEFORE execution
+          2. Execute step
+          3. Verify success
+          4. If failure, STOP and rollback
+          5. Proceed to next step
+
+          For each step, provide:
+          - Action taken
+          - Result
+          - Verification output
+
+    - id: verify-resolution
+      type: Agent
+      description: "Verify incident is resolved"
+      depends_on: [execute-remediation]
+      config:
+        agent: incident-responder
+        input: |
+          Verify incident ${INCIDENT_ID} is resolved:
+
+          Remediation Actions:
+          ${execute-remediation.output.actions}
+
+          Verification Checks:
+          1. Confirm error rate returned to baseline
+          2. Check service health endpoints
+          3. Verify affected metrics are normal
+          4. Review recent logs for continued errors
+
+          Return:
+          - resolved: true/false
+          - verification_results: details
+          - residual_issues: any remaining concerns
+
+    # ========================================
+    # PHASE 5: INCIDENT CLOSURE
+    # ========================================
+
+    - id: update-status-resolved
+      type: Response
+      description: "Post resolution update"
+      depends_on: [verify-resolution]
+      when: verify-resolution.output.resolved == true
+      config:
+        platform: ${SOURCE}
+        message: |
+          ✅ **Incident Resolved**
+
+          **Incident:** ${INCIDENT_TEXT}
+          **Severity:** ${classify-incident.output.severity}
+          **Duration:** ${duration_since_start}
+
+          **Root Cause:**
+          ${investigate-rca.output.hypothesis}
+
+          **Remediation:**
+          ${execute-remediation.output.summary}
+
+          **Verification:**
+          ${verify-resolution.output.verification_results}
+
+          **Next Steps:**
+          - ✅ Monitor for recurrence (24 hours)
+          - 📋 Post-incident review scheduled
+          - 📝 Post-mortem document generated
+
+    - id: close-incident
+      type: Agent
+      description: "Close incident in alerting platform"
+      depends_on: [verify-resolution]
+      when: verify-resolution.output.resolved == true
+      config:
+        agent: incident-responder
+        input: |
+          Close incident ${INCIDENT_ID} in ${SOURCE}:
+
+          Resolution: ${investigate-rca.output.hypothesis}
+          Remediation: ${execute-remediation.output.summary}
+
+          Add final note with summary and mark as resolved.
+
+    # ========================================
+    # PHASE 6: POST-MORTEM
+    # ========================================
+
+    - id: generate-postmortem
+      type: Agent
+      description: "Generate post-incident report"
+      depends_on: [close-incident]
+      config:
+        agent: postmortem-writer
+        input: |
+          Generate post-mortem for incident ${INCIDENT_ID}:
+
+          **Incident Details:**
+          - Severity: ${classify-incident.output.severity}
+          - Duration: ${duration_since_start}
+          - Impact: ${classify-incident.output.blast_radius}
+
+          **Timeline:**
+          ${investigate-rca.output.timeline}
+
+          **Root Cause:**
+          ${investigate-rca.output.hypothesis}
+
+          **Contributing Factors:**
+          ${investigate-rca.output.contributing_factors}
+
+          **Remediation:**
+          ${execute-remediation.output.summary}
+
+          **Lessons Learned:**
+          - What went well
+          - What could be improved
+          - Action items to prevent recurrence
+
+          Format as Markdown document suitable for Confluence/GitHub.
+
+    - id: create-postmortem-ticket
+      type: Execute
+      description: "Create follow-up ticket for action items"
+      depends_on: [generate-postmortem]
+      config:
+        command: |
+          # Create Jira ticket with post-mortem action items
+          curl -X POST https://jira.example.com/rest/api/2/issue \
+            -H "Authorization: Bearer ${JIRA_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "fields": {
+                "project": {"key": "OPS"},
+                "summary": "Post-mortem: ${INCIDENT_TEXT}",
+                "description": "${generate-postmortem.output.markdown}",
+                "issuetype": {"name": "Task"},
+                "labels": ["incident", "postmortem", "priority:${classify-incident.output.severity}"]
+              }
+            }'
+
+    # ========================================
+    # ERROR HANDLING
+    # ========================================
+
+    - id: handle-remediation-failure
+      type: Agent
+      description: "Handle remediation failure"
+      depends_on: [execute-remediation]
+      when: execute-remediation.success == false OR verify-resolution.output.resolved == false
+      config:
+        agent: incident-responder
+        input: |
+          Remediation failed for incident ${INCIDENT_ID}.
+
+          Attempted Actions:
+          ${execute-remediation.output.actions}
+
+          Errors:
+          ${execute-remediation.output.errors}
+
+          Escalate to oncall with:
+          1. Summary of attempted remediation
+          2. Current system state
+          3. Recommended next steps
+          4. Urgency level based on impact
+
+  # Flow connections (explicit dependency graph)
+  connections:
+    - from: trigger
+      to: parse-incident
+
+    - from: parse-incident
+      to: acknowledge-incident
+
+    - from: parse-incident
+      to: classify-incident
+
+    - from: classify-incident
+      to: investigate-rca
+    - from: acknowledge-incident
+      to: investigate-rca
+
+    - from: investigate-rca
+      to: update-status-investigating
+
+    - from: investigate-rca
+      to: assess-remediation
+
+    - from: assess-remediation
+      to: request-approval
+      when: auto_remediate == false
+
+    - from: assess-remediation
+      to: execute-remediation
+      when: auto_remediate == true
+
+    - from: request-approval
+      to: execute-remediation
+      when: approval_granted == true
+
+    - from: execute-remediation
+      to: verify-resolution
+
+    - from: verify-resolution
+      to: update-status-resolved
+      when: resolved == true
+
+    - from: verify-resolution
+      to: close-incident
+      when: resolved == true
+
+    - from: close-incident
+      to: generate-postmortem
+
+    - from: generate-postmortem
+      to: create-postmortem-ticket
+
+    - from: execute-remediation
+      to: handle-remediation-failure
+      when: success == false
+
+    - from: verify-resolution
+      to: handle-remediation-failure
+      when: resolved == false
+
+  # Flow-level configuration
+  config:
+    # Maximum flow execution time
+    timeout: 1800  # 30 minutes
+
+    # Retry configuration
+    retry:
+      max_attempts: 3
+      backoff: exponential
+
+    # Notifications
+    notifications:
+      slack:
+        channels:
+          - "#incidents"
+          - "#ops-alerts"
+        notify_on:
+          - flow_started
+          - remediation_executed
+          - flow_completed
+          - flow_failed
+
+    # Monitoring
+    monitoring:
+      track_duration: true
+      track_cost: true
+      track_token_usage: true
