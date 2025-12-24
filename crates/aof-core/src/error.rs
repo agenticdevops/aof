@@ -48,6 +48,9 @@ pub enum AofError {
     #[error("Runtime error: {0}")]
     Runtime(String),
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
@@ -99,6 +102,11 @@ impl AofError {
     /// Create a runtime error
     pub fn runtime(msg: impl Into<String>) -> Self {
         Self::Runtime(msg.into())
+    }
+
+    /// Create a validation error
+    pub fn validation(msg: impl Into<String>) -> Self {
+        Self::Validation(msg.into())
     }
 }
 

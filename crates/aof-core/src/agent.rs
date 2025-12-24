@@ -154,6 +154,12 @@ pub struct AgentContext {
 
     /// Execution metadata
     pub metadata: ExecutionMetadata,
+
+    /// Optional output schema for structured responses
+    pub output_schema: Option<crate::schema::OutputSchema>,
+
+    /// Optional input schema for validation
+    pub input_schema: Option<crate::schema::InputSchema>,
 }
 
 /// Message in conversation history
@@ -212,7 +218,21 @@ impl AgentContext {
             state: HashMap::new(),
             tool_results: Vec::new(),
             metadata: ExecutionMetadata::default(),
+            output_schema: None,
+            input_schema: None,
         }
+    }
+
+    /// Set output schema for structured responses
+    pub fn with_output_schema(mut self, schema: crate::schema::OutputSchema) -> Self {
+        self.output_schema = Some(schema);
+        self
+    }
+
+    /// Set input schema for validation
+    pub fn with_input_schema(mut self, schema: crate::schema::InputSchema) -> Self {
+        self.input_schema = Some(schema);
+        self
     }
 
     /// Add a message to history

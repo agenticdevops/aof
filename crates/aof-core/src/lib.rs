@@ -14,6 +14,7 @@ pub mod mcp;
 pub mod memory;
 pub mod model;
 pub mod registry;
+pub mod schema;
 pub mod tool;
 pub mod trigger;
 pub mod workflow;
@@ -31,6 +32,7 @@ pub use model::{
     Model, ModelConfig, ModelProvider, ModelRequest, ModelResponse, RequestMessage, StopReason,
     StreamChunk, ToolDefinition as ModelToolDefinition, Usage,
 };
+pub use schema::{FormatHint, InputSchema, OutputSchema};
 pub use tool::{
     Tool, ToolCall, ToolConfig, ToolDefinition, ToolExecutor, ToolInput, ToolResult, ToolType,
 };
