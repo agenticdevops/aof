@@ -96,7 +96,7 @@ pub use tools::observability::{ObservabilityTools, PrometheusQueryTool, LokiQuer
 pub use tools::kubectl::{KubectlTools, KubectlGetTool, KubectlApplyTool, KubectlDeleteTool, KubectlLogsTool, KubectlExecTool, KubectlDescribeTool};
 
 #[cfg(feature = "docker")]
-pub use tools::docker::{DockerTools, DockerPsTool, DockerBuildTool, DockerRunTool, DockerLogsTool, DockerExecTool, DockerImagesTool};
+pub use tools::docker::{DockerTools, DockerPsTool, DockerStatsTool, DockerBuildTool, DockerRunTool, DockerLogsTool, DockerExecTool, DockerImagesTool};
 
 #[cfg(feature = "git")]
 pub use tools::git::{GitTools, GitStatusTool, GitDiffTool, GitLogTool, GitCommitTool, GitBranchTool, GitCheckoutTool, GitPullTool, GitPushTool};

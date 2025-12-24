@@ -121,7 +121,7 @@ impl Runtime {
                 "kubectl_get", "kubectl_apply", "kubectl_delete", "kubectl_logs",
                 "kubectl_exec", "kubectl_describe",
                 // Legacy docker tools
-                "docker_ps", "docker_logs", "docker_build", "docker_run",
+                "docker_ps", "docker_stats", "docker_logs", "docker_build", "docker_run",
                 "docker_exec", "docker_images",
                 // Legacy git tools
                 "git_status", "git_diff", "git_log", "git_commit", "git_branch",
@@ -805,6 +805,9 @@ fn create_builtin_executor_for_tools(tool_names: &[String]) -> Arc<dyn ToolExecu
             // Docker tools
             "docker_ps" => {
                 registry.register(aof_tools::DockerPsTool::new());
+            }
+            "docker_stats" => {
+                registry.register(aof_tools::DockerStatsTool::new());
             }
             "docker_build" => {
                 registry.register(aof_tools::DockerBuildTool::new());
