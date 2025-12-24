@@ -68,6 +68,12 @@ spec:
     Use docker commands to check container status, view logs,
     and explain any issues you find.
 
+    IMPORTANT: When using 'docker stats', ALWAYS add the --no-stream flag
+    to get a one-time snapshot. Without it, the command runs continuously
+    and will timeout.
+
+    Example: "docker stats --no-stream" or "docker stats --no-stream --all"
+
     Keep responses concise and actionable.
 
   tools:

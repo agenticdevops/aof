@@ -5,6 +5,7 @@
 //! ## Available Tools
 //!
 //! - `docker_ps` - List running containers
+//! - `docker_stats` - Get container resource usage (CPU, memory, I/O)
 //! - `docker_build` - Build images
 //! - `docker_run` - Run containers
 //! - `docker_logs` - Get container logs
@@ -34,6 +35,7 @@ impl DockerTools {
     pub fn all() -> Vec<Box<dyn Tool>> {
         vec![
             Box::new(DockerPsTool::new()),
+            Box::new(DockerStatsTool::new()),
             Box::new(DockerBuildTool::new()),
             Box::new(DockerRunTool::new()),
             Box::new(DockerLogsTool::new()),
@@ -139,6 +141,120 @@ impl Tool for DockerPsTool {
                 } else {
                     Ok(ToolResult::error(format!(
                         "docker ps failed: {}",
+                        output.stderr
+                    )))
+                }
+            }
+            Err(e) => Ok(ToolResult::error(e)),
+        }
+    }
+
+    fn config(&self) -> &ToolConfig {
+        &self.config
+    }
+}
+
+// ============================================================================
+// Docker Stats Tool
+// ============================================================================
+
+/// Get container resource usage statistics
+pub struct DockerStatsTool {
+    config: ToolConfig,
+}
+
+impl DockerStatsTool {
+    pub fn new() -> Self {
+        let parameters = create_schema(
+            serde_json::json!({
+                "all": {
+                    "type": "boolean",
+                    "description": "Show all containers (default shows just running)",
+                    "default": false
+                },
+                "no_trunc": {
+                    "type": "boolean",
+                    "description": "Don't truncate output",
+                    "default": false
+                },
+                "format": {
+                    "type": "string",
+                    "description": "Format output (json for structured data)",
+                    "default": "table"
+                }
+            }),
+            vec![],
+        );
+
+        Self {
+            config: tool_config_with_timeout(
+                "docker_stats",
+                "Get resource usage statistics for containers (CPU, memory, network, I/O). Returns a one-time snapshot.",
+                parameters,
+                30,
+            ),
+        }
+    }
+}
+
+impl Default for DockerStatsTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Tool for DockerStatsTool {
+    async fn execute(&self, input: ToolInput) -> AofResult<ToolResult> {
+        let all: bool = input.get_arg("all").unwrap_or(false);
+        let no_trunc: bool = input.get_arg("no_trunc").unwrap_or(false);
+        let format: String = input.get_arg("format").unwrap_or_else(|_| "table".to_string());
+
+        // CRITICAL: Always use --no-stream to get a one-time snapshot
+        // Without this flag, docker stats runs continuously like 'top'
+        let mut args = vec!["stats".to_string(), "--no-stream".to_string()];
+
+        if all {
+            args.push("-a".to_string());
+        }
+
+        if no_trunc {
+            args.push("--no-trunc".to_string());
+        }
+
+        if format == "json" {
+            args.push("--format={{json .}}".to_string());
+        }
+
+        debug!(args = ?args, "Executing docker stats");
+
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let result = execute_command("docker", &args_str, None, 30).await;
+
+        match result {
+            Ok(output) => {
+                if output.success {
+                    if format == "json" {
+                        // Parse JSON lines output
+                        let stats: Vec<serde_json::Value> = output
+                            .stdout
+                            .lines()
+                            .filter_map(|line| serde_json::from_str(line).ok())
+                            .collect();
+
+                        Ok(ToolResult::success(serde_json::json!({
+                            "stats": stats,
+                            "count": stats.len()
+                        })))
+                    } else {
+                        // Return table format as-is
+                        Ok(ToolResult::success(serde_json::json!({
+                            "output": output.stdout
+                        })))
+                    }
+                } else {
+                    Ok(ToolResult::error(format!(
+                        "docker stats failed: {}",
                         output.stderr
                     )))
                 }
