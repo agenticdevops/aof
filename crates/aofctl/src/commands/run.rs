@@ -302,9 +302,9 @@ async fn run_agent(
     });
 
     // Execute with or without schema
-    let result = if let Some(output_schema) = schema {
+    let result = if let Some(ref output_schema) = schema {
         // Create context with schema attached
-        let mut ctx = AgentContext::new(input_str).with_output_schema(output_schema);
+        let mut ctx = AgentContext::new(input_str).with_output_schema(output_schema.clone());
         runtime
             .execute_with_context(&agent_name, &mut ctx)
             .await
@@ -323,7 +323,7 @@ async fn run_agent(
     io::stdout().flush().ok();
 
     // Output result in requested format with smart visualization
-    output_result_smart(&agent_name, &result, output)?;
+    output_result_smart(&agent_name, &result, output, schema.as_ref())?;
 
     Ok(())
 }
@@ -901,8 +901,9 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
 }
 
 /// Format and output agent result with smart visualization
-fn output_result_smart(agent_name: &str, result: &str, output: &str) -> Result<()> {
+fn output_result_smart(agent_name: &str, result: &str, output: &str, schema: Option<&OutputSchema>) -> Result<()> {
     use comfy_table::{Table, presets::UTF8_FULL, ContentArrangement};
+    use aof_core::FormatHint;
 
     match output {
         "json" => {
@@ -926,7 +927,32 @@ fn output_result_smart(agent_name: &str, result: &str, output: &str) -> Result<(
             println!("{} {}", ColorizeColor::bold("Agent:").cyan(), ColorizeColor::bright_white(agent_name));
             println!();
 
-            // Detect and render format
+            // If schema is present, validate and use format hint
+            if let Some(schema) = schema {
+                // Try to parse result as JSON
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(result) {
+                    // Validate against schema
+                    if let Err(e) = schema.validate(&json) {
+                        eprintln!("{} Schema validation failed: {}", ColorizeColor::bold("Warning:").yellow(), e);
+                    }
+
+                    // Use format hint to guide rendering
+                    let rendered = match schema.format_hint {
+                        Some(FormatHint::Table) => render_as_table(&json),
+                        Some(FormatHint::List) => render_as_list(&json),
+                        Some(FormatHint::Json) => Some(render_json(&json)),
+                        Some(FormatHint::Yaml) => render_as_yaml(&json),
+                        Some(FormatHint::Auto) | None => detect_and_render(result),
+                    };
+
+                    if let Some(rendered) = rendered {
+                        println!("{}", rendered);
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Fallback to auto-detection
             if let Some(rendered) = detect_and_render(result) {
                 println!("{}", rendered);
             } else {
@@ -983,6 +1009,106 @@ fn render_json(json: &serde_json::Value) -> String {
     let json_str = serde_json::to_string_pretty(json)
         .unwrap_or_else(|_| json.to_string());
     json_str.bright_cyan().to_string()
+}
+
+/// Render JSON as a table (for array of objects)
+fn render_as_table(json: &serde_json::Value) -> Option<String> {
+    use comfy_table::{Table, presets::UTF8_FULL, Cell};
+    use colored::Colorize;
+
+    // Extract array from common patterns
+    let array = match json {
+        serde_json::Value::Array(arr) => arr,
+        serde_json::Value::Object(obj) => {
+            // Try common field names
+            if let Some(serde_json::Value::Array(arr)) = obj.get("containers") {
+                arr
+            } else if let Some(serde_json::Value::Array(arr)) = obj.get("resources") {
+                arr
+            } else if let Some(serde_json::Value::Array(arr)) = obj.get("items") {
+                arr
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+
+    if array.is_empty() {
+        return Some("No items".to_string());
+    }
+
+    // Get headers from first object
+    let headers: Vec<String> = if let Some(serde_json::Value::Object(first)) = array.first() {
+        first.keys().cloned().collect()
+    } else {
+        return None;
+    };
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(headers.iter().map(|h| Cell::new(h).fg(comfy_table::Color::Cyan)));
+
+    // Add rows
+    for item in array {
+        if let serde_json::Value::Object(obj) = item {
+            let row: Vec<String> = headers
+                .iter()
+                .map(|h| {
+                    obj.get(h)
+                        .map(|v| match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            serde_json::Value::Null => "null".to_string(),
+                            _ => v.to_string(),
+                        })
+                        .unwrap_or_default()
+                })
+                .collect();
+            table.add_row(row);
+        }
+    }
+
+    Some(table.to_string())
+}
+
+/// Render JSON as a list
+fn render_as_list(json: &serde_json::Value) -> Option<String> {
+    use colored::Colorize;
+
+    // Extract array from common patterns
+    let array = match json {
+        serde_json::Value::Array(arr) => arr,
+        serde_json::Value::Object(obj) => {
+            if let Some(serde_json::Value::Array(arr)) = obj.get("items") {
+                arr
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+
+    if array.is_empty() {
+        return Some("No items".to_string());
+    }
+
+    let mut lines = Vec::new();
+    for item in array {
+        let line = match item {
+            serde_json::Value::String(s) => format!("  {} {}", "•".bright_cyan(), s),
+            _ => format!("  {} {}", "•".bright_cyan(), item.to_string()),
+        };
+        lines.push(line);
+    }
+
+    Some(lines.join("\n"))
+}
+
+/// Render JSON as YAML
+fn render_as_yaml(json: &serde_json::Value) -> Option<String> {
+    serde_yaml::to_string(json).ok()
 }
 
 /// Try to render markdown table
@@ -1130,7 +1256,7 @@ fn try_render_docker_stats(content: &str) -> Option<String> {
 
 /// Format and output agent result (legacy, for backwards compat)
 fn output_result(agent_name: &str, result: &str, output: &str) -> Result<()> {
-    output_result_smart(agent_name, result, output)
+    output_result_smart(agent_name, result, output, None)
 }
 
 /// Run a workflow with configuration
