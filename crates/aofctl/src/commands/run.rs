@@ -1,5 +1,5 @@
 use anyhow::{Context as AnyhowContext, Result, anyhow};
-use aof_core::{AgentConfig, Context as AofContext};
+use aof_core::{AgentConfig, AgentContext, Context as AofContext, OutputSchema};
 use aof_runtime::Runtime;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -155,12 +155,53 @@ impl Write for LogWriter {
     }
 }
 
+/// Parse output schema from CLI arguments
+fn parse_output_schema(
+    schema_name: Option<&str>,
+    schema_file: Option<&str>,
+) -> Result<Option<OutputSchema>> {
+    use aof_core::schema::schemas;
+
+    if let Some(file_path) = schema_file {
+        // Read schema from file
+        let content = fs::read_to_string(file_path)
+            .with_context(|| format!("Failed to read schema file: {}", file_path))?;
+        let schema_json: serde_json::Value = serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse schema file as JSON: {}", file_path))?;
+        return Ok(Some(OutputSchema::from_json_schema(schema_json)));
+    }
+
+    if let Some(name) = schema_name {
+        // Check if it's a pre-built schema name
+        let schema = match name {
+            "container-list" => schemas::container_list(),
+            "resource-stats" => schemas::resource_stats(),
+            "simple-list" => schemas::simple_list(),
+            "key-value" => schemas::key_value(),
+            _ => {
+                // Try to parse as inline JSON schema
+                let schema_json: serde_json::Value = serde_json::from_str(name)
+                    .with_context(|| format!(
+                        "Invalid schema name '{}'. Expected one of: container-list, resource-stats, simple-list, key-value, or inline JSON schema",
+                        name
+                    ))?;
+                OutputSchema::from_json_schema(schema_json)
+            }
+        };
+        return Ok(Some(schema));
+    }
+
+    Ok(None)
+}
+
 /// Execute a resource (agent, workflow, job) with configuration and input
 pub async fn execute(
     resource_type: &str,
     name_or_config: &str,
     input: Option<&str>,
     output: &str,
+    output_schema: Option<&str>,
+    output_schema_file: Option<&str>,
     context: Option<&AofContext>,
 ) -> Result<()> {
     // Log context if provided
@@ -178,8 +219,11 @@ pub async fn execute(
     let rt = ResourceType::from_str(resource_type)
         .ok_or_else(|| anyhow::anyhow!("Unknown resource type: {}", resource_type))?;
 
+    // Parse output schema if provided
+    let schema = parse_output_schema(output_schema, output_schema_file)?;
+
     match rt {
-        ResourceType::Agent => run_agent(name_or_config, input, output, context).await,
+        ResourceType::Agent => run_agent(name_or_config, input, output, schema, context).await,
         ResourceType::Workflow | ResourceType::Flow => run_workflow(name_or_config, input, output).await,
         ResourceType::Fleet => run_fleet(name_or_config, input, output).await,
         ResourceType::Job => run_job(name_or_config, input, output).await,
@@ -190,7 +234,13 @@ pub async fn execute(
 }
 
 /// Run an agent with configuration
-async fn run_agent(config: &str, input: Option<&str>, output: &str, context: Option<&AofContext>) -> Result<()> {
+async fn run_agent(
+    config: &str,
+    input: Option<&str>,
+    output: &str,
+    schema: Option<OutputSchema>,
+    context: Option<&AofContext>,
+) -> Result<()> {
     // Check if interactive mode should be enabled (when no input provided and stdin is a TTY)
     let interactive = input.is_none() && io::stdin().is_terminal();
 
@@ -251,10 +301,21 @@ async fn run_agent(config: &str, input: Option<&str>, output: &str, context: Opt
         }
     });
 
-    let result = runtime
-        .execute(&agent_name, input_str)
-        .await
-        .with_context(|| "Failed to execute agent")?;
+    // Execute with or without schema
+    let result = if let Some(output_schema) = schema {
+        // Create context with schema attached
+        let mut ctx = AgentContext::new(input_str).with_output_schema(output_schema);
+        runtime
+            .execute_with_context(&agent_name, &mut ctx)
+            .await
+            .with_context(|| "Failed to execute agent with schema")?
+    } else {
+        // Standard execution without schema
+        runtime
+            .execute(&agent_name, input_str)
+            .await
+            .with_context(|| "Failed to execute agent")?
+    };
 
     // Stop spinner
     spinner_handle.abort();

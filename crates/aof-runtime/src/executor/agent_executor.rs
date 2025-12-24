@@ -663,7 +663,7 @@ impl AgentExecutor {
         warn!("[BUILD_REQUEST] Converted {} messages", messages.len());
 
         // Get tool definitions if available
-        let tools: Vec<ModelToolDefinition> = if let Some(executor) = &self.tool_executor {
+        let mut tools: Vec<ModelToolDefinition> = if let Some(executor) = &self.tool_executor {
             warn!("[BUILD_REQUEST] Tool executor available, listing tools...");
             let tool_defs = executor.list_tools();
             warn!("[BUILD_REQUEST] Got {} tool definitions from executor", tool_defs.len());
@@ -683,15 +683,28 @@ impl AgentExecutor {
             Vec::new()
         };
 
-        warn!("[BUILD_REQUEST] Final: messages={}, tools={}, system_prompt={:?}",
+        // Enhance system prompt with output schema instructions if schema is present
+        let system_prompt = if let Some(schema) = &context.output_schema {
+            warn!("[BUILD_REQUEST] Output schema present, adding structured output instructions");
+
+            let base_prompt = self.config.system_prompt.as_deref().unwrap_or("");
+            let schema_instructions = schema.to_system_instructions();
+
+            Some(format!("{}\n\n{}", base_prompt, schema_instructions))
+        } else {
+            self.config.system_prompt.clone()
+        };
+
+        warn!("[BUILD_REQUEST] Final: messages={}, tools={}, system_prompt={:?}, has_schema={}",
             messages.len(),
             tools.len(),
-            self.config.system_prompt.as_ref().map(|s| s.len())
+            system_prompt.as_ref().map(|s| s.len()),
+            context.output_schema.is_some()
         );
 
         Ok(ModelRequest {
             messages,
-            system: self.config.system_prompt.clone(),
+            system: system_prompt,
             tools,
             temperature: Some(self.config.temperature),
             max_tokens: self.config.max_tokens,

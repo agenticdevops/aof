@@ -43,6 +43,16 @@ pub enum Commands {
         /// Output format (json, yaml, text)
         #[arg(short, long, default_value = "text")]
         output: String,
+
+        /// Output schema for structured responses
+        /// Use pre-built schema names (container-list, resource-stats, simple-list, key-value)
+        /// or provide inline JSON schema
+        #[arg(long)]
+        output_schema: Option<String>,
+
+        /// Path to JSON schema file for output validation
+        #[arg(long, conflicts_with = "output_schema")]
+        output_schema_file: Option<String>,
     },
 
     /// Get resources (verb-first: get agents, get agent <name>)
@@ -219,12 +229,16 @@ impl Cli {
                 name_or_config,
                 input,
                 output,
+                output_schema,
+                output_schema_file,
             } => {
                 commands::run::execute(
                     &resource_type,
                     &name_or_config,
                     input.as_deref(),
                     &output,
+                    output_schema.as_deref(),
+                    output_schema_file.as_deref(),
                     context.as_ref(),
                 )
                 .await
