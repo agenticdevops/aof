@@ -48,6 +48,9 @@
 pub mod registry;
 pub mod tools;
 
+#[cfg(feature = "benchmark")]
+pub mod benchmark;
+
 pub use registry::{ToolRegistry, BuiltinToolExecutor};
 
 // ============================================================================

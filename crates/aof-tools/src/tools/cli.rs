@@ -246,7 +246,7 @@ impl DockerTool {
         Self {
             config: tool_config_with_timeout(
                 "docker",
-                "Execute docker commands for container operations. Supports all docker subcommands: ps, build, run, exec, logs, images, pull, push, compose, etc.",
+                "Execute docker commands for container operations. Supports all docker subcommands: ps, build, run, exec, logs, images, pull, push, compose, etc. Auto-injects --no-stream to stats command for reliability.",
                 parameters,
                 300, // Longer timeout for builds
             ),
@@ -271,17 +271,28 @@ impl Tool for DockerTool {
         let working_dir: Option<String> = input.get_arg("working_dir").ok();
         let timeout_secs: u64 = input.get_arg("timeout_secs").unwrap_or(300);
 
-        let args: Vec<&str> = command.split_whitespace().collect();
+        let mut args: Vec<String> = command.split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         if args.is_empty() {
             return Ok(ToolResult::error("Empty command provided"));
         }
 
+        // Smart injection: Add --no-stream to stats command if not present
+        // This prevents stats from running continuously like `top`
+        if args[0] == "stats" && !args.iter().any(|a| a.contains("--no-stream") || a == "-n") {
+            args.insert(1, "--no-stream".to_string());
+            debug!("Auto-injected --no-stream flag to docker stats command");
+        }
+
         debug!(command = %command, "Executing docker");
+
+        let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
         let result = execute_command(
             "docker",
-            &args,
+            &args_refs,
             working_dir.as_deref(),
             timeout_secs,
         ).await;
@@ -293,7 +304,7 @@ impl Tool for DockerTool {
                     "stderr": output.stderr,
                     "exit_code": output.exit_code,
                     "success": output.success,
-                    "command": format!("docker {}", command)
+                    "command": format!("docker {}", args.join(" "))
                 })))
             }
             Err(e) => Ok(ToolResult::error(e)),

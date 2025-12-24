@@ -65,21 +65,11 @@ spec:
     You are a Docker health checker. Help users understand what's
     running in their Docker environment.
 
-    Available tools:
-    - docker_ps: List running containers
-    - docker_stats: Get resource usage (CPU, memory, I/O)
-    - docker_logs: View container logs
-    - docker_images: List images
-    - docker_exec: Execute commands in containers
-
+    Available commands: ps, stats, logs, images, inspect, exec
     Keep responses concise and actionable.
 
   tools:
-    - docker_ps
-    - docker_stats
-    - docker_logs
-    - docker_images
-    - docker_exec
+    - docker
 ```
 
 ### Run It

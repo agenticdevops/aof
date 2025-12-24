@@ -8,6 +8,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{mpsc as tokio_mpsc, RwLock};
 use tracing::info;
 use crate::resources::ResourceType;
+use crate::output::Spinner;
 
 /// Internal struct to try parsing K8s format explicitly for better errors
 #[derive(serde::Deserialize)]
@@ -238,15 +239,30 @@ async fn run_agent(config: &str, input: Option<&str>, output: &str, context: Opt
         .await
         .with_context(|| "Failed to load agent")?;
 
-    // Single execution mode
+    // Single execution mode with spinner
     let input_str = input.unwrap_or("default input");
+
+    // Show spinner during execution
+    let mut spinner = Spinner::new(&format!("Executing agent: {}", agent_name));
+    let spinner_handle = tokio::spawn(async move {
+        loop {
+            spinner.tick();
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+    });
+
     let result = runtime
         .execute(&agent_name, input_str)
         .await
         .with_context(|| "Failed to execute agent")?;
 
-    // Output result in requested format
-    output_result(&agent_name, &result, output)?;
+    // Stop spinner
+    spinner_handle.abort();
+    print!("\r\x1b[2K"); // Clear spinner line
+    io::stdout().flush().ok();
+
+    // Output result in requested format with smart visualization
+    output_result_smart(&agent_name, &result, output)?;
 
     Ok(())
 }
@@ -823,8 +839,10 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
     f.render_widget(metrics_para, main_layout[1]);
 }
 
-/// Format and output agent result
-fn output_result(agent_name: &str, result: &str, output: &str) -> Result<()> {
+/// Format and output agent result with smart visualization
+fn output_result_smart(agent_name: &str, result: &str, output: &str) -> Result<()> {
+    use comfy_table::{Table, presets::UTF8_FULL, ContentArrangement};
+
     match output {
         "json" => {
             let json_output = serde_json::json!({
@@ -843,11 +861,175 @@ fn output_result(agent_name: &str, result: &str, output: &str) -> Result<()> {
             println!("{}", yaml_output);
         }
         "text" | _ => {
-            println!("Agent: {}", agent_name);
-            println!("Result: {}", result);
+            use colored::Colorize as ColorizeColor;
+            println!("{} {}", ColorizeColor::bold("Agent:").cyan(), ColorizeColor::bright_white(agent_name));
+            println!();
+
+            // Detect and render format
+            if let Some(rendered) = detect_and_render(result) {
+                println!("{}", rendered);
+            } else {
+                // Fallback: plain text with basic formatting
+                println!("{}", result);
+            }
         }
     }
     Ok(())
+}
+
+/// Detect format and render beautifully (with robust fallback)
+fn detect_and_render(content: &str) -> Option<String> {
+    use comfy_table::{Table, presets::UTF8_FULL, ContentArrangement, Cell};
+    use colored::Colorize;
+
+    // Try JSON first
+    if content.trim().starts_with('{') || content.trim().starts_with('[') {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(content) {
+            return Some(render_json(&json));
+        }
+    }
+
+    // Try markdown table
+    if content.contains('|') && content.lines().filter(|l| l.contains('|')).count() >= 2 {
+        if let Some(table) = try_render_markdown_table(content) {
+            return Some(table);
+        }
+    }
+
+    // Detect lists with bullets
+    let bullet_lines: Vec<&str> = content.lines()
+        .filter(|l| l.trim().starts_with('*') || l.trim().starts_with('-') || l.trim().starts_with("•"))
+        .collect();
+
+    if bullet_lines.len() >= 3 {
+        return Some(render_bullet_list(content));
+    }
+
+    // Detect key-value pairs (docker stats format)
+    if content.contains("CPU") && content.contains("MEM") {
+        if let Some(stats) = try_render_docker_stats(content) {
+            return Some(stats);
+        }
+    }
+
+    // No special format detected - return None for fallback
+    None
+}
+
+/// Render JSON beautifully
+fn render_json(json: &serde_json::Value) -> String {
+    use colored::Colorize;
+    let json_str = serde_json::to_string_pretty(json)
+        .unwrap_or_else(|_| json.to_string());
+    json_str.bright_cyan().to_string()
+}
+
+/// Try to render markdown table
+fn try_render_markdown_table(content: &str) -> Option<String> {
+    use comfy_table::{Table, presets::UTF8_FULL, Cell};
+    use colored::Colorize;
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+
+    let mut is_header = true;
+    let mut found_separator = false;
+
+    for line in content.lines() {
+        let line = line.trim();
+        if !line.starts_with('|') {
+            continue;
+        }
+
+        let cells: Vec<&str> = line.split('|')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if cells.is_empty() {
+            continue;
+        }
+
+        // Check if separator row
+        if cells.iter().all(|c| c.chars().all(|ch| ch == '-' || ch == ':' || ch.is_whitespace())) {
+            found_separator = true;
+            continue;
+        }
+
+        if is_header && !found_separator {
+            table.set_header(cells.iter().map(|c| Cell::new(c).fg(comfy_table::Color::Cyan)));
+            is_header = false;
+        } else {
+            table.add_row(cells);
+        }
+    }
+
+    if table.row_iter().count() > 0 {
+        Some(table.to_string())
+    } else {
+        None
+    }
+}
+
+/// Render bullet list with colors
+fn render_bullet_list(content: &str) -> String {
+    use colored::Colorize;
+
+    content.lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with('*') || trimmed.starts_with('-') || trimmed.starts_with("•") {
+                format!("  {} {}", "•".bright_cyan(), trimmed[1..].trim())
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Try to render docker stats output
+fn try_render_docker_stats(content: &str) -> Option<String> {
+    use comfy_table::{Table, presets::UTF8_FULL};
+    use colored::Colorize;
+
+    // Look for docker stats pattern
+    if !content.contains("CPU") || !content.contains("MEM") {
+        return None;
+    }
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec!["Container", "CPU %", "Memory Usage", "Net I/O"]);
+
+    // Parse docker stats lines
+    for line in content.lines() {
+        if line.contains("CPU") || line.is_empty() {
+            continue;
+        }
+
+        // Simple extraction - this is best effort
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 4 {
+            table.add_row(vec![
+                parts.get(0).unwrap_or(&""),
+                parts.get(1).unwrap_or(&""),
+                parts.get(2).unwrap_or(&""),
+                parts.get(3).unwrap_or(&""),
+            ]);
+        }
+    }
+
+    if table.row_iter().count() > 0 {
+        Some(table.to_string())
+    } else {
+        None
+    }
+}
+
+/// Format and output agent result (legacy, for backwards compat)
+fn output_result(agent_name: &str, result: &str, output: &str) -> Result<()> {
+    output_result_smart(agent_name, result, output)
 }
 
 /// Run a workflow with configuration

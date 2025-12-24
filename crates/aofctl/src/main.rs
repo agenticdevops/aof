@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
         tracing_subscriber::registry()
             .with(
                 tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "aofctl=info,aof_runtime=info".into()),
+                    .unwrap_or_else(|_| "error".into()), // Default to error level for clean output
             )
             .with(tracing_subscriber::fmt::layer())
             .init();
