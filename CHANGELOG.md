@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-beta.2] - 2025-12-24
+
+### Added
+
+#### Agent Library (30 Production-Ready Agents)
+- **Kubernetes Domain** (5 agents)
+  - deploy-guardian: Validates deployments before production rollout
+  - node-doctor: Diagnoses and auto-heals node problems
+  - resource-optimizer: Right-sizes containers based on actual usage
+  - pod-debugger: Troubleshoots pod failures with context
+  - rollout-manager: Manages progressive deployments
+- **Observability Domain** (5 agents)
+  - alert-manager: Manages Prometheus alerts with runbook automation
+  - slo-guardian: Monitors SLI/SLO compliance and error budgets
+  - log-analyzer: Analyzes logs for patterns and anomalies
+  - metrics-explorer: Queries and visualizes Prometheus metrics
+  - trace-investigator: Analyzes distributed traces
+- **Incident Domain** (5 agents)
+  - rca-agent: Performs automated root cause analysis
+  - incident-commander: Orchestrates incident response
+  - escalation-manager: Routes incidents to appropriate teams
+  - postmortem-writer: Generates blameless postmortems
+  - runbook-executor: Executes runbooks with safety checks
+- **CI/CD Domain** (5 agents)
+  - pipeline-fixer: Diagnoses and fixes failing pipelines
+  - build-optimizer: Optimizes build performance
+  - release-manager: Coordinates release workflows
+  - test-analyzer: Analyzes test failures and flakiness
+  - artifact-manager: Manages build artifacts and images
+- **Security Domain** (5 agents)
+  - vuln-scanner: Scans for vulnerabilities with Trivy
+  - secret-auditor: Audits secrets management with Vault
+  - compliance-checker: Validates compliance with OPA policies
+  - access-reviewer: Reviews RBAC permissions
+  - security-responder: Responds to security incidents
+- **Cloud Domain** (5 agents)
+  - cost-optimizer: Analyzes cloud costs and recommends savings
+  - drift-detector: Detects infrastructure drift with Terraform
+  - capacity-planner: Forecasts capacity needs
+  - backup-validator: Validates backup integrity
+  - multi-cloud-coordinator: Coordinates across AWS/Azure/GCP
+
+#### MCP Server Catalog (10 Documented Servers)
+- **Core**: filesystem, fetch, puppeteer
+- **Development**: github, gitlab
+- **Databases**: postgres (read-only), sqlite (read/write)
+- **Communication**: slack
+- **Search**: brave-search
+
+Each catalog entry includes:
+- Configuration examples for AOF agents
+- Full tool reference with parameters
+- Use case examples with agent specs
+- Troubleshooting guides
+
+#### Comprehensive Documentation
+- Agent Library user guide with domain overviews
+- MCP integration guide with tested servers
+- Wired both sections into Docusaurus sidebar
+
+### Changed
+- Improved getting-started with zero-setup examples
+- Cleaned up architecture documentation
+- Updated all agent specs to use correct tool naming (underscore-separated)
+
 ## [0.2.0-beta] - 2025-12-20
 
 ### Added
