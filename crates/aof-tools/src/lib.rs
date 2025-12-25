@@ -91,6 +91,15 @@ pub use tools::http::HttpTool;
 #[cfg(feature = "observability")]
 pub use tools::observability::{ObservabilityTools, PrometheusQueryTool, LokiQueryTool, ElasticsearchQueryTool, VictoriaMetricsQueryTool};
 
+#[cfg(feature = "observability")]
+pub use tools::newrelic::{NewRelicTools, NewRelicNrqlQueryTool, NewRelicAlertsListTool, NewRelicIncidentsListTool, NewRelicEntitySearchTool, NewRelicMetricsQueryTool, NewRelicIncidentAckTool};
+
+#[cfg(feature = "siem")]
+pub use tools::splunk::{SplunkTools, SplunkSearchTool, SplunkAlertsListTool, SplunkSavedSearchesTool, SplunkSavedSearchRunTool, SplunkHecSendTool, SplunkIndexesListTool};
+
+#[cfg(feature = "itsm")]
+pub use tools::servicenow::{ServiceNowTools, ServiceNowIncidentCreateTool, ServiceNowIncidentQueryTool, ServiceNowIncidentUpdateTool, ServiceNowIncidentGetTool, ServiceNowCmdbQueryTool, ServiceNowChangeCreateTool};
+
 // ============================================================================
 // Legacy Per-Operation Tools (Backward Compatibility)
 // ============================================================================
@@ -136,4 +145,13 @@ pub mod prelude {
 
     #[cfg(feature = "observability")]
     pub use super::tools::observability::ObservabilityTools;
+
+    #[cfg(feature = "observability")]
+    pub use super::tools::newrelic::NewRelicTools;
+
+    #[cfg(feature = "siem")]
+    pub use super::tools::splunk::SplunkTools;
+
+    #[cfg(feature = "itsm")]
+    pub use super::tools::servicenow::ServiceNowTools;
 }

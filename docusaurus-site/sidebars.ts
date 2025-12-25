@@ -73,6 +73,21 @@ const sidebars: SidebarsConfig = {
           items: [
             'tools/grafana',
             'tools/datadog',
+            'tools/newrelic',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'SIEM',
+          items: [
+            'tools/splunk',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'ITSM',
+          items: [
+            'tools/servicenow',
           ],
         },
         'tools/mcp-integration',
@@ -125,6 +140,7 @@ const sidebars: SidebarsConfig = {
         'agent-library/cicd',
         'agent-library/security',
         'agent-library/cloud',
+        'agent-library/itsm',
       ],
     },
     {

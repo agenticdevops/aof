@@ -26,11 +26,12 @@ aofctl run agent library://kubernetes/pod-doctor \
 | Domain | Agents | Focus Area |
 |--------|--------|------------|
 | [Kubernetes](./kubernetes.md) | 5 | Pod debugging, HPA tuning, Network policies |
-| [Observability](./observability.md) | 5 | Alerts, SLOs, Dashboards, Logs, Traces |
+| [Observability](./observability.md) | 7 | Alerts, SLOs, Dashboards, Logs, Traces, New Relic, Splunk |
 | [Incident](./incident.md) | 5 | RCA, Postmortems, Runbooks, Escalation |
 | [CI/CD](./cicd.md) | 5 | Pipelines, Tests, Builds, Releases |
 | [Security](./security.md) | 5 | Scanning, Compliance, Secrets, Threats |
 | [Cloud](./cloud.md) | 5 | Cost, IAM, Right-sizing, Drift |
+| [ITSM](./itsm.md) | 3 | ServiceNow incidents, CMDB, Change management |
 
 ## Using Library Agents
 

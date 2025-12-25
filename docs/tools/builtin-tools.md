@@ -452,10 +452,24 @@ Tools are organized by feature flags in the `aof-tools` crate:
 | `git` | `git_*` legacy tools |
 | `terraform` | `terraform_*` legacy tools |
 | `http` | `http_request` |
-| `observability` | `prometheus_query`, `loki_query`, `elasticsearch_query`, `victoriametrics_query` |
+| `observability` | `prometheus_query`, `loki_query`, `elasticsearch_query`, `victoriametrics_query`, `newrelic_*` |
+| `siem` | `splunk_*` (Splunk SPL queries, alerts, HEC) |
+| `itsm` | `servicenow_*` (ServiceNow incidents, CMDB, changes) |
 | `all` | All tools |
 
 The unified CLI tools (`kubectl`, `git`, `docker`, `terraform`, `aws`, `helm`) are always available.
+
+---
+
+## Platform-Specific Tools
+
+For detailed documentation on platform-specific integrations:
+
+- [Grafana Tools](./grafana.md) - Native Grafana integration for metrics and dashboards
+- [Datadog Tools](./datadog.md) - Native Datadog integration for observability
+- [New Relic Tools](./newrelic.md) - Native New Relic NerdGraph integration
+- [Splunk Tools](./splunk.md) - Native Splunk SIEM and log analysis
+- [ServiceNow Tools](./servicenow.md) - Native ServiceNow ITSM integration
 
 ---
 

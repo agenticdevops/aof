@@ -601,4 +601,3 @@ export KUBECONFIG=~/.kube/config
 
 - [Kubernetes Agents](./kubernetes.md) - K8s operations
 - [Security Agents](./security.md) - Security scanning
-- [Cost Optimization Guide](../guides/cost-optimization.md)

@@ -48,6 +48,17 @@ pub mod grafana;
 #[cfg(feature = "observability")]
 pub mod datadog;
 
+#[cfg(feature = "observability")]
+pub mod newrelic;
+
+// SIEM tools
+#[cfg(feature = "siem")]
+pub mod splunk;
+
+// ITSM tools
+#[cfg(feature = "itsm")]
+pub mod servicenow;
+
 // CI/CD tools
 #[cfg(feature = "cicd")]
 pub mod github_actions;

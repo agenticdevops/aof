@@ -16,6 +16,8 @@ Production-ready agents for monitoring, alerting, and observability operations.
 | [dashboard-generator](#dashboard-generator) | Auto-generate dashboards | grafana_dashboard_* |
 | [log-analyzer](#log-analyzer) | Analyze logs for patterns | loki_query, aws_logs |
 | [trace-investigator](#trace-investigator) | Investigate traces | kubectl |
+| [newrelic-ops](#newrelic-ops) | New Relic observability | newrelic_* |
+| [splunk-analyst](#splunk-analyst) | Splunk log analysis & SIEM | splunk_* |
 
 ## alert-manager
 
@@ -387,6 +389,210 @@ aofctl run agent library://observability/trace-investigator \
 
 ---
 
+## newrelic-ops
+
+Comprehensive New Relic agent for NRQL queries, incident response, and entity discovery.
+
+### Usage
+
+```bash
+# Query metrics with NRQL
+aofctl run agent library://observability/newrelic-ops \
+  --prompt "Check API error rate for the last hour"
+
+# Investigate incidents
+aofctl run agent library://observability/newrelic-ops \
+  --prompt "List active incidents and acknowledge critical ones"
+
+# Discover entities
+aofctl run agent library://observability/newrelic-ops \
+  --prompt "Find all production hosts with alertSeverity CRITICAL"
+```
+
+### Capabilities
+
+- Execute NRQL queries for metrics, logs, and traces
+- List and manage alert policies
+- List and acknowledge incidents
+- Search entities by type, tags, and alert status
+- Query detailed metric timeslices
+
+### Tools Used
+
+- `newrelic_nrql_query` - Execute NRQL queries
+- `newrelic_alerts_list` - List alert policies
+- `newrelic_incidents_list` - List incidents
+- `newrelic_entity_search` - Search entities
+- `newrelic_metrics_query` - Query metrics
+- `newrelic_incident_ack` - Acknowledge incidents
+
+### Example Output
+
+```markdown
+## New Relic Analysis: API Service
+
+### Current Status
+- **Active Incidents**: 2
+- **Alerting Entities**: 3
+- **Error Rate**: 2.3% (above 1% threshold)
+
+### NRQL Query Results
+
+Query: `SELECT percentage(count(*), WHERE error IS true) FROM Transaction WHERE appName = 'api' SINCE 1 hour ago TIMESERIES`
+
+| Time | Error Rate |
+|------|------------|
+| 14:00 | 0.8% |
+| 14:15 | 1.2% |
+| 14:30 | 2.3% ← Spike |
+| 14:45 | 2.1% |
+
+### Correlated Incidents
+
+| Issue ID | Priority | Title | Status |
+|----------|----------|-------|--------|
+| INC-123 | CRITICAL | High error rate | ACTIVATED |
+| INC-124 | HIGH | Database latency | ACTIVATED |
+
+### Recommended Actions
+
+1. Acknowledge INC-123 and begin investigation
+2. Query database metrics: `SELECT average(duration) FROM DatabaseQuery`
+3. Check deployment events for correlation
+```
+
+### Agent Definition
+
+```yaml
+apiVersion: aof.sh/v1alpha1
+kind: Agent
+metadata:
+  name: newrelic-ops
+  labels:
+    category: observability
+    platform: newrelic
+spec:
+  model: google:gemini-2.5-flash
+  tools:
+    - newrelic_nrql_query
+    - newrelic_alerts_list
+    - newrelic_incidents_list
+    - newrelic_entity_search
+    - newrelic_incident_ack
+  environment:
+    NEWRELIC_API_KEY: "${NEWRELIC_API_KEY}"
+    NEWRELIC_ACCOUNT_ID: "${NEWRELIC_ACCOUNT_ID}"
+    NEWRELIC_REGION: "${NEWRELIC_REGION:-us}"
+```
+
+> **Tool Reference**: See [New Relic Tools](../tools/newrelic.md) for detailed API documentation.
+
+---
+
+## splunk-analyst
+
+Comprehensive Splunk agent for SPL queries, security analysis, and event management.
+
+### Usage
+
+```bash
+# Search logs with SPL
+aofctl run agent library://observability/splunk-analyst \
+  --prompt "Search for error logs in the last hour"
+
+# Security analysis
+aofctl run agent library://observability/splunk-analyst \
+  --prompt "List all fired security alerts"
+
+# Run saved searches
+aofctl run agent library://observability/splunk-analyst \
+  --prompt "Run the daily-error-report saved search"
+```
+
+### Capabilities
+
+- Execute SPL (Search Processing Language) queries
+- Monitor and list fired alerts
+- Run saved searches on-demand
+- Send events via HTTP Event Collector
+- Discover available indexes
+
+### Tools Used
+
+- `splunk_search` - Execute SPL queries
+- `splunk_alerts_list` - List fired alerts
+- `splunk_saved_searches` - List saved searches
+- `splunk_saved_search_run` - Run saved searches
+- `splunk_hec_send` - Send events via HEC
+- `splunk_indexes_list` - List indexes
+
+### Example Output
+
+```markdown
+## Splunk Security Analysis
+
+### Alert Summary (Last 24 Hours)
+- **Total Fired Alerts**: 47
+- **Critical**: 3
+- **High**: 12
+- **Medium**: 32
+
+### Top Alerts by Frequency
+
+| Alert Name | Fires | Severity |
+|------------|-------|----------|
+| Failed SSH Login | 23 | HIGH |
+| Suspicious Network Traffic | 12 | CRITICAL |
+| Privilege Escalation | 8 | HIGH |
+
+### SPL Query Results
+
+Query: `index=security action=failure | stats count by user | where count > 10`
+
+| User | Failed Attempts |
+|------|-----------------|
+| admin | 45 |
+| service_account | 23 |
+| unknown | 156 ← Suspicious |
+
+### Security Recommendations
+
+1. **URGENT**: Investigate 156 failed logins from unknown user
+2. Review `admin` account for brute force attempts
+3. Enable MFA for privileged accounts
+4. Block suspicious source IPs
+```
+
+### Agent Definition
+
+```yaml
+apiVersion: aof.sh/v1alpha1
+kind: Agent
+metadata:
+  name: splunk-analyst
+  labels:
+    category: observability
+    platform: splunk
+spec:
+  model: google:gemini-2.5-flash
+  tools:
+    - splunk_search
+    - splunk_alerts_list
+    - splunk_saved_searches
+    - splunk_saved_search_run
+    - splunk_hec_send
+    - splunk_indexes_list
+  environment:
+    SPLUNK_BASE_URL: "${SPLUNK_BASE_URL}"
+    SPLUNK_TOKEN: "${SPLUNK_TOKEN}"
+    SPLUNK_HEC_URL: "${SPLUNK_HEC_URL}"
+    SPLUNK_HEC_TOKEN: "${SPLUNK_HEC_TOKEN}"
+```
+
+> **Tool Reference**: See [Splunk Tools](../tools/splunk.md) for detailed API documentation.
+
+---
+
 ## Environment Setup
 
 ```bash
@@ -401,6 +607,17 @@ export PROMETHEUS_URL=https://prometheus.example.com
 export DD_API_KEY=your-api-key
 export DD_APP_KEY=your-app-key
 export DD_SITE=datadoghq.com
+
+# New Relic
+export NEWRELIC_API_KEY=NRAK-xxxxxxxxxxxx
+export NEWRELIC_ACCOUNT_ID=1234567
+export NEWRELIC_REGION=us  # or eu
+
+# Splunk
+export SPLUNK_BASE_URL=https://splunk.example.com:8089
+export SPLUNK_TOKEN=your-auth-token
+export SPLUNK_HEC_URL=https://splunk.example.com:8088
+export SPLUNK_HEC_TOKEN=your-hec-token
 
 # Loki
 export LOKI_URL=https://loki.example.com

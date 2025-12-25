@@ -9,7 +9,9 @@ AOF provides a comprehensive tools system that enables agents to interact with i
 | **CLI Tools** | Unified command-line wrappers | `kubectl`, `git`, `docker`, `terraform`, `aws`, `helm` |
 | **File Tools** | File system operations | `read_file`, `write_file`, `list_directory`, `search_files` |
 | **Execution Tools** | Shell and HTTP execution | `shell`, `http_request` |
-| **Observability Tools** | Metrics and logs queries | `prometheus_query`, `loki_query`, `elasticsearch_query`, `grafana_*`, `datadog_*` |
+| **Observability Tools** | Metrics and logs queries | `prometheus_query`, `loki_query`, `elasticsearch_query`, `grafana_*`, `datadog_*`, `newrelic_*` |
+| **SIEM Tools** | Security information and event management | `splunk_*` |
+| **ITSM Tools** | IT Service Management | `servicenow_*` |
 | **CI/CD Tools** | Pipeline and deployment management | `github_*`, `gitlab_*`, `argocd_*`, `flux_*` |
 | **MCP Tools** | External MCP server tools | Any tool from configured MCP servers |
 
@@ -104,6 +106,9 @@ tools:
 - [CI/CD Tools](./cicd.md) - GitHub Actions, GitLab CI, ArgoCD, and Flux integration
 - [Grafana Tools](./grafana.md) - Native Grafana integration for metrics and dashboards
 - [Datadog Tools](./datadog.md) - Native Datadog integration for observability
+- [New Relic Tools](./newrelic.md) - Native New Relic NerdGraph (GraphQL) integration
+- [Splunk Tools](./splunk.md) - Native Splunk SIEM and log analysis integration
+- [ServiceNow Tools](./servicenow.md) - Native ServiceNow ITSM integration
 - [MCP Integration](./mcp-integration.md) - Using MCP servers with agents
 - [Custom Tools](./custom-tools.md) - Creating custom tool implementations
 
