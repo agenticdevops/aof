@@ -116,7 +116,7 @@ impl FleetOutput {
     ║                                                               ║
     ║   {BRIGHT_CYAN}█████╗  ██████╗ ███████╗{CYAN}                                    ║
     ║  {BRIGHT_CYAN}██╔══██╗██╔═══██╗██╔════╝{CYAN}   {WHITE}Agentic Ops Framework{CYAN}           ║
-    ║  {BRIGHT_CYAN}███████║██║   ██║█████╗{CYAN}     {DIM}Multi-Model RCA Engine{CYAN}           ║
+    ║  {BRIGHT_CYAN}███████║██║   ██║█████╗{CYAN}     {DIM}Multi-Agent Orchestration{CYAN}        ║
     ║  {BRIGHT_CYAN}██╔══██║██║   ██║██╔══╝{CYAN}                                      ║
     ║  {BRIGHT_CYAN}██║  ██║╚██████╔╝██║{CYAN}        {DIM}v0.1.x{CYAN}                          ║
     ║  {BRIGHT_CYAN}╚═╝  ╚═╝ ╚═════╝ ╚═╝{CYAN}                                         ║
@@ -254,55 +254,127 @@ impl FleetOutput {
         );
     }
 
-    /// Print the final RCA report beautifully
-    pub fn print_rca_report(&self, report: &serde_json::Value) {
+    /// Print the fleet result beautifully
+    pub fn print_fleet_result(&self, result: &serde_json::Value) {
         println!();
         println!();
 
-        // Extract report content
-        let result = report
-            .get("result")
-            .and_then(|r| r.as_str())
-            .unwrap_or("");
+        // Check if this is aggregated results (peer mode with merge aggregation)
+        let has_merged_results = result.get("results").and_then(|r| r.as_array()).is_some();
 
-        let tier_count = report
-            .get("tier_count")
-            .and_then(|t| t.as_u64())
-            .unwrap_or(0);
+        // Check if this is an RCA result (has tier_count) vs general fleet result
+        let is_rca = result.get("tier_count").is_some();
 
-        let synthesized_by = report
-            .get("synthesized_by")
-            .and_then(|s| s.as_str())
-            .unwrap_or("unknown");
+        if is_rca {
+            // RCA-specific output
+            let tier_count = result
+                .get("tier_count")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0);
 
-        // Print beautiful report header
-        println!(
-            "{BRIGHT_GREEN}{BOLD}╔═══════════════════════════════════════════════════════════════════════════╗{RESET}"
-        );
-        println!(
-            "{BRIGHT_GREEN}{BOLD}║{RESET}  {TARGET} {WHITE}{BOLD}ROOT CAUSE ANALYSIS REPORT{RESET}                                          {BRIGHT_GREEN}{BOLD}║{RESET}"
-        );
-        println!(
-            "{BRIGHT_GREEN}{BOLD}╠═══════════════════════════════════════════════════════════════════════════╣{RESET}"
-        );
-        println!(
-            "{BRIGHT_GREEN}{BOLD}║{RESET}  {GRAY}Tiers: {CYAN}{}{RESET}  {GRAY}│{RESET}  {GRAY}Synthesized by: {CYAN}{}{RESET}                          {BRIGHT_GREEN}{BOLD}║{RESET}",
-            tier_count, synthesized_by
-        );
-        println!(
-            "{BRIGHT_GREEN}{BOLD}╚═══════════════════════════════════════════════════════════════════════════╝{RESET}"
-        );
-        println!();
+            let synthesized_by = result
+                .get("synthesized_by")
+                .and_then(|s| s.as_str())
+                .unwrap_or("unknown");
 
-        // Parse and pretty-print the markdown content
-        self.print_markdown_report(result);
+            println!(
+                "{BRIGHT_GREEN}{BOLD}╔═══════════════════════════════════════════════════════════════════════════╗{RESET}"
+            );
+            println!(
+                "{BRIGHT_GREEN}{BOLD}║{RESET}  {TARGET} {WHITE}{BOLD}ROOT CAUSE ANALYSIS REPORT{RESET}                                          {BRIGHT_GREEN}{BOLD}║{RESET}"
+            );
+            println!(
+                "{BRIGHT_GREEN}{BOLD}╠═══════════════════════════════════════════════════════════════════════════╣{RESET}"
+            );
+            println!(
+                "{BRIGHT_GREEN}{BOLD}║{RESET}  {GRAY}Tiers: {CYAN}{}{RESET}  {GRAY}│{RESET}  {GRAY}Synthesized by: {CYAN}{}{RESET}                          {BRIGHT_GREEN}{BOLD}║{RESET}",
+                tier_count, synthesized_by
+            );
+            println!(
+                "{BRIGHT_GREEN}{BOLD}╚═══════════════════════════════════════════════════════════════════════════╝{RESET}"
+            );
+
+            // Extract and print RCA result
+            let result_text = result
+                .get("result")
+                .and_then(|r| r.as_str())
+                .unwrap_or("");
+
+            println!();
+            self.print_markdown_report(result_text);
+        } else if has_merged_results {
+            // Peer mode with merge aggregation - show all agent results
+            let agent_count = result
+                .get("agent_count")
+                .and_then(|c| c.as_u64())
+                .unwrap_or(0);
+
+            println!(
+                "{BRIGHT_GREEN}{BOLD}╔═══════════════════════════════════════════════════════════════════════════╗{RESET}"
+            );
+            println!(
+                "{BRIGHT_GREEN}{BOLD}║{RESET}  {TARGET} {WHITE}{BOLD}FLEET RESULTS{RESET} {GRAY}({} agents){RESET}                                       {BRIGHT_GREEN}{BOLD}║{RESET}",
+                agent_count
+            );
+            println!(
+                "{BRIGHT_GREEN}{BOLD}╚═══════════════════════════════════════════════════════════════════════════╝{RESET}"
+            );
+
+            println!();
+
+            // Print each agent's result
+            if let Some(results) = result.get("results").and_then(|r| r.as_array()) {
+                for agent_result in results {
+                    if let Some(agent_name) = agent_result.get("agent").and_then(|a| a.as_str()) {
+                        println!("{CYAN}{BOLD}┌─ {}{RESET}", agent_name);
+                        println!("{CYAN}│{RESET}");
+
+                        if let Some(response) = agent_result.get("response").and_then(|r| r.as_str()) {
+                            // Indent each line of the response
+                            for line in response.lines() {
+                                println!("{CYAN}│{RESET}  {}", line);
+                            }
+                        }
+
+                        println!("{CYAN}└{RESET}");
+                        println!();
+                    }
+                }
+            }
+        } else {
+            // General fleet output header (consensus or single result)
+            println!(
+                "{BRIGHT_GREEN}{BOLD}╔═══════════════════════════════════════════════════════════════════════════╗{RESET}"
+            );
+            println!(
+                "{BRIGHT_GREEN}{BOLD}║{RESET}  {TARGET} {WHITE}{BOLD}FLEET RESULTS{RESET}                                                        {BRIGHT_GREEN}{BOLD}║{RESET}"
+            );
+            println!(
+                "{BRIGHT_GREEN}{BOLD}╚═══════════════════════════════════════════════════════════════════════════╝{RESET}"
+            );
+
+            println!();
+
+            // Extract result content - try different field names based on coordination mode
+            let result_text = result
+                .get("result")  // Tiered mode
+                .and_then(|r| r.as_str())
+                .or_else(|| result.get("response").and_then(|r| r.as_str()))  // Peer mode consensus
+                .or_else(|| result.get("conclusion").and_then(|r| r.as_str())) // Deep mode
+                .unwrap_or_else(|| {
+                    // If result is not in JSON format, convert the whole value to string
+                    result.as_str().unwrap_or("")
+                });
+
+            self.print_markdown_report(result_text);
+        }
 
         println!();
         println!(
             "{DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}"
         );
         println!(
-            "{DIM}  Generated by AOF Multi-Model Consensus Engine{RESET}"
+            "{DIM}  Generated by AOF Fleet Orchestration{RESET}"
         );
     }
 

@@ -131,7 +131,8 @@ spec:
 
   coordination:
     mode: peer
-    distribution: broadcast
+    distribution: round-robin
+    aggregation: merge  # Collect ALL agent results
 ```
 
 ### Run It

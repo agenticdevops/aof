@@ -173,6 +173,13 @@ pub struct CoordinationConfig {
     #[serde(default)]
     pub consensus: Option<ConsensusConfig>,
 
+    /// Result aggregation strategy (for peer mode with complementary specialists)
+    /// When set, peer mode will collect and merge ALL agent results instead of using consensus.
+    /// Use this when agents provide complementary information (e.g., security + quality reviews)
+    /// rather than competing perspectives.
+    #[serde(default)]
+    pub aggregation: Option<FinalAggregation>,
+
     /// Tiered execution configuration (for tiered mode)
     #[serde(default)]
     pub tiered: Option<TieredConfig>,
@@ -278,6 +285,7 @@ impl Default for CoordinationConfig {
             manager: None,
             distribution: TaskDistribution::RoundRobin,
             consensus: None,
+            aggregation: None,
             tiered: None,
             deep: None,
         }
@@ -287,8 +295,9 @@ impl Default for CoordinationConfig {
 /// Coordination mode for the fleet
 ///
 /// Choose the mode that best fits your use case:
-/// - **Peer**: All agents work on the same task, results combined via consensus. Best for
-///   diverse perspectives (code review, RCA analysis).
+/// - **Peer**: All agents work on the same task in parallel. Results can be combined via
+///   consensus (competing perspectives) or aggregation (complementary specialists).
+///   Best for code review, multi-expert analysis, RCA.
 /// - **Hierarchical**: Manager delegates to workers, aggregates results. Best for
 ///   complex multi-step tasks with oversight.
 /// - **Pipeline**: Sequential handoff between agents. Best for workflows where

@@ -17,7 +17,7 @@ pub use deep::{DeepFleetExecutor, DeepResult, Finding, InvestigationPlan, Invest
 
 use aof_core::{
     AgentConfig, AgentFleet, AgentInstanceState, AgentInstanceStatus, AgentRole, AofError,
-    AofResult, ConsensusAlgorithm, CoordinationMode, FinalAggregation, FleetAgent, FleetMetrics,
+    AofResult, ConsensusAlgorithm, ConsensusConfig, CoordinationMode, FinalAggregation, FleetAgent, FleetMetrics,
     FleetState, FleetStatus, FleetTask, FleetTaskStatus, TaskDistribution,
 };
 use std::sync::Arc;
@@ -411,6 +411,7 @@ impl FleetCoordinator {
     /// Execute task in peer mode (consensus-based)
     async fn execute_peer(&self, mut task: FleetTask) -> AofResult<Option<FleetTask>> {
         let consensus_config = self.fleet.spec.coordination.consensus.clone();
+        let aggregation_mode = self.fleet.spec.coordination.aggregation;
 
         // Get all peer agents
         let state = self.state.read().await;
@@ -427,6 +428,64 @@ impl FleetCoordinator {
         // Execute on all agents in parallel
         let agent_results = self.execute_agents_parallel(&agents, &task.input).await;
 
+        // Check if we should use aggregation instead of consensus
+        if let Some(agg_mode) = aggregation_mode {
+            // Aggregation mode: collect and merge ALL results
+            use aof_core::fleet::FinalAggregation;
+
+            match agg_mode {
+                FinalAggregation::Merge => {
+                    // Merge all agent results into a combined output
+                    let mut merged_results = Vec::new();
+
+                    for result in &agent_results {
+                        merged_results.push(serde_json::json!({
+                            "agent": result.agent_name,
+                            "response": result.response,
+                        }));
+                    }
+
+                    task.result = Some(serde_json::json!({
+                        "results": merged_results,
+                        "agent_count": agent_results.len(),
+                    }));
+                    task.status = FleetTaskStatus::Completed;
+                },
+                FinalAggregation::Consensus => {
+                    // Fallback to consensus (same as before)
+                    return self.execute_peer_with_consensus(task, consensus_config, agent_results).await;
+                },
+                FinalAggregation::ManagerSynthesis => {
+                    // Not supported in peer mode without a manager
+                    return Err(AofError::runtime(
+                        "ManagerSynthesis aggregation requires hierarchical mode with a manager agent".to_string()
+                    ));
+                }
+            }
+        } else {
+            // No aggregation specified, use consensus (backward compatible)
+            return self.execute_peer_with_consensus(task, consensus_config, agent_results).await;
+        }
+
+        task.completed_at = Some(chrono::Utc::now());
+
+        // Update metrics
+        {
+            let mut state = self.state.write().await;
+            state.metrics.completed_tasks += 1;
+            state.completed_tasks.push(task.clone());
+        }
+
+        Ok(Some(task))
+    }
+
+    /// Execute peer mode with consensus (original behavior)
+    async fn execute_peer_with_consensus(
+        &self,
+        mut task: FleetTask,
+        consensus_config: Option<ConsensusConfig>,
+        agent_results: Vec<AgentResult>,
+    ) -> AofResult<Option<FleetTask>> {
         // Create consensus engine
         let engine = if let Some(config) = consensus_config {
             ConsensusEngine::from_config(config)

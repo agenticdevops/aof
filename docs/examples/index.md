@@ -71,13 +71,13 @@ aofctl run agent examples/kubectl-agent.yaml --input "Show me all pods"
 ---
 
 ### 4. Code Review Fleet
-**File:** `examples/fleets/code-review-team.yaml`
-**Use Case:** Multi-agent code review with security, performance, and quality reviewers
+**File:** `examples/quickstart/code-review-fleet.yaml`
+**Use Case:** Multi-agent code review with security and quality reviewers
 
 **Features:**
-- 3 specialized reviewers running in parallel
-- Peer coordination with consensus voting
-- Git and file reading tools
+- 2 specialized reviewers running in parallel
+- Peer coordination with result aggregation (not consensus)
+- Collects and merges ALL review findings
 
 **Quick Start:**
 ```bash
@@ -85,7 +85,7 @@ aofctl run agent examples/kubectl-agent.yaml --input "Show me all pods"
 export GOOGLE_API_KEY=AIza...
 
 # Run fleet with code to review
-aofctl run fleet examples/fleets/code-review-team.yaml --input "Review: function add(a, b) { return a + b; }"
+aofctl run fleet examples/quickstart/code-review-fleet.yaml --input "Review: function login(user, pass) { const query = 'SELECT * FROM users WHERE name=' + user; return db.query(query); }"
 ```
 
 ---
@@ -150,7 +150,8 @@ AgentFleet enables multi-agent coordination for complex tasks. All fleet example
 
 | Fleet | Description | Location |
 |-------|-------------|----------|
-| **code-review-team** | Multi-perspective code review with consensus | `examples/fleets/code-review-team.yaml` |
+| **code-review-fleet** | Multi-specialist code review with aggregation | `examples/quickstart/code-review-fleet.yaml` |
+| **code-review-team** | Multi-perspective code review (legacy) | `examples/fleets/code-review-team.yaml` |
 | **incident-response-team** | Incident triage and response coordination | `examples/fleets/incident-response-team.yaml` |
 | **k8s-rca-team** | Kubernetes root cause analysis | `examples/fleets/k8s-rca-team.yaml` |
 | **dockerizer-team** | Containerize applications | `examples/fleets/dockerizer-team.yaml` |
@@ -183,6 +184,7 @@ AgentFleet enables multi-agent coordination for complex tasks. All fleet example
 | Example | Complexity | Status | Prerequisites |
 |---------|------------|--------|---------------|
 | **simple-test-fleet** | ⭐ Simple | ✅ Working | Gemini API key |
+| **code-review-fleet** | ⭐ Simple | ✅ Working | Gemini API key |
 | **code-review-team** | ⭐⭐ Medium | ✅ Working | Gemini API key |
 | **incident-response-team** | ⭐⭐ Medium | ✅ Working | Gemini API key |
 | **k8s-rca-team** | ⭐⭐⭐ Advanced | ✅ Working | Gemini API key, kubectl |

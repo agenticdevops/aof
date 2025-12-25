@@ -900,6 +900,34 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
     f.render_widget(metrics_para, main_layout[1]);
 }
 
+/// Extract JSON from markdown code blocks (```json ... ```)
+fn extract_json_from_markdown(content: &str) -> String {
+    let content = content.trim();
+
+    // Check for markdown code block with json language tag
+    if content.starts_with("```json") || content.starts_with("```JSON") {
+        // Find the closing ```
+        if let Some(end_pos) = content[6..].find("```") {
+            return content[6..6+end_pos].trim().to_string();
+        }
+    }
+
+    // Check for generic markdown code block
+    if content.starts_with("```") {
+        // Find the first newline after opening fence
+        if let Some(newline_pos) = content[3..].find('\n') {
+            let json_start = 3 + newline_pos + 1;
+            // Find the closing ```
+            if let Some(end_pos) = content[json_start..].find("```") {
+                return content[json_start..json_start+end_pos].trim().to_string();
+            }
+        }
+    }
+
+    // No markdown fence found, return as-is
+    content.to_string()
+}
+
 /// Format and output agent result with smart visualization
 fn output_result_smart(agent_name: &str, result: &str, output: &str, schema: Option<&OutputSchema>) -> Result<()> {
     use comfy_table::{Table, presets::UTF8_FULL, ContentArrangement};
@@ -929,8 +957,11 @@ fn output_result_smart(agent_name: &str, result: &str, output: &str, schema: Opt
 
             // If schema is present, validate and use format hint
             if let Some(schema) = schema {
+                // Extract JSON from markdown code blocks if present
+                let json_str = extract_json_from_markdown(result);
+
                 // Try to parse result as JSON
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(result) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&json_str) {
                     // Validate against schema
                     if let Err(e) = schema.validate(&json) {
                         eprintln!("{} Schema validation failed: {}", ColorizeColor::bold("Warning:").yellow(), e);
@@ -942,7 +973,7 @@ fn output_result_smart(agent_name: &str, result: &str, output: &str, schema: Opt
                         Some(FormatHint::List) => render_as_list(&json),
                         Some(FormatHint::Json) => Some(render_json(&json)),
                         Some(FormatHint::Yaml) => render_as_yaml(&json),
-                        Some(FormatHint::Auto) | None => detect_and_render(result),
+                        Some(FormatHint::Auto) | None => detect_and_render(&json_str),
                     };
 
                     if let Some(rendered) = rendered {
@@ -1696,8 +1727,8 @@ async fn run_fleet(config_path: &str, input: Option<&str>, output_format: &str) 
             println!("{}", serde_yaml::to_string(&output_yaml)?);
         }
         "text" | _ => {
-            // Print beautiful RCA report
-            output.print_rca_report(&result);
+            // Print beautiful fleet result
+            output.print_fleet_result(&result);
             output.print_fleet_complete(&fleet_name, duration_ms, None);
         }
     }

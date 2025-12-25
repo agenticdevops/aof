@@ -36,6 +36,7 @@ spec:
     # Security-focused reviewer
     - name: security-reviewer
       role: specialist
+      replicas: 1
       spec:
         model: google:gemini-2.5-flash
         temperature: 0.1
@@ -77,6 +78,7 @@ spec:
     # Quality-focused reviewer
     - name: quality-reviewer
       role: specialist
+      replicas: 1
       spec:
         model: google:gemini-2.5-flash
         temperature: 0.2
@@ -112,4 +114,5 @@ spec:
 
   coordination:
     mode: peer
-    distribution: broadcast
+    distribution: round-robin
+    aggregation: merge  # Collect ALL results instead of consensus
