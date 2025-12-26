@@ -589,35 +589,57 @@ impl Runtime {
         Ok(create_builtin_executor_for_tools(tool_names))
     }
 
-    // Helper: Create memory backend from config string
+    // Helper: Create memory backend from config
     //
     // Supported formats:
+    // Simple string formats:
     // - "InMemory" or "" (default): In-memory backend, cleared on restart
     // - "File:./path.json": File-based JSON backend, persists across restarts
     // - "File:./path.json:100": File backend with max 100 entries (oldest removed first)
-    // - "SQLite:./path.db": (Future) SQLite backend
-    // - "PostgreSQL:connection_url": (Future) PostgreSQL backend
+    // - "file:./path.json": Same as above (case-insensitive type)
+    //
+    // Structured format:
+    // - memory:
+    //     type: File
+    //     config:
+    //       path: ./memory.json
+    //       max_messages: 50
     async fn create_memory_async(&self, config: &AgentConfig) -> AofResult<Arc<SimpleMemory>> {
-        let memory_config = config.memory.as_deref().unwrap_or("InMemory");
+        let memory_spec = match &config.memory {
+            None => {
+                debug!("No memory config, using InMemory backend");
+                let backend = InMemoryBackend::new();
+                return Ok(Arc::new(SimpleMemory::new(Arc::new(backend))));
+            }
+            Some(spec) => spec,
+        };
 
-        if memory_config.is_empty() || memory_config == "InMemory" {
+        // Check if this is an in-memory backend
+        if memory_spec.is_in_memory() {
             debug!("Creating InMemory backend");
             let backend = InMemoryBackend::new();
             return Ok(Arc::new(SimpleMemory::new(Arc::new(backend))));
         }
 
-        if let Some(rest) = memory_config.strip_prefix("File:") {
-            // Parse optional max_entries: "File:./path.json:100"
-            let parts: Vec<&str> = rest.splitn(2, ':').collect();
-            let path = parts[0];
-            let max_entries = parts.get(1).and_then(|s| s.parse().ok());
+        // Check if this is a file-based backend
+        if memory_spec.is_file() {
+            let path = memory_spec.path().ok_or_else(|| {
+                AofError::config(
+                    "File memory backend requires a path. \
+                    Use 'File:./path.json' or structured config with 'config.path'"
+                )
+            })?;
+            let max_entries = memory_spec.max_messages();
 
             debug!("Creating File backend at: {}, max_entries: {:?}", path, max_entries);
-            let backend = FileBackend::with_max_entries(path, max_entries).await?;
+            let backend = FileBackend::with_max_entries(&path, max_entries).await?;
             return Ok(Arc::new(SimpleMemory::new(Arc::new(backend))));
         }
 
-        if memory_config.starts_with("SQLite:") {
+        // Handle legacy string formats for backward compatibility
+        let memory_type = memory_spec.memory_type();
+
+        if memory_type.starts_with("SQLite") {
             return Err(AofError::config(
                 "SQLite memory backend is not yet implemented. \
                 Use 'InMemory' or 'File:./path.json' instead. \
@@ -625,7 +647,7 @@ impl Runtime {
             ));
         }
 
-        if memory_config.starts_with("PostgreSQL:") {
+        if memory_type.starts_with("PostgreSQL") {
             return Err(AofError::config(
                 "PostgreSQL memory backend is not yet implemented. \
                 Use 'InMemory' or 'File:./path.json' instead. \
@@ -635,8 +657,8 @@ impl Runtime {
 
         Err(AofError::config(format!(
             "Unknown memory backend: '{}'. \
-            Supported: 'InMemory', 'File:./path.json', 'File:./path.json:100' (with max entries)",
-            memory_config
+            Supported: 'InMemory', 'File:./path.json', or structured config with type: File/InMemory",
+            memory_type
         )))
     }
 

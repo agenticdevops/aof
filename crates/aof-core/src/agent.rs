@@ -1,10 +1,119 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 
 use crate::mcp::McpServerConfig;
 use crate::AofResult;
+
+/// Memory specification - unified way to configure memory backends
+///
+/// Supports multiple formats:
+/// 1. Simple string: `"file:./memory.json"` or `"in_memory"`
+/// 2. Object with type: `{type: "File", config: {path: "./memory.json", max_messages: 50}}`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MemorySpec {
+    /// Simple memory specification (backward compatible)
+    /// Format: "type" or "type:path" (e.g., "in_memory", "file:./memory.json")
+    Simple(String),
+
+    /// Structured memory configuration
+    Structured(StructuredMemoryConfig),
+}
+
+impl MemorySpec {
+    /// Get the memory type
+    pub fn memory_type(&self) -> &str {
+        match self {
+            MemorySpec::Simple(s) => {
+                // Extract type from "type" or "type:path" format
+                s.split(':').next().unwrap_or(s)
+            }
+            MemorySpec::Structured(config) => &config.memory_type,
+        }
+    }
+
+    /// Get the file path if this is a file-based memory
+    pub fn path(&self) -> Option<String> {
+        match self {
+            MemorySpec::Simple(s) => {
+                // Extract path from "file:./path.json" format
+                if s.contains(':') {
+                    s.split(':').nth(1).map(|s| s.to_string())
+                } else {
+                    None
+                }
+            }
+            MemorySpec::Structured(config) => config
+                .config
+                .as_ref()
+                .and_then(|c| c.get("path"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        }
+    }
+
+    /// Get max_messages configuration if available
+    pub fn max_messages(&self) -> Option<usize> {
+        match self {
+            MemorySpec::Simple(_) => None,
+            MemorySpec::Structured(config) => config
+                .config
+                .as_ref()
+                .and_then(|c| c.get("max_messages"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+        }
+    }
+
+    /// Get the full configuration object
+    pub fn config(&self) -> Option<&serde_json::Value> {
+        match self {
+            MemorySpec::Simple(_) => None,
+            MemorySpec::Structured(config) => config.config.as_ref(),
+        }
+    }
+
+    /// Check if this is an in-memory backend
+    pub fn is_in_memory(&self) -> bool {
+        let t = self.memory_type().to_lowercase();
+        t == "in_memory" || t == "inmemory" || t == "memory"
+    }
+
+    /// Check if this is a file-based backend
+    pub fn is_file(&self) -> bool {
+        self.memory_type().to_lowercase() == "file"
+    }
+}
+
+/// Structured memory configuration with type and config fields
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuredMemoryConfig {
+    /// Memory backend type: "File", "InMemory", etc.
+    #[serde(rename = "type")]
+    pub memory_type: String,
+
+    /// Backend-specific configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Value>,
+}
+
+impl fmt::Display for MemorySpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MemorySpec::Simple(s) => write!(f, "{}", s),
+            MemorySpec::Structured(config) => {
+                if let Some(path) = self.path() {
+                    write!(f, "{} (path: {})", config.memory_type, path)
+                } else {
+                    write!(f, "{}", config.memory_type)
+                }
+            }
+        }
+    }
+}
 
 /// Tool specification - unified way to configure both built-in and MCP tools
 ///
@@ -312,9 +421,10 @@ pub struct AgentConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<McpServerConfig>,
 
-    /// Memory backend
+    /// Memory backend configuration
+    /// Supports both simple string format and structured object format
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub memory: Option<String>,
+    pub memory: Option<MemorySpec>,
 
     /// Maximum number of conversation messages to include in context
     /// Controls token usage by limiting how much history is sent to the LLM.
@@ -396,7 +506,7 @@ struct AgentSpec {
     tools: Vec<ToolSpec>,
     #[serde(default)]
     mcp_servers: Vec<McpServerConfig>,
-    memory: Option<String>,
+    memory: Option<MemorySpec>,
     #[serde(default = "default_max_context_messages")]
     max_context_messages: usize,
     #[serde(default = "default_max_iterations")]
@@ -419,7 +529,7 @@ struct FlatAgentConfig {
     tools: Vec<ToolSpec>,
     #[serde(default)]
     mcp_servers: Vec<McpServerConfig>,
-    memory: Option<String>,
+    memory: Option<MemorySpec>,
     #[serde(default = "default_max_context_messages")]
     max_context_messages: usize,
     #[serde(default = "default_max_iterations")]
@@ -776,5 +886,119 @@ mod tests {
         assert_eq!(config.mcp_servers.len(), 1);
         assert_eq!(config.mcp_servers[0].name, "tools");
         assert_eq!(config.mcp_servers[0].command, Some("./my-mcp-server".to_string()));
+    }
+
+    #[test]
+    fn test_memory_spec_simple_string() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            memory: "file:./memory.json"
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "file");
+        assert_eq!(memory.path(), Some("./memory.json".to_string()));
+        assert!(memory.is_file());
+        assert!(!memory.is_in_memory());
+    }
+
+    #[test]
+    fn test_memory_spec_simple_in_memory() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            memory: "in_memory"
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "in_memory");
+        assert!(memory.is_in_memory());
+        assert!(!memory.is_file());
+    }
+
+    #[test]
+    fn test_memory_spec_structured_file() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            memory:
+              type: File
+              config:
+                path: ./k8s-helper-memory.json
+                max_messages: 50
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "File");
+        assert_eq!(memory.path(), Some("./k8s-helper-memory.json".to_string()));
+        assert_eq!(memory.max_messages(), Some(50));
+        assert!(memory.is_file());
+    }
+
+    #[test]
+    fn test_memory_spec_structured_in_memory() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            memory:
+              type: InMemory
+              config:
+                max_messages: 100
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "InMemory");
+        assert!(memory.is_in_memory());
+        assert_eq!(memory.max_messages(), Some(100));
+    }
+
+    #[test]
+    fn test_memory_spec_k8s_style_with_structured_memory() {
+        // This is the exact format from the bug report
+        let yaml = r#"
+            apiVersion: aof.dev/v1
+            kind: Agent
+            metadata:
+              name: k8s-helper
+              labels:
+                purpose: operations
+                team: platform
+            spec:
+              model: google:gemini-2.5-flash
+              instructions: |
+                You are a Kubernetes helper.
+              memory:
+                type: File
+                config:
+                  path: ./k8s-helper-memory.json
+                  max_messages: 50
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.name, "k8s-helper");
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "File");
+        assert_eq!(memory.path(), Some("./k8s-helper-memory.json".to_string()));
+        assert_eq!(memory.max_messages(), Some(50));
+    }
+
+    #[test]
+    fn test_memory_spec_no_memory() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.memory.is_none());
     }
 }

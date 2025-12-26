@@ -37,7 +37,7 @@ spec:
       command: string
       args: []
       env: {}
-  memory: string            # Optional: "InMemory", "File:./path", etc.
+  memory: string|object     # Optional: "InMemory", "File:./path", or structured config
 ```
 
 ## Metadata Fields
@@ -325,13 +325,13 @@ For more details, see [MCP Integration Guide](../tools/mcp-integration.md).
 ## Memory Configuration
 
 ### `spec.memory`
-**Type:** `string`
+**Type:** `string | object`
 **Required:** No
-**Description:** Memory backend identifier string.
+**Description:** Memory backend configuration. Supports both simple string format and structured object format.
+
+#### Simple String Format (Backward Compatible)
 
 **Format:** `"Type"` or `"Type:config"` or `"Type:config:options"`
-
-**Examples:**
 
 ```yaml
 spec:
@@ -343,15 +343,46 @@ spec:
 
   # File-based with max entries limit (keeps last 100 conversations)
   memory: "File:./agent-memory.json:100"
+
+  # Alternative formats (case-insensitive type)
+  memory: "file:./agent-memory.json"
+  memory: "in_memory"
 ```
+
+#### Structured Object Format
+
+For more explicit configuration, use the structured format with `type` and `config` fields:
+
+```yaml
+spec:
+  memory:
+    type: File
+    config:
+      path: ./k8s-helper-memory.json
+      max_messages: 50
+
+  # Or for in-memory:
+  memory:
+    type: InMemory
+    config:
+      max_messages: 100
+```
+
+**Structured Format Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | Memory backend type: `File`, `InMemory` |
+| `config` | object | No | Backend-specific configuration |
+| `config.path` | string | File only | Path to the JSON file |
+| `config.max_messages` | int | No | Maximum number of entries to retain |
 
 **Available Memory Types:**
 
 | Type | Format | Description |
 |------|--------|-------------|
-| `InMemory` | `"InMemory"` | RAM-based, cleared on restart (default) |
-| `File` | `"File:./path.json"` | JSON file persistence |
-| `File` | `"File:./path.json:N"` | JSON file with max N entries (oldest removed) |
+| `InMemory` | `"InMemory"` or `{type: InMemory}` | RAM-based, cleared on restart (default) |
+| `File` | `"File:./path.json"` or `{type: File, config: {path: ...}}` | JSON file persistence |
 | `SQLite` | `"SQLite:./path.db"` | *Planned for future release* |
 | `PostgreSQL` | `"PostgreSQL:url"` | *Planned for future release* |
 
@@ -359,18 +390,24 @@ spec:
 
 To prevent unbounded file growth, you can specify a maximum number of entries. When the limit is exceeded, the oldest entries (by creation time) are automatically removed.
 
-This is especially useful for conversation history where you only want to retain recent interactions:
-
+**Simple format:**
 ```yaml
 spec:
   # Keep only the last 50 conversation turns
   memory: "File:./conversations.json:50"
-
-  # Keep last 200 entries for longer context
-  memory: "File:./agent-memory.json:200"
 ```
 
-**Note:** Memory is a simple string, not a complex object. If omitted, defaults to `InMemory`.
+**Structured format:**
+```yaml
+spec:
+  memory:
+    type: File
+    config:
+      path: ./conversations.json
+      max_messages: 50
+```
+
+**Note:** If omitted, memory defaults to `InMemory`.
 
 **Future Backends:** SQLite and PostgreSQL backends are planned for future releases. Use `InMemory` for development/testing and `File` for persistent storage.
 
