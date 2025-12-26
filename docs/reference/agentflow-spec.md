@@ -126,7 +126,11 @@ Nodes define what happens at each step of the flow.
 
 ### Agent Node
 
-Execute a single agent.
+Execute a single agent. Agent nodes support two configuration methods:
+
+#### Option 1: Reference External Agent
+
+Reference an agent defined in a separate YAML file:
 
 ```yaml
 nodes:
@@ -137,6 +141,48 @@ nodes:
       input: "${event.text}"     # Input from trigger event
       timeout_seconds: 120
 ```
+
+#### Option 2: Inline Agent Definition
+
+Define the agent directly in the flow (recommended for simple, single-use agents):
+
+```yaml
+nodes:
+  - id: check-status
+    type: Agent
+    config:
+      inline:
+        name: status-checker
+        model: google:gemini-2.5-flash
+        instructions: |
+          Check the system status and report any issues.
+          Format your response as a summary.
+        tools:
+          - shell
+        temperature: 0.1
+      input: "${event.text}"
+```
+
+**Inline Agent Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Agent identifier |
+| `model` | string | Yes | Model to use (e.g., `google:gemini-2.5-flash`) |
+| `instructions` | string | No | System prompt / instructions |
+| `tools` | list | No | Tools available to the agent |
+| `mcp_servers` | list | No | MCP server configurations |
+| `temperature` | float | No | Model temperature (default: 0.7) |
+| `max_tokens` | int | No | Maximum response tokens |
+
+**When to use each approach:**
+
+| Use Case | Recommended |
+|----------|-------------|
+| Reusable agent across multiple flows | External agent file |
+| Complex agent with many tools | External agent file |
+| Simple, single-purpose step | Inline definition |
+| Self-contained flow (no external deps) | Inline definition |
 
 ### Fleet Node
 

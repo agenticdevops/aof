@@ -192,6 +192,38 @@ pub enum NodeType {
     End,
 }
 
+/// Inline agent configuration for flow nodes
+/// Allows defining agent config directly in the flow without a separate Agent CRD
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineAgentConfig {
+    /// Agent name (used for logging and identification)
+    pub name: String,
+
+    /// Model to use (e.g., "google:gemini-2.5-flash", "anthropic:claude-sonnet-4-20250514")
+    pub model: String,
+
+    /// System instructions for the agent
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+
+    /// Tools available to the agent
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<ToolSpec>,
+
+    /// MCP servers for the agent
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<McpServerConfig>,
+
+    /// Temperature for model sampling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+
+    /// Maximum tokens for response
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<usize>,
+}
+
 /// Node configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -202,12 +234,16 @@ pub struct NodeConfig {
     pub script: Option<String>,
 
     // Agent node
-    /// Agent name to execute
+    /// Agent name to execute (reference to external agent)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
 
-    /// Inline agent configuration (YAML string)
+    /// Inline agent configuration (structured)
     /// Use this to embed agent config directly in the flow
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inline: Option<InlineAgentConfig>,
+
+    /// Inline agent configuration (YAML string) - legacy
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_config: Option<String>,
 
@@ -553,8 +589,12 @@ impl AgentFlow {
         for node in &self.spec.nodes {
             match node.node_type {
                 NodeType::Agent => {
-                    if node.config.agent.is_none() {
-                        return Err(format!("Agent node '{}' requires 'agent' config", node.id));
+                    // Agent node requires either 'agent' (reference) OR 'inline' (embedded config)
+                    if node.config.agent.is_none() && node.config.inline.is_none() {
+                        return Err(format!(
+                            "Agent node '{}' requires either 'agent' (reference) or 'inline' (embedded config)",
+                            node.id
+                        ));
                     }
                 }
                 NodeType::Conditional => {

@@ -379,10 +379,6 @@ impl AgentFlowExecutor {
         node: &FlowNode,
         state: &mut AgentFlowState,
     ) -> AofResult<serde_json::Value> {
-        let agent_name = node.config.agent.as_ref().ok_or_else(|| {
-            AofError::Config("Agent node requires 'agent' config".to_string())
-        })?;
-
         let input = node
             .config
             .input
@@ -390,16 +386,72 @@ impl AgentFlowExecutor {
             .map(|i| self.expand_variables(i, state))
             .unwrap_or_default();
 
-        info!("Executing agent: {} with input: {}", agent_name, input);
+        // Check if we have inline config or agent reference
+        if let Some(inline) = &node.config.inline {
+            // Inline agent configuration - create agent on the fly
+            info!("Executing inline agent: {} with input: {}", inline.name, input);
+            return self.run_inline_agent(inline, &input, state).await;
+        }
 
-        // Try to load and execute the agent
-        // For now, we'll use a mock response since we need the full agent loading infrastructure
-        // In a real implementation, this would load the agent config and run it
+        // Agent reference - load from external config
+        let agent_name = node.config.agent.as_ref().ok_or_else(|| {
+            AofError::Config("Agent node requires 'agent' or 'inline' config".to_string())
+        })?;
+
+        info!("Executing agent: {} with input: {}", agent_name, input);
 
         // Check if there's an agent config file
         let agent_result = self.run_agent(agent_name, &input, state).await?;
 
         Ok(agent_result)
+    }
+
+    /// Run an inline agent (defined directly in the flow)
+    async fn run_inline_agent(
+        &self,
+        inline: &aof_core::agentflow::InlineAgentConfig,
+        input: &str,
+        _state: &AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        use aof_core::AgentConfig;
+
+        // Convert InlineAgentConfig to AgentConfig
+        let agent_config = AgentConfig {
+            name: inline.name.clone(),
+            model: inline.model.clone(),
+            system_prompt: inline.instructions.clone(),
+            provider: None,
+            tools: inline.tools.clone(),
+            mcp_servers: inline.mcp_servers.clone(),
+            memory: None,
+            max_context_messages: 10,
+            max_iterations: 10,
+            temperature: inline.temperature.unwrap_or(0.7),
+            max_tokens: inline.max_tokens,
+            extra: std::collections::HashMap::new(),
+        };
+
+        // Load the agent into runtime
+        {
+            let mut runtime = self.runtime.write().await;
+            runtime.load_agent_from_config(agent_config).await?;
+        }
+
+        // Apply flow context if specified
+        self.apply_flow_context().await?;
+
+        // Execute the agent
+        let result = {
+            let runtime = self.runtime.read().await;
+            runtime.execute(&inline.name, input).await?
+        };
+
+        Ok(serde_json::json!({
+            "agent": inline.name,
+            "input": input,
+            "output": result,
+            "requires_approval": false
+        }))
     }
 
     /// Run an agent using the runtime
