@@ -1406,10 +1406,14 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
                     out.print_node_start(&node_id, &node_type, step_num, total_steps);
                 }
                 AgentFlowEvent::NodeCompleted { node_id, duration_ms, output } => {
-                    // Extract preview from output
+                    // Extract the actual output text from agent result
                     let preview = output.as_ref().and_then(|o| {
-                        o.as_str().map(|s| s.to_string())
-                            .or_else(|| serde_json::to_string_pretty(o).ok())
+                        // Try to get "output" field first (agent result structure)
+                        o.get("output")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            // Fall back to direct string
+                            .or_else(|| o.as_str().map(|s| s.to_string()))
                     });
                     out.print_node_complete(&node_id, duration_ms, preview.as_deref());
                 }

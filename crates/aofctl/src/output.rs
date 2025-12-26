@@ -813,10 +813,10 @@ impl FlowOutput {
             node.output_preview = output_preview.map(|s| s.to_string());
         }
 
-        // Clear "Executing..." and print completion
-        print!("\r");
+        // Move to new line to handle any interleaved log output, then print completion
+        println!();
         println!(
-            "  {BRIGHT_BLUE}{BOLD}│{RESET}  {GREEN}{CHECK} Completed{RESET} {DIM}({:.2}s){RESET}                    ",
+            "  {BRIGHT_BLUE}{BOLD}│{RESET}  {GREEN}{CHECK} Completed{RESET} {DIM}({:.2}s){RESET}",
             duration_ms as f64 / 1000.0
         );
 
@@ -849,13 +849,14 @@ impl FlowOutput {
             node.status = FlowNodeStatus::Failed;
         }
 
-        print!("\r");
+        // Move to new line to handle any interleaved log output
+        println!();
         println!(
-            "  {BRIGHT_BLUE}{BOLD}│{RESET}  {RED}{CROSS} Failed{RESET}                                      "
+            "  {BRIGHT_BLUE}{BOLD}│{RESET}  {RED}{CROSS} Failed{RESET}"
         );
         println!(
             "  {BRIGHT_BLUE}{BOLD}│{RESET}    {RED}{}{RESET}",
-            truncate_str(error, 50)
+            truncate_str(error, 55)
         );
         println!("  {BRIGHT_BLUE}{BOLD}└─{RESET}");
         println!();
@@ -938,82 +939,64 @@ impl FlowOutput {
         }
 
         let duration_ms = self.start_time.elapsed().as_millis() as u64;
-        let total_nodes = self.nodes.len();
         let completed = self.nodes.iter().filter(|n| n.status == FlowNodeStatus::Completed).count();
         let failed = self.nodes.iter().filter(|n| n.status == FlowNodeStatus::Failed).count();
+        let skipped = self.nodes.len().saturating_sub(completed + failed);
 
-        let status_color = if status == "Completed" { GREEN } else { RED };
-        let status_icon = if status == "Completed" { CHECK } else { CROSS };
+        let is_success = status == "Completed";
+        let status_color = if is_success { GREEN } else { RED };
+        let status_icon = if is_success { CHECK } else { CROSS };
+        let status_text = if is_success { "COMPLETE" } else { "FAILED" };
 
         println!();
         println!(
-            "{status_color}{BOLD}╭─────────────────────────────────────────────────────────────╮{RESET}"
+            "{status_color}{BOLD}╭───────────────────────────────────────────────────────────╮{RESET}"
         );
         println!(
-            "{status_color}{BOLD}│{RESET} {ROCKET} {WHITE}{BOLD}FLOW EXECUTION {}{RESET}                           {status_color}{BOLD}│{RESET}",
-            status.to_uppercase()
+            "{status_color}{BOLD}│{RESET} {ROCKET} {WHITE}{BOLD}FLOW EXECUTION {status_text}{RESET}                                {status_color}{BOLD}│{RESET}"
         );
         println!(
-            "{status_color}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+            "{status_color}{BOLD}├───────────────────────────────────────────────────────────┤{RESET}"
         );
         println!(
-            "{status_color}{BOLD}│{RESET}  Flow: {CYAN}{:<30}{RESET}                    {status_color}{BOLD}│{RESET}",
-            truncate_str(flow_name, 30)
+            "{status_color}{BOLD}│{RESET}  Flow:     {CYAN}{:<44}{RESET}{status_color}{BOLD}│{RESET}",
+            truncate_str(flow_name, 44)
         );
         println!(
-            "{status_color}{BOLD}│{RESET}  Status: {status_color}{status_icon} {}{RESET}                                          {status_color}{BOLD}│{RESET}",
+            "{status_color}{BOLD}│{RESET}  Status:   {status_color}{status_icon} {:<42}{RESET}{status_color}{BOLD}│{RESET}",
             status
         );
         println!(
-            "{status_color}{BOLD}│{RESET}  Duration: {YELLOW}{:.2}s{RESET}                                           {status_color}{BOLD}│{RESET}",
+            "{status_color}{BOLD}│{RESET}  Duration: {YELLOW}{:.2}s{RESET}                                          {status_color}{BOLD}│{RESET}",
             duration_ms as f64 / 1000.0
         );
         println!(
-            "{status_color}{BOLD}│{RESET}  Nodes: {GREEN}{} completed{RESET}",
-            completed
+            "{status_color}{BOLD}│{RESET}  Nodes:    {GREEN}{} completed{RESET}, {RED}{} failed{RESET}, {GRAY}{} skipped{RESET}       {status_color}{BOLD}│{RESET}",
+            completed, failed, skipped
         );
-        if failed > 0 {
-            println!(
-                "{status_color}{BOLD}│{RESET}         {RED}{} failed{RESET}",
-                failed
-            );
-        }
-        if total_nodes > completed + failed {
-            println!(
-                "{status_color}{BOLD}│{RESET}         {GRAY}{} skipped{RESET}",
-                total_nodes - completed - failed
-            );
-        }
 
         // Token usage
         if let Some(ref u) = usage {
             println!(
-                "{status_color}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+                "{status_color}{BOLD}├───────────────────────────────────────────────────────────┤{RESET}"
             );
             println!(
-                "{status_color}{BOLD}│{RESET}  {BRIGHT_CYAN}Token Usage:{RESET}                                                {status_color}{BOLD}│{RESET}"
-            );
-            println!(
-                "{status_color}{BOLD}│{RESET}    Input:  {WHITE}{:>12}{RESET} tokens                            {status_color}{BOLD}│{RESET}",
-                u.input_tokens
-            );
-            println!(
-                "{status_color}{BOLD}│{RESET}    Output: {WHITE}{:>12}{RESET} tokens                            {status_color}{BOLD}│{RESET}",
-                u.output_tokens
-            );
-            println!(
-                "{status_color}{BOLD}│{RESET}    Total:  {BRIGHT_YELLOW}{:>12}{RESET} tokens                            {status_color}{BOLD}│{RESET}",
-                u.total_tokens
+                "{status_color}{BOLD}│{RESET}  Tokens:   {WHITE}{} in{RESET} / {WHITE}{} out{RESET} = {BRIGHT_YELLOW}{} total{RESET}",
+                u.input_tokens, u.output_tokens, u.total_tokens
             );
         }
 
         // Execution path
-        if !self.nodes.is_empty() {
+        let completed_nodes: Vec<&FlowNodeState> = self.nodes.iter()
+            .filter(|n| n.status == FlowNodeStatus::Completed)
+            .collect();
+
+        if !completed_nodes.is_empty() {
             println!(
-                "{status_color}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+                "{status_color}{BOLD}├───────────────────────────────────────────────────────────┤{RESET}"
             );
-            print!("{status_color}{BOLD}│{RESET}  {DIM}Path:{RESET} ");
-            for (i, node) in self.nodes.iter().filter(|n| n.status == FlowNodeStatus::Completed).enumerate() {
+            print!("{status_color}{BOLD}│{RESET}  Path:     ");
+            for (i, node) in completed_nodes.iter().enumerate() {
                 if i > 0 {
                     print!(" {GRAY}{ARROW_RIGHT}{RESET} ");
                 }
@@ -1023,7 +1006,7 @@ impl FlowOutput {
         }
 
         println!(
-            "{status_color}{BOLD}╰─────────────────────────────────────────────────────────────╯{RESET}"
+            "{status_color}{BOLD}╰───────────────────────────────────────────────────────────╯{RESET}"
         );
     }
 }
