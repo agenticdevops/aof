@@ -1,17 +1,127 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 
 use crate::mcp::McpServerConfig;
 use crate::AofResult;
 
+/// Memory specification - unified way to configure memory backends
+///
+/// Supports multiple formats:
+/// 1. Simple string: `"file:./memory.json"` or `"in_memory"`
+/// 2. Object with type: `{type: "File", config: {path: "./memory.json", max_messages: 50}}`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MemorySpec {
+    /// Simple memory specification (backward compatible)
+    /// Format: "type" or "type:path" (e.g., "in_memory", "file:./memory.json")
+    Simple(String),
+
+    /// Structured memory configuration
+    Structured(StructuredMemoryConfig),
+}
+
+impl MemorySpec {
+    /// Get the memory type
+    pub fn memory_type(&self) -> &str {
+        match self {
+            MemorySpec::Simple(s) => {
+                // Extract type from "type" or "type:path" format
+                s.split(':').next().unwrap_or(s)
+            }
+            MemorySpec::Structured(config) => &config.memory_type,
+        }
+    }
+
+    /// Get the file path if this is a file-based memory
+    pub fn path(&self) -> Option<String> {
+        match self {
+            MemorySpec::Simple(s) => {
+                // Extract path from "file:./path.json" format
+                if s.contains(':') {
+                    s.split(':').nth(1).map(|s| s.to_string())
+                } else {
+                    None
+                }
+            }
+            MemorySpec::Structured(config) => config
+                .config
+                .as_ref()
+                .and_then(|c| c.get("path"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        }
+    }
+
+    /// Get max_messages configuration if available
+    pub fn max_messages(&self) -> Option<usize> {
+        match self {
+            MemorySpec::Simple(_) => None,
+            MemorySpec::Structured(config) => config
+                .config
+                .as_ref()
+                .and_then(|c| c.get("max_messages"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+        }
+    }
+
+    /// Get the full configuration object
+    pub fn config(&self) -> Option<&serde_json::Value> {
+        match self {
+            MemorySpec::Simple(_) => None,
+            MemorySpec::Structured(config) => config.config.as_ref(),
+        }
+    }
+
+    /// Check if this is an in-memory backend
+    pub fn is_in_memory(&self) -> bool {
+        let t = self.memory_type().to_lowercase();
+        t == "in_memory" || t == "inmemory" || t == "memory"
+    }
+
+    /// Check if this is a file-based backend
+    pub fn is_file(&self) -> bool {
+        self.memory_type().to_lowercase() == "file"
+    }
+}
+
+/// Structured memory configuration with type and config fields
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuredMemoryConfig {
+    /// Memory backend type: "File", "InMemory", etc.
+    #[serde(rename = "type")]
+    pub memory_type: String,
+
+    /// Backend-specific configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Value>,
+}
+
+impl fmt::Display for MemorySpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MemorySpec::Simple(s) => write!(f, "{}", s),
+            MemorySpec::Structured(config) => {
+                if let Some(path) = self.path() {
+                    write!(f, "{} (path: {})", config.memory_type, path)
+                } else {
+                    write!(f, "{}", config.memory_type)
+                }
+            }
+        }
+    }
+}
+
 /// Tool specification - unified way to configure both built-in and MCP tools
 ///
 /// Supports multiple formats:
 /// 1. Simple string: `"shell"` - built-in tool with defaults
-/// 2. Object with source: `{name: "kubectl_get", source: "builtin", config: {...}}`
-/// 3. MCP tool: `{name: "read_file", source: "mcp", server: "filesystem"}`
+/// 2. Type-based: `{type: "Shell", config: {allowed_commands: [...]}}`
+/// 3. Object with source: `{name: "kubectl_get", source: "builtin", config: {...}}`
+/// 4. MCP tool: `{name: "read_file", source: "mcp", server: "filesystem"}`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolSpec {
@@ -19,8 +129,36 @@ pub enum ToolSpec {
     /// Assumes built-in if the tool exists, otherwise tries MCP
     Simple(String),
 
+    /// Type-based tool specification (type: Shell/MCP/HTTP)
+    /// Format: {type: "Shell", config: {allowed_commands: [...]}}
+    TypeBased(TypeBasedToolSpec),
+
     /// Fully qualified tool specification
     Qualified(QualifiedToolSpec),
+}
+
+/// Type-based tool specification
+/// Supports: Shell, MCP, HTTP tool types with their configurations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeBasedToolSpec {
+    /// Tool type: Shell, MCP, HTTP
+    #[serde(rename = "type")]
+    pub tool_type: TypeBasedToolType,
+
+    /// Tool-specific configuration
+    #[serde(default)]
+    pub config: serde_json::Value,
+}
+
+/// Tool types for type-based specification
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TypeBasedToolType {
+    /// Shell command execution with restrictions
+    Shell,
+    /// MCP server tool
+    MCP,
+    /// HTTP API tool
+    HTTP,
 }
 
 impl ToolSpec {
@@ -28,6 +166,15 @@ impl ToolSpec {
     pub fn name(&self) -> &str {
         match self {
             ToolSpec::Simple(name) => name,
+            ToolSpec::TypeBased(spec) => match spec.tool_type {
+                TypeBasedToolType::Shell => "shell",
+                TypeBasedToolType::MCP => spec
+                    .config
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("mcp"),
+                TypeBasedToolType::HTTP => "http",
+            },
             ToolSpec::Qualified(spec) => &spec.name,
         }
     }
@@ -36,6 +183,7 @@ impl ToolSpec {
     pub fn is_builtin(&self) -> bool {
         match self {
             ToolSpec::Simple(_) => true, // default to builtin for simple names
+            ToolSpec::TypeBased(spec) => spec.tool_type == TypeBasedToolType::Shell,
             ToolSpec::Qualified(spec) => spec.source == ToolSource::Builtin,
         }
     }
@@ -44,7 +192,34 @@ impl ToolSpec {
     pub fn is_mcp(&self) -> bool {
         match self {
             ToolSpec::Simple(_) => false,
+            ToolSpec::TypeBased(spec) => spec.tool_type == TypeBasedToolType::MCP,
             ToolSpec::Qualified(spec) => spec.source == ToolSource::Mcp,
+        }
+    }
+
+    /// Check if this is an HTTP tool
+    pub fn is_http(&self) -> bool {
+        match self {
+            ToolSpec::Simple(_) => false,
+            ToolSpec::TypeBased(spec) => spec.tool_type == TypeBasedToolType::HTTP,
+            ToolSpec::Qualified(_) => false,
+        }
+    }
+
+    /// Check if this is a Shell tool (type-based)
+    pub fn is_shell(&self) -> bool {
+        match self {
+            ToolSpec::Simple(name) => name == "shell",
+            ToolSpec::TypeBased(spec) => spec.tool_type == TypeBasedToolType::Shell,
+            ToolSpec::Qualified(spec) => spec.name == "shell",
+        }
+    }
+
+    /// Get the tool type (for type-based specs)
+    pub fn tool_type(&self) -> Option<TypeBasedToolType> {
+        match self {
+            ToolSpec::TypeBased(spec) => Some(spec.tool_type),
+            _ => None,
         }
     }
 
@@ -52,6 +227,13 @@ impl ToolSpec {
     pub fn mcp_server(&self) -> Option<&str> {
         match self {
             ToolSpec::Simple(_) => None,
+            ToolSpec::TypeBased(spec) => {
+                if spec.tool_type == TypeBasedToolType::MCP {
+                    spec.config.get("name").and_then(|v| v.as_str())
+                } else {
+                    None
+                }
+            }
             ToolSpec::Qualified(spec) => spec.server.as_deref(),
         }
     }
@@ -60,7 +242,16 @@ impl ToolSpec {
     pub fn config(&self) -> Option<&serde_json::Value> {
         match self {
             ToolSpec::Simple(_) => None,
+            ToolSpec::TypeBased(spec) => Some(&spec.config),
             ToolSpec::Qualified(spec) => spec.config.as_ref(),
+        }
+    }
+
+    /// Get type-based spec if this is a type-based tool
+    pub fn type_based_spec(&self) -> Option<&TypeBasedToolSpec> {
+        match self {
+            ToolSpec::TypeBased(spec) => Some(spec),
+            _ => None,
         }
     }
 }
@@ -312,9 +503,10 @@ pub struct AgentConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<McpServerConfig>,
 
-    /// Memory backend
+    /// Memory backend configuration
+    /// Supports both simple string format and structured object format
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub memory: Option<String>,
+    pub memory: Option<MemorySpec>,
 
     /// Maximum number of conversation messages to include in context
     /// Controls token usage by limiting how much history is sent to the LLM.
@@ -354,6 +546,178 @@ impl AgentConfig {
     pub fn mcp_tools(&self) -> Vec<&ToolSpec> {
         self.tools.iter().filter(|t| t.is_mcp()).collect()
     }
+
+    /// Get type-based Shell tools
+    pub fn type_based_shell_tools(&self) -> Vec<&TypeBasedToolSpec> {
+        self.tools
+            .iter()
+            .filter_map(|t| match t {
+                ToolSpec::TypeBased(spec) if spec.tool_type == TypeBasedToolType::Shell => {
+                    Some(spec)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Get type-based MCP tools
+    pub fn type_based_mcp_tools(&self) -> Vec<&TypeBasedToolSpec> {
+        self.tools
+            .iter()
+            .filter_map(|t| match t {
+                ToolSpec::TypeBased(spec) if spec.tool_type == TypeBasedToolType::MCP => Some(spec),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Get type-based HTTP tools
+    pub fn type_based_http_tools(&self) -> Vec<&TypeBasedToolSpec> {
+        self.tools
+            .iter()
+            .filter_map(|t| match t {
+                ToolSpec::TypeBased(spec) if spec.tool_type == TypeBasedToolType::HTTP => {
+                    Some(spec)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Check if there are any type-based tools
+    pub fn has_type_based_tools(&self) -> bool {
+        self.tools.iter().any(|t| matches!(t, ToolSpec::TypeBased(_)))
+    }
+
+    /// Convert type-based MCP tools to McpServerConfig
+    /// Returns configs that can be used with create_mcp_executor_from_config
+    pub fn type_based_mcp_to_server_configs(&self) -> Vec<crate::mcp::McpServerConfig> {
+        self.type_based_mcp_tools()
+            .iter()
+            .filter_map(|spec| {
+                let config = &spec.config;
+                let name = config.get("name")?.as_str()?;
+
+                // Extract command - can be string or array
+                let command = config.get("command").and_then(|v| {
+                    if let Some(s) = v.as_str() {
+                        Some(s.to_string())
+                    } else if let Some(arr) = v.as_array() {
+                        arr.first().and_then(|v| v.as_str()).map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                });
+
+                // Extract args from command array (skip first element)
+                let args: Vec<String> = config
+                    .get("command")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .skip(1)
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Extract env vars
+                let env: std::collections::HashMap<String, String> = config
+                    .get("env")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                Some(crate::mcp::McpServerConfig {
+                    name: name.to_string(),
+                    transport: crate::mcp::McpTransport::Stdio,
+                    command,
+                    args,
+                    env,
+                    endpoint: None,
+                    tools: vec![],
+                    init_options: None,
+                    timeout_secs: config
+                        .get("timeout_seconds")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(30),
+                    auto_reconnect: true,
+                })
+            })
+            .collect()
+    }
+
+    /// Get Shell tool configuration (allowed_commands, working_directory, etc.)
+    pub fn shell_tool_config(&self) -> Option<ShellToolConfig> {
+        self.type_based_shell_tools().first().map(|spec| {
+            let config = &spec.config;
+            ShellToolConfig {
+                allowed_commands: config
+                    .get("allowed_commands")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                working_directory: config
+                    .get("working_directory")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                timeout_seconds: config
+                    .get("timeout_seconds")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+            }
+        })
+    }
+
+    /// Get HTTP tool configuration
+    pub fn http_tool_config(&self) -> Option<HttpToolConfig> {
+        self.type_based_http_tools().first().map(|spec| {
+            let config = &spec.config;
+            HttpToolConfig {
+                base_url: config
+                    .get("base_url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                timeout_seconds: config
+                    .get("timeout_seconds")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+                allowed_methods: config
+                    .get("allowed_methods")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            }
+        })
+    }
+}
+
+/// Shell tool configuration extracted from type-based spec
+#[derive(Debug, Clone, Default)]
+pub struct ShellToolConfig {
+    pub allowed_commands: Vec<String>,
+    pub working_directory: Option<String>,
+    pub timeout_seconds: Option<u32>,
+}
+
+/// HTTP tool configuration extracted from type-based spec
+#[derive(Debug, Clone, Default)]
+pub struct HttpToolConfig {
+    pub base_url: Option<String>,
+    pub timeout_seconds: Option<u32>,
+    pub allowed_methods: Vec<String>,
 }
 
 /// Internal type for flexible config parsing
@@ -396,7 +760,7 @@ struct AgentSpec {
     tools: Vec<ToolSpec>,
     #[serde(default)]
     mcp_servers: Vec<McpServerConfig>,
-    memory: Option<String>,
+    memory: Option<MemorySpec>,
     #[serde(default = "default_max_context_messages")]
     max_context_messages: usize,
     #[serde(default = "default_max_iterations")]
@@ -419,7 +783,7 @@ struct FlatAgentConfig {
     tools: Vec<ToolSpec>,
     #[serde(default)]
     mcp_servers: Vec<McpServerConfig>,
-    memory: Option<String>,
+    memory: Option<MemorySpec>,
     #[serde(default = "default_max_context_messages")]
     max_context_messages: usize,
     #[serde(default = "default_max_iterations")]
@@ -673,6 +1037,132 @@ mod tests {
     }
 
     #[test]
+    fn test_tool_spec_type_based_shell() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - type: Shell
+                config:
+                  allowed_commands:
+                    - kubectl
+                    - helm
+                  working_directory: /tmp
+                  timeout_seconds: 30
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 1);
+        assert_eq!(config.tools[0].name(), "shell");
+        assert!(config.tools[0].is_shell());
+        assert!(config.tools[0].is_builtin());
+        assert!(config.tools[0].config().is_some());
+
+        let config_val = config.tools[0].config().unwrap();
+        assert!(config_val.get("allowed_commands").is_some());
+    }
+
+    #[test]
+    fn test_tool_spec_type_based_mcp() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - type: MCP
+                config:
+                  name: kubectl-mcp
+                  command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+                  env:
+                    KUBECONFIG: "${KUBECONFIG}"
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 1);
+        assert!(config.tools[0].is_mcp());
+        assert_eq!(config.tools[0].mcp_server(), Some("kubectl-mcp"));
+    }
+
+    #[test]
+    fn test_tool_spec_type_based_http() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - type: HTTP
+                config:
+                  base_url: http://localhost:8080
+                  timeout_seconds: 10
+                  allowed_methods: [GET, POST]
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 1);
+        assert_eq!(config.tools[0].name(), "http");
+        assert!(config.tools[0].is_http());
+
+        let config_val = config.tools[0].config().unwrap();
+        assert_eq!(config_val.get("base_url").unwrap(), "http://localhost:8080");
+    }
+
+    #[test]
+    fn test_tool_spec_type_based_mixed() {
+        // This is the exact format from the user's final_agents.yaml
+        let yaml = r#"
+            apiVersion: aof.dev/v1
+            kind: Agent
+            metadata:
+              name: k8s-helper
+              labels:
+                purpose: operations
+            spec:
+              model: google:gemini-2.5-flash
+              instructions: You are a K8s helper.
+              tools:
+                - type: Shell
+                  config:
+                    allowed_commands:
+                      - kubectl
+                      - helm
+                    working_directory: /tmp
+                    timeout_seconds: 30
+                - type: MCP
+                  config:
+                    name: kubectl-mcp
+                    command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+                - type: HTTP
+                  config:
+                    base_url: http://localhost
+                    timeout_seconds: 10
+              memory:
+                type: File
+                config:
+                  path: ./k8s-helper-memory.json
+                  max_messages: 50
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.name, "k8s-helper");
+        assert_eq!(config.tools.len(), 3);
+
+        // First tool: Shell
+        assert!(config.tools[0].is_shell());
+        assert!(config.tools[0].is_builtin());
+
+        // Second tool: MCP
+        assert!(config.tools[1].is_mcp());
+        assert_eq!(config.tools[1].mcp_server(), Some("kubectl-mcp"));
+
+        // Third tool: HTTP
+        assert!(config.tools[2].is_http());
+
+        // Memory
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert!(memory.is_file());
+        assert_eq!(memory.path(), Some("./k8s-helper-memory.json".to_string()));
+    }
+
+    #[test]
     fn test_tool_result_serialization() {
         let result = ToolResult {
             tool_name: "test_tool".to_string(),
@@ -776,5 +1266,119 @@ mod tests {
         assert_eq!(config.mcp_servers.len(), 1);
         assert_eq!(config.mcp_servers[0].name, "tools");
         assert_eq!(config.mcp_servers[0].command, Some("./my-mcp-server".to_string()));
+    }
+
+    #[test]
+    fn test_memory_spec_simple_string() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            memory: "file:./memory.json"
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "file");
+        assert_eq!(memory.path(), Some("./memory.json".to_string()));
+        assert!(memory.is_file());
+        assert!(!memory.is_in_memory());
+    }
+
+    #[test]
+    fn test_memory_spec_simple_in_memory() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            memory: "in_memory"
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "in_memory");
+        assert!(memory.is_in_memory());
+        assert!(!memory.is_file());
+    }
+
+    #[test]
+    fn test_memory_spec_structured_file() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            memory:
+              type: File
+              config:
+                path: ./k8s-helper-memory.json
+                max_messages: 50
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "File");
+        assert_eq!(memory.path(), Some("./k8s-helper-memory.json".to_string()));
+        assert_eq!(memory.max_messages(), Some(50));
+        assert!(memory.is_file());
+    }
+
+    #[test]
+    fn test_memory_spec_structured_in_memory() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            memory:
+              type: InMemory
+              config:
+                max_messages: 100
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "InMemory");
+        assert!(memory.is_in_memory());
+        assert_eq!(memory.max_messages(), Some(100));
+    }
+
+    #[test]
+    fn test_memory_spec_k8s_style_with_structured_memory() {
+        // This is the exact format from the bug report
+        let yaml = r#"
+            apiVersion: aof.dev/v1
+            kind: Agent
+            metadata:
+              name: k8s-helper
+              labels:
+                purpose: operations
+                team: platform
+            spec:
+              model: google:gemini-2.5-flash
+              instructions: |
+                You are a Kubernetes helper.
+              memory:
+                type: File
+                config:
+                  path: ./k8s-helper-memory.json
+                  max_messages: 50
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.name, "k8s-helper");
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert_eq!(memory.memory_type(), "File");
+        assert_eq!(memory.path(), Some("./k8s-helper-memory.json".to_string()));
+        assert_eq!(memory.max_messages(), Some(50));
+    }
+
+    #[test]
+    fn test_memory_spec_no_memory() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.memory.is_none());
     }
 }
