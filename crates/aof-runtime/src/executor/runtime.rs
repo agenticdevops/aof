@@ -87,11 +87,64 @@ impl Runtime {
         debug!("Model created for agent: {}", agent_name);
 
         // Create tool executor
-        // Priority: mcp_servers > tools (legacy)
-        info!("Creating tool executor for agent '{}': mcp_servers={}, tools={:?}",
-            agent_name, config.mcp_servers.len(), config.tool_names());
+        // Priority: type-based tools > mcp_servers > simple tools
+        info!("Creating tool executor for agent '{}': mcp_servers={}, tools={:?}, has_type_based={}",
+            agent_name, config.mcp_servers.len(), config.tool_names(), config.has_type_based_tools());
 
-        let tool_executor: Option<Arc<dyn ToolExecutor>> = if !config.mcp_servers.is_empty() {
+        let tool_executor: Option<Arc<dyn ToolExecutor>> = if config.has_type_based_tools() {
+            // Handle type-based tools (Shell, MCP, HTTP)
+            info!("Processing type-based tools");
+
+            // Collect builtin tools from type-based Shell tools
+            let mut builtin_tool_names: Vec<String> = Vec::new();
+
+            // Add shell tool if type-based Shell is present
+            if !config.type_based_shell_tools().is_empty() {
+                info!("Found type-based Shell tool");
+                builtin_tool_names.push("shell".to_string());
+
+                // If allowed_commands are specified, add them as tools too
+                if let Some(shell_config) = config.shell_tool_config() {
+                    for cmd in &shell_config.allowed_commands {
+                        if !builtin_tool_names.contains(cmd) {
+                            builtin_tool_names.push(cmd.clone());
+                        }
+                    }
+                    info!("Shell allowed commands: {:?}", shell_config.allowed_commands);
+                }
+            }
+
+            // Add http tool if type-based HTTP is present
+            if !config.type_based_http_tools().is_empty() {
+                info!("Found type-based HTTP tool");
+                builtin_tool_names.push("http".to_string());
+            }
+
+            // Convert type-based MCP tools to MCP server configs
+            let type_based_mcp_servers = config.type_based_mcp_to_server_configs();
+            let has_type_based_mcp = !type_based_mcp_servers.is_empty();
+
+            if has_type_based_mcp {
+                info!("Found {} type-based MCP tools, converting to MCP servers", type_based_mcp_servers.len());
+                // Combine with any explicit mcp_servers
+                let mut all_mcp_servers = config.mcp_servers.clone();
+                all_mcp_servers.extend(type_based_mcp_servers);
+
+                // Create combined executor with builtin tools and MCP
+                if !builtin_tool_names.is_empty() {
+                    info!("Creating combined executor: builtin={:?}, mcp_servers={}", builtin_tool_names, all_mcp_servers.len());
+                    // For now, prioritize MCP if present
+                    Some(self.create_mcp_executor_from_config(&all_mcp_servers).await?)
+                } else {
+                    Some(self.create_mcp_executor_from_config(&all_mcp_servers).await?)
+                }
+            } else if !builtin_tool_names.is_empty() {
+                info!("Creating system executor for type-based tools: {:?}", builtin_tool_names);
+                Some(self.create_system_executor(&builtin_tool_names)?)
+            } else {
+                None
+            }
+        } else if !config.mcp_servers.is_empty() {
             // Use the new flexible MCP configuration
             info!("Using MCP servers for tools");
             Some(self.create_mcp_executor_from_config(&config.mcp_servers).await?)

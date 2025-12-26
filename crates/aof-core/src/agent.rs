@@ -546,6 +546,178 @@ impl AgentConfig {
     pub fn mcp_tools(&self) -> Vec<&ToolSpec> {
         self.tools.iter().filter(|t| t.is_mcp()).collect()
     }
+
+    /// Get type-based Shell tools
+    pub fn type_based_shell_tools(&self) -> Vec<&TypeBasedToolSpec> {
+        self.tools
+            .iter()
+            .filter_map(|t| match t {
+                ToolSpec::TypeBased(spec) if spec.tool_type == TypeBasedToolType::Shell => {
+                    Some(spec)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Get type-based MCP tools
+    pub fn type_based_mcp_tools(&self) -> Vec<&TypeBasedToolSpec> {
+        self.tools
+            .iter()
+            .filter_map(|t| match t {
+                ToolSpec::TypeBased(spec) if spec.tool_type == TypeBasedToolType::MCP => Some(spec),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Get type-based HTTP tools
+    pub fn type_based_http_tools(&self) -> Vec<&TypeBasedToolSpec> {
+        self.tools
+            .iter()
+            .filter_map(|t| match t {
+                ToolSpec::TypeBased(spec) if spec.tool_type == TypeBasedToolType::HTTP => {
+                    Some(spec)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Check if there are any type-based tools
+    pub fn has_type_based_tools(&self) -> bool {
+        self.tools.iter().any(|t| matches!(t, ToolSpec::TypeBased(_)))
+    }
+
+    /// Convert type-based MCP tools to McpServerConfig
+    /// Returns configs that can be used with create_mcp_executor_from_config
+    pub fn type_based_mcp_to_server_configs(&self) -> Vec<crate::mcp::McpServerConfig> {
+        self.type_based_mcp_tools()
+            .iter()
+            .filter_map(|spec| {
+                let config = &spec.config;
+                let name = config.get("name")?.as_str()?;
+
+                // Extract command - can be string or array
+                let command = config.get("command").and_then(|v| {
+                    if let Some(s) = v.as_str() {
+                        Some(s.to_string())
+                    } else if let Some(arr) = v.as_array() {
+                        arr.first().and_then(|v| v.as_str()).map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                });
+
+                // Extract args from command array (skip first element)
+                let args: Vec<String> = config
+                    .get("command")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .skip(1)
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Extract env vars
+                let env: std::collections::HashMap<String, String> = config
+                    .get("env")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                Some(crate::mcp::McpServerConfig {
+                    name: name.to_string(),
+                    transport: crate::mcp::McpTransport::Stdio,
+                    command,
+                    args,
+                    env,
+                    endpoint: None,
+                    tools: vec![],
+                    init_options: None,
+                    timeout_secs: config
+                        .get("timeout_seconds")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(30),
+                    auto_reconnect: true,
+                })
+            })
+            .collect()
+    }
+
+    /// Get Shell tool configuration (allowed_commands, working_directory, etc.)
+    pub fn shell_tool_config(&self) -> Option<ShellToolConfig> {
+        self.type_based_shell_tools().first().map(|spec| {
+            let config = &spec.config;
+            ShellToolConfig {
+                allowed_commands: config
+                    .get("allowed_commands")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                working_directory: config
+                    .get("working_directory")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                timeout_seconds: config
+                    .get("timeout_seconds")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+            }
+        })
+    }
+
+    /// Get HTTP tool configuration
+    pub fn http_tool_config(&self) -> Option<HttpToolConfig> {
+        self.type_based_http_tools().first().map(|spec| {
+            let config = &spec.config;
+            HttpToolConfig {
+                base_url: config
+                    .get("base_url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                timeout_seconds: config
+                    .get("timeout_seconds")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+                allowed_methods: config
+                    .get("allowed_methods")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            }
+        })
+    }
+}
+
+/// Shell tool configuration extracted from type-based spec
+#[derive(Debug, Clone, Default)]
+pub struct ShellToolConfig {
+    pub allowed_commands: Vec<String>,
+    pub working_directory: Option<String>,
+    pub timeout_seconds: Option<u32>,
+}
+
+/// HTTP tool configuration extracted from type-based spec
+#[derive(Debug, Clone, Default)]
+pub struct HttpToolConfig {
+    pub base_url: Option<String>,
+    pub timeout_seconds: Option<u32>,
+    pub allowed_methods: Vec<String>,
 }
 
 /// Internal type for flexible config parsing
