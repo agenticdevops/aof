@@ -63,6 +63,7 @@ aofctl get <resource_type> [name] [flags]
 **Flags:**
 - `-o, --output string` - Output format: json|yaml|wide|name (default: wide)
 - `--all-namespaces` - Show resources across all namespaces
+- `--library` - List resources from the built-in agent library
 
 **Examples:**
 ```bash
@@ -77,15 +78,45 @@ aofctl get agent my-agent -o yaml
 
 # All namespaces
 aofctl get agent --all-namespaces
+
+# List built-in library agents
+aofctl get agents --library
+
+# Get specific library agent
+aofctl get agents pod-doctor --library
+
+# Get library agents as JSON
+aofctl get agents --library -o json
 ```
 
-**Output:**
+**Output (default):**
 ```
 NAME              MODEL           STATUS    AGE
 k8s-helper        google:gemini-2.5-flash    Running   5d
 slack-bot         anthropic:claude-3-5-sonnet-20241022   Running   2d
 incident-responder google:gemini-2.5-flash   Running   1d
 ```
+
+**Output (--library):**
+```
+DOMAIN         NAME                     STATUS      MODEL                    AGE
+================================================================================
+kubernetes     pod-doctor               Available   google:gemini-2.5-flash  -
+kubernetes     resource-optimizer       Available   google:gemini-2.5-flash  -
+incident       rca-agent                Available   google:gemini-2.5-flash  -
+cicd           pipeline-doctor          Available   google:gemini-2.5-flash  -
+security       security-scanner         Available   google:gemini-2.5-flash  -
+observability  alert-manager            Available   google:gemini-2.5-flash  -
+cloud          cost-optimizer           Available   google:gemini-2.5-flash  -
+```
+
+The library contains 30 production-ready agents across 6 domains:
+- **kubernetes** - Pod diagnostics, resource optimization, HPA tuning, etc.
+- **incident** - RCA, incident command, escalation, postmortems
+- **cicd** - Pipeline troubleshooting, build optimization, releases
+- **security** - Vulnerability scanning, secret rotation, compliance
+- **observability** - Alerts, logging, tracing, SLO monitoring
+- **cloud** - Cost optimization, drift detection, IAM auditing
 
 ---
 

@@ -70,6 +70,10 @@ pub enum Commands {
         /// Show all namespaces
         #[arg(long)]
         all_namespaces: bool,
+
+        /// List resources from the built-in library
+        #[arg(long)]
+        library: bool,
     },
 
     /// Apply configuration from file (verb-first: apply -f config.yaml)
@@ -248,8 +252,9 @@ impl Cli {
                 name,
                 output,
                 all_namespaces,
+                library,
             } => {
-                commands::get::execute(&resource_type, name.as_deref(), &output, all_namespaces)
+                commands::get::execute(&resource_type, name.as_deref(), &output, all_namespaces, library)
                     .await
             }
             Commands::Apply { file, namespace } => {

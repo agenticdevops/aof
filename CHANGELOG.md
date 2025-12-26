@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Agent nodes now report input/output tokens
   - Flow completion summary shows total token usage
   - Script nodes correctly show 0 tokens (no LLM usage)
+- `--library` flag for `aofctl get agents` to list built-in agents
+  - Shows all 30 production-ready agents from the library
+  - Displays domain (category), agent name, status, and model
+  - Supports filtering by agent name: `aofctl get agents pod-doctor --library`
+  - Supports JSON/YAML output formats
 
 ### Fixed
 - Script node YAML field naming (`scriptConfig` camelCase)

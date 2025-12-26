@@ -7,13 +7,21 @@ pub async fn execute(
     name: Option<&str>,
     output: &str,
     all_namespaces: bool,
+    library: bool,
 ) -> Result<()> {
     // Parse resource type
     let rt = ResourceType::from_str(resource_type)
         .ok_or_else(|| anyhow::anyhow!("Unknown resource type: {}", resource_type))?;
 
-    // Build resource list (placeholder until persistent storage is implemented)
-    let resources = get_mock_resources(&rt, name, all_namespaces);
+    // Build resource list - either from library or mock data
+    let resources = if library {
+        get_library_resources(&rt, name)?
+    } else {
+        get_mock_resources(&rt, name, all_namespaces)
+    };
+
+    // When listing library, always show domains (namespaces)
+    let show_namespaces = all_namespaces || library;
 
     // Format and display output
     match output {
@@ -45,14 +53,113 @@ pub async fn execute(
         }
         "wide" | _ => {
             // Table format (default)
-            print_table_header(&rt, all_namespaces);
+            print_table_header(&rt, show_namespaces);
             for resource in resources {
-                print_table_row(&rt, &resource, all_namespaces);
+                print_table_row(&rt, &resource, show_namespaces);
             }
         }
     }
 
     Ok(())
+}
+
+/// Get resources from the built-in library directory
+fn get_library_resources(
+    rt: &ResourceType,
+    name: Option<&str>,
+) -> Result<Vec<serde_json::Value>> {
+    // Only agents are in the library currently
+    if !matches!(rt, ResourceType::Agent) {
+        return Ok(vec![]);
+    }
+
+    // Find the library directory - check common locations
+    let library_path = find_library_path()?;
+    let mut resources = Vec::new();
+
+    // Scan all subdirectories (domains) for agent YAML files
+    if let Ok(entries) = std::fs::read_dir(&library_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let domain = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                // Scan for YAML files in each domain
+                if let Ok(files) = std::fs::read_dir(&path) {
+                    for file in files.flatten() {
+                        let file_path = file.path();
+                        if file_path.extension().map_or(false, |e| e == "yaml" || e == "yml") {
+                            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                                if let Ok(agent) = serde_yaml::from_str::<serde_json::Value>(&content) {
+                                    let agent_name = agent
+                                        .get("metadata")
+                                        .and_then(|m| m.get("name"))
+                                        .and_then(|n| n.as_str())
+                                        .unwrap_or("unknown");
+
+                                    // Filter by name if provided
+                                    if let Some(filter) = name {
+                                        if agent_name != filter {
+                                            continue;
+                                        }
+                                    }
+
+                                    // Add domain to metadata
+                                    let mut enriched = agent.clone();
+                                    if let Some(metadata) = enriched.get_mut("metadata") {
+                                        if let Some(obj) = metadata.as_object_mut() {
+                                            obj.insert("namespace".to_string(), serde_json::json!(domain));
+                                        }
+                                    }
+
+                                    // Add status for display
+                                    if let Some(obj) = enriched.as_object_mut() {
+                                        obj.insert("status".to_string(), serde_json::json!({
+                                            "phase": "Available"
+                                        }));
+                                    }
+
+                                    resources.push(enriched);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(resources)
+}
+
+/// Find the library directory - check multiple possible locations
+fn find_library_path() -> Result<std::path::PathBuf> {
+    // Check common locations
+    let candidates = [
+        std::path::PathBuf::from("library"),
+        std::path::PathBuf::from("./library"),
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.join("library")))
+            .unwrap_or_default(),
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().and_then(|p| p.parent()).map(|p| p.join("library")))
+            .unwrap_or_default(),
+    ];
+
+    for candidate in candidates {
+        if candidate.exists() && candidate.is_dir() {
+            return Ok(candidate);
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Library directory not found. Make sure you're running from the project root or the library is installed."
+    ))
 }
 
 fn get_mock_resources(
@@ -115,11 +222,11 @@ fn print_table_header(rt: &ResourceType, all_namespaces: bool) {
     match rt {
         ResourceType::Agent => {
             if all_namespaces {
-                println!("\nNAMESPACE    NAME              STATUS    MODEL              AGE");
-                println!("{}", "=".repeat(75));
+                println!("\n{:<14} {:<24} {:<11} {:<24} {}", "DOMAIN", "NAME", "STATUS", "MODEL", "AGE");
+                println!("{}", "=".repeat(80));
             } else {
-                println!("\nNAME              STATUS    MODEL              AGE");
-                println!("{}", "=".repeat(60));
+                println!("\n{:<24} {:<11} {:<24} {}", "NAME", "STATUS", "MODEL", "AGE");
+                println!("{}", "=".repeat(65));
             }
         }
         ResourceType::Workflow => {
@@ -171,14 +278,28 @@ fn print_table_row(rt: &ResourceType, resource: &serde_json::Value, all_namespac
         .and_then(|p| p.as_str())
         .unwrap_or("Unknown");
 
-    let age = "5m"; // Placeholder
+    // Get model from spec if available (for library agents)
+    let model = resource
+        .get("spec")
+        .and_then(|s| s.get("model"))
+        .and_then(|m| m.as_str())
+        .unwrap_or("claude-sonnet-4");
+
+    // Truncate model name if too long
+    let model_display = if model.len() > 24 {
+        format!("{}...", &model[..21])
+    } else {
+        model.to_string()
+    };
+
+    let age = "-"; // Library agents don't have age
 
     match rt {
         ResourceType::Agent => {
             if all_namespaces {
-                println!("{:<12} {:<16} {:<9} {:<18} {}", namespace, name, status, "claude-sonnet-4", age);
+                println!("{:<14} {:<24} {:<11} {:<24} {}", namespace, name, status, model_display, age);
             } else {
-                println!("{:<16} {:<9} {:<18} {}", name, status, "claude-sonnet-4", age);
+                println!("{:<24} {:<11} {:<24} {}", name, status, model_display, age);
             }
         }
         ResourceType::Workflow => {
