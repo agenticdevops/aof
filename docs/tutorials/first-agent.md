@@ -98,6 +98,11 @@ spec:
         timeout_seconds: 30
 ```
 
+> **Note**: Tools can be specified in multiple formats:
+> - **Type-based** (shown above): `{type: Shell, config: {...}}`
+> - **Simple**: `- shell` (for defaults)
+> - **Qualified**: `{name: shell, source: builtin, config: {...}}`
+
 Test it again:
 ```bash
 aofctl run agent k8s-helper.yaml --input "Show me all pods in the default namespace"
