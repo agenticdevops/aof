@@ -34,10 +34,11 @@ pub enum Commands {
         resource_type: String,
 
         /// Resource name or configuration file
+        /// Supports library:// URIs: library://kubernetes/pod-doctor
         name_or_config: String,
 
-        /// Input/query for the agent
-        #[arg(short, long)]
+        /// Input/query for the agent (alias: --prompt)
+        #[arg(short, long, visible_alias = "prompt")]
         input: Option<String>,
 
         /// Output format (json, yaml, text)

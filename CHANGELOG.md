@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Displays domain (category), agent name, status, and model
   - Supports filtering by agent name: `aofctl get agents pod-doctor --library`
   - Supports JSON/YAML output formats
+- `library://` URI syntax for running agents from the built-in library
+  - Format: `library://domain/agent-name`
+  - Example: `aofctl run agent library://kubernetes/pod-doctor --prompt "debug CrashLoopBackOff"`
+  - Helpful error messages showing available agents when agent not found
+- `--prompt` as an alias for `--input` in the run command
+  - More intuitive for LLM-style interactions
 
 ### Fixed
 - Script node YAML field naming (`scriptConfig` camelCase)

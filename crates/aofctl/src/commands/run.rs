@@ -233,6 +233,90 @@ pub async fn execute(
     }
 }
 
+/// Resolve a library:// URI to the actual file path
+/// Format: library://domain/agent-name (e.g., library://kubernetes/pod-doctor)
+fn resolve_library_uri(uri: &str) -> Result<std::path::PathBuf> {
+    // Parse library://domain/agent-name
+    let path = uri.strip_prefix("library://")
+        .ok_or_else(|| anyhow!("Invalid library URI: {}", uri))?;
+
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() != 2 {
+        return Err(anyhow!(
+            "Invalid library URI format: {}\nExpected: library://domain/agent-name\nExample: library://kubernetes/pod-doctor",
+            uri
+        ));
+    }
+
+    let domain = parts[0];
+    let agent_name = parts[1];
+
+    // Find the library directory
+    let library_path = find_library_path()?;
+
+    // Try both .yaml and .yml extensions
+    for ext in &["yaml", "yml"] {
+        let agent_path = library_path.join(domain).join(format!("{}.{}", agent_name, ext));
+        if agent_path.exists() {
+            return Ok(agent_path);
+        }
+    }
+
+    // Agent not found - provide helpful error
+    let available = list_library_agents(&library_path, domain);
+    Err(anyhow!(
+        "Agent '{}' not found in library domain '{}'\n\nAvailable agents in '{}':\n  {}\n\nRun 'aofctl get agents --library' to see all available agents.",
+        agent_name, domain, domain,
+        available.join(", ")
+    ))
+}
+
+/// Find the library directory
+fn find_library_path() -> Result<std::path::PathBuf> {
+    let candidates = [
+        std::path::PathBuf::from("library"),
+        std::path::PathBuf::from("./library"),
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.join("library")))
+            .unwrap_or_default(),
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().and_then(|p| p.parent()).map(|p| p.join("library")))
+            .unwrap_or_default(),
+    ];
+
+    for candidate in candidates {
+        if candidate.exists() && candidate.is_dir() {
+            return Ok(candidate);
+        }
+    }
+
+    Err(anyhow!(
+        "Library directory not found. Make sure you're running from the project root or the library is installed."
+    ))
+}
+
+/// List available agents in a library domain
+fn list_library_agents(library_path: &std::path::Path, domain: &str) -> Vec<String> {
+    let domain_path = library_path.join(domain);
+    let mut agents = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&domain_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "yaml" || e == "yml") {
+                if let Some(stem) = path.file_stem() {
+                    agents.push(stem.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    agents.sort();
+    agents
+}
+
 /// Run an agent with configuration
 async fn run_agent(
     config: &str,
@@ -241,15 +325,23 @@ async fn run_agent(
     schema: Option<OutputSchema>,
     context: Option<&AofContext>,
 ) -> Result<()> {
+    // Resolve library:// URIs to actual file paths
+    let config_path = if config.starts_with("library://") {
+        resolve_library_uri(config)?
+    } else {
+        std::path::PathBuf::from(config)
+    };
+    let config_str = config_path.to_string_lossy();
+
     // Check if interactive mode should be enabled (when no input provided and stdin is a TTY)
     let interactive = input.is_none() && io::stdin().is_terminal();
 
     if interactive {
         // Load agent configuration
-        let config_content = fs::read_to_string(config)
-            .with_context(|| format!("Failed to read config file: {}", config))?;
+        let config_content = fs::read_to_string(&config_path)
+            .with_context(|| format!("Failed to read config file: {}", config_str))?;
 
-        let agent_config = parse_agent_config(&config_content, config)?;
+        let agent_config = parse_agent_config(&config_content, &config_str)?;
 
         let agent_name = agent_config.name.clone();
 
@@ -266,7 +358,7 @@ async fn run_agent(
     }
 
     // Non-interactive mode: normal logging to console
-    info!("Loading agent config from: {}", config);
+    info!("Loading agent config from: {}", config_str);
     if let Some(ctx) = context {
         info!("Context: {} (approval required: {})",
             ctx.name(),
@@ -274,10 +366,10 @@ async fn run_agent(
         );
     }
 
-    let config_content = fs::read_to_string(config)
-        .with_context(|| format!("Failed to read config file: {}", config))?;
+    let config_content = fs::read_to_string(&config_path)
+        .with_context(|| format!("Failed to read config file: {}", config_str))?;
 
-    let agent_config = parse_agent_config(&config_content, config)?;
+    let agent_config = parse_agent_config(&config_content, &config_str)?;
 
     let agent_name = agent_config.name.clone();
     info!("Agent loaded: {}", agent_name);

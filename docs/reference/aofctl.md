@@ -185,20 +185,41 @@ aofctl run <resource_type> <name_or_file> [flags]
 ```
 
 **Flags:**
-- `-i, --input string` - Input/query for the agent
+- `-i, --input string` - Input/query for the agent (alias: `--prompt`)
 - `-o, --output string` - Output format: json|yaml|text (default: text)
+
+**Agent Sources:**
+- **File path**: `aofctl run agent my-agent.yaml`
+- **Library URI**: `aofctl run agent library://domain/agent-name`
 
 **Examples:**
 ```bash
-# Interactive mode
+# Interactive mode (opens REPL)
 aofctl run agent my-agent.yaml
 
-# With query
-aofctl run agent my-agent.yaml -i "Show me all pods"
+# With query (non-interactive)
+aofctl run agent my-agent.yaml --input "Show me all pods"
+
+# Using --prompt alias
+aofctl run agent my-agent.yaml --prompt "Show me all pods"
+
+# Run agent from library
+aofctl run agent library://kubernetes/pod-doctor --prompt "Debug CrashLoopBackOff in namespace production"
+
+# Run library agent with JSON output
+aofctl run agent library://incident/rca-agent --prompt "Analyze high latency" -o json
 
 # Run workflow
 aofctl run workflow incident-response.yaml
 ```
+
+**Library Domains:**
+- `kubernetes` - Pod diagnostics, resource optimization
+- `incident` - RCA, incident command, postmortems
+- `cicd` - Pipeline troubleshooting, builds
+- `security` - Vulnerability scanning, compliance
+- `observability` - Alerts, logging, tracing
+- `cloud` - Cost optimization, drift detection
 
 **Example Output:**
 ```bash
