@@ -153,7 +153,11 @@ Both agents analyze the code in parallel and return their findings.
 
 ## Your First Flow (5 minutes)
 
-A **Flow** chains agents together in a workflow. Let's create a Docker troubleshooting pipeline.
+A **Flow** chains steps together in a workflow. Flows can use:
+- **Agent nodes** - For intelligent analysis (uses LLM)
+- **Script nodes** - For deterministic operations like running commands (no LLM)
+
+Let's create a Docker troubleshooting pipeline that uses Script nodes to collect data efficiently, then an Agent for intelligent analysis.
 
 ### Create the Flow
 
@@ -166,55 +170,75 @@ metadata:
   name: docker-troubleshoot
 
 spec:
-  description: "Diagnose and fix Docker container issues"
+  description: "Diagnose Docker issues with Script + Agent nodes"
 
   nodes:
-    # Step 1: Check status
+    # Step 1: Get container status (Script - no LLM, fast)
     - id: check-status
-      type: Agent
+      type: Script
       config:
-        inline:
-          name: status-checker
-          model: google:gemini-2.5-flash
-          instructions: |
-            Run docker ps -a to check container status.
-            Report: running count, stopped count, any unhealthy containers.
-          tools:
-            - docker
+        script_config:
+          tool: docker
+          action: ps
+          args:
+            all: true
 
-    # Step 2: Analyze logs
-    - id: analyze-logs
-      type: Agent
+    # Step 2: Get container stats (Script - no LLM)
+    - id: get-stats
+      type: Script
       config:
-        inline:
-          name: log-analyzer
-          model: google:gemini-2.5-flash
-          instructions: |
-            For any unhealthy or exited containers, check their logs.
-            Look for error patterns and identify root causes.
-          tools:
-            - docker
+        script_config:
+          tool: docker
+          action: stats
 
-    # Step 3: Recommend fixes
-    - id: recommend-fixes
+    # Step 3: Get logs from exited containers (Script - shell command)
+    - id: get-logs
+      type: Script
+      config:
+        script_config:
+          command: |
+            docker ps -a --filter "status=exited" --format "{{.Names}}" | head -3 | while read name; do
+              echo "=== Logs for $name ==="
+              docker logs --tail 30 "$name" 2>&1
+            done
+          parse: text
+          timeout_seconds: 30
+
+    # Step 4: Analyze everything with AI (Agent - uses LLM)
+    - id: analyze
       type: Agent
       config:
         inline:
-          name: fixer
+          name: docker-analyst
           model: google:gemini-2.5-flash
           instructions: |
-            Based on the analysis, provide specific commands to fix issues.
-            Format: Issue → Cause → Fix command → Notes
-          tools:
-            - docker
+            Analyze the Docker diagnostics and provide:
+            1. **Status Summary**: Overview of container health
+            2. **Issues Found**: Any problems detected
+            3. **Root Causes**: Likely reasons for failures
+            4. **Fix Commands**: Specific docker commands to resolve issues
+
+            Be concise and actionable.
+          temperature: 0.1
+        input: |
+          Container Status:
+          ${check-status.output}
+
+          Resource Stats:
+          ${get-stats.output}
+
+          Logs from Exited Containers:
+          ${get-logs.output}
 
   connections:
     - from: start
       to: check-status
     - from: check-status
-      to: analyze-logs
-    - from: analyze-logs
-      to: recommend-fixes
+      to: get-stats
+    - from: get-stats
+      to: get-logs
+    - from: get-logs
+      to: analyze
 ```
 
 ### Run It
@@ -222,24 +246,53 @@ spec:
 ```bash
 # Diagnose your Docker environment
 aofctl run flow docker-troubleshoot.yaml --input "diagnose"
-
-# Focus on a specific container
-aofctl run flow docker-troubleshoot.yaml --input "diagnose container nginx"
 ```
 
-The flow executes each step in sequence, passing context between agents.
+**Why this is efficient:** Script nodes collect data without using LLM tokens. Only the final analysis step uses the AI, making the flow faster and cheaper.
+
+### Script Nodes: No LLM, Just Commands
+
+Script nodes run shell commands or native tools directly:
+
+```yaml
+# Shell command
+- id: get-logs
+  type: Script
+  config:
+    script_config:
+      command: docker logs --tail 50 myapp
+      parse: lines   # Split output into array
+
+# Native tool (built-in support)
+- id: check-pods
+  type: Script
+  config:
+    script_config:
+      tool: kubectl
+      action: get
+      args:
+        resource: pods
+        namespace: default
+```
+
+**Available native tools:** `docker`, `kubectl`, `http`, `json`, `file`
+
+The flow executes each step in sequence, passing context between nodes.
 
 ## Quick Reference
 
 | Concept | What It Does | When to Use |
 |---------|--------------|-------------|
-| **Agent** | Single AI specialist | Simple tasks, one skill |
+| **Agent** | Single AI specialist | Simple tasks, intelligent analysis |
 | **Fleet** | Multiple agents in parallel | Reviews, analysis, multi-perspective tasks |
 | **Flow** | Sequential pipeline | Multi-step workflows, troubleshooting |
+| **Script Node** | Run commands (no LLM) | Data collection, CLI operations, file ops |
 
 ## Add Tools
 
-Agents can use these built-in tools:
+### Agent Tools (LLM-driven)
+
+Agents can use these built-in tools via the LLM:
 
 ```yaml
 spec:
@@ -252,6 +305,24 @@ spec:
     - terraform   # Terraform commands
     - http        # HTTP requests
 ```
+
+### Script Node Tools (No LLM)
+
+Script nodes have native tools that run without LLM involvement:
+
+```yaml
+# In a Flow, use Script nodes for deterministic operations
+- id: check-pods
+  type: Script
+  config:
+    script_config:
+      tool: docker    # docker, kubectl, http, json, file
+      action: ps
+      args:
+        all: true
+```
+
+**Tip:** Use Script nodes for data collection, then pass results to Agent nodes for analysis. This saves tokens and speeds up flows.
 
 ## Use Other Models
 
@@ -289,6 +360,7 @@ You've learned the three core concepts. Now:
 ### Reference
 - **[Agent Spec](reference/agent-spec.md)** - Complete YAML reference
 - **[Fleet Spec](reference/fleet-spec.md)** - Multi-agent configuration
+- **[AgentFlow Spec](reference/agentflow-spec.md)** - Flows, Script nodes, and more
 - **[aofctl CLI](reference/aofctl.md)** - All CLI commands
 
 ## Troubleshooting
