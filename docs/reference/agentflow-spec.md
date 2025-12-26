@@ -216,7 +216,7 @@ nodes:
   - id: check-containers
     type: Script
     config:
-      script_config:
+      scriptConfig:
         command: docker ps -a --format "{{json .}}"
         parse: json              # Parse output as JSON
         timeout_seconds: 30
@@ -232,7 +232,7 @@ nodes:
   - id: get-pods
     type: Script
     config:
-      script_config:
+      scriptConfig:
         tool: kubectl            # Built-in tool
         action: get              # Tool action
         args:
@@ -291,7 +291,7 @@ spec:
     - id: check-status
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: docker
           action: ps
           args:
@@ -301,7 +301,7 @@ spec:
     - id: get-logs
       type: Script
       config:
-        script_config:
+        scriptConfig:
           command: |
             docker ps -a --filter "status=exited" --format "{{.Names}}" | \
             while read name; do

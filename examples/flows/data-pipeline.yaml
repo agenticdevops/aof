@@ -22,7 +22,7 @@ spec:
     - id: read-data
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: file
           action: read
           args:
@@ -33,7 +33,7 @@ spec:
     - id: extract-fields
       type: Script
       config:
-        script_config:
+        scriptConfig:
           command: |
             echo '${read-data.output.content}' | jq '.items[] | {name: .name, value: .value}'
           parse: json
@@ -43,7 +43,7 @@ spec:
     - id: calc-stats
       type: Script
       config:
-        script_config:
+        scriptConfig:
           command: |
             echo '${read-data.output.content}' | jq '{
               total_items: (.items | length),

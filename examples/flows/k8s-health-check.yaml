@@ -27,7 +27,7 @@ spec:
     - id: get-pods
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: kubectl
           action: get
           args:
@@ -38,7 +38,7 @@ spec:
     - id: get-events
       type: Script
       config:
-        script_config:
+        scriptConfig:
           command: kubectl get events --sort-by='.lastTimestamp' -n ${CHECK_NAMESPACE} | tail -20
           parse: lines
 
@@ -46,7 +46,7 @@ spec:
     - id: check-nodes
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: kubectl
           action: get
           args:
@@ -56,7 +56,7 @@ spec:
     - id: health-check
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: http
           action: get
           args:

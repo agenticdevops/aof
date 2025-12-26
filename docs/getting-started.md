@@ -177,7 +177,7 @@ spec:
     - id: check-status
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: docker
           action: ps
           args:
@@ -187,7 +187,7 @@ spec:
     - id: get-stats
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: docker
           action: stats
 
@@ -195,7 +195,7 @@ spec:
     - id: get-logs
       type: Script
       config:
-        script_config:
+        scriptConfig:
           command: |
             docker ps -a --filter "status=exited" --format "{{.Names}}" | head -3 | while read name; do
               echo "=== Logs for $name ==="
@@ -259,7 +259,7 @@ Script nodes run shell commands or native tools directly:
 - id: get-logs
   type: Script
   config:
-    script_config:
+    scriptConfig:
       command: docker logs --tail 50 myapp
       parse: lines   # Split output into array
 
@@ -267,7 +267,7 @@ Script nodes run shell commands or native tools directly:
 - id: check-pods
   type: Script
   config:
-    script_config:
+    scriptConfig:
       tool: kubectl
       action: get
       args:
@@ -315,7 +315,7 @@ Script nodes have native tools that run without LLM involvement:
 - id: check-pods
   type: Script
   config:
-    script_config:
+    scriptConfig:
       tool: docker    # docker, kubectl, http, json, file
       action: ps
       args:

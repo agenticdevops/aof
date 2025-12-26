@@ -25,7 +25,7 @@ spec:
     - id: check-status
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: docker
           action: ps
           args:
@@ -35,7 +35,7 @@ spec:
     - id: get-stats
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: docker
           action: stats
 
@@ -43,7 +43,7 @@ spec:
     - id: get-logs
       type: Script
       config:
-        script_config:
+        scriptConfig:
           command: |
             docker ps -a --filter "status=exited" --format "{{.Names}}" | head -5 | while read name; do
               echo "=== Logs for $name ==="
