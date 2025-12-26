@@ -437,17 +437,28 @@ impl FleetCoordinator {
                 FinalAggregation::Merge => {
                     // Merge all agent results into a combined output
                     let mut merged_results = Vec::new();
+                    let mut total_input_tokens: usize = 0;
+                    let mut total_output_tokens: usize = 0;
 
                     for result in &agent_results {
+                        total_input_tokens += result.input_tokens;
+                        total_output_tokens += result.output_tokens;
                         merged_results.push(serde_json::json!({
                             "agent": result.agent_name,
                             "response": result.response,
+                            "input_tokens": result.input_tokens,
+                            "output_tokens": result.output_tokens,
                         }));
                     }
 
                     task.result = Some(serde_json::json!({
                         "results": merged_results,
                         "agent_count": agent_results.len(),
+                        "usage": {
+                            "input_tokens": total_input_tokens,
+                            "output_tokens": total_output_tokens,
+                            "total_tokens": total_input_tokens + total_output_tokens,
+                        }
                     }));
                     task.status = FleetTaskStatus::Completed;
                 },
@@ -493,10 +504,13 @@ impl FleetCoordinator {
             ConsensusEngine::new()
         };
 
+        // Calculate total token usage across all agent results before evaluate takes ownership
+        let total_input_tokens: usize = agent_results.iter().map(|r| r.input_tokens).sum();
+        let total_output_tokens: usize = agent_results.iter().map(|r| r.output_tokens).sum();
+
         // Evaluate consensus
         let consensus = engine.evaluate(agent_results)?;
 
-        // Update task based on consensus result
         if consensus.reached {
             self.emit_event(FleetEvent::ConsensusReached {
                 task_id: task.task_id.clone(),
@@ -514,6 +528,11 @@ impl FleetCoordinator {
                 "confidence": consensus.confidence,
                 "votes": consensus.votes,
                 "requires_review": consensus.requires_human_review,
+                "usage": {
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                    "total_tokens": total_input_tokens + total_output_tokens,
+                }
             }));
             task.status = FleetTaskStatus::Completed;
         } else {
@@ -524,6 +543,14 @@ impl FleetCoordinator {
                 consensus.confidence,
                 consensus.review_reason.unwrap_or_default()
             ));
+            // Still include token usage even on failure
+            task.result = Some(serde_json::json!({
+                "usage": {
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                    "total_tokens": total_input_tokens + total_output_tokens,
+                }
+            }));
         }
 
         task.completed_at = Some(chrono::Utc::now());
@@ -783,7 +810,8 @@ impl FleetCoordinator {
             handles.push(tokio::spawn(async move {
                 let start = std::time::Instant::now();
                 let rt = runtime.read().await;
-                let result = rt.execute(&agent_name, &input_str).await;
+                // Use execute_with_usage to get token counts
+                let result = rt.execute_with_usage(&agent_name, &input_str).await;
                 let elapsed = start.elapsed().as_millis() as u64;
 
                 (agent_name, tier, weight, elapsed, result)
@@ -793,10 +821,11 @@ impl FleetCoordinator {
         let mut results = Vec::new();
         for handle in handles {
             match handle.await {
-                Ok((name, tier, weight, elapsed, Ok(response))) => {
+                Ok((name, tier, weight, elapsed, Ok((response, input_tokens, output_tokens)))) => {
                     let mut result = AgentResult::new(&name, response)
                         .with_execution_time(elapsed)
-                        .with_weight(weight);
+                        .with_weight(weight)
+                        .with_usage(input_tokens, output_tokens);
                     if let Some(t) = tier {
                         result = result.with_tier(t);
                     }

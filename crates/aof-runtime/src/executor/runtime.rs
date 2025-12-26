@@ -206,6 +206,34 @@ impl Runtime {
         executor.execute(context).await
     }
 
+    /// Execute an agent and return both the response and token usage
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the loaded agent
+    /// * `input` - User input/query
+    ///
+    /// # Returns
+    /// Tuple of (response string, input_tokens, output_tokens)
+    pub async fn execute_with_usage(
+        &self,
+        agent_name: &str,
+        input: &str,
+    ) -> AofResult<(String, usize, usize)> {
+        let executor = self
+            .agents
+            .get(agent_name)
+            .ok_or_else(|| AofError::agent(format!("Agent not found: {}", agent_name)))?;
+
+        let mut context = AgentContext::new(input);
+        let response = executor.execute(&mut context).await?;
+
+        Ok((
+            response,
+            context.metadata.input_tokens,
+            context.metadata.output_tokens,
+        ))
+    }
+
     /// Execute an agent with streaming support for real-time updates
     ///
     /// # Arguments

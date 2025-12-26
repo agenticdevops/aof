@@ -78,6 +78,14 @@ pub mod symbols {
 use colors::*;
 use symbols::*;
 
+/// Token usage statistics for fleet execution
+#[derive(Debug, Clone, Default)]
+pub struct TokenUsage {
+    pub input_tokens: usize,
+    pub output_tokens: usize,
+    pub total_tokens: usize,
+}
+
 /// Fleet output formatter for beautiful CLI display
 pub struct FleetOutput {
     /// Whether to use colors (auto-detected from terminal)
@@ -544,6 +552,17 @@ impl FleetOutput {
 
     /// Print fleet completion summary
     pub fn print_fleet_complete(&self, fleet_name: &str, duration_ms: u64, cost_estimate: Option<f64>) {
+        self.print_fleet_complete_with_usage(fleet_name, duration_ms, cost_estimate, None);
+    }
+
+    /// Print fleet completion summary with token usage
+    pub fn print_fleet_complete_with_usage(
+        &self,
+        fleet_name: &str,
+        duration_ms: u64,
+        cost_estimate: Option<f64>,
+        usage: Option<TokenUsage>,
+    ) {
         if self.quiet {
             return;
         }
@@ -565,7 +584,30 @@ impl FleetOutput {
             "{GREEN}{BOLD}│{RESET}  Duration: {YELLOW}{:.2}s{RESET}                                            {GREEN}{BOLD}│{RESET}",
             duration_ms as f64 / 1000.0
         );
+        if let Some(ref u) = usage {
+            println!(
+                "{GREEN}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+            );
+            println!(
+                "{GREEN}{BOLD}│{RESET}  {BRIGHT_CYAN}Token Usage:{RESET}                                                {GREEN}{BOLD}│{RESET}"
+            );
+            println!(
+                "{GREEN}{BOLD}│{RESET}    Input:  {WHITE}{:>12}{RESET} tokens                            {GREEN}{BOLD}│{RESET}",
+                u.input_tokens
+            );
+            println!(
+                "{GREEN}{BOLD}│{RESET}    Output: {WHITE}{:>12}{RESET} tokens                            {GREEN}{BOLD}│{RESET}",
+                u.output_tokens
+            );
+            println!(
+                "{GREEN}{BOLD}│{RESET}    Total:  {BRIGHT_YELLOW}{:>12}{RESET} tokens                            {GREEN}{BOLD}│{RESET}",
+                u.total_tokens
+            );
+        }
         if let Some(cost) = cost_estimate {
+            println!(
+                "{GREEN}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+            );
             println!(
                 "{GREEN}{BOLD}│{RESET}  Est. Cost: {MAGENTA}${:.4}{RESET}                                          {GREEN}{BOLD}│{RESET}",
                 cost

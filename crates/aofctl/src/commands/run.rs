@@ -1582,7 +1582,7 @@ async fn run_fleet(config_path: &str, input: Option<&str>, output_format: &str) 
     use aof_runtime::fleet::{FleetCoordinator, FleetEvent};
     use tokio::sync::mpsc;
     use std::time::Instant;
-    use crate::output::FleetOutput;
+    use crate::output::{FleetOutput, TokenUsage};
 
     let start_time = Instant::now();
     let output = FleetOutput::new();
@@ -1729,7 +1729,15 @@ async fn run_fleet(config_path: &str, input: Option<&str>, output_format: &str) 
         "text" | _ => {
             // Print beautiful fleet result
             output.print_fleet_result(&result);
-            output.print_fleet_complete(&fleet_name, duration_ms, None);
+
+            // Extract token usage from result if available
+            let usage = result.get("usage").map(|u| TokenUsage {
+                input_tokens: u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                output_tokens: u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+                total_tokens: u.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            });
+
+            output.print_fleet_complete_with_usage(&fleet_name, duration_ms, None, usage);
         }
     }
 

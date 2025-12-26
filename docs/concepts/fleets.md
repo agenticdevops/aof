@@ -6,12 +6,47 @@ AgentFleet enables multiple AI agents to work together on complex tasks. Think o
 
 | Mode | Description | Use Case |
 |------|-------------|----------|
-| `peer` | All agents parallel + consensus | Code review, voting |
+| `peer` | All agents parallel + consensus OR aggregation | Code review, multi-expert analysis |
 | `hierarchical` | Manager coordinates workers | Complex orchestration |
 | `pipeline` | Sequential handoff | Data transformation |
 | `swarm` | Self-organizing, load balanced | High-volume parallel |
 | `tiered` | Tier-based parallel | Multi-model RCA |
-| `deep` | **NEW** Iterative planning + execution | Complex investigations |
+| `deep` | Iterative planning + execution | Complex investigations |
+
+## Fleet Patterns for Agentic Ops
+
+Choose the right fleet pattern for your use case:
+
+| Use Case | Fleet Pattern | Why |
+|----------|---------------|-----|
+| **Code Review** | Peer + Aggregation | Multiple specialists (security, quality) provide complementary findings |
+| **Root Cause Analysis** | Tiered or Deep | Data collectors → Reasoners → Synthesis |
+| **Incident Response** | Hierarchical | Coordinator delegates to specialists |
+| **Multi-Model Validation** | Peer + Consensus | Multiple LLMs validate same hypothesis |
+| **Data Pipeline** | Pipeline | Sequential transformation stages |
+| **High-Volume Processing** | Swarm | Self-organizing load balancing |
+| **Complex Investigation** | Deep | Iterative planning, execution, re-planning |
+| **Change Approval** | Peer + Consensus | Voting/unanimous agreement |
+| **Parallel Data Collection** | Peer + Aggregation | Logs + Metrics + Traces agents |
+
+### Quick Decision Guide
+
+```
+Need multiple perspectives on SAME task?
+  └── Yes: Use Peer + Consensus (pick best)
+  └── No: Different specialists?
+        └── Yes: Use Peer + Aggregation (collect all)
+        └── No: Sequential processing?
+              └── Yes: Use Pipeline
+              └── No: Complex orchestration?
+                    └── Yes: Use Hierarchical
+                    └── No: Iterative investigation?
+                          └── Yes: Use Deep
+                          └── No: High-volume?
+                                └── Yes: Use Swarm
+                                └── No: Multi-tier RCA?
+                                      └── Yes: Use Tiered
+```
 
 ## Agent-First Architecture
 
@@ -129,7 +164,13 @@ AOF supports six coordination modes for different use cases:
 
 ### 1. Peer Mode (Default)
 
-All agents work as equals, executing in parallel with results aggregated via consensus.
+All agents work as equals, executing in parallel. Results can be:
+- **Consensus** (default): Pick the best result when agents compete on the same task
+- **Aggregation**: Merge ALL results when agents provide complementary information
+
+#### Peer Mode with Consensus (Competing Perspectives)
+
+Use consensus when multiple agents tackle the **same problem** and you want to pick the best answer:
 
 ```yaml
 coordination:
@@ -140,13 +181,31 @@ coordination:
     min_votes: 2
 ```
 
-**Best for**: Code review, multi-perspective analysis, voting scenarios
+**Best for**: Multiple RCA hypotheses, voting scenarios, redundancy
+
+#### Peer Mode with Aggregation (Complementary Specialists)
+
+Use aggregation when specialists provide **different but complementary** information:
+
+```yaml
+coordination:
+  mode: peer
+  distribution: round-robin
+  aggregation: merge  # Collect ALL agent results
+```
+
+**Best for**: Code review (security + quality), multi-expert analysis, parallel data collection
+
+**Aggregation Options**:
+- `merge` - Collect and combine all agent results into a structured output
+- `consensus` - Fall back to consensus (default)
+- `manager_synthesis` - Use a manager to synthesize (requires hierarchical mode)
 
 **How it works**:
 1. Task submitted to all agents simultaneously
 2. Each agent executes independently (in parallel)
 3. Results collected from all agents
-4. Consensus algorithm determines final result
+4. Either consensus picks one OR aggregation merges all
 
 ```
      ┌──────────┐
@@ -161,10 +220,20 @@ coordination:
    │       │       │
    └───────┼───────┘
            ▼
-     ┌──────────┐
-     │Consensus │
-     └──────────┘
+     ┌──────────────┐
+     │ Consensus OR │
+     │ Aggregation  │
+     └──────────────┘
 ```
+
+**When to Use Which**:
+
+| Scenario | Use | Example |
+|----------|-----|---------|
+| Same task, pick best | `consensus` | 3 models diagnose same issue |
+| Different specialists, need all | `aggregation: merge` | Security + Quality reviewers |
+| Voting/approval | `consensus` | 3 agents approve deployment |
+| Parallel data collection | `aggregation: merge` | Logs + Metrics + Traces agents |
 
 ### 2. Hierarchical Mode
 
@@ -658,15 +727,15 @@ shared:
 
 ## Real-World Examples
 
-### Example 1: Code Review Fleet
+### Example 1: Code Review Fleet (with Aggregation)
 
-Three specialists review code in parallel, with majority consensus:
+Two specialists review code in parallel. Uses **aggregation** to collect ALL findings (not consensus):
 
 ```yaml
 apiVersion: aof.dev/v1
 kind: AgentFleet
 metadata:
-  name: code-review-team
+  name: code-review-fleet
 spec:
   agents:
     - name: security-reviewer
@@ -676,20 +745,7 @@ spec:
         instructions: |
           Focus on security: SQL injection, XSS, authentication,
           secrets in code, dependency vulnerabilities.
-        tools:
-          - read_file
-          - git
-
-    - name: performance-reviewer
-      role: specialist
-      spec:
-        model: google:gemini-2.5-flash
-        instructions: |
-          Focus on performance: Big-O complexity, memory leaks,
-          N+1 queries, caching opportunities.
-        tools:
-          - read_file
-          - git
+          Format: ## Security Review with Critical/High/Medium sections.
 
     - name: quality-reviewer
       role: specialist
@@ -697,25 +753,56 @@ spec:
         model: google:gemini-2.5-flash
         instructions: |
           Focus on quality: SOLID principles, error handling,
-          test coverage, documentation.
-        tools:
-          - read_file
-          - git
+          code structure, naming conventions.
+          Format: ## Quality Review with Issues/Suggestions/Score.
 
   coordination:
     mode: peer
     distribution: round-robin
-    consensus:
-      algorithm: majority
-      min_votes: 2
-      timeout_ms: 60000
+    aggregation: merge  # Collect ALL findings from both specialists
 ```
 
 **Run it**:
 ```bash
-aofctl run fleet code-review-team.yaml \
-  --input "Review this PR: https://github.com/org/repo/pull/123"
+aofctl run fleet code-review-fleet.yaml \
+  --input "Review: function login(user, pass) { const query = 'SELECT * FROM users WHERE name=' + user; return db.query(query); }"
 ```
+
+**Output** (both reviews merged):
+```
+╔═══════════════════════════════════════════════════════════════════════════╗
+║  FLEET RESULTS (2 agents)                                                 ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌─ security-reviewer
+│  ## Security Review
+│  ### Critical Issues
+│  * SQL Injection: Direct concatenation of user input...
+└
+
+┌─ quality-reviewer
+│  ## Quality Review
+│  ### Issues Found
+│  1. Unused parameter 'pass'
+│  2. No error handling
+│  ### Score: 2/10
+└
+```
+
+### Example 1b: Code Review Fleet (with Consensus)
+
+Same task but with **consensus** - picks the most agreed-upon findings:
+
+```yaml
+coordination:
+  mode: peer
+  distribution: round-robin
+  consensus:
+    algorithm: majority
+    min_votes: 2
+```
+
+**Use consensus when**: Multiple agents analyze the same aspect and you want to validate findings (e.g., 3 security reviewers must agree on vulnerabilities).
 
 ### Example 2: Incident Response Fleet
 
@@ -823,6 +910,84 @@ metrics:
 Access via CLI:
 ```bash
 aofctl describe fleet code-review-team
+```
+
+## Token Usage Tracking
+
+Fleet execution automatically tracks token usage for each agent and provides aggregated totals. This is useful for cost monitoring and optimization.
+
+### Token Usage in Output
+
+After fleet execution, token usage is displayed in the completion summary:
+
+```
+╭─────────────────────────────────────────────────────────────╮
+│ 🚀 FLEET EXECUTION COMPLETE                                  │
+├─────────────────────────────────────────────────────────────┤
+│  Fleet: code-review-fleet                                   │
+│  Duration: 5.23s                                            │
+├─────────────────────────────────────────────────────────────┤
+│  Token Usage:                                                │
+│    Input:          1,234 tokens                              │
+│    Output:           567 tokens                              │
+│    Total:          1,801 tokens                              │
+╰─────────────────────────────────────────────────────────────╯
+```
+
+### Token Usage in JSON Output
+
+When using `--output json`, token usage is included in the result:
+
+```json
+{
+  "results": [...],
+  "agent_count": 2,
+  "usage": {
+    "input_tokens": 1234,
+    "output_tokens": 567,
+    "total_tokens": 1801
+  }
+}
+```
+
+### Per-Agent Token Tracking
+
+Each agent's token usage is tracked individually and included in the result when using `aggregation: merge`:
+
+```json
+{
+  "results": [
+    {
+      "agent": "security-reviewer",
+      "response": "...",
+      "input_tokens": 612,
+      "output_tokens": 284
+    },
+    {
+      "agent": "quality-reviewer",
+      "response": "...",
+      "input_tokens": 622,
+      "output_tokens": 283
+    }
+  ],
+  "usage": {
+    "input_tokens": 1234,
+    "output_tokens": 567,
+    "total_tokens": 1801
+  }
+}
+```
+
+### Cost Estimation
+
+Use token counts to estimate costs based on your model's pricing:
+
+```bash
+# Gemini 2.5 Flash pricing (~$0.075/1M input, ~$0.30/1M output)
+# 1,234 input + 567 output ≈ $0.00026
+
+# Claude Sonnet pricing (~$3/1M input, ~$15/1M output)
+# Same tokens ≈ $0.012
 ```
 
 ## Best Practices

@@ -1,0 +1,69 @@
+# High-Volume Fleet - Swarm Mode
+#
+# Self-organizing fleet for high-volume parallel processing.
+# Uses least-loaded distribution for automatic load balancing.
+#
+# Use Case:
+#   - Batch processing large datasets
+#   - Parallel log analysis
+#   - Mass code review across many files
+#   - High-throughput operations
+#
+# Prerequisites:
+#   - Google AI Studio API key (free): https://aistudio.google.com/apikey
+#
+# Usage:
+#   export GOOGLE_API_KEY=AIza...
+#   aofctl run fleet examples/fleets/high-volume-fleet.yaml --input "Process item: ..."
+
+apiVersion: aof.dev/v1
+kind: AgentFleet
+metadata:
+  name: high-volume-fleet
+  labels:
+    category: processing
+    mode: swarm
+
+spec:
+  agents:
+    # Worker pool - replicas for parallel processing
+    - name: processor
+      role: worker
+      replicas: 3  # 3 parallel workers
+      spec:
+        model: google:gemini-2.5-flash
+        temperature: 0.1
+        instructions: |
+          You are a high-throughput data processor.
+
+          Process each item efficiently:
+          1. Parse the input
+          2. Apply transformations
+          3. Return structured result
+
+          Format your response as:
+          ## Processed Result
+          - Input: [summarize]
+          - Output: [transformed data]
+          - Status: success/error
+
+    # Validator - spot checks processed items
+    - name: validator
+      role: validator
+      replicas: 1
+      spec:
+        model: google:gemini-2.5-flash
+        temperature: 0.0
+        instructions: |
+          You validate processed results.
+
+          Check for:
+          - Data integrity
+          - Format compliance
+          - Error detection
+
+          Return: PASS or FAIL with reason
+
+  coordination:
+    mode: swarm
+    distribution: least-loaded  # Automatic load balancing
