@@ -1327,8 +1327,15 @@ fn detect_yaml_kind(content: &str) -> Option<String> {
 async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, output: &str) -> Result<()> {
     use aof_runtime::AgentFlowExecutor;
     use tokio::sync::mpsc;
+    use crate::output::{FleetOutput, TokenUsage};
 
     info!("Executing AgentFlow from: {}", config_path);
+
+    // Print AOF banner for text output
+    let fleet_output = FleetOutput::new();
+    if output == "text" {
+        fleet_output.print_banner();
+    }
 
     // Create runtime for agent execution (wrapped in RwLock for mutable access)
     let runtime = std::sync::Arc::new(RwLock::new(Runtime::new()));
@@ -1346,7 +1353,8 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
     let node_ids: Vec<String> = flow.spec.nodes.iter().map(|n| n.id.clone()).collect();
 
     // Create FlowOutput for beautiful visualization
-    let flow_output = Arc::new(Mutex::new(FlowOutput::new().quiet(output == "json" || output == "yaml")));
+    let is_quiet = output == "json" || output == "yaml";
+    let flow_output = Arc::new(Mutex::new(FlowOutput::new().quiet(is_quiet)));
 
     // Print flow header
     {
@@ -1493,12 +1501,35 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
                 })
             };
 
+            // Extract token usage from all node outputs
+            let mut total_input_tokens = 0usize;
+            let mut total_output_tokens = 0usize;
+            for (_, node_result) in &final_state.node_results {
+                if let Some(ref output) = node_result.output {
+                    if let Some(input) = output.get("input_tokens").and_then(|v| v.as_u64()) {
+                        total_input_tokens += input as usize;
+                    }
+                    if let Some(output_t) = output.get("output_tokens").and_then(|v| v.as_u64()) {
+                        total_output_tokens += output_t as usize;
+                    }
+                }
+            }
+            let usage = if total_input_tokens > 0 || total_output_tokens > 0 {
+                Some(TokenUsage {
+                    input_tokens: total_input_tokens,
+                    output_tokens: total_output_tokens,
+                    total_tokens: total_input_tokens + total_output_tokens,
+                })
+            } else {
+                None
+            };
+
             let out = flow_output.lock().unwrap();
             out.print_flow_result(&result_value);
             out.print_flow_complete(
                 &final_state.flow_name,
                 if final_state.status == aof_core::FlowExecutionStatus::Completed { "Completed" } else { "Failed" },
-                None, // Token usage not tracked for flows yet
+                usage,
             );
         }
     }
