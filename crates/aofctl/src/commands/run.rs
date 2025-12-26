@@ -8,7 +8,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{mpsc as tokio_mpsc, RwLock};
 use tracing::info;
 use crate::resources::ResourceType;
-use crate::output::Spinner;
+use crate::output::{Spinner, FlowOutput};
 
 /// Internal struct to try parsing K8s format explicitly for better errors
 #[derive(serde::Deserialize)]
@@ -1338,6 +1338,23 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
         .await
         .context("Failed to load AgentFlow")?;
 
+    // Get flow metadata for output visualization
+    let flow = executor.flow();
+    let flow_name = flow.metadata.name.clone();
+    let flow_description = flow.spec.description.clone();
+    let node_count = flow.spec.nodes.len();
+    let node_ids: Vec<String> = flow.spec.nodes.iter().map(|n| n.id.clone()).collect();
+
+    // Create FlowOutput for beautiful visualization
+    let flow_output = Arc::new(Mutex::new(FlowOutput::new().quiet(output == "json" || output == "yaml")));
+
+    // Print flow header
+    {
+        let mut out = flow_output.lock().unwrap();
+        out.print_flow_header(&flow_name, flow_description.as_deref(), node_count);
+        out.print_pipeline_start(&node_ids);
+    }
+
     // Parse trigger data from input
     let trigger_data: serde_json::Value = if let Some(inp) = input {
         serde_json::from_str(inp).unwrap_or_else(|_| {
@@ -1367,34 +1384,49 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
     let (event_tx, mut event_rx) = mpsc::channel(100);
     let executor = executor.with_event_channel(event_tx);
 
-    // Spawn task to print events
+    // Clone for the event handler
+    let flow_output_clone = Arc::clone(&flow_output);
+    let node_ids_clone = node_ids.clone();
+
+    // Spawn task to handle events with beautiful output
     let event_printer = tokio::spawn(async move {
+        let mut step_num = 0usize;
+        let total_steps = node_ids_clone.len();
+
         while let Some(event) = event_rx.recv().await {
             use aof_runtime::AgentFlowEvent;
+            let mut out = flow_output_clone.lock().unwrap();
+
             match event {
-                AgentFlowEvent::Started { flow_name, run_id } => {
-                    eprintln!("[AGENTFLOW] Started: {} (run: {})", flow_name, run_id);
+                AgentFlowEvent::Started { .. } => {
+                    // Header already printed
                 }
                 AgentFlowEvent::NodeStarted { node_id, node_type } => {
-                    eprintln!("[NODE] Starting: {} ({})", node_id, node_type);
+                    step_num += 1;
+                    out.print_node_start(&node_id, &node_type, step_num, total_steps);
                 }
-                AgentFlowEvent::NodeCompleted { node_id, duration_ms, .. } => {
-                    eprintln!("[NODE] Completed: {} ({}ms)", node_id, duration_ms);
+                AgentFlowEvent::NodeCompleted { node_id, duration_ms, output } => {
+                    // Extract preview from output
+                    let preview = output.as_ref().and_then(|o| {
+                        o.as_str().map(|s| s.to_string())
+                            .or_else(|| serde_json::to_string_pretty(o).ok())
+                    });
+                    out.print_node_complete(&node_id, duration_ms, preview.as_deref());
                 }
                 AgentFlowEvent::NodeFailed { node_id, error } => {
-                    eprintln!("[NODE] Failed: {} - {}", node_id, error);
+                    out.print_node_failed(&node_id, &error);
                 }
                 AgentFlowEvent::Waiting { node_id, reason } => {
-                    eprintln!("[NODE] Waiting: {} - {}", node_id, reason);
+                    out.print_node_skipped(&node_id, &reason);
                 }
-                AgentFlowEvent::VariableSet { key, value } => {
-                    eprintln!("[VAR] Set: {} = {}", key, value);
+                AgentFlowEvent::VariableSet { .. } => {
+                    // Variables set silently for cleaner output
                 }
-                AgentFlowEvent::Completed { run_id, status } => {
-                    eprintln!("[AGENTFLOW] Completed: {} with status {:?}", run_id, status);
+                AgentFlowEvent::Completed { .. } => {
+                    // Completion handled after execution
                 }
                 AgentFlowEvent::Error { message } => {
-                    eprintln!("[ERROR] {}", message);
+                    eprintln!("\x1b[31m\x1b[1m✗ Error:\x1b[0m {}", message);
                 }
             }
         }
@@ -1416,6 +1448,9 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
         .map(|(id, _)| id.clone())
         .collect();
 
+    // Get status string
+    let status_str = format!("{:?}", final_state.status);
+
     // Output result in requested format
     match output {
         "json" => {
@@ -1423,7 +1458,7 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
                 "success": true,
                 "flow": final_state.flow_name,
                 "run_id": final_state.run_id,
-                "status": format!("{:?}", final_state.status),
+                "status": status_str,
                 "completed_nodes": completed_nodes,
                 "variables": final_state.variables,
                 "node_results": final_state.node_results,
@@ -1435,22 +1470,32 @@ async fn run_agentflow(config_path: &str, _content: &str, input: Option<&str>, o
                 "success": true,
                 "flow": final_state.flow_name,
                 "run_id": final_state.run_id,
-                "status": format!("{:?}", final_state.status),
+                "status": status_str,
                 "completed_nodes": completed_nodes,
                 "variables": final_state.variables,
             }))?;
             println!("{}", yaml_output);
         }
         "text" | _ => {
-            println!("AgentFlow: {}", final_state.flow_name);
-            println!("Run ID: {}", final_state.run_id);
-            println!("Status: {:?}", final_state.status);
-            if !completed_nodes.is_empty() {
-                println!("Completed Nodes: {}", completed_nodes.join(" -> "));
-            }
-            if let Some(error) = &final_state.error {
-                println!("Error: {}", error.message);
-            }
+            // Build result from final node output
+            let result_value = if let Some(last_node) = completed_nodes.last() {
+                final_state.node_results
+                    .get(last_node)
+                    .and_then(|r| r.output.clone())
+                    .unwrap_or(serde_json::Value::Null)
+            } else {
+                serde_json::json!({
+                    "variables": final_state.variables
+                })
+            };
+
+            let out = flow_output.lock().unwrap();
+            out.print_flow_result(&result_value);
+            out.print_flow_complete(
+                &final_state.flow_name,
+                if final_state.status == aof_core::FlowExecutionStatus::Completed { "Completed" } else { "Failed" },
+                None, // Token usage not tracked for flows yet
+            );
         }
     }
 

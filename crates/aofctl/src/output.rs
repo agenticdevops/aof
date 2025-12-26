@@ -656,6 +656,387 @@ impl FleetOutput {
     }
 }
 
+// ============================================================================
+// FlowOutput - Beautiful visualization for AgentFlow execution
+// ============================================================================
+
+/// Node execution state for tracking
+#[derive(Debug, Clone)]
+pub struct FlowNodeState {
+    pub id: String,
+    pub node_type: String,
+    pub status: FlowNodeStatus,
+    pub duration_ms: Option<u64>,
+    pub output_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FlowNodeStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Skipped,
+}
+
+/// Flow output formatter for beautiful CLI display
+pub struct FlowOutput {
+    use_colors: bool,
+    quiet: bool,
+    nodes: Vec<FlowNodeState>,
+    start_time: std::time::Instant,
+}
+
+impl Default for FlowOutput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FlowOutput {
+    pub fn new() -> Self {
+        Self {
+            use_colors: atty::is(atty::Stream::Stdout),
+            quiet: false,
+            nodes: Vec::new(),
+            start_time: std::time::Instant::now(),
+        }
+    }
+
+    pub fn quiet(mut self, quiet: bool) -> Self {
+        self.quiet = quiet;
+        self
+    }
+
+    /// Print flow header with beautiful styling
+    pub fn print_flow_header(&mut self, flow_name: &str, description: Option<&str>, node_count: usize) {
+        if self.quiet {
+            return;
+        }
+        self.start_time = std::time::Instant::now();
+
+        println!();
+        println!(
+            "{BRIGHT_CYAN}{BOLD}╭─────────────────────────────────────────────────────────────╮{RESET}"
+        );
+        println!(
+            "{BRIGHT_CYAN}{BOLD}│{RESET} {LINK} {WHITE}{BOLD}AGENTFLOW{RESET}                                                 {BRIGHT_CYAN}{BOLD}│{RESET}"
+        );
+        println!(
+            "{BRIGHT_CYAN}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+        );
+        println!(
+            "{BRIGHT_CYAN}{BOLD}│{RESET}  {GEAR} Flow: {CYAN}{BOLD}{:<40}{RESET}         {BRIGHT_CYAN}{BOLD}│{RESET}",
+            truncate_str(flow_name, 40)
+        );
+        if let Some(desc) = description {
+            println!(
+                "{BRIGHT_CYAN}{BOLD}│{RESET}  {INFO} {DIM}{:<51}{RESET} {BRIGHT_CYAN}{BOLD}│{RESET}",
+                truncate_str(desc, 51)
+            );
+        }
+        println!(
+            "{BRIGHT_CYAN}{BOLD}│{RESET}  {TRIANGLE} Nodes: {WHITE}{}{RESET}                                               {BRIGHT_CYAN}{BOLD}│{RESET}",
+            node_count
+        );
+        println!(
+            "{BRIGHT_CYAN}{BOLD}╰─────────────────────────────────────────────────────────────╯{RESET}"
+        );
+        println!();
+    }
+
+    /// Print the pipeline visualization header
+    pub fn print_pipeline_start(&self, node_ids: &[String]) {
+        if self.quiet {
+            return;
+        }
+
+        // Print pipeline visualization
+        print!("  {DIM}Pipeline:{RESET} ");
+        for (i, node_id) in node_ids.iter().enumerate() {
+            if i > 0 {
+                print!(" {GRAY}{ARROW_RIGHT}{RESET} ");
+            }
+            print!("{CYAN}{}{RESET}", node_id);
+        }
+        println!();
+        println!();
+    }
+
+    /// Print node starting execution
+    pub fn print_node_start(&mut self, node_id: &str, node_type: &str, step: usize, total: usize) {
+        if self.quiet {
+            return;
+        }
+
+        // Add to tracking
+        self.nodes.push(FlowNodeState {
+            id: node_id.to_string(),
+            node_type: node_type.to_string(),
+            status: FlowNodeStatus::Running,
+            duration_ms: None,
+            output_preview: None,
+        });
+
+        let type_icon = match node_type {
+            "Agent" => ROBOT,
+            "Fleet" => BRAIN,
+            "Approval" | "HumanApproval" => "👤",
+            "Conditional" => "🔀",
+            "Transform" => GEAR,
+            "Wait" => CLOCK,
+            _ => CIRCLE,
+        };
+
+        println!(
+            "  {BRIGHT_BLUE}{BOLD}┌─{RESET} {BOLD}Step {}/{}{RESET}",
+            step, total
+        );
+        println!(
+            "  {BRIGHT_BLUE}{BOLD}│{RESET}  {} {WHITE}{BOLD}{}{RESET} {DIM}({}){RESET}",
+            type_icon, node_id, node_type
+        );
+        print!("  {BRIGHT_BLUE}{BOLD}│{RESET}  {DIM}Executing...{RESET}");
+        let _ = io::stdout().flush();
+    }
+
+    /// Print node completed
+    pub fn print_node_complete(&mut self, node_id: &str, duration_ms: u64, output_preview: Option<&str>) {
+        if self.quiet {
+            return;
+        }
+
+        // Update tracking
+        if let Some(node) = self.nodes.iter_mut().find(|n| n.id == node_id) {
+            node.status = FlowNodeStatus::Completed;
+            node.duration_ms = Some(duration_ms);
+            node.output_preview = output_preview.map(|s| s.to_string());
+        }
+
+        // Clear "Executing..." and print completion
+        print!("\r");
+        println!(
+            "  {BRIGHT_BLUE}{BOLD}│{RESET}  {GREEN}{CHECK} Completed{RESET} {DIM}({:.2}s){RESET}                    ",
+            duration_ms as f64 / 1000.0
+        );
+
+        // Show output preview if available
+        if let Some(preview) = output_preview {
+            let lines: Vec<&str> = preview.lines().take(3).collect();
+            for line in lines {
+                println!(
+                    "  {BRIGHT_BLUE}{BOLD}│{RESET}    {DIM}{}{RESET}",
+                    truncate_str(line, 50)
+                );
+            }
+            if preview.lines().count() > 3 {
+                println!("  {BRIGHT_BLUE}{BOLD}│{RESET}    {DIM}...{RESET}");
+            }
+        }
+
+        println!("  {BRIGHT_BLUE}{BOLD}└─{RESET}");
+        println!();
+    }
+
+    /// Print node failed
+    pub fn print_node_failed(&mut self, node_id: &str, error: &str) {
+        if self.quiet {
+            return;
+        }
+
+        // Update tracking
+        if let Some(node) = self.nodes.iter_mut().find(|n| n.id == node_id) {
+            node.status = FlowNodeStatus::Failed;
+        }
+
+        print!("\r");
+        println!(
+            "  {BRIGHT_BLUE}{BOLD}│{RESET}  {RED}{CROSS} Failed{RESET}                                      "
+        );
+        println!(
+            "  {BRIGHT_BLUE}{BOLD}│{RESET}    {RED}{}{RESET}",
+            truncate_str(error, 50)
+        );
+        println!("  {BRIGHT_BLUE}{BOLD}└─{RESET}");
+        println!();
+    }
+
+    /// Print node skipped
+    pub fn print_node_skipped(&mut self, node_id: &str, reason: &str) {
+        if self.quiet {
+            return;
+        }
+
+        // Add to tracking as skipped
+        self.nodes.push(FlowNodeState {
+            id: node_id.to_string(),
+            node_type: "Unknown".to_string(),
+            status: FlowNodeStatus::Skipped,
+            duration_ms: None,
+            output_preview: None,
+        });
+
+        println!(
+            "  {GRAY}○ {}{RESET} {DIM}(skipped: {}){RESET}",
+            node_id, reason
+        );
+    }
+
+    /// Print flow result with output
+    pub fn print_flow_result(&self, result: &serde_json::Value) {
+        if self.quiet {
+            return;
+        }
+
+        println!();
+        println!(
+            "{GREEN}{BOLD}╭─────────────────────────────────────────────────────────────╮{RESET}"
+        );
+        println!(
+            "{GREEN}{BOLD}│{RESET} {TARGET} {WHITE}{BOLD}RESULT{RESET}                                                    {GREEN}{BOLD}│{RESET}"
+        );
+        println!(
+            "{GREEN}{BOLD}╰─────────────────────────────────────────────────────────────╯{RESET}"
+        );
+
+        // Try to extract and display the final output
+        if let Some(output) = result.get("output").and_then(|o| o.as_str()) {
+            println!();
+            for line in output.lines() {
+                println!("  {}", line);
+            }
+        } else if let Some(output) = result.get("final_output") {
+            if let Some(output_str) = output.as_str() {
+                println!();
+                for line in output_str.lines() {
+                    println!("  {}", line);
+                }
+            } else {
+                println!();
+                println!("  {}", serde_json::to_string_pretty(output).unwrap_or_default());
+            }
+        } else {
+            // Print the entire result if no specific output field
+            println!();
+            let json_str = serde_json::to_string_pretty(result).unwrap_or_default();
+            for line in json_str.lines().take(20) {
+                println!("  {DIM}{}{RESET}", line);
+            }
+        }
+        println!();
+    }
+
+    /// Print flow completion summary
+    pub fn print_flow_complete(
+        &self,
+        flow_name: &str,
+        status: &str,
+        usage: Option<TokenUsage>,
+    ) {
+        if self.quiet {
+            return;
+        }
+
+        let duration_ms = self.start_time.elapsed().as_millis() as u64;
+        let total_nodes = self.nodes.len();
+        let completed = self.nodes.iter().filter(|n| n.status == FlowNodeStatus::Completed).count();
+        let failed = self.nodes.iter().filter(|n| n.status == FlowNodeStatus::Failed).count();
+
+        let status_color = if status == "Completed" { GREEN } else { RED };
+        let status_icon = if status == "Completed" { CHECK } else { CROSS };
+
+        println!();
+        println!(
+            "{status_color}{BOLD}╭─────────────────────────────────────────────────────────────╮{RESET}"
+        );
+        println!(
+            "{status_color}{BOLD}│{RESET} {ROCKET} {WHITE}{BOLD}FLOW EXECUTION {}{RESET}                           {status_color}{BOLD}│{RESET}",
+            status.to_uppercase()
+        );
+        println!(
+            "{status_color}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+        );
+        println!(
+            "{status_color}{BOLD}│{RESET}  Flow: {CYAN}{:<30}{RESET}                    {status_color}{BOLD}│{RESET}",
+            truncate_str(flow_name, 30)
+        );
+        println!(
+            "{status_color}{BOLD}│{RESET}  Status: {status_color}{status_icon} {}{RESET}                                          {status_color}{BOLD}│{RESET}",
+            status
+        );
+        println!(
+            "{status_color}{BOLD}│{RESET}  Duration: {YELLOW}{:.2}s{RESET}                                           {status_color}{BOLD}│{RESET}",
+            duration_ms as f64 / 1000.0
+        );
+        println!(
+            "{status_color}{BOLD}│{RESET}  Nodes: {GREEN}{} completed{RESET}",
+            completed
+        );
+        if failed > 0 {
+            println!(
+                "{status_color}{BOLD}│{RESET}         {RED}{} failed{RESET}",
+                failed
+            );
+        }
+        if total_nodes > completed + failed {
+            println!(
+                "{status_color}{BOLD}│{RESET}         {GRAY}{} skipped{RESET}",
+                total_nodes - completed - failed
+            );
+        }
+
+        // Token usage
+        if let Some(ref u) = usage {
+            println!(
+                "{status_color}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+            );
+            println!(
+                "{status_color}{BOLD}│{RESET}  {BRIGHT_CYAN}Token Usage:{RESET}                                                {status_color}{BOLD}│{RESET}"
+            );
+            println!(
+                "{status_color}{BOLD}│{RESET}    Input:  {WHITE}{:>12}{RESET} tokens                            {status_color}{BOLD}│{RESET}",
+                u.input_tokens
+            );
+            println!(
+                "{status_color}{BOLD}│{RESET}    Output: {WHITE}{:>12}{RESET} tokens                            {status_color}{BOLD}│{RESET}",
+                u.output_tokens
+            );
+            println!(
+                "{status_color}{BOLD}│{RESET}    Total:  {BRIGHT_YELLOW}{:>12}{RESET} tokens                            {status_color}{BOLD}│{RESET}",
+                u.total_tokens
+            );
+        }
+
+        // Execution path
+        if !self.nodes.is_empty() {
+            println!(
+                "{status_color}{BOLD}├─────────────────────────────────────────────────────────────┤{RESET}"
+            );
+            print!("{status_color}{BOLD}│{RESET}  {DIM}Path:{RESET} ");
+            for (i, node) in self.nodes.iter().filter(|n| n.status == FlowNodeStatus::Completed).enumerate() {
+                if i > 0 {
+                    print!(" {GRAY}{ARROW_RIGHT}{RESET} ");
+                }
+                print!("{CYAN}{}{RESET}", node.id);
+            }
+            println!();
+        }
+
+        println!(
+            "{status_color}{BOLD}╰─────────────────────────────────────────────────────────────╯{RESET}"
+        );
+    }
+}
+
+/// Truncate string with ellipsis
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
 /// Simple spinner for progress indication
 pub struct Spinner {
     state: usize,
