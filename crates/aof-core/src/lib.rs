@@ -23,7 +23,7 @@ pub mod workflow;
 pub use agent::{
     Agent, AgentConfig, AgentContext, AgentMetadata, ExecutionMetadata, MemorySpec, Message,
     MessageRole, QualifiedToolSpec, StructuredMemoryConfig, ToolResult as AgentToolResult,
-    ToolSource, ToolSpec,
+    ToolSource, ToolSpec, TypeBasedToolSpec, TypeBasedToolType,
 };
 pub use error::{AofError, AofResult};
 pub use error_tracker::{ErrorKnowledgeBase, ErrorRecord, ErrorStats};

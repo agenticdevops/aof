@@ -190,11 +190,12 @@ spec:
 **Required:** No
 **Description:** List of tools the agent can use to interact with external systems.
 
-Tools can be specified in two formats:
+Tools can be specified in three formats:
 1. **Simple format**: Just the tool name as a string
-2. **Qualified format**: Object with name, source, config, and other options
+2. **Type-based format**: Object with `type` (Shell/MCP/HTTP) and `config`
+3. **Qualified format**: Object with name, source, config, and other options
 
-**Simple Format (Recommended):**
+#### Simple Format
 ```yaml
 tools:
   - shell
@@ -203,7 +204,46 @@ tools:
   - docker
 ```
 
-**Qualified Format (For Advanced Configuration):**
+#### Type-Based Format (Recommended for explicit configuration)
+
+Use `type: Shell`, `type: MCP`, or `type: HTTP` with a `config` object:
+
+```yaml
+tools:
+  # Shell tool with command restrictions
+  - type: Shell
+    config:
+      allowed_commands:
+        - kubectl
+        - helm
+      working_directory: /tmp
+      timeout_seconds: 30
+
+  # MCP server tool
+  - type: MCP
+    config:
+      name: kubectl-mcp
+      command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+      env:
+        KUBECONFIG: "${KUBECONFIG}"
+
+  # HTTP API tool
+  - type: HTTP
+    config:
+      base_url: http://localhost:8080
+      timeout_seconds: 10
+      allowed_methods: [GET, POST]
+```
+
+**Type-Based Tool Fields:**
+
+| Type | Config Fields | Description |
+|------|---------------|-------------|
+| `Shell` | `allowed_commands`, `working_directory`, `timeout_seconds` | Shell command execution with restrictions |
+| `MCP` | `name`, `command`, `args`, `env` | MCP server tool |
+| `HTTP` | `base_url`, `timeout_seconds`, `allowed_methods` | HTTP API calls |
+
+#### Qualified Format (Legacy)
 ```yaml
 tools:
   - name: shell

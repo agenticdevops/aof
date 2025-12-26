@@ -119,8 +119,9 @@ impl fmt::Display for MemorySpec {
 ///
 /// Supports multiple formats:
 /// 1. Simple string: `"shell"` - built-in tool with defaults
-/// 2. Object with source: `{name: "kubectl_get", source: "builtin", config: {...}}`
-/// 3. MCP tool: `{name: "read_file", source: "mcp", server: "filesystem"}`
+/// 2. Type-based: `{type: "Shell", config: {allowed_commands: [...]}}`
+/// 3. Object with source: `{name: "kubectl_get", source: "builtin", config: {...}}`
+/// 4. MCP tool: `{name: "read_file", source: "mcp", server: "filesystem"}`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolSpec {
@@ -128,8 +129,36 @@ pub enum ToolSpec {
     /// Assumes built-in if the tool exists, otherwise tries MCP
     Simple(String),
 
+    /// Type-based tool specification (type: Shell/MCP/HTTP)
+    /// Format: {type: "Shell", config: {allowed_commands: [...]}}
+    TypeBased(TypeBasedToolSpec),
+
     /// Fully qualified tool specification
     Qualified(QualifiedToolSpec),
+}
+
+/// Type-based tool specification
+/// Supports: Shell, MCP, HTTP tool types with their configurations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeBasedToolSpec {
+    /// Tool type: Shell, MCP, HTTP
+    #[serde(rename = "type")]
+    pub tool_type: TypeBasedToolType,
+
+    /// Tool-specific configuration
+    #[serde(default)]
+    pub config: serde_json::Value,
+}
+
+/// Tool types for type-based specification
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TypeBasedToolType {
+    /// Shell command execution with restrictions
+    Shell,
+    /// MCP server tool
+    MCP,
+    /// HTTP API tool
+    HTTP,
 }
 
 impl ToolSpec {
@@ -137,6 +166,15 @@ impl ToolSpec {
     pub fn name(&self) -> &str {
         match self {
             ToolSpec::Simple(name) => name,
+            ToolSpec::TypeBased(spec) => match spec.tool_type {
+                TypeBasedToolType::Shell => "shell",
+                TypeBasedToolType::MCP => spec
+                    .config
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("mcp"),
+                TypeBasedToolType::HTTP => "http",
+            },
             ToolSpec::Qualified(spec) => &spec.name,
         }
     }
@@ -145,6 +183,7 @@ impl ToolSpec {
     pub fn is_builtin(&self) -> bool {
         match self {
             ToolSpec::Simple(_) => true, // default to builtin for simple names
+            ToolSpec::TypeBased(spec) => spec.tool_type == TypeBasedToolType::Shell,
             ToolSpec::Qualified(spec) => spec.source == ToolSource::Builtin,
         }
     }
@@ -153,7 +192,34 @@ impl ToolSpec {
     pub fn is_mcp(&self) -> bool {
         match self {
             ToolSpec::Simple(_) => false,
+            ToolSpec::TypeBased(spec) => spec.tool_type == TypeBasedToolType::MCP,
             ToolSpec::Qualified(spec) => spec.source == ToolSource::Mcp,
+        }
+    }
+
+    /// Check if this is an HTTP tool
+    pub fn is_http(&self) -> bool {
+        match self {
+            ToolSpec::Simple(_) => false,
+            ToolSpec::TypeBased(spec) => spec.tool_type == TypeBasedToolType::HTTP,
+            ToolSpec::Qualified(_) => false,
+        }
+    }
+
+    /// Check if this is a Shell tool (type-based)
+    pub fn is_shell(&self) -> bool {
+        match self {
+            ToolSpec::Simple(name) => name == "shell",
+            ToolSpec::TypeBased(spec) => spec.tool_type == TypeBasedToolType::Shell,
+            ToolSpec::Qualified(spec) => spec.name == "shell",
+        }
+    }
+
+    /// Get the tool type (for type-based specs)
+    pub fn tool_type(&self) -> Option<TypeBasedToolType> {
+        match self {
+            ToolSpec::TypeBased(spec) => Some(spec.tool_type),
+            _ => None,
         }
     }
 
@@ -161,6 +227,13 @@ impl ToolSpec {
     pub fn mcp_server(&self) -> Option<&str> {
         match self {
             ToolSpec::Simple(_) => None,
+            ToolSpec::TypeBased(spec) => {
+                if spec.tool_type == TypeBasedToolType::MCP {
+                    spec.config.get("name").and_then(|v| v.as_str())
+                } else {
+                    None
+                }
+            }
             ToolSpec::Qualified(spec) => spec.server.as_deref(),
         }
     }
@@ -169,7 +242,16 @@ impl ToolSpec {
     pub fn config(&self) -> Option<&serde_json::Value> {
         match self {
             ToolSpec::Simple(_) => None,
+            ToolSpec::TypeBased(spec) => Some(&spec.config),
             ToolSpec::Qualified(spec) => spec.config.as_ref(),
+        }
+    }
+
+    /// Get type-based spec if this is a type-based tool
+    pub fn type_based_spec(&self) -> Option<&TypeBasedToolSpec> {
+        match self {
+            ToolSpec::TypeBased(spec) => Some(spec),
+            _ => None,
         }
     }
 }
@@ -780,6 +862,132 @@ mod tests {
         let mcp_tools = config.mcp_tools();
         assert_eq!(mcp_tools.len(), 1);
         assert_eq!(mcp_tools[0].mcp_server(), Some("github"));
+    }
+
+    #[test]
+    fn test_tool_spec_type_based_shell() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - type: Shell
+                config:
+                  allowed_commands:
+                    - kubectl
+                    - helm
+                  working_directory: /tmp
+                  timeout_seconds: 30
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 1);
+        assert_eq!(config.tools[0].name(), "shell");
+        assert!(config.tools[0].is_shell());
+        assert!(config.tools[0].is_builtin());
+        assert!(config.tools[0].config().is_some());
+
+        let config_val = config.tools[0].config().unwrap();
+        assert!(config_val.get("allowed_commands").is_some());
+    }
+
+    #[test]
+    fn test_tool_spec_type_based_mcp() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - type: MCP
+                config:
+                  name: kubectl-mcp
+                  command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+                  env:
+                    KUBECONFIG: "${KUBECONFIG}"
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 1);
+        assert!(config.tools[0].is_mcp());
+        assert_eq!(config.tools[0].mcp_server(), Some("kubectl-mcp"));
+    }
+
+    #[test]
+    fn test_tool_spec_type_based_http() {
+        let yaml = r#"
+            name: test-agent
+            model: gpt-4
+            tools:
+              - type: HTTP
+                config:
+                  base_url: http://localhost:8080
+                  timeout_seconds: 10
+                  allowed_methods: [GET, POST]
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.tools.len(), 1);
+        assert_eq!(config.tools[0].name(), "http");
+        assert!(config.tools[0].is_http());
+
+        let config_val = config.tools[0].config().unwrap();
+        assert_eq!(config_val.get("base_url").unwrap(), "http://localhost:8080");
+    }
+
+    #[test]
+    fn test_tool_spec_type_based_mixed() {
+        // This is the exact format from the user's final_agents.yaml
+        let yaml = r#"
+            apiVersion: aof.dev/v1
+            kind: Agent
+            metadata:
+              name: k8s-helper
+              labels:
+                purpose: operations
+            spec:
+              model: google:gemini-2.5-flash
+              instructions: You are a K8s helper.
+              tools:
+                - type: Shell
+                  config:
+                    allowed_commands:
+                      - kubectl
+                      - helm
+                    working_directory: /tmp
+                    timeout_seconds: 30
+                - type: MCP
+                  config:
+                    name: kubectl-mcp
+                    command: ["npx", "-y", "@modelcontextprotocol/server-kubectl"]
+                - type: HTTP
+                  config:
+                    base_url: http://localhost
+                    timeout_seconds: 10
+              memory:
+                type: File
+                config:
+                  path: ./k8s-helper-memory.json
+                  max_messages: 50
+        "#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(config.name, "k8s-helper");
+        assert_eq!(config.tools.len(), 3);
+
+        // First tool: Shell
+        assert!(config.tools[0].is_shell());
+        assert!(config.tools[0].is_builtin());
+
+        // Second tool: MCP
+        assert!(config.tools[1].is_mcp());
+        assert_eq!(config.tools[1].mcp_server(), Some("kubectl-mcp"));
+
+        // Third tool: HTTP
+        assert!(config.tools[2].is_http());
+
+        // Memory
+        assert!(config.memory.is_some());
+        let memory = config.memory.as_ref().unwrap();
+        assert!(memory.is_file());
+        assert_eq!(memory.path(), Some("./k8s-helper-memory.json".to_string()));
     }
 
     #[test]
