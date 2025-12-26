@@ -52,8 +52,9 @@ pub use fleet::{
 };
 pub use agentflow::{
     AgentFlow, AgentFlowMetadata, AgentFlowSpec, AgentFlowState, FlowConfig, FlowConnection,
-    FlowContext, FlowError, FlowExecutionStatus, FlowNode, FlowRetryConfig, NodeCondition,
-    NodeConfig, NodeExecutionStatus, NodeResult, NodeType,
+    FlowContext, FlowError, FlowExecutionStatus, FlowNode, FlowRetryConfig, InlineAgentConfig,
+    NodeCondition, NodeConfig, NodeExecutionStatus, NodeResult, NodeType, ScriptConfig,
+    ScriptOutputParse,
 };
 pub use binding::{
     BindingMatch, FlowBinding, FlowBindingMetadata, FlowBindingSpec, ResolvedBinding,

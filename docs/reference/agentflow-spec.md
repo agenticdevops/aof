@@ -197,6 +197,151 @@ nodes:
       input: "${event.text}"
 ```
 
+### Script Node
+
+Execute shell commands or native tools **without LLM involvement**. Script nodes are ideal for deterministic operations that don't require intelligence, such as:
+
+- Running shell commands (like Jenkins pipelines)
+- Executing docker, kubectl, or other CLI tools
+- Parsing logs or data files
+- Making HTTP requests
+- File operations
+
+Script nodes are faster and more predictable than Agent nodes since they don't use LLM tokens.
+
+#### Option 1: Shell Command Execution
+
+```yaml
+nodes:
+  - id: check-containers
+    type: Script
+    config:
+      script_config:
+        command: docker ps -a --format "{{json .}}"
+        parse: json              # Parse output as JSON
+        timeout_seconds: 30
+        fail_on_error: true      # Fail flow if command fails
+```
+
+#### Option 2: Native Tool Execution
+
+Use built-in native tools for common operations:
+
+```yaml
+nodes:
+  - id: get-pods
+    type: Script
+    config:
+      script_config:
+        tool: kubectl            # Built-in tool
+        action: get              # Tool action
+        args:
+          resource: pods
+          namespace: production
+```
+
+**Available Native Tools:**
+
+| Tool | Actions | Description |
+|------|---------|-------------|
+| `docker` | `ps`, `logs`, `inspect`, `stats` | Container operations |
+| `kubectl` | `get`, `logs`, `describe` | Kubernetes operations |
+| `http` | `get`, `post`, `put`, `delete` | HTTP requests |
+| `json` | `parse`, `extract`, `merge` | JSON transformation |
+| `file` | `read`, `write`, `exists`, `list` | File operations |
+
+**Script Configuration Fields:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `command` | string | * | - | Shell command to execute |
+| `tool` | string | * | - | Native tool to use |
+| `action` | string | No | "run" | Tool action |
+| `args` | object | No | {} | Arguments for tool |
+| `working_dir` | string | No | - | Working directory |
+| `env` | object | No | {} | Environment variables |
+| `timeout_seconds` | int | No | 60 | Execution timeout |
+| `parse` | string | No | "text" | Output parsing mode |
+| `pattern` | string | No | - | Regex pattern (for parse: regex) |
+| `fail_on_error` | bool | No | true | Fail on non-zero exit |
+
+\* Either `command` or `tool` is required.
+
+**Output Parsing Modes:**
+
+| Mode | Description |
+|------|-------------|
+| `text` | Raw text output (default) |
+| `json` | Parse as JSON object |
+| `lines` | Split into array of lines |
+| `regex` | Apply regex pattern with named groups |
+
+**Example: Docker Diagnostics with Script Nodes**
+
+```yaml
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: docker-diagnostics
+spec:
+  description: "Docker health check using Script nodes"
+
+  nodes:
+    # Native tool: Get container status
+    - id: check-status
+      type: Script
+      config:
+        script_config:
+          tool: docker
+          action: ps
+          args:
+            all: true
+
+    # Shell command: Get logs
+    - id: get-logs
+      type: Script
+      config:
+        script_config:
+          command: |
+            docker ps -a --filter "status=exited" --format "{{.Names}}" | \
+            while read name; do
+              echo "=== $name ==="
+              docker logs --tail 20 "$name" 2>&1
+            done
+          parse: text
+
+    # LLM analysis of Script outputs
+    - id: analyze
+      type: Agent
+      config:
+        inline:
+          name: analyzer
+          model: google:gemini-2.5-flash
+          instructions: "Analyze container diagnostics and provide recommendations."
+        input: |
+          Status: ${check-status.output}
+          Logs: ${get-logs.output}
+
+  connections:
+    - from: start
+      to: check-status
+    - from: check-status
+      to: get-logs
+    - from: get-logs
+      to: analyze
+```
+
+**When to use Script vs Agent:**
+
+| Use Case | Recommended |
+|----------|-------------|
+| Running CLI commands | Script |
+| Fetching data from APIs | Script |
+| Parsing logs or files | Script |
+| Intelligent analysis | Agent |
+| Decision making | Agent |
+| Natural language generation | Agent |
+
 ### HumanApproval Node
 
 Wait for human approval before proceeding.
@@ -594,3 +739,5 @@ aofctl validate flows/deploy-flow.yaml
 4. **Handle failure paths** - Use conditional connections for error cases
 5. **Set appropriate timeouts** - Prevent runaway executions
 6. **Use fleets for complex analysis** - Multi-agent coordination for RCA
+7. **Use Script nodes for deterministic operations** - Save LLM tokens by using Script nodes for data collection, API calls, and file operations. Reserve Agent nodes for tasks requiring intelligence.
+8. **Combine Script + Agent nodes** - Use Script nodes to gather data, then pass results to Agent nodes for analysis

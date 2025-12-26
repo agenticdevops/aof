@@ -1,0 +1,91 @@
+# Docker Troubleshooting Flow with Script Nodes
+#
+# This flow demonstrates using Script nodes for non-LLM deterministic operations.
+# Script nodes execute shell commands or native tools without invoking an LLM,
+# making them faster and more predictable for operations like:
+# - Checking container status
+# - Fetching logs
+# - Running diagnostics
+#
+# The final analysis step uses an Agent node with LLM for intelligent analysis.
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: docker-troubleshoot-script
+  labels:
+    purpose: diagnostics
+    type: devops
+
+spec:
+  description: "Diagnose Docker container issues using native tools + LLM analysis"
+
+  nodes:
+    # Step 1: Check container status using native docker tool (no LLM)
+    - id: check-status
+      type: Script
+      config:
+        script_config:
+          tool: docker
+          action: ps
+          args:
+            all: true
+
+    # Step 2: Get container stats (no LLM)
+    - id: get-stats
+      type: Script
+      config:
+        script_config:
+          tool: docker
+          action: stats
+
+    # Step 3: Get logs for unhealthy containers using shell command (no LLM)
+    - id: get-logs
+      type: Script
+      config:
+        script_config:
+          command: |
+            docker ps -a --filter "status=exited" --format "{{.Names}}" | head -5 | while read name; do
+              echo "=== Logs for $name ==="
+              docker logs --tail 50 "$name" 2>&1
+              echo ""
+            done
+          parse: text
+          timeout_seconds: 30
+
+    # Step 4: Analyze findings with LLM
+    - id: analyze
+      type: Agent
+      config:
+        inline:
+          name: docker-analyzer
+          model: google:gemini-2.5-flash
+          instructions: |
+            Analyze the Docker container diagnostics data and provide:
+
+            1. **Status Summary**: Brief overview of container health
+            2. **Issues Found**: List any problems discovered
+            3. **Root Cause Analysis**: Likely causes for any failures
+            4. **Recommended Fixes**: Specific commands or actions to resolve issues
+
+            Be concise and actionable. Format as markdown.
+          temperature: 0.1
+        input: |
+          Container Status:
+          ${check-status.output}
+
+          Resource Stats:
+          ${get-stats.output}
+
+          Recent Logs from Exited Containers:
+          ${get-logs.output}
+
+  connections:
+    - from: start
+      to: check-status
+    - from: check-status
+      to: get-stats
+    - from: get-stats
+      to: get-logs
+    - from: get-logs
+      to: analyze

@@ -28,6 +28,7 @@ futures = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 rand = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }

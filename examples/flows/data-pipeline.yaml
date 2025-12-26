@@ -1,0 +1,104 @@
+# Data Processing Pipeline Flow
+#
+# This flow demonstrates using Script nodes for:
+# - File operations (reading, writing)
+# - JSON parsing and transformation
+# - Shell command execution with output parsing
+# - Chaining deterministic operations with LLM analysis
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: data-pipeline
+  labels:
+    purpose: data-processing
+    type: etl
+
+spec:
+  description: "Extract, transform, and analyze data with Script nodes"
+
+  nodes:
+    # Step 1: Read input data file
+    - id: read-data
+      type: Script
+      config:
+        script_config:
+          tool: file
+          action: read
+          args:
+            path: "/tmp/input-data.json"
+          fail_on_error: false
+
+    # Step 2: Parse and extract specific fields
+    - id: extract-fields
+      type: Script
+      config:
+        script_config:
+          command: |
+            echo '${read-data.output.content}' | jq '.items[] | {name: .name, value: .value}'
+          parse: json
+          fail_on_error: false
+
+    # Step 3: Calculate statistics using shell
+    - id: calc-stats
+      type: Script
+      config:
+        script_config:
+          command: |
+            echo '${read-data.output.content}' | jq '{
+              total_items: (.items | length),
+              sum: ([.items[].value] | add),
+              avg: ([.items[].value] | add / length),
+              max: ([.items[].value] | max),
+              min: ([.items[].value] | min)
+            }'
+          parse: json
+          fail_on_error: false
+
+    # Step 4: Analyze results with LLM
+    - id: analyze
+      type: Agent
+      config:
+        inline:
+          name: data-analyst
+          model: google:gemini-2.5-flash
+          instructions: |
+            Analyze the processed data and statistics. Provide:
+
+            1. **Data Summary**: Overview of the data characteristics
+            2. **Key Insights**: Notable patterns or anomalies
+            3. **Recommendations**: Actions based on the analysis
+
+            Be concise and data-driven.
+          temperature: 0.2
+        input: |
+          Extracted Fields:
+          ${extract-fields.output}
+
+          Statistics:
+          ${calc-stats.output}
+
+    # Step 5: Write results
+    - id: write-results
+      type: Script
+      config:
+        script_config:
+          tool: file
+          action: write
+          args:
+            path: "/tmp/analysis-results.txt"
+            content: "${analyze.output}"
+
+  connections:
+    - from: start
+      to: read-data
+    - from: read-data
+      to: extract-fields
+    - from: read-data
+      to: calc-stats
+    - from: extract-fields
+      to: analyze
+    - from: calc-stats
+      to: analyze
+    - from: analyze
+      to: write-results

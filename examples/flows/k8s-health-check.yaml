@@ -1,0 +1,108 @@
+# Kubernetes Health Check Flow
+#
+# This flow demonstrates Script nodes for Kubernetes diagnostics:
+# - Native kubectl tool for cluster inspection
+# - HTTP tool for service health checks
+# - JSON tool for data extraction
+# - LLM agent for intelligent analysis
+
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: k8s-health-check
+  labels:
+    purpose: monitoring
+    type: kubernetes
+
+spec:
+  description: "Comprehensive Kubernetes cluster health check"
+
+  context:
+    namespace: default
+    env:
+      CHECK_NAMESPACE: default
+
+  nodes:
+    # Step 1: Get pod status using native kubectl tool
+    - id: get-pods
+      type: Script
+      config:
+        script_config:
+          tool: kubectl
+          action: get
+          args:
+            resource: pods
+            namespace: "${context.namespace}"
+
+    # Step 2: Get recent events
+    - id: get-events
+      type: Script
+      config:
+        script_config:
+          command: kubectl get events --sort-by='.lastTimestamp' -n ${CHECK_NAMESPACE} | tail -20
+          parse: lines
+
+    # Step 3: Check node resources
+    - id: check-nodes
+      type: Script
+      config:
+        script_config:
+          tool: kubectl
+          action: get
+          args:
+            resource: nodes
+
+    # Step 4: Health endpoint check (example)
+    - id: health-check
+      type: Script
+      config:
+        script_config:
+          tool: http
+          action: get
+          args:
+            url: "http://localhost:8080/health"
+          fail_on_error: false
+
+    # Step 5: Analyze with LLM
+    - id: analyze
+      type: Agent
+      config:
+        inline:
+          name: k8s-analyzer
+          model: google:gemini-2.5-flash
+          instructions: |
+            Analyze the Kubernetes cluster health data and provide:
+
+            1. **Cluster Overview**: Node count, pod count, overall status
+            2. **Issues Detected**: Any pods not running, events indicating problems
+            3. **Resource Utilization**: Node capacity and usage patterns
+            4. **Recommendations**: Actions to improve cluster health
+
+            Format as structured markdown with severity indicators.
+          temperature: 0.1
+        input: |
+          Pod Status:
+          ${get-pods.output}
+
+          Recent Events:
+          ${get-events.output}
+
+          Node Status:
+          ${check-nodes.output}
+
+          Health Endpoint:
+          ${health-check.output}
+
+  connections:
+    - from: start
+      to: get-pods
+    - from: start
+      to: check-nodes
+    - from: get-pods
+      to: get-events
+    - from: check-nodes
+      to: health-check
+    - from: get-events
+      to: analyze
+    - from: health-check
+      to: analyze

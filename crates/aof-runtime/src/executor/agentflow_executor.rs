@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use aof_core::{
     AgentConfig, AgentFlow, AgentFlowState, AofError, AofResult, FlowError, FlowExecutionStatus,
-    FlowNode, NodeExecutionStatus, NodeResult, NodeType,
+    FlowNode, NodeExecutionStatus, NodeResult, NodeType, ScriptOutputParse,
 };
 
 use super::Runtime;
@@ -281,6 +281,8 @@ impl AgentFlowExecutor {
         let result = match node.node_type {
             NodeType::Transform => self.execute_transform_node(node, state).await,
             NodeType::Agent => self.execute_agent_node(node, state).await,
+            NodeType::Script => self.execute_script_node(node, state).await,
+            NodeType::Fleet => self.execute_fleet_node(node, state).await,
             NodeType::Conditional => self.execute_conditional_node(node, state).await,
             NodeType::Slack => self.execute_slack_node(node, state).await,
             NodeType::Discord => self.execute_discord_node(node, state).await,
@@ -800,6 +802,624 @@ impl AgentFlowExecutor {
         Ok(serde_json::json!({
             "status": "waiting_approval",
             "node_id": node.id
+        }))
+    }
+
+    /// Execute a Script node (non-LLM deterministic operations)
+    ///
+    /// Script nodes run shell commands or native tools without involving an LLM.
+    /// This is useful for:
+    /// - Running shell commands (like Jenkins)
+    /// - Executing deterministic operations (parsing logs, checking status)
+    /// - Native tool execution (docker, kubectl, etc.)
+    async fn execute_script_node(
+        &self,
+        node: &FlowNode,
+        state: &mut AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        let script_config = node.config.script_config.as_ref().ok_or_else(|| {
+            AofError::Config(format!("Script node '{}' requires script_config", node.id))
+        })?;
+
+        let timeout_secs = script_config.timeout_seconds.unwrap_or(60);
+
+        // Determine execution mode: command vs tool
+        if let Some(command) = &script_config.command {
+            // Shell command execution
+            let expanded_command = self.expand_variables(command, state);
+            info!("Executing script command: {}", expanded_command);
+
+            // Build command with working directory and environment
+            let mut cmd = tokio::process::Command::new("sh");
+            cmd.arg("-c").arg(&expanded_command);
+
+            if let Some(working_dir) = &script_config.working_dir {
+                let expanded_dir = self.expand_variables(working_dir, state);
+                cmd.current_dir(&expanded_dir);
+            }
+
+            // Set environment variables
+            for (key, value) in &script_config.env {
+                let expanded_value = self.expand_variables(value, state);
+                cmd.env(key, expanded_value);
+            }
+
+            // Execute with timeout
+            let output = tokio::time::timeout(
+                std::time::Duration::from_secs(timeout_secs as u64),
+                cmd.output(),
+            )
+            .await
+            .map_err(|_| AofError::Workflow(format!(
+                "Script node '{}' timed out after {}s",
+                node.id, timeout_secs
+            )))?
+            .map_err(|e| AofError::Workflow(format!(
+                "Script node '{}' execution failed: {}",
+                node.id, e
+            )))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let exit_code = output.status.code().unwrap_or(-1);
+
+            // Check for failure
+            if !output.status.success() && script_config.fail_on_error {
+                return Err(AofError::Workflow(format!(
+                    "Script node '{}' failed with exit code {}: {}",
+                    node.id, exit_code, stderr
+                )));
+            }
+
+            // Parse output based on parse mode
+            let parsed_output = self.parse_script_output(
+                &stdout,
+                script_config.parse.as_ref(),
+                script_config.pattern.as_ref(),
+            )?;
+
+            debug!("Script '{}' completed: exit_code={}", node.id, exit_code);
+
+            Ok(serde_json::json!({
+                "exit_code": exit_code,
+                "stdout": stdout,
+                "stderr": stderr,
+                "output": parsed_output,
+                "success": output.status.success()
+            }))
+        } else if let Some(tool_name) = &script_config.tool {
+            // Native tool execution (no shell, direct Rust implementation)
+            info!("Executing native tool: {}", tool_name);
+
+            let action = script_config.action.as_deref().unwrap_or("run");
+            let args = &script_config.args;
+
+            // Execute built-in tool
+            let result = self.execute_native_tool(tool_name, action, args, state).await?;
+
+            Ok(result)
+        } else {
+            Err(AofError::Config(format!(
+                "Script node '{}' requires either 'command' or 'tool'",
+                node.id
+            )))
+        }
+    }
+
+    /// Parse script output based on parse mode
+    fn parse_script_output(
+        &self,
+        output: &str,
+        parse: Option<&ScriptOutputParse>,
+        pattern: Option<&String>,
+    ) -> AofResult<serde_json::Value> {
+        match parse {
+            Some(ScriptOutputParse::Json) => {
+                serde_json::from_str(output.trim()).map_err(|e| {
+                    AofError::Workflow(format!("Failed to parse JSON output: {}", e))
+                })
+            }
+            Some(ScriptOutputParse::Lines) => {
+                let lines: Vec<&str> = output.lines().collect();
+                Ok(serde_json::json!(lines))
+            }
+            Some(ScriptOutputParse::Regex) => {
+                if let Some(pattern) = pattern {
+                    let re = regex::Regex::new(pattern).map_err(|e| {
+                        AofError::Config(format!("Invalid regex pattern: {}", e))
+                    })?;
+
+                    let captures: Vec<HashMap<String, String>> = re
+                        .captures_iter(output)
+                        .map(|cap| {
+                            let mut map = HashMap::new();
+                            for name in re.capture_names().flatten() {
+                                if let Some(m) = cap.name(name) {
+                                    map.insert(name.to_string(), m.as_str().to_string());
+                                }
+                            }
+                            // Also include numbered groups
+                            for (i, m) in cap.iter().enumerate() {
+                                if let Some(m) = m {
+                                    map.insert(format!("${}", i), m.as_str().to_string());
+                                }
+                            }
+                            map
+                        })
+                        .collect();
+
+                    Ok(serde_json::to_value(captures).unwrap_or(serde_json::json!([])))
+                } else {
+                    Ok(serde_json::Value::String(output.to_string()))
+                }
+            }
+            Some(ScriptOutputParse::Text) | None => {
+                Ok(serde_json::Value::String(output.trim().to_string()))
+            }
+        }
+    }
+
+    /// Execute a native tool (built-in Rust implementations)
+    async fn execute_native_tool(
+        &self,
+        tool: &str,
+        action: &str,
+        args: &HashMap<String, serde_json::Value>,
+        state: &AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        match tool {
+            "docker" => self.execute_docker_tool(action, args, state).await,
+            "kubectl" => self.execute_kubectl_tool(action, args, state).await,
+            "http" => self.execute_http_tool(action, args, state).await,
+            "json" => self.execute_json_tool(action, args, state).await,
+            "file" => self.execute_file_tool(action, args, state).await,
+            _ => Err(AofError::Config(format!(
+                "Unknown native tool: {}. Available: docker, kubectl, http, json, file",
+                tool
+            ))),
+        }
+    }
+
+    /// Execute docker tool actions
+    async fn execute_docker_tool(
+        &self,
+        action: &str,
+        args: &HashMap<String, serde_json::Value>,
+        _state: &AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        match action {
+            "ps" => {
+                // List containers
+                let all = args.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
+                let mut cmd = tokio::process::Command::new("docker");
+                cmd.arg("ps");
+                if all {
+                    cmd.arg("-a");
+                }
+                cmd.arg("--format").arg("{{json .}}");
+
+                let output = cmd.output().await.map_err(|e| {
+                    AofError::Workflow(format!("Docker ps failed: {}", e))
+                })?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let containers: Vec<serde_json::Value> = stdout
+                    .lines()
+                    .filter_map(|line| serde_json::from_str(line).ok())
+                    .collect();
+
+                Ok(serde_json::json!({
+                    "containers": containers,
+                    "count": containers.len()
+                }))
+            }
+            "logs" => {
+                let container = args.get("container")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("docker logs requires 'container' arg".to_string()))?;
+
+                let tail = args.get("tail").and_then(|v| v.as_u64()).unwrap_or(100);
+
+                let output = tokio::process::Command::new("docker")
+                    .arg("logs")
+                    .arg("--tail")
+                    .arg(tail.to_string())
+                    .arg(container)
+                    .output()
+                    .await
+                    .map_err(|e| AofError::Workflow(format!("Docker logs failed: {}", e)))?;
+
+                let logs = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+                Ok(serde_json::json!({
+                    "logs": logs,
+                    "stderr": stderr,
+                    "container": container
+                }))
+            }
+            "inspect" => {
+                let container = args.get("container")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("docker inspect requires 'container' arg".to_string()))?;
+
+                let output = tokio::process::Command::new("docker")
+                    .arg("inspect")
+                    .arg(container)
+                    .output()
+                    .await
+                    .map_err(|e| AofError::Workflow(format!("Docker inspect failed: {}", e)))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let info: serde_json::Value = serde_json::from_str(&stdout)
+                    .unwrap_or(serde_json::json!({}));
+
+                Ok(info)
+            }
+            "stats" => {
+                let output = tokio::process::Command::new("docker")
+                    .arg("stats")
+                    .arg("--no-stream")
+                    .arg("--format")
+                    .arg("{{json .}}")
+                    .output()
+                    .await
+                    .map_err(|e| AofError::Workflow(format!("Docker stats failed: {}", e)))?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stats: Vec<serde_json::Value> = stdout
+                    .lines()
+                    .filter_map(|line| serde_json::from_str(line).ok())
+                    .collect();
+
+                Ok(serde_json::json!({ "stats": stats }))
+            }
+            _ => Err(AofError::Config(format!(
+                "Unknown docker action: {}. Available: ps, logs, inspect, stats",
+                action
+            ))),
+        }
+    }
+
+    /// Execute kubectl tool actions
+    async fn execute_kubectl_tool(
+        &self,
+        action: &str,
+        args: &HashMap<String, serde_json::Value>,
+        _state: &AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        match action {
+            "get" => {
+                let resource = args.get("resource")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("kubectl get requires 'resource' arg".to_string()))?;
+
+                let namespace = args.get("namespace").and_then(|v| v.as_str());
+                let name = args.get("name").and_then(|v| v.as_str());
+
+                let mut cmd = tokio::process::Command::new("kubectl");
+                cmd.arg("get").arg(resource);
+                if let Some(ns) = namespace {
+                    cmd.arg("-n").arg(ns);
+                }
+                if let Some(n) = name {
+                    cmd.arg(n);
+                }
+                cmd.arg("-o").arg("json");
+
+                let output = cmd.output().await.map_err(|e| {
+                    AofError::Workflow(format!("kubectl get failed: {}", e))
+                })?;
+
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let result: serde_json::Value = serde_json::from_str(&stdout)
+                    .unwrap_or(serde_json::json!({}));
+
+                Ok(result)
+            }
+            "logs" => {
+                let pod = args.get("pod")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("kubectl logs requires 'pod' arg".to_string()))?;
+
+                let namespace = args.get("namespace").and_then(|v| v.as_str());
+                let container = args.get("container").and_then(|v| v.as_str());
+                let tail = args.get("tail").and_then(|v| v.as_u64()).unwrap_or(100);
+
+                let mut cmd = tokio::process::Command::new("kubectl");
+                cmd.arg("logs").arg(pod);
+                if let Some(ns) = namespace {
+                    cmd.arg("-n").arg(ns);
+                }
+                if let Some(c) = container {
+                    cmd.arg("-c").arg(c);
+                }
+                cmd.arg("--tail").arg(tail.to_string());
+
+                let output = cmd.output().await.map_err(|e| {
+                    AofError::Workflow(format!("kubectl logs failed: {}", e))
+                })?;
+
+                let logs = String::from_utf8_lossy(&output.stdout).to_string();
+
+                Ok(serde_json::json!({
+                    "logs": logs,
+                    "pod": pod
+                }))
+            }
+            "describe" => {
+                let resource = args.get("resource")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("kubectl describe requires 'resource' arg".to_string()))?;
+
+                let name = args.get("name").and_then(|v| v.as_str());
+                let namespace = args.get("namespace").and_then(|v| v.as_str());
+
+                let mut cmd = tokio::process::Command::new("kubectl");
+                cmd.arg("describe").arg(resource);
+                if let Some(n) = name {
+                    cmd.arg(n);
+                }
+                if let Some(ns) = namespace {
+                    cmd.arg("-n").arg(ns);
+                }
+
+                let output = cmd.output().await.map_err(|e| {
+                    AofError::Workflow(format!("kubectl describe failed: {}", e))
+                })?;
+
+                let description = String::from_utf8_lossy(&output.stdout).to_string();
+
+                Ok(serde_json::json!({
+                    "output": description,
+                    "resource": resource
+                }))
+            }
+            _ => Err(AofError::Config(format!(
+                "Unknown kubectl action: {}. Available: get, logs, describe",
+                action
+            ))),
+        }
+    }
+
+    /// Execute HTTP tool actions
+    async fn execute_http_tool(
+        &self,
+        action: &str,
+        args: &HashMap<String, serde_json::Value>,
+        _state: &AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        let url = args.get("url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| AofError::Config("http tool requires 'url' arg".to_string()))?;
+
+        // Use curl for HTTP requests (available on most systems)
+        let method = match action {
+            "get" => "GET",
+            "post" => "POST",
+            "put" => "PUT",
+            "delete" => "DELETE",
+            "head" => "HEAD",
+            _ => action,
+        };
+
+        let mut cmd = tokio::process::Command::new("curl");
+        cmd.arg("-s").arg("-X").arg(method).arg(url);
+
+        // Add headers if provided
+        if let Some(headers) = args.get("headers").and_then(|v| v.as_object()) {
+            for (key, value) in headers {
+                if let Some(v) = value.as_str() {
+                    cmd.arg("-H").arg(format!("{}: {}", key, v));
+                }
+            }
+        }
+
+        // Add body for POST/PUT
+        if let Some(body) = args.get("body") {
+            cmd.arg("-d").arg(body.to_string());
+            cmd.arg("-H").arg("Content-Type: application/json");
+        }
+
+        let output = cmd.output().await.map_err(|e| {
+            AofError::Workflow(format!("HTTP request failed: {}", e))
+        })?;
+
+        let body = String::from_utf8_lossy(&output.stdout).to_string();
+
+        // Try to parse as JSON
+        let parsed: serde_json::Value = serde_json::from_str(&body)
+            .unwrap_or(serde_json::Value::String(body.clone()));
+
+        Ok(serde_json::json!({
+            "url": url,
+            "method": method,
+            "body": parsed,
+            "raw": body
+        }))
+    }
+
+    /// Execute JSON tool actions (parsing, extracting, transforming)
+    async fn execute_json_tool(
+        &self,
+        action: &str,
+        args: &HashMap<String, serde_json::Value>,
+        state: &AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        match action {
+            "parse" => {
+                let input = args.get("input")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("json parse requires 'input' arg".to_string()))?;
+
+                let expanded = self.expand_variables(input, state);
+                let parsed: serde_json::Value = serde_json::from_str(&expanded).map_err(|e| {
+                    AofError::Workflow(format!("Failed to parse JSON: {}", e))
+                })?;
+
+                Ok(parsed)
+            }
+            "extract" => {
+                let from = args.get("from")
+                    .ok_or_else(|| AofError::Config("json extract requires 'from' arg".to_string()))?;
+
+                let path = args.get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("json extract requires 'path' arg".to_string()))?;
+
+                // Simple JSON path extraction (supports dot notation)
+                let mut current = from.clone();
+                for key in path.split('.') {
+                    current = current.get(key).cloned().unwrap_or(serde_json::json!(null));
+                }
+
+                Ok(current)
+            }
+            "merge" => {
+                let sources = args.get("sources")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| AofError::Config("json merge requires 'sources' array".to_string()))?;
+
+                let mut result = serde_json::Map::new();
+                for source in sources {
+                    if let Some(obj) = source.as_object() {
+                        for (k, v) in obj {
+                            result.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+
+                Ok(serde_json::Value::Object(result))
+            }
+            _ => Err(AofError::Config(format!(
+                "Unknown json action: {}. Available: parse, extract, merge",
+                action
+            ))),
+        }
+    }
+
+    /// Execute file tool actions
+    async fn execute_file_tool(
+        &self,
+        action: &str,
+        args: &HashMap<String, serde_json::Value>,
+        state: &AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        match action {
+            "read" => {
+                let path = args.get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("file read requires 'path' arg".to_string()))?;
+
+                let expanded_path = self.expand_variables(path, state);
+                let content = tokio::fs::read_to_string(&expanded_path).await.map_err(|e| {
+                    AofError::Workflow(format!("Failed to read file {}: {}", expanded_path, e))
+                })?;
+
+                Ok(serde_json::json!({
+                    "path": expanded_path,
+                    "content": content,
+                    "size": content.len()
+                }))
+            }
+            "write" => {
+                let path = args.get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("file write requires 'path' arg".to_string()))?;
+
+                let content = args.get("content")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("file write requires 'content' arg".to_string()))?;
+
+                let expanded_path = self.expand_variables(path, state);
+                let expanded_content = self.expand_variables(content, state);
+
+                tokio::fs::write(&expanded_path, &expanded_content).await.map_err(|e| {
+                    AofError::Workflow(format!("Failed to write file {}: {}", expanded_path, e))
+                })?;
+
+                Ok(serde_json::json!({
+                    "path": expanded_path,
+                    "written": true,
+                    "size": expanded_content.len()
+                }))
+            }
+            "exists" => {
+                let path = args.get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("file exists requires 'path' arg".to_string()))?;
+
+                let expanded_path = self.expand_variables(path, state);
+                let exists = tokio::fs::metadata(&expanded_path).await.is_ok();
+
+                Ok(serde_json::json!({
+                    "path": expanded_path,
+                    "exists": exists
+                }))
+            }
+            "list" => {
+                let path = args.get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AofError::Config("file list requires 'path' arg".to_string()))?;
+
+                let expanded_path = self.expand_variables(path, state);
+                let mut entries = Vec::new();
+
+                let mut dir = tokio::fs::read_dir(&expanded_path).await.map_err(|e| {
+                    AofError::Workflow(format!("Failed to read directory {}: {}", expanded_path, e))
+                })?;
+
+                while let Some(entry) = dir.next_entry().await.map_err(|e| {
+                    AofError::Workflow(format!("Failed to read directory entry: {}", e))
+                })? {
+                    let file_name = entry.file_name().to_string_lossy().to_string();
+                    let file_type = if entry.path().is_dir() { "directory" } else { "file" };
+                    entries.push(serde_json::json!({
+                        "name": file_name,
+                        "type": file_type,
+                        "path": entry.path().to_string_lossy()
+                    }));
+                }
+
+                Ok(serde_json::json!({
+                    "path": expanded_path,
+                    "entries": entries,
+                    "count": entries.len()
+                }))
+            }
+            _ => Err(AofError::Config(format!(
+                "Unknown file action: {}. Available: read, write, exists, list",
+                action
+            ))),
+        }
+    }
+
+    /// Execute a Fleet node (multi-agent coordination)
+    async fn execute_fleet_node(
+        &self,
+        node: &FlowNode,
+        state: &mut AgentFlowState,
+    ) -> AofResult<serde_json::Value> {
+        let fleet_name = node.config.fleet.as_ref().ok_or_else(|| {
+            AofError::Config(format!("Fleet node '{}' requires 'fleet' config", node.id))
+        })?;
+
+        let input = node
+            .config
+            .input
+            .as_ref()
+            .map(|i| self.expand_variables(i, state))
+            .unwrap_or_default();
+
+        info!("Executing fleet: {} with input: {}", fleet_name, input);
+
+        // TODO: Implement fleet execution using aof-runtime's fleet executor
+        // For now, return a placeholder indicating fleet support is coming
+        Ok(serde_json::json!({
+            "fleet": fleet_name,
+            "input": input,
+            "status": "pending",
+            "note": "Fleet execution within flows will be fully implemented in next version"
         }))
     }
 

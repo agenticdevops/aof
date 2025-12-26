@@ -170,8 +170,12 @@ pub struct FlowNode {
 pub enum NodeType {
     /// Transform/extract data
     Transform,
-    /// Execute an agent
+    /// Execute an agent (LLM-based)
     Agent,
+    /// Execute a shell command (no LLM)
+    Script,
+    /// Execute a fleet of agents
+    Fleet,
     /// Conditional routing
     Conditional,
     /// Slack-specific action (send message, etc.)
@@ -224,6 +228,89 @@ pub struct InlineAgentConfig {
     pub max_tokens: Option<usize>,
 }
 
+/// Script node configuration for non-LLM deterministic operations
+/// This enables running shell commands, native tools, or custom SDK tools
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ScriptConfig {
+    /// Shell command to execute
+    /// Supports variable substitution: ${previous.output}, ${node_id.field}
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+
+    /// Built-in tool to execute (e.g., "docker", "kubectl", "http")
+    /// These are native Rust implementations, no LLM required
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+
+    /// Tool action (e.g., "ps", "logs", "get")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+
+    /// Arguments for the tool or command
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub args: HashMap<String, serde_json::Value>,
+
+    /// Working directory for command execution
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+
+    /// Environment variables
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub env: HashMap<String, String>,
+
+    /// Timeout in seconds (default: 60)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<u32>,
+
+    /// How to parse the output: "text", "json", "lines", "regex"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parse: Option<ScriptOutputParse>,
+
+    /// Regex pattern for parsing (when parse = "regex")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+
+    /// Whether to fail the flow if command returns non-zero exit code
+    #[serde(default = "default_true")]
+    pub fail_on_error: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for ScriptConfig {
+    fn default() -> Self {
+        Self {
+            command: None,
+            tool: None,
+            action: None,
+            args: HashMap::new(),
+            working_dir: None,
+            env: HashMap::new(),
+            timeout_seconds: Some(60),
+            parse: None,
+            pattern: None,
+            fail_on_error: true,
+        }
+    }
+}
+
+/// Output parsing mode for Script nodes
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ScriptOutputParse {
+    /// Raw text output
+    Text,
+    /// Parse as JSON
+    Json,
+    /// Split into lines (returns array)
+    Lines,
+    /// Apply regex pattern
+    Regex,
+}
+
 /// Node configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -264,6 +351,17 @@ pub struct NodeConfig {
     /// These override or extend the agent's default MCP servers
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_servers: Vec<McpServerConfig>,
+
+    // Script node (non-LLM deterministic operations)
+    /// Script configuration for running shell commands or native tools
+    /// Use this for deterministic operations that don't need an LLM
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script_config: Option<ScriptConfig>,
+
+    // Fleet node
+    /// Fleet name to execute (reference to external fleet)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fleet: Option<String>,
 
     // Conditional node
     /// Condition expression
@@ -593,6 +691,31 @@ impl AgentFlow {
                     if node.config.agent.is_none() && node.config.inline.is_none() {
                         return Err(format!(
                             "Agent node '{}' requires either 'agent' (reference) or 'inline' (embedded config)",
+                            node.id
+                        ));
+                    }
+                }
+                NodeType::Script => {
+                    // Script node requires script_config with either command or tool
+                    if let Some(ref cfg) = node.config.script_config {
+                        if cfg.command.is_none() && cfg.tool.is_none() {
+                            return Err(format!(
+                                "Script node '{}' requires either 'command' or 'tool' in script_config",
+                                node.id
+                            ));
+                        }
+                    } else {
+                        return Err(format!(
+                            "Script node '{}' requires 'script_config'",
+                            node.id
+                        ));
+                    }
+                }
+                NodeType::Fleet => {
+                    // Fleet node requires fleet reference
+                    if node.config.fleet.is_none() {
+                        return Err(format!(
+                            "Fleet node '{}' requires 'fleet' config",
                             node.id
                         ));
                     }
