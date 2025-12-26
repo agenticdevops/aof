@@ -980,9 +980,13 @@ impl FlowOutput {
             println!(
                 "{status_color}{BOLD}├───────────────────────────────────────────────────────────┤{RESET}"
             );
+            // Format tokens with padding for alignment
+            let tokens_str = format!("{} in / {} out = {} total",
+                u.input_tokens, u.output_tokens, u.total_tokens);
+            let padding = 43usize.saturating_sub(tokens_str.len());
             println!(
-                "{status_color}{BOLD}│{RESET}  Tokens:   {WHITE}{} in{RESET} / {WHITE}{} out{RESET} = {BRIGHT_YELLOW}{} total{RESET}",
-                u.input_tokens, u.output_tokens, u.total_tokens
+                "{status_color}{BOLD}│{RESET}  Tokens:   {WHITE}{} in{RESET} / {WHITE}{} out{RESET} = {BRIGHT_YELLOW}{} total{RESET}{}{status_color}{BOLD}│{RESET}",
+                u.input_tokens, u.output_tokens, u.total_tokens, " ".repeat(padding)
             );
         }
 

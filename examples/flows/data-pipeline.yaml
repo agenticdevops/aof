@@ -82,7 +82,7 @@ spec:
     - id: write-results
       type: Script
       config:
-        script_config:
+        scriptConfig:
           tool: file
           action: write
           args:

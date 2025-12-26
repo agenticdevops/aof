@@ -442,16 +442,18 @@ impl AgentFlowExecutor {
         // Apply flow context if specified
         self.apply_flow_context().await?;
 
-        // Execute the agent
-        let result = {
+        // Execute the agent with token usage tracking
+        let (result, input_tokens, output_tokens) = {
             let runtime = self.runtime.read().await;
-            runtime.execute(&inline.name, input).await?
+            runtime.execute_with_usage(&inline.name, input).await?
         };
 
         Ok(serde_json::json!({
             "agent": inline.name,
             "input": input,
             "output": result,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
             "requires_approval": false
         }))
     }
@@ -478,11 +480,13 @@ impl AgentFlowExecutor {
                 // Apply flow context if specified
                 self.apply_flow_context().await?;
 
-                let result = runtime.execute(agent_name, input).await?;
+                let (result, input_tokens, output_tokens) = runtime.execute_with_usage(agent_name, input).await?;
                 return Ok(serde_json::json!({
                     "agent": agent_name,
                     "input": input,
                     "output": result,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                     "requires_approval": false
                 }));
             }
@@ -510,12 +514,14 @@ impl AgentFlowExecutor {
                     self.apply_flow_context().await?;
 
                     let runtime = self.runtime.read().await;
-                    let result = runtime.execute(agent_name, input).await?;
+                    let (result, input_tokens, output_tokens) = runtime.execute_with_usage(agent_name, input).await?;
 
                     return Ok(serde_json::json!({
                         "agent": agent_name,
                         "input": input,
                         "output": result,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
                         "requires_approval": false
                     }));
                 }
@@ -541,12 +547,14 @@ impl AgentFlowExecutor {
                 self.apply_flow_context().await?;
 
                 let runtime = self.runtime.read().await;
-                let result = runtime.execute(agent_name, input).await?;
+                let (result, input_tokens, output_tokens) = runtime.execute_with_usage(agent_name, input).await?;
 
                 return Ok(serde_json::json!({
                     "agent": agent_name,
                     "input": input,
                     "output": result,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                     "requires_approval": false
                 }));
             }

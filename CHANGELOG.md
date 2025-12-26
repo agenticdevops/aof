@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1-beta] - 2025-12-26
+
+### Added
+- Token usage tracking for AgentFlow execution
+  - Agent nodes now report input/output tokens
+  - Flow completion summary shows total token usage
+  - Script nodes correctly show 0 tokens (no LLM usage)
+
+### Fixed
+- Script node YAML field naming (`scriptConfig` camelCase)
+- Flow completion display formatting for token line
+
 ## [0.3.0-beta] - 2025-12-24
 
 ### Added
