@@ -360,6 +360,34 @@ spec:
 
 For more details, see [MCP Integration Guide](../tools/mcp-integration.md).
 
+### Graceful Degradation
+
+When MCP servers fail to initialize (e.g., unavailable server, network issues, missing packages), the agent will:
+
+1. **Log a warning** with detailed error information
+2. **Continue loading** with any successfully initialized tools
+3. **Fall back to builtin tools** if configured alongside MCP
+
+This ensures agents remain functional even when some external tools are unavailable.
+
+**Example with fallback:**
+```yaml
+spec:
+  tools:
+    # Builtin Shell tool - always available
+    - type: Shell
+      config:
+        allowed_commands: [kubectl, helm]
+
+    # MCP tool - optional, agent continues if unavailable
+    - type: MCP
+      config:
+        name: kubernetes-mcp
+        command: ["npx", "-y", "@example/mcp-server-kubernetes"]
+```
+
+If the MCP server fails to start, the agent will still load with the Shell tool available.
+
 ---
 
 ## Memory Configuration
