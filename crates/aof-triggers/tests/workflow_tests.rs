@@ -188,6 +188,7 @@ fn test_custom_handler_config() {
         max_tasks_per_user: 5,
         command_timeout_secs: 600,
         default_agent: None,
+        command_bindings: HashMap::new(),
     };
 
     let handler = create_handler_with_config(config.clone());

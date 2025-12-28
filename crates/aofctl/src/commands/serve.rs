@@ -9,6 +9,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use aof_core::{TriggerRegistry, Registry, StandaloneTriggerType};
 use aof_runtime::{Runtime, RuntimeOrchestrator};
 use aof_triggers::{
     TriggerHandler, TriggerHandlerConfig, TriggerServer, TriggerServerConfig,
@@ -16,6 +17,8 @@ use aof_triggers::{
     DiscordPlatform, PlatformConfig,
     TelegramPlatform, TelegramConfig,
     WhatsAppPlatform, WhatsAppConfig,
+    GitHubPlatform, GitHubConfig,
+    CommandBinding as HandlerCommandBinding,
     flow::{FlowRegistry, FlowRouter},
 };
 use serde::{Deserialize, Serialize};
@@ -64,6 +67,10 @@ pub struct ServeSpec {
     /// Flows directory (for AgentFlow-based routing)
     #[serde(default)]
     pub flows: FlowsConfig,
+
+    /// Triggers directory (for loading Trigger resources)
+    #[serde(default)]
+    pub triggers: TriggersConfig,
 
     /// Runtime settings
     #[serde(default)]
@@ -222,6 +229,17 @@ pub struct FlowsConfig {
     pub enabled: bool,
 }
 
+/// Triggers configuration for loading Trigger resources
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TriggersConfig {
+    /// Directory containing Trigger YAML files
+    pub directory: Option<PathBuf>,
+
+    /// Watch for changes and hot-reload
+    #[serde(default)]
+    pub watch: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
     /// Maximum concurrent tasks
@@ -287,6 +305,7 @@ pub async fn execute(
     host: Option<&str>,
     agents_dir: Option<&str>,
     flows_dir: Option<&str>,
+    triggers_dir: Option<&str>,
 ) -> anyhow::Result<()> {
     // Load configuration
     let config = if let Some(config_path) = config_file {
@@ -314,6 +333,10 @@ pub async fn execute(
                     directory: flows_dir.map(PathBuf::from),
                     watch: false,
                     enabled: true,
+                },
+                triggers: TriggersConfig {
+                    directory: triggers_dir.map(PathBuf::from),
+                    watch: false,
                 },
                 runtime: RuntimeConfig::default(),
             },
@@ -486,6 +509,104 @@ pub async fn execute(
                 }
             } else {
                 warn!("  WhatsApp enabled but missing access_token");
+            }
+        }
+    }
+
+    // Load Triggers from directory
+    let triggers_dir_path = triggers_dir
+        .map(PathBuf::from)
+        .or_else(|| config.spec.triggers.directory.clone());
+
+    if let Some(ref triggers_path) = triggers_dir_path {
+        info!("Loading Triggers from: {}", triggers_path.display());
+        let mut trigger_registry = TriggerRegistry::new();
+
+        match trigger_registry.load_directory(triggers_path) {
+            Ok(count) => {
+                if count > 0 {
+                    info!("  Loaded {} triggers: {:?}", count, trigger_registry.names());
+
+                    // Register platforms for each trigger type
+                    for trigger in trigger_registry.get_all() {
+                        match trigger.spec.trigger_type {
+                            StandaloneTriggerType::GitHub => {
+                                // Register GitHub platform if we have a trigger for it
+                                if let Some(ref secret) = trigger.spec.config.webhook_secret {
+                                    // Get GitHub token from env or trigger config
+                                    let token = std::env::var("GITHUB_TOKEN")
+                                        .or_else(|_| std::env::var("GH_TOKEN"))
+                                        .unwrap_or_default();
+
+                                    if token.is_empty() {
+                                        warn!("  GitHub trigger '{}': GITHUB_TOKEN not set, API features disabled", trigger.name());
+                                    }
+
+                                    let github_config = GitHubConfig {
+                                        token,
+                                        webhook_secret: secret.clone(),
+                                        bot_name: "aof-bot".to_string(),
+                                        api_url: "https://api.github.com".to_string(),
+                                        allowed_repos: None,
+                                        allowed_events: None,
+                                        allowed_users: None,
+                                        auto_approve_patterns: None,
+                                        enable_status_checks: true,
+                                        enable_reviews: true,
+                                        enable_comments: true,
+                                    };
+                                    match GitHubPlatform::new(github_config) {
+                                        Ok(platform) => {
+                                            handler.register_platform(Arc::new(platform));
+                                            info!("  Registered platform: github (from trigger '{}')", trigger.name());
+                                            platforms_registered += 1;
+                                        }
+                                        Err(e) => {
+                                            warn!("  Failed to create GitHub platform: {}", e);
+                                        }
+                                    }
+                                } else {
+                                    warn!("  GitHub trigger '{}' missing webhook_secret", trigger.name());
+                                }
+                            }
+                            // Other trigger types use platforms registered from config
+                            _ => {}
+                        }
+
+                        // Add command bindings from trigger
+                        for (cmd, binding) in &trigger.spec.commands {
+                            // Convert core CommandBinding to handler CommandBinding
+                            let handler_binding = HandlerCommandBinding {
+                                agent: binding.agent.clone(),
+                                fleet: binding.fleet.clone(),
+                                flow: binding.flow.clone(),
+                                description: binding.description.clone(),
+                            };
+
+                            // Strip leading slash if present for consistent lookup
+                            let cmd_name = cmd.trim_start_matches('/').to_string();
+                            handler.register_command_binding(cmd_name.clone(), handler_binding);
+
+                            if let Some(ref agent) = binding.agent {
+                                info!("  Registered command '{}' -> agent '{}'", cmd, agent);
+                            } else if let Some(ref fleet) = binding.fleet {
+                                info!("  Registered command '{}' -> fleet '{}'", cmd, fleet);
+                            } else if let Some(ref flow) = binding.flow {
+                                info!("  Registered command '{}' -> flow '{}'", cmd, flow);
+                            }
+                        }
+
+                        // Set default agent if specified in trigger
+                        if let Some(ref default_agent) = trigger.spec.default_agent {
+                            info!("  Default agent for trigger '{}': {}", trigger.name(), default_agent);
+                        }
+                    }
+                } else {
+                    info!("  No Trigger files found in {}", triggers_path.display());
+                }
+            }
+            Err(e) => {
+                warn!("  Failed to load triggers from {}: {}", triggers_path.display(), e);
             }
         }
     }

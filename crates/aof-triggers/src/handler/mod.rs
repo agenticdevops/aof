@@ -823,6 +823,12 @@ impl TriggerHandler {
         self.platforms.get(name)
     }
 
+    /// Register a command binding (maps slash command to agent/fleet/flow)
+    pub fn register_command_binding(&mut self, command: String, binding: CommandBinding) {
+        info!("Registering command binding: /{} -> {:?}", command, binding);
+        self.config.command_bindings.insert(command, binding);
+    }
+
     /// Handle incoming message from platform
     pub async fn handle_message(&self, platform: &str, message: TriggerMessage) -> AofResult<()> {
         debug!(
@@ -877,9 +883,42 @@ impl TriggerHandler {
             if let Some(binding) = self.config.command_bindings.get(&cmd_name) {
                 info!("Command '{}' matched binding: {:?}", cmd_name, binding);
 
-                // Create modified message with just the text (without the command)
+                // Create modified message with context from metadata if command text is empty
                 let mut routed_message = message.clone();
-                routed_message.text = command_text.clone().unwrap_or_default();
+                let cmd_text = command_text.clone().unwrap_or_default();
+
+                // If command text is empty, construct context from metadata (for PR/issue commands)
+                if cmd_text.trim().is_empty() {
+                    // Build context from metadata for commands like /review
+                    let mut context_parts = Vec::new();
+
+                    if let Some(pr_url) = message.metadata.get("pr_html_url").and_then(|v| v.as_str()) {
+                        context_parts.push(format!("Review the PR at: {}", pr_url));
+                    } else if let Some(issue_url) = message.metadata.get("issue_html_url").and_then(|v| v.as_str()) {
+                        context_parts.push(format!("Review the PR/issue at: {}", issue_url));
+                    }
+
+                    if let Some(pr_title) = message.metadata.get("pr_title").and_then(|v| v.as_str()) {
+                        context_parts.push(format!("Title: {}", pr_title));
+                    } else if let Some(issue_title) = message.metadata.get("issue_title").and_then(|v| v.as_str()) {
+                        context_parts.push(format!("Title: {}", issue_title));
+                    }
+
+                    if let Some(comment_body) = message.metadata.get("comment_body").and_then(|v| v.as_str()) {
+                        if !comment_body.starts_with('/') {
+                            context_parts.push(format!("Additional context: {}", comment_body));
+                        }
+                    }
+
+                    routed_message.text = if context_parts.is_empty() {
+                        format!("Execute {} command", cmd_name)
+                    } else {
+                        context_parts.join("\n")
+                    };
+                    info!("Constructed context for command '{}': {}", cmd_name, routed_message.text);
+                } else {
+                    routed_message.text = cmd_text;
+                }
 
                 // Route to flow if specified (highest priority - complex workflows)
                 if let Some(ref flow_name) = binding.flow {
