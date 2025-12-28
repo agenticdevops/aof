@@ -475,6 +475,32 @@ The server exposes these endpoints for each platform:
 | Telegram | `https://your-domain/webhook/telegram` |
 | Discord | `https://your-domain/webhook/discord` |
 | WhatsApp | `https://your-domain/webhook/whatsapp` |
+| GitHub | `https://your-domain/webhook/github` |
+| GitLab | `https://your-domain/webhook/gitlab` |
+| Bitbucket | `https://your-domain/webhook/bitbucket` |
+
+---
+
+## Git Platform Behavior
+
+GitHub, GitLab, and Bitbucket handle responses differently from chat platforms:
+
+| Aspect | Chat Platforms (Slack/Telegram/Discord) | Git Platforms (GitHub/GitLab/Bitbucket) |
+|--------|----------------------------------------|----------------------------------------|
+| Response style | Real-time updates | Single response only |
+| Progress indicators | "🤔 Thinking...", "🔄 Processing..." shown | Skipped (would create noisy comment threads) |
+| Message updates | Can edit existing messages | Creates new comments |
+| Best for | Interactive conversations | PR reviews, issue triage |
+
+**Why single responses for Git platforms:**
+- Each `send_response` creates a NEW comment in GitHub/GitLab/Bitbucket
+- Progress indicators like "Thinking..." would flood PR threads with multiple comments
+- Only the final response is posted, keeping PR reviews clean and professional
+
+**Example: `/review` on GitHub PR**
+1. User posts `/review` comment on PR
+2. Bot processes (no intermediate comments)
+3. Bot posts ONE comment with the complete review
 
 ---
 

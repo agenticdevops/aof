@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Changed from tracing (default level: error) to println for critical startup messages
   - Users can now see server bind address, registered platforms, loaded agents/flows
   - Error messages use stderr for proper output separation
+- GitHub/GitLab/Bitbucket PR reviews now post a single response instead of multiple comments
+  - Intermediate acknowledgment messages ("Thinking...", "Processing...") are skipped for Git platforms
+  - Only the final response is posted, keeping PR threads clean
+  - Slack/Telegram/Discord still show real-time progress indicators
 
 ## [0.3.1-beta] - 2025-12-26
 
