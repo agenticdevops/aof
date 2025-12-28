@@ -72,6 +72,12 @@ impl Registry<AgentConfig> for AgentRegistry {
             let file_path = entry.path();
 
             if file_path.extension().map_or(false, |e| e == "yaml" || e == "yml") {
+                // Skip non-Agent YAML files (Trigger, Fleet, Flow, etc.)
+                if !yaml_file_has_kind(&file_path, "Agent") {
+                    tracing::debug!("Skipping non-Agent file: {:?}", file_path);
+                    continue;
+                }
+
                 match load_yaml_file::<AgentConfig>(&file_path) {
                     Ok(agent) => {
                         let name = agent.name.clone();
@@ -661,6 +667,26 @@ fn load_yaml_file<T: serde::de::DeserializeOwned>(path: &Path) -> AofResult<T> {
     let content = std::fs::read_to_string(path)?;
     let resource: T = serde_yaml::from_str(&content)?;
     Ok(resource)
+}
+
+/// Check if a YAML file has a specific `kind` field value
+/// Returns true if the file has the expected kind, false otherwise
+fn yaml_file_has_kind(path: &Path, expected_kind: &str) -> bool {
+    // Helper struct to just parse kind field
+    #[derive(serde::Deserialize)]
+    struct KindCheck {
+        kind: Option<String>,
+    }
+
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    match serde_yaml::from_str::<KindCheck>(&content) {
+        Ok(check) => check.kind.as_deref() == Some(expected_kind),
+        Err(_) => false,
+    }
 }
 
 #[cfg(test)]
