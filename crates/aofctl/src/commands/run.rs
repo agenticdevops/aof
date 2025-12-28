@@ -298,28 +298,69 @@ fn resolve_library_uri(uri: &str) -> Result<std::path::PathBuf> {
 }
 
 /// Find the library directory
+///
+/// Search order:
+/// 1. AOF_LIBRARY_PATH environment variable
+/// 2. ./library (current directory)
+/// 3. Relative to executable (../library, ../../library)
+/// 4. Common installation paths (/usr/local/share/aof/library, ~/.aof/library)
 fn find_library_path() -> Result<std::path::PathBuf> {
-    let candidates = [
+    // 1. Check AOF_LIBRARY_PATH environment variable first
+    if let Ok(lib_path) = std::env::var("AOF_LIBRARY_PATH") {
+        let path = std::path::PathBuf::from(&lib_path);
+        if path.exists() && path.is_dir() {
+            return Ok(path);
+        }
+        // If set but invalid, warn and continue searching
+        tracing::warn!("AOF_LIBRARY_PATH is set to '{}' but directory doesn't exist", lib_path);
+    }
+
+    let mut candidates: Vec<std::path::PathBuf> = vec![
+        // 2. Current directory
         std::path::PathBuf::from("library"),
         std::path::PathBuf::from("./library"),
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("library")))
-            .unwrap_or_default(),
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().and_then(|p| p.parent()).map(|p| p.join("library")))
-            .unwrap_or_default(),
     ];
 
-    for candidate in candidates {
+    // 3. Relative to executable
+    if let Ok(exe_path) = std::env::current_exe() {
+        // Next to executable: /path/to/bin/aofctl -> /path/to/bin/library
+        if let Some(parent) = exe_path.parent() {
+            candidates.push(parent.join("library"));
+            // One level up: /path/to/bin/aofctl -> /path/to/library
+            if let Some(grandparent) = parent.parent() {
+                candidates.push(grandparent.join("library"));
+                // Share directory: /path/to/bin/aofctl -> /path/to/share/aof/library
+                candidates.push(grandparent.join("share").join("aof").join("library"));
+            }
+        }
+    }
+
+    // 4. Common installation paths
+    candidates.push(std::path::PathBuf::from("/usr/local/share/aof/library"));
+    candidates.push(std::path::PathBuf::from("/usr/share/aof/library"));
+
+    // User home directory
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(std::path::PathBuf::from(&home).join(".aof").join("library"));
+        candidates.push(std::path::PathBuf::from(&home).join(".local").join("share").join("aof").join("library"));
+    }
+
+    for candidate in &candidates {
         if candidate.exists() && candidate.is_dir() {
-            return Ok(candidate);
+            tracing::debug!("Found library at: {}", candidate.display());
+            return Ok(candidate.clone());
         }
     }
 
     Err(anyhow!(
-        "Library directory not found. Make sure you're running from the project root or the library is installed."
+        "Library directory not found.\n\n\
+        Searched locations:\n  {}\n\n\
+        Solutions:\n\
+        1. Set AOF_LIBRARY_PATH environment variable:\n\
+           export AOF_LIBRARY_PATH=/path/to/aof/library\n\n\
+        2. Run from the AOF project directory\n\n\
+        3. Install the library to ~/.aof/library",
+        candidates.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n  ")
     ))
 }
 
