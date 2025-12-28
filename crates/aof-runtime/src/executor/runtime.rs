@@ -130,13 +130,29 @@ impl Runtime {
                 let mut all_mcp_servers = config.mcp_servers.clone();
                 all_mcp_servers.extend(type_based_mcp_servers);
 
-                // Create combined executor with builtin tools and MCP
-                if !builtin_tool_names.is_empty() {
-                    info!("Creating combined executor: builtin={:?}, mcp_servers={}", builtin_tool_names, all_mcp_servers.len());
-                    // For now, prioritize MCP if present
-                    Some(self.create_mcp_executor_from_config(&all_mcp_servers).await?)
+                // Try to create MCP executor, but fall back to builtin tools if MCP fails
+                let mcp_executor = self.create_mcp_executor_from_config(&all_mcp_servers).await?;
+
+                if let Some(mcp_exec) = mcp_executor {
+                    if !builtin_tool_names.is_empty() {
+                        // Create combined executor with both builtin and MCP tools
+                        info!("Creating combined executor: builtin={:?}, mcp available", builtin_tool_names);
+                        let builtin_exec = self.create_system_executor(&builtin_tool_names)?;
+                        Some(Arc::new(CombinedToolExecutor {
+                            primary: builtin_exec,
+                            secondary: Some(mcp_exec),
+                        }))
+                    } else {
+                        Some(mcp_exec)
+                    }
+                } else if !builtin_tool_names.is_empty() {
+                    // MCP failed, but we have builtin tools - use those
+                    info!("MCP initialization failed, using builtin tools only: {:?}", builtin_tool_names);
+                    Some(self.create_system_executor(&builtin_tool_names)?)
                 } else {
-                    Some(self.create_mcp_executor_from_config(&all_mcp_servers).await?)
+                    // No MCP and no builtin tools
+                    warn!("No tools available: MCP initialization failed and no builtin tools configured");
+                    None
                 }
             } else if !builtin_tool_names.is_empty() {
                 info!("Creating system executor for type-based tools: {:?}", builtin_tool_names);
@@ -147,7 +163,13 @@ impl Runtime {
         } else if !config.mcp_servers.is_empty() {
             // Use the new flexible MCP configuration
             info!("Using MCP servers for tools");
-            Some(self.create_mcp_executor_from_config(&config.mcp_servers).await?)
+            match self.create_mcp_executor_from_config(&config.mcp_servers).await? {
+                Some(executor) => Some(executor),
+                None => {
+                    warn!("MCP servers configured but none could be initialized");
+                    None
+                }
+            }
         } else if !config.tools.is_empty() {
             // Separate built-in tools from MCP tools
             let builtin_tools: Vec<&str> = config.tools.iter()
@@ -518,19 +540,22 @@ impl Runtime {
     }
 
     // Helper: Create MCP executor from flexible config
+    // Returns None if no MCP servers could be initialized (graceful degradation)
     async fn create_mcp_executor_from_config(
         &self,
         mcp_servers: &[McpServerConfig],
-    ) -> AofResult<Arc<dyn ToolExecutor>> {
+    ) -> AofResult<Option<Arc<dyn ToolExecutor>>> {
         info!("Creating MCP executor from {} server configs", mcp_servers.len());
 
         let mut clients: Vec<Arc<aof_mcp::McpClient>> = Vec::new();
         let mut all_tool_names: Vec<String> = Vec::new();
+        let mut initialization_errors: Vec<String> = Vec::new();
 
         for server_config in mcp_servers {
             // Validate the config
             if let Err(e) = server_config.validate() {
                 warn!("Invalid MCP server config '{}': {}", server_config.name, e);
+                initialization_errors.push(format!("{}: {}", server_config.name, e));
                 continue;
             }
 
@@ -538,8 +563,14 @@ impl Runtime {
 
             let mcp_client = match server_config.transport {
                 McpTransport::Stdio => {
-                    let command = server_config.command.as_ref()
-                        .ok_or_else(|| AofError::config("Stdio transport requires command"))?;
+                    let command = match server_config.command.as_ref() {
+                        Some(cmd) => cmd,
+                        None => {
+                            warn!("MCP server '{}': Stdio transport requires command", server_config.name);
+                            initialization_errors.push(format!("{}: Stdio transport requires command", server_config.name));
+                            continue;
+                        }
+                    };
 
                     let mut builder = McpClientBuilder::new()
                         .stdio(command.clone(), server_config.args.clone());
@@ -549,46 +580,66 @@ impl Runtime {
                         builder = builder.with_env(key.clone(), value.clone());
                     }
 
-                    builder.build()
-                        .map_err(|e| AofError::tool(format!(
-                            "Failed to create MCP client for '{}': {}", server_config.name, e
-                        )))?
+                    match builder.build() {
+                        Ok(client) => client,
+                        Err(e) => {
+                            warn!("Failed to create MCP client for '{}': {}", server_config.name, e);
+                            initialization_errors.push(format!("{}: {}", server_config.name, e));
+                            continue;
+                        }
+                    }
                 }
                 #[cfg(feature = "sse")]
                 McpTransport::Sse => {
-                    let endpoint = server_config.endpoint.as_ref()
-                        .ok_or_else(|| AofError::config("SSE transport requires endpoint"))?;
+                    let endpoint = match server_config.endpoint.as_ref() {
+                        Some(ep) => ep,
+                        None => {
+                            warn!("MCP server '{}': SSE transport requires endpoint", server_config.name);
+                            initialization_errors.push(format!("{}: SSE transport requires endpoint", server_config.name));
+                            continue;
+                        }
+                    };
 
-                    McpClientBuilder::new()
-                        .sse(endpoint.clone())
-                        .build()
-                        .map_err(|e| AofError::tool(format!(
-                            "Failed to create SSE MCP client for '{}': {}", server_config.name, e
-                        )))?
+                    match McpClientBuilder::new().sse(endpoint.clone()).build() {
+                        Ok(client) => client,
+                        Err(e) => {
+                            warn!("Failed to create SSE MCP client for '{}': {}", server_config.name, e);
+                            initialization_errors.push(format!("{}: {}", server_config.name, e));
+                            continue;
+                        }
+                    }
                 }
                 #[cfg(feature = "http")]
                 McpTransport::Http => {
-                    let endpoint = server_config.endpoint.as_ref()
-                        .ok_or_else(|| AofError::config("HTTP transport requires endpoint"))?;
+                    let endpoint = match server_config.endpoint.as_ref() {
+                        Some(ep) => ep,
+                        None => {
+                            warn!("MCP server '{}': HTTP transport requires endpoint", server_config.name);
+                            initialization_errors.push(format!("{}: HTTP transport requires endpoint", server_config.name));
+                            continue;
+                        }
+                    };
 
-                    McpClientBuilder::new()
-                        .http(endpoint.clone())
-                        .build()
-                        .map_err(|e| AofError::tool(format!(
-                            "Failed to create HTTP MCP client for '{}': {}", server_config.name, e
-                        )))?
+                    match McpClientBuilder::new().http(endpoint.clone()).build() {
+                        Ok(client) => client,
+                        Err(e) => {
+                            warn!("Failed to create HTTP MCP client for '{}': {}", server_config.name, e);
+                            initialization_errors.push(format!("{}: {}", server_config.name, e));
+                            continue;
+                        }
+                    }
                 }
                 #[cfg(not(feature = "sse"))]
                 McpTransport::Sse => {
-                    return Err(AofError::config(
-                        "SSE transport not enabled. Enable the 'sse' feature in aof-mcp"
-                    ));
+                    warn!("MCP server '{}': SSE transport not enabled", server_config.name);
+                    initialization_errors.push(format!("{}: SSE transport not enabled", server_config.name));
+                    continue;
                 }
                 #[cfg(not(feature = "http"))]
                 McpTransport::Http => {
-                    return Err(AofError::config(
-                        "HTTP transport not enabled. Enable the 'http' feature in aof-mcp"
-                    ));
+                    warn!("MCP server '{}': HTTP transport not enabled", server_config.name);
+                    initialization_errors.push(format!("{}: HTTP transport not enabled", server_config.name));
+                    continue;
                 }
             };
 
@@ -611,25 +662,27 @@ impl Runtime {
                 }
                 Err(e) => {
                     warn!("Failed to initialize MCP server '{}': {}", server_config.name, e);
-                    if !server_config.auto_reconnect {
-                        return Err(AofError::tool(format!(
-                            "MCP server '{}' initialization failed: {}", server_config.name, e
-                        )));
-                    }
+                    initialization_errors.push(format!("{}: {}", server_config.name, e));
+                    // Continue to next server instead of failing entirely
                 }
             }
         }
 
         if clients.is_empty() {
-            return Err(AofError::tool("No MCP servers could be initialized"));
+            // Log all errors but return None for graceful degradation
+            warn!(
+                "No MCP servers could be initialized. Errors: {:?}. Agent will continue without MCP tools.",
+                initialization_errors
+            );
+            return Ok(None);
         }
 
         info!("MCP executor created with {} servers and {} tools", clients.len(), all_tool_names.len());
 
-        Ok(Arc::new(MultiMcpToolExecutor {
+        Ok(Some(Arc::new(MultiMcpToolExecutor {
             clients,
             tool_names: all_tool_names,
-        }))
+        })))
     }
 
     // Helper: Create system tool executor for shell/kubectl commands
@@ -853,6 +906,61 @@ impl ToolExecutor for MultiMcpToolExecutor {
     fn get_tool(&self, _name: &str) -> Option<Arc<dyn Tool>> {
         // MCP tools are dynamically resolved, not stored as objects
         None
+    }
+}
+
+/// Combined tool executor that wraps multiple executors
+/// Tries primary executor first, then secondary if tool not found
+struct CombinedToolExecutor {
+    primary: Arc<dyn ToolExecutor>,
+    secondary: Option<Arc<dyn ToolExecutor>>,
+}
+
+#[async_trait]
+impl ToolExecutor for CombinedToolExecutor {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        input: ToolInput,
+    ) -> AofResult<aof_core::ToolResult> {
+        debug!("Executing tool '{}' via combined executor", name);
+
+        // Check if primary executor has this tool
+        let primary_tools: std::collections::HashSet<_> = self.primary.list_tools()
+            .iter()
+            .map(|t| t.name.clone())
+            .collect();
+
+        if primary_tools.contains(name) {
+            return self.primary.execute_tool(name, input).await;
+        }
+
+        // Try secondary executor if available
+        if let Some(ref secondary) = self.secondary {
+            return secondary.execute_tool(name, input).await;
+        }
+
+        // Tool not found in any executor
+        Ok(aof_core::ToolResult {
+            success: false,
+            data: serde_json::json!({}),
+            error: Some(format!("Tool '{}' not found in any executor", name)),
+            execution_time_ms: 0,
+        })
+    }
+
+    fn list_tools(&self) -> Vec<ToolDefinition> {
+        let mut tools = self.primary.list_tools();
+        if let Some(ref secondary) = self.secondary {
+            tools.extend(secondary.list_tools());
+        }
+        tools
+    }
+
+    fn get_tool(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        self.primary.get_tool(name).or_else(|| {
+            self.secondary.as_ref().and_then(|s| s.get_tool(name))
+        })
     }
 }
 
@@ -1265,5 +1373,29 @@ mod tests {
         let model_config = runtime.create_model_config(&config).unwrap();
         assert_eq!(model_config.provider, ModelProvider::Anthropic);
         assert_eq!(model_config.model, "gpt-4");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_executor_graceful_failure() {
+        let runtime = Runtime::new();
+
+        // Create MCP config with non-existent command
+        let mcp_servers = vec![McpServerConfig {
+            name: "non-existent-mcp".to_string(),
+            transport: McpTransport::Stdio,
+            command: Some("non-existent-command-that-does-not-exist".to_string()),
+            args: vec![],
+            endpoint: None,
+            env: Default::default(),
+            tools: vec![],
+            timeout_secs: 5,
+            auto_reconnect: false,
+            init_options: None,
+        }];
+
+        // Should return None instead of error (graceful degradation)
+        let result = runtime.create_mcp_executor_from_config(&mcp_servers).await;
+        assert!(result.is_ok(), "Should not return error for failed MCP init");
+        assert!(result.unwrap().is_none(), "Should return None when no MCP servers initialize");
     }
 }
