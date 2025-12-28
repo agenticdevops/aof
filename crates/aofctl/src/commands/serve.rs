@@ -23,7 +23,6 @@ use aof_triggers::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
 
 /// Server configuration loaded from YAML
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -309,7 +308,7 @@ pub async fn execute(
 ) -> anyhow::Result<()> {
     // Load configuration
     let config = if let Some(config_path) = config_file {
-        info!("Loading configuration from: {}", config_path);
+        println!("Loading configuration from: {}", config_path);
         let content = std::fs::read_to_string(config_path)?;
         serde_yaml::from_str::<ServeConfig>(&content)?
     } else {
@@ -351,8 +350,8 @@ pub async fn execute(
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid bind address: {}", e))?;
 
-    info!("Starting AOF Trigger Server");
-    info!("  Bind address: {}", bind_addr);
+    println!("Starting AOF Trigger Server");
+    println!("  Bind address: {}", bind_addr);
 
     // Create runtime orchestrator
     let orchestrator = Arc::new(
@@ -370,7 +369,7 @@ pub async fn execute(
     };
 
     if let Some(ref agent) = config.spec.runtime.default_agent {
-        info!("  Default agent for natural language: {}", agent);
+        println!("  Default agent for natural language: {}", agent);
     }
 
     // Create trigger handler
@@ -408,15 +407,15 @@ pub async fn execute(
                 match SlackPlatform::new_with_auto_detection(platform_config).await {
                     Ok(platform) => {
                         handler.register_platform(Arc::new(platform));
-                        info!("  Registered platform: slack");
+                        println!("  Registered platform: slack");
                         platforms_registered += 1;
                     }
                     Err(e) => {
-                        warn!("  Failed to create Slack platform: {}", e);
+                        eprintln!("  Failed to create Slack platform: {}", e);
                     }
                 }
             } else {
-                warn!("  Slack enabled but missing bot_token or signing_secret");
+                eprintln!("  Slack enabled but missing bot_token or signing_secret");
             }
         }
     }
@@ -438,10 +437,10 @@ pub async fn execute(
                 };
                 let platform = Arc::new(DiscordPlatform::new(platform_config));
                 handler.register_platform(platform);
-                info!("  Registered platform: discord");
+                println!("  Registered platform: discord");
                 platforms_registered += 1;
             } else {
-                warn!("  Discord enabled but missing bot_token");
+                eprintln!("  Discord enabled but missing bot_token");
             }
         }
     }
@@ -466,15 +465,15 @@ pub async fn execute(
                 match TelegramPlatform::new(platform_config) {
                     Ok(platform) => {
                         handler.register_platform(Arc::new(platform));
-                        info!("  Registered platform: telegram");
+                        println!("  Registered platform: telegram");
                         platforms_registered += 1;
                     }
                     Err(e) => {
-                        warn!("  Failed to create Telegram platform: {}", e);
+                        eprintln!("  Failed to create Telegram platform: {}", e);
                     }
                 }
             } else {
-                warn!("  Telegram enabled but missing bot_token");
+                eprintln!("  Telegram enabled but missing bot_token");
             }
         }
     }
@@ -500,15 +499,15 @@ pub async fn execute(
                 match WhatsAppPlatform::new(platform_config) {
                     Ok(platform) => {
                         handler.register_platform(Arc::new(platform));
-                        info!("  Registered platform: whatsapp");
+                        println!("  Registered platform: whatsapp");
                         platforms_registered += 1;
                     }
                     Err(e) => {
-                        warn!("  Failed to create WhatsApp platform: {}", e);
+                        eprintln!("  Failed to create WhatsApp platform: {}", e);
                     }
                 }
             } else {
-                warn!("  WhatsApp enabled but missing access_token");
+                eprintln!("  WhatsApp enabled but missing access_token");
             }
         }
     }
@@ -519,13 +518,13 @@ pub async fn execute(
         .or_else(|| config.spec.triggers.directory.clone());
 
     if let Some(ref triggers_path) = triggers_dir_path {
-        info!("Loading Triggers from: {}", triggers_path.display());
+        println!("Loading Triggers from: {}", triggers_path.display());
         let mut trigger_registry = TriggerRegistry::new();
 
         match trigger_registry.load_directory(triggers_path) {
             Ok(count) => {
                 if count > 0 {
-                    info!("  Loaded {} triggers: {:?}", count, trigger_registry.names());
+                    println!("  Loaded {} triggers: {:?}", count, trigger_registry.names());
 
                     // Register platforms for each trigger type
                     for trigger in trigger_registry.get_all() {
@@ -539,7 +538,7 @@ pub async fn execute(
                                         .unwrap_or_default();
 
                                     if token.is_empty() {
-                                        warn!("  GitHub trigger '{}': GITHUB_TOKEN not set, API features disabled", trigger.name());
+                                        eprintln!("  GitHub trigger '{}': GITHUB_TOKEN not set, API features disabled", trigger.name());
                                     }
 
                                     let github_config = GitHubConfig {
@@ -558,15 +557,15 @@ pub async fn execute(
                                     match GitHubPlatform::new(github_config) {
                                         Ok(platform) => {
                                             handler.register_platform(Arc::new(platform));
-                                            info!("  Registered platform: github (from trigger '{}')", trigger.name());
+                                            println!("  Registered platform: github (from trigger '{}')", trigger.name());
                                             platforms_registered += 1;
                                         }
                                         Err(e) => {
-                                            warn!("  Failed to create GitHub platform: {}", e);
+                                            eprintln!("  Failed to create GitHub platform: {}", e);
                                         }
                                     }
                                 } else {
-                                    warn!("  GitHub trigger '{}' missing webhook_secret", trigger.name());
+                                    eprintln!("  GitHub trigger '{}' missing webhook_secret", trigger.name());
                                 }
                             }
                             // Other trigger types use platforms registered from config
@@ -588,32 +587,32 @@ pub async fn execute(
                             handler.register_command_binding(cmd_name.clone(), handler_binding);
 
                             if let Some(ref agent) = binding.agent {
-                                info!("  Registered command '{}' -> agent '{}'", cmd, agent);
+                                println!("  Registered command '{}' -> agent '{}'", cmd, agent);
                             } else if let Some(ref fleet) = binding.fleet {
-                                info!("  Registered command '{}' -> fleet '{}'", cmd, fleet);
+                                println!("  Registered command '{}' -> fleet '{}'", cmd, fleet);
                             } else if let Some(ref flow) = binding.flow {
-                                info!("  Registered command '{}' -> flow '{}'", cmd, flow);
+                                println!("  Registered command '{}' -> flow '{}'", cmd, flow);
                             }
                         }
 
                         // Set default agent if specified in trigger
                         if let Some(ref default_agent) = trigger.spec.default_agent {
-                            info!("  Default agent for trigger '{}': {}", trigger.name(), default_agent);
+                            println!("  Default agent for trigger '{}': {}", trigger.name(), default_agent);
                         }
                     }
                 } else {
-                    info!("  No Trigger files found in {}", triggers_path.display());
+                    println!("  No Trigger files found in {}", triggers_path.display());
                 }
             }
             Err(e) => {
-                warn!("  Failed to load triggers from {}: {}", triggers_path.display(), e);
+                eprintln!("  Failed to load triggers from {}: {}", triggers_path.display(), e);
             }
         }
     }
 
     if platforms_registered == 0 {
-        warn!("No platforms registered! Server will start but won't process any webhooks.");
-        warn!("Configure platforms in your config file or set environment variables.");
+        eprintln!("Warning: No platforms registered! Server will start but won't process any webhooks.");
+        eprintln!("Configure platforms in your config file or set environment variables.");
     }
 
     // Load AgentFlows and set up FlowRouter
@@ -626,7 +625,7 @@ pub async fn execute(
 
     if config.spec.flows.enabled {
         if let Some(ref flows_path) = flows_dir_path {
-            info!("Loading AgentFlows from: {}", flows_path.display());
+            println!("Loading AgentFlows from: {}", flows_path.display());
 
             match FlowRegistry::from_directory(flows_path).await {
                 Ok(registry) => {
@@ -653,27 +652,27 @@ pub async fn execute(
                         if let Some(ref ap) = agents_path {
                             match handler.load_agents_from_directory(ap).await {
                                 Ok(count) => {
-                                    info!("  Pre-loaded {} agents from {:?}", count, ap);
+                                    println!("  Pre-loaded {} agents from {:?}", count, ap);
                                     agents_loaded = true;
                                 }
-                                Err(e) => warn!("  Failed to pre-load agents: {}", e),
+                                Err(e) => eprintln!("  Failed to pre-load agents: {}", e),
                             }
                         }
 
-                        info!("  Loaded {} AgentFlows: {:?}", flow_count, flow_names);
+                        println!("  Loaded {} AgentFlows: {:?}", flow_count, flow_names);
                     } else {
-                        info!("  No AgentFlow files found in {}", flows_path.display());
+                        println!("  No AgentFlow files found in {}", flows_path.display());
                     }
                 }
                 Err(e) => {
-                    warn!("  Failed to load AgentFlows from {}: {}", flows_path.display(), e);
+                    eprintln!("  Failed to load AgentFlows from {}: {}", flows_path.display(), e);
                 }
             }
         } else {
-            info!("  No flows directory configured - using default agent routing");
+            println!("  No flows directory configured - using default agent routing");
         }
     } else {
-        info!("  Flow-based routing disabled");
+        println!("  Flow-based routing disabled");
     }
 
     // Pre-load agents from directory if not already done
@@ -687,8 +686,8 @@ pub async fn execute(
             let runtime = Arc::new(RwLock::new(Runtime::new()));
             handler.set_runtime(runtime);
             match handler.load_agents_from_directory(ap).await {
-                Ok(count) => info!("  Pre-loaded {} agents from {:?}", count, ap),
-                Err(e) => warn!("  Failed to pre-load agents: {}", e),
+                Ok(count) => println!("  Pre-loaded {} agents from {:?}", count, ap),
+                Err(e) => eprintln!("  Failed to pre-load agents: {}", e),
             }
         }
     }
@@ -704,28 +703,28 @@ pub async fn execute(
     // Create and start server
     let server = TriggerServer::with_config(Arc::new(handler), server_config);
 
-    info!("Server starting...");
-    info!("  Health check: http://{}/health", bind_addr);
-    info!("  Webhook endpoint: http://{}/webhook/{{platform}}", bind_addr);
-    info!("Press Ctrl+C to stop");
+    println!("Server starting...");
+    println!("  Health check: http://{}/health", bind_addr);
+    println!("  Webhook endpoint: http://{}/webhook/{{platform}}", bind_addr);
+    println!("Press Ctrl+C to stop");
 
     // Handle graceful shutdown
     let shutdown_signal = async {
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to install Ctrl+C handler");
-        info!("Shutdown signal received, stopping server...");
+        println!("\nShutdown signal received, stopping server...");
     };
 
     tokio::select! {
         result = server.serve() => {
             if let Err(e) = result {
-                error!("Server error: {}", e);
+                eprintln!("Server error: {}", e);
                 return Err(anyhow::anyhow!("Server error: {}", e));
             }
         }
         _ = shutdown_signal => {
-            info!("Server stopped gracefully");
+            println!("Server stopped gracefully");
         }
     }
 

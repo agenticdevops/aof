@@ -421,6 +421,26 @@ aofctl serve \
 aofctl serve --config daemon-config.yaml --port 3000
 ```
 
+### Expected Startup Output
+
+When the server starts successfully, you'll see:
+
+```
+Loading configuration from: daemon-config.yaml
+Starting AOF Trigger Server
+  Bind address: 0.0.0.0:3000
+  Default agent for natural language: devops
+  Registered platform: slack
+  Registered platform: telegram
+Loading AgentFlows from: ./flows/
+  Pre-loaded 19 agents from "./agents/"
+  Loaded 3 AgentFlows: ["k8s-health-check", "docker-troubleshoot", "data-pipeline"]
+Server starting...
+  Health check: http://0.0.0.0:3000/health
+  Webhook endpoint: http://0.0.0.0:3000/webhook/{platform}
+Press Ctrl+C to stop
+```
+
 ---
 
 ## Platform Safety
