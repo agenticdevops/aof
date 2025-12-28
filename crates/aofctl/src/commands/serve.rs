@@ -532,8 +532,17 @@ pub async fn execute(
                             StandaloneTriggerType::GitHub => {
                                 // Register GitHub platform if we have a trigger for it
                                 if let Some(ref secret) = trigger.spec.config.webhook_secret {
+                                    // Get GitHub token from env or trigger config
+                                    let token = std::env::var("GITHUB_TOKEN")
+                                        .or_else(|_| std::env::var("GH_TOKEN"))
+                                        .unwrap_or_default();
+
+                                    if token.is_empty() {
+                                        warn!("  GitHub trigger '{}': GITHUB_TOKEN not set, API features disabled", trigger.name());
+                                    }
+
                                     let github_config = GitHubConfig {
-                                        token: String::new(), // Token is optional for webhook-only mode
+                                        token,
                                         webhook_secret: secret.clone(),
                                         bot_name: "aof-bot".to_string(),
                                         api_url: "https://api.github.com".to_string(),
