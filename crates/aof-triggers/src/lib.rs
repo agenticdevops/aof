@@ -20,7 +20,7 @@ pub mod server;
 pub use command::{CommandContext, CommandType, TriggerCommand, TriggerTarget};
 
 // Re-export main types from handler module
-pub use handler::{TriggerHandler, TriggerHandlerConfig};
+pub use handler::{TriggerHandler, TriggerHandlerConfig, CommandBinding};
 
 // Re-export main types from platforms module
 pub use platforms::{Platform, PlatformConfig};

@@ -799,6 +799,12 @@ impl TriggerHandler {
         self.platforms.get(name)
     }
 
+    /// Register a command binding (maps slash command to agent/fleet/flow)
+    pub fn register_command_binding(&mut self, command: String, binding: CommandBinding) {
+        info!("Registering command binding: /{} -> {:?}", command, binding);
+        self.config.command_bindings.insert(command, binding);
+    }
+
     /// Handle incoming message from platform
     pub async fn handle_message(&self, platform: &str, message: TriggerMessage) -> AofResult<()> {
         debug!(

@@ -916,12 +916,20 @@ impl GitHubPlatform {
                 })?;
                 let issue = payload.issue.as_ref();
                 let issue_num = issue.map(|i| i.number).unwrap_or(0);
-                format!(
-                    "comment:{}:#{} {}",
-                    action.unwrap_or(""),
-                    issue_num,
-                    comment.body.lines().next().unwrap_or("")
-                )
+                let first_line = comment.body.lines().next().unwrap_or("").trim();
+
+                // If the comment starts with a slash command, use it directly as the text
+                // This enables command detection in issue comments (e.g., /review, /deploy)
+                if first_line.starts_with('/') {
+                    first_line.to_string()
+                } else {
+                    format!(
+                        "comment:{}:#{} {}",
+                        action.unwrap_or(""),
+                        issue_num,
+                        first_line
+                    )
+                }
             }
             "workflow_run" => {
                 let run = payload.workflow_run.as_ref().ok_or_else(|| {
@@ -991,6 +999,20 @@ impl GitHubPlatform {
             metadata.insert("issue_title".to_string(), serde_json::json!(issue.title));
             metadata.insert("issue_state".to_string(), serde_json::json!(issue.state));
             metadata.insert("issue_html_url".to_string(), serde_json::json!(issue.html_url));
+        }
+
+        // Add comment-specific metadata
+        if let Some(ref comment) = payload.comment {
+            metadata.insert("comment_id".to_string(), serde_json::json!(comment.id));
+            metadata.insert("comment_body".to_string(), serde_json::json!(comment.body));
+            metadata.insert("comment_html_url".to_string(), serde_json::json!(comment.html_url));
+            // Check if this is a PR comment (issue_comment on a PR has a pull_request URL in the issue)
+            if let Some(ref issue) = payload.issue {
+                // GitHub includes a pull_request field in the issue object if this is a PR
+                // Since we don't have that field parsed, we can check the html_url
+                let is_pr_comment = issue.html_url.contains("/pull/");
+                metadata.insert("is_pr_comment".to_string(), serde_json::json!(is_pr_comment));
+            }
         }
 
         // Add push-specific metadata

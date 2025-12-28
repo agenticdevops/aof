@@ -18,6 +18,7 @@ use aof_triggers::{
     TelegramPlatform, TelegramConfig,
     WhatsAppPlatform, WhatsAppConfig,
     GitHubPlatform, GitHubConfig,
+    CommandBinding as HandlerCommandBinding,
     flow::{FlowRegistry, FlowRouter},
 };
 use serde::{Deserialize, Serialize};
@@ -574,6 +575,18 @@ pub async fn execute(
 
                         // Add command bindings from trigger
                         for (cmd, binding) in &trigger.spec.commands {
+                            // Convert core CommandBinding to handler CommandBinding
+                            let handler_binding = HandlerCommandBinding {
+                                agent: binding.agent.clone(),
+                                fleet: binding.fleet.clone(),
+                                flow: binding.flow.clone(),
+                                description: binding.description.clone(),
+                            };
+
+                            // Strip leading slash if present for consistent lookup
+                            let cmd_name = cmd.trim_start_matches('/').to_string();
+                            handler.register_command_binding(cmd_name.clone(), handler_binding);
+
                             if let Some(ref agent) = binding.agent {
                                 info!("  Registered command '{}' -> agent '{}'", cmd, agent);
                             } else if let Some(ref fleet) = binding.fleet {
