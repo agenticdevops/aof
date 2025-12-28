@@ -977,7 +977,12 @@ impl TriggerHandler {
         };
 
         // Auto-acknowledge if enabled
-        if self.config.auto_ack {
+        // Skip for GitHub/GitLab/Bitbucket - they create new comments instead of updating
+        let is_git_platform = matches!(
+            platform_impl.platform_name(),
+            "github" | "gitlab" | "bitbucket"
+        );
+        if self.config.auto_ack && !is_git_platform {
             let ack = TriggerResponseBuilder::new()
                 .text("Processing your request...")
                 .build();
@@ -1765,11 +1770,17 @@ impl TriggerHandler {
                 // Trigger the selected flow
                 info!("Triggering flow: {}", callback_value);
 
-                // Send acknowledgment
-                let ack = TriggerResponseBuilder::new()
-                    .text(format!("Running flow: *{}*...", callback_value))
-                    .build();
-                let _ = platform_impl.send_response(&message.channel_id, ack).await;
+                // Send acknowledgment (skip for Git platforms - they create new comments)
+                let is_git_platform = matches!(
+                    platform_impl.platform_name(),
+                    "github" | "gitlab" | "bitbucket"
+                );
+                if !is_git_platform {
+                    let ack = TriggerResponseBuilder::new()
+                        .text(format!("Running flow: *{}*...", callback_value))
+                        .build();
+                    let _ = platform_impl.send_response(&message.channel_id, ack).await;
+                }
 
                 // Execute the flow if we have a router
                 if let Some(ref router) = self.flow_router {
@@ -1896,11 +1907,17 @@ impl TriggerHandler {
             if let Some(flow) = router.get_flow(flow_name) {
                 info!("Executing flow '{}' for message: {}", flow_name, message.text);
 
-                // Send acknowledgment
-                let ack = TriggerResponseBuilder::new()
-                    .text(format!("🔄 Running {} flow...", flow_name))
-                    .build();
-                let _ = platform_impl.send_response(&message.channel_id, ack).await;
+                // Send acknowledgment (skip for Git platforms - they create new comments)
+                let is_git_platform = matches!(
+                    platform_impl.platform_name(),
+                    "github" | "gitlab" | "bitbucket"
+                );
+                if !is_git_platform {
+                    let ack = TriggerResponseBuilder::new()
+                        .text(format!("🔄 Running {} flow...", flow_name))
+                        .build();
+                    let _ = platform_impl.send_response(&message.channel_id, ack).await;
+                }
 
                 // Create FlowMatch and execute
                 let flow_match = FlowMatch {
@@ -1933,11 +1950,17 @@ impl TriggerHandler {
         if let Some(fleet_config) = self.available_fleets.get(fleet_name) {
             info!("Executing fleet '{}' for message: {}", fleet_name, message.text);
 
-            // Send acknowledgment
-            let ack = TriggerResponseBuilder::new()
-                .text(format!("{} Running {} fleet...", fleet_config.emoji, fleet_config.display_name))
-                .build();
-            let _ = platform_impl.send_response(&message.channel_id, ack).await;
+            // Send acknowledgment (skip for Git platforms - they create new comments)
+            let is_git_platform = matches!(
+                platform_impl.platform_name(),
+                "github" | "gitlab" | "bitbucket"
+            );
+            if !is_git_platform {
+                let ack = TriggerResponseBuilder::new()
+                    .text(format!("{} Running {} fleet...", fleet_config.emoji, fleet_config.display_name))
+                    .build();
+                let _ = platform_impl.send_response(&message.channel_id, ack).await;
+            }
 
             // Set user's fleet context
             self.set_user_fleet(&message.user.id, fleet_name);
@@ -2060,10 +2083,18 @@ impl TriggerHandler {
         self.add_to_conversation(&message.channel_id, thread_id, "user", &input);
 
         // Send typing indicator / acknowledgment
-        let ack = TriggerResponseBuilder::new()
-            .text("🤔 Thinking...")
-            .build();
-        let _ = platform_impl.send_response(&message.channel_id, ack).await;
+        // Skip for GitHub/GitLab/Bitbucket - they create new comments instead of updating existing ones
+        // This prevents noisy "Thinking..." comments in PR threads
+        let is_git_platform = matches!(
+            platform_impl.platform_name(),
+            "github" | "gitlab" | "bitbucket"
+        );
+        if !is_git_platform {
+            let ack = TriggerResponseBuilder::new()
+                .text("🤔 Thinking...")
+                .build();
+            let _ = platform_impl.send_response(&message.channel_id, ack).await;
+        }
 
         // Build the full input with conversation context
         let input_with_context = if conversation_context.is_empty() {
@@ -2326,11 +2357,17 @@ impl TriggerHandler {
 
         info!("Executing AgentFlow '{}' with input: {}", flow_name, input);
 
-        // Send typing indicator / acknowledgment
-        let ack = TriggerResponseBuilder::new()
-            .text(format!("🔄 Processing with flow `{}`...", flow_name))
-            .build();
-        let _ = platform_impl.send_response(&message.channel_id, ack).await;
+        // Send typing indicator / acknowledgment (skip for Git platforms - they create new comments)
+        let is_git_platform = matches!(
+            platform_impl.platform_name(),
+            "github" | "gitlab" | "bitbucket"
+        );
+        if !is_git_platform {
+            let ack = TriggerResponseBuilder::new()
+                .text(format!("🔄 Processing with flow `{}`...", flow_name))
+                .build();
+            let _ = platform_impl.send_response(&message.channel_id, ack).await;
+        }
 
         // Create AgentFlowExecutor
         let mut executor = AgentFlowExecutor::new(
