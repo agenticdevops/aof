@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `aofctl serve` now produces visible startup output
+  - Changed from tracing (default level: error) to println for critical startup messages
+  - Users can now see server bind address, registered platforms, loaded agents/flows
+  - Error messages use stderr for proper output separation
+
 ## [0.3.1-beta] - 2025-12-26
 
 ### Added
