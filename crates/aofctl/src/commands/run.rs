@@ -36,11 +36,18 @@ fn parse_agent_config(content: &str, file_path: &str) -> Result<AgentConfig> {
     if let Ok(check) = serde_yaml::from_str::<KindCheck>(content) {
         if let Some(kind) = check.kind {
             if kind != "Agent" {
+                let hint = match kind.as_str() {
+                    "Trigger" => "Triggers are used with 'aofctl serve', not 'aofctl run'".to_string(),
+                    "Fleet" => "Use 'aofctl run fleet <file>' to run a fleet".to_string(),
+                    "Flow" | "AgentFlow" => "Use 'aofctl run flow <file>' to run a flow".to_string(),
+                    "Workflow" => "Use 'aofctl run workflow <file>' to run a workflow".to_string(),
+                    _ => format!("This file contains a {} resource, not an Agent", kind),
+                };
                 return Err(anyhow!(
-                    "Wrong resource type: {}\n\n  Expected: kind: Agent\n  Found: kind: {}\n\n  Hint: Use 'aofctl run {}' instead of 'aofctl run agent'\n",
+                    "Wrong resource type: {}\n\n  Expected: kind: Agent\n  Found: kind: {}\n\n  Hint: {}\n",
                     file_path,
                     kind,
-                    kind.to_lowercase()
+                    hint
                 ));
             }
         }
