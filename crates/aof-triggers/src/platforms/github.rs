@@ -470,12 +470,17 @@ impl GitHubPlatform {
     /// Create new GitHub platform adapter
     ///
     /// # Errors
-    /// Returns error if token or webhook_secret is empty
+    /// Returns error if webhook_secret is empty (token is optional for receive-only mode)
     pub fn new(config: GitHubConfig) -> Result<Self, PlatformError> {
-        if config.token.is_empty() || config.webhook_secret.is_empty() {
+        // Webhook secret is required for signature verification
+        if config.webhook_secret.is_empty() {
             return Err(PlatformError::ParseError(
-                "GitHub token and webhook secret are required".to_string(),
+                "GitHub webhook secret is required for signature verification".to_string(),
             ));
+        }
+        // Token is optional - if not provided, API features (posting comments) are disabled
+        if config.token.is_empty() {
+            tracing::warn!("GitHub token not provided - API features (posting comments, reviews) disabled");
         }
 
         let client = reqwest::Client::builder()
@@ -957,8 +962,15 @@ impl GitHubPlatform {
             _ => format!("{}:{}", event_type, action.unwrap_or("")),
         };
 
-        // Build channel_id from repo full name
-        let channel_id = repo.full_name.clone();
+        // Build channel_id from repo full name and issue/PR number for response posting
+        // Format: owner/repo#number (allows send_response to post comments)
+        let channel_id = if let Some(ref pr) = payload.pull_request {
+            format!("{}#{}", repo.full_name, pr.number)
+        } else if let Some(ref issue) = payload.issue {
+            format!("{}#{}", repo.full_name, issue.number)
+        } else {
+            repo.full_name.clone()
+        };
 
         // Build user
         let trigger_user = TriggerUser {
