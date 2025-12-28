@@ -767,6 +767,12 @@ impl TriggerHandler {
                 continue;
             }
 
+            // Check if file has kind: Agent before trying to parse
+            if !Self::yaml_file_has_kind(&path, "Agent") {
+                debug!("Skipping non-Agent file: {:?}", path);
+                continue;
+            }
+
             // Try to load as agent
             match runtime.load_agent_from_file(path.to_str().unwrap()).await {
                 Ok(agent_name) => {
@@ -774,8 +780,8 @@ impl TriggerHandler {
                     count += 1;
                 }
                 Err(e) => {
-                    // Not all YAML files are agents, this is fine
-                    debug!("Skipping {:?}: {}", path, e);
+                    // Agent file failed to parse - this is a real error
+                    warn!("Failed to load agent from {:?}: {}", path, e);
                 }
             }
         }
@@ -785,6 +791,24 @@ impl TriggerHandler {
 
         info!("Loaded {} agents from {:?}", count, dir_path);
         Ok(count)
+    }
+
+    /// Check if a YAML file has a specific `kind` field value
+    fn yaml_file_has_kind(path: &std::path::Path, expected_kind: &str) -> bool {
+        #[derive(serde::Deserialize)]
+        struct KindCheck {
+            kind: Option<String>,
+        }
+
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        match serde_yaml::from_str::<KindCheck>(&content) {
+            Ok(check) => check.kind.as_deref() == Some(expected_kind),
+            Err(_) => false,
+        }
     }
 
     /// Register a platform

@@ -27,7 +27,26 @@ struct K8sMetadata {
 
 /// Parse agent config with detailed error messages including field path and line numbers
 fn parse_agent_config(content: &str, file_path: &str) -> Result<AgentConfig> {
-    // First, try the normal parse
+    // First, check if this is the right kind of resource
+    #[derive(serde::Deserialize)]
+    struct KindCheck {
+        kind: Option<String>,
+    }
+
+    if let Ok(check) = serde_yaml::from_str::<KindCheck>(content) {
+        if let Some(kind) = check.kind {
+            if kind != "Agent" {
+                return Err(anyhow!(
+                    "Wrong resource type: {}\n\n  Expected: kind: Agent\n  Found: kind: {}\n\n  Hint: Use 'aofctl run {}' instead of 'aofctl run agent'\n",
+                    file_path,
+                    kind,
+                    kind.to_lowercase()
+                ));
+            }
+        }
+    }
+
+    // Now try the normal parse
     let deserializer = serde_yaml::Deserializer::from_str(content);
     let result: Result<AgentConfig, _> = serde_path_to_error::deserialize(deserializer);
 
