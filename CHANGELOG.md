@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2-beta] - 2026-01-02
+
 ### Added
 - Built-in command handler support via `agent: builtin` in trigger command bindings
   - Use `agent: builtin` for `/help`, `/agent`, `/fleet` to get interactive menus
@@ -16,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Messages older than 60 seconds are silently dropped
   - Prevents processing of queued messages when daemon restarts
   - Configurable via `max_message_age_secs` in handler config
+- `cargo install aofctl` support via crates.io publishing
+  - All AOF crates now published to crates.io
+  - Automated publishing on tagged releases
+- New documentation: Built-in Commands Guide (`docs/guides/builtin-commands.md`)
 
 ### Fixed
 - `aofctl serve` now produces visible startup output
@@ -26,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Intermediate acknowledgment messages ("Thinking...", "Processing...") are skipped for Git platforms
   - Only the final response is posted, keeping PR threads clean
   - Slack/Telegram/Discord still show real-time progress indicators
+- Improved `library://` URI path resolution for agent library
 
 ## [0.3.1-beta] - 2025-12-26
 
