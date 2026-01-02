@@ -50,7 +50,7 @@ spec:
   # These also appear in Telegram's command menu
   commands:
     /help:
-      agent: devops
+      agent: builtin  # Use built-in help handler with interactive menu
       description: "Show available commands"
 
     /status:

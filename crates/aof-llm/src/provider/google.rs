@@ -65,6 +65,18 @@ impl GoogleModel {
         // Note: Gemini uses "user" and "model" roles only. Tool responses use functionResponse parts.
         let mut contents: Vec<GeminiContent> = Vec::new();
 
+        // Debug: Log all incoming messages with their structure
+        tracing::warn!("[GOOGLE] Building request with {} messages:", request.messages.len());
+        for (idx, msg) in request.messages.iter().enumerate() {
+            let tool_calls_info = msg.tool_calls.as_ref()
+                .map(|tcs| format!("{} tool calls", tcs.len()))
+                .unwrap_or_else(|| "no tool calls".to_string());
+            tracing::warn!(
+                "[GOOGLE]   Message[{}]: role={:?}, content_len={}, {}",
+                idx, msg.role, msg.content.len(), tool_calls_info
+            );
+        }
+
         for (i, m) in request.messages.iter().enumerate() {
             match m.role {
                 MessageRole::User => {
@@ -162,6 +174,22 @@ impl GoogleModel {
             top_p: None,
             top_k: None,
         };
+
+        // Debug: Log the final converted contents structure
+        tracing::warn!("[GOOGLE] Final contents structure ({} items):", contents.len());
+        for (idx, content) in contents.iter().enumerate() {
+            let parts_info: Vec<String> = content.parts.iter().map(|p| {
+                match p {
+                    GeminiPart::Text { text } => format!("text({})", text.len()),
+                    GeminiPart::FunctionCall { function_call } => format!("functionCall({})", function_call.name),
+                    GeminiPart::FunctionResponse { function_response } => format!("functionResponse({})", function_response.name),
+                }
+            }).collect();
+            tracing::warn!(
+                "[GOOGLE]   Content[{}]: role={}, parts=[{}]",
+                idx, content.role, parts_info.join(", ")
+            );
+        }
 
         GeminiRequest {
             contents,

@@ -109,6 +109,12 @@ pub struct TriggerHandlerConfig {
     /// Command bindings (slash command name -> binding)
     /// Maps commands like "/diagnose" to specific agents or fleets
     pub command_bindings: HashMap<String, CommandBinding>,
+
+    /// Maximum age of messages to process (in seconds)
+    /// Messages older than this are silently dropped to handle queued messages
+    /// from platforms like Telegram when the daemon was down.
+    /// Default: 60 seconds. Set to 0 to disable.
+    pub max_message_age_secs: u64,
 }
 
 impl Default for TriggerHandlerConfig {
@@ -120,6 +126,7 @@ impl Default for TriggerHandlerConfig {
             command_timeout_secs: 300, // 5 minutes
             default_agent: None,
             command_bindings: HashMap::new(),
+            max_message_age_secs: 60, // Drop messages older than 1 minute
         }
     }
 }
@@ -836,6 +843,24 @@ impl TriggerHandler {
             platform, message.id, message.user.id
         );
 
+        // Check if message is too old (stale/queued messages from when daemon was down)
+        if self.config.max_message_age_secs > 0 {
+            let message_age = chrono::Utc::now()
+                .signed_duration_since(message.timestamp)
+                .num_seconds();
+
+            if message_age > self.config.max_message_age_secs as i64 {
+                info!(
+                    "Dropping stale message from {}: {} seconds old (max: {}s) - text: '{}'",
+                    platform,
+                    message_age,
+                    self.config.max_message_age_secs,
+                    message.text.chars().take(50).collect::<String>()
+                );
+                return Ok(());
+            }
+        }
+
         // Get platform for response
         let platform_impl = self
             .platforms
@@ -881,6 +906,11 @@ impl TriggerHandler {
         if let Some(cmd_name) = command_name {
             // Check if we have a binding for this command
             if let Some(binding) = self.config.command_bindings.get(&cmd_name) {
+                // Check for builtin handler - skip binding and use built-in command handler
+                if binding.agent.as_deref() == Some("builtin") {
+                    info!("Command '{}' uses builtin handler, falling through to built-in command parser", cmd_name);
+                    // Fall through to TriggerCommand::parse below which handles built-ins
+                } else {
                 info!("Command '{}' matched binding: {:?}", cmd_name, binding);
 
                 // Create modified message with context from metadata if command text is empty
@@ -937,6 +967,7 @@ impl TriggerHandler {
                     info!("Routing command '{}' to agent '{}'", cmd_name, agent_name);
                     return self.handle_natural_language(&routed_message, platform_impl, agent_name).await;
                 }
+                } // end else (non-builtin handler)
             }
 
             // Check for default binding (for any unbound slash command)
