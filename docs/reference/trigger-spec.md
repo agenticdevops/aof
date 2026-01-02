@@ -1048,6 +1048,36 @@ commands:
 
 **Note:** Only one of `agent`, `fleet`, or `flow` should be specified per command.
 
+### Built-in Command Handlers
+
+Use `agent: builtin` to invoke AOF's built-in interactive command handlers instead of routing to an LLM agent. This is useful for commands that need rich interactive menus.
+
+```yaml
+commands:
+  /help:
+    agent: builtin          # Uses built-in help menu with fleet/agent selection
+    description: "Show available commands"
+  /agent:
+    agent: builtin          # Uses built-in agent selection menu
+    description: "Switch active agent"
+  /fleet:
+    agent: builtin          # Uses built-in fleet selection menu
+    description: "Switch active fleet"
+```
+
+**Available built-in handlers:**
+| Command | Description |
+|---------|-------------|
+| `/help` | Interactive help menu with fleet/agent selection buttons |
+| `/agent` | Agent selection menu with inline keyboard |
+| `/fleet` | Fleet selection menu with inline keyboard |
+| `/info` | System information display |
+| `/flows` | List available flows |
+
+**When to use `builtin` vs agent:**
+- Use `agent: builtin` for interactive menus and system commands
+- Use `agent: <name>` when you want the LLM to handle the command
+
 ### When to Use Each
 
 | Target | Use When | Example |

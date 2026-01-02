@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Built-in command handler support via `agent: builtin` in trigger command bindings
+  - Use `agent: builtin` for `/help`, `/agent`, `/fleet` to get interactive menus
+  - Interactive menus include fleet/agent selection buttons (Telegram/Slack)
+  - Keeps built-in UI handlers separate from LLM-routed commands
+- Stale message filtering for webhook handlers
+  - Messages older than 60 seconds are silently dropped
+  - Prevents processing of queued messages when daemon restarts
+  - Configurable via `max_message_age_secs` in handler config
+
 ### Fixed
 - `aofctl serve` now produces visible startup output
   - Changed from tracing (default level: error) to println for critical startup messages
