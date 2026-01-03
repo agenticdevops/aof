@@ -279,7 +279,8 @@ pub struct JiraPriority {
 /// Jira issue information
 #[derive(Debug, Clone, Deserialize)]
 pub struct JiraIssue {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub key: String,
     #[serde(rename = "self", default)]
     pub self_url: Option<String>,
@@ -837,7 +838,9 @@ impl JiraPlatform {
         // Build metadata with full event details
         let mut metadata = HashMap::new();
         metadata.insert("event_type".to_string(), serde_json::json!(event_type));
-        metadata.insert("issue_id".to_string(), serde_json::json!(issue.id));
+        if let Some(ref id) = issue.id {
+            metadata.insert("issue_id".to_string(), serde_json::json!(id));
+        }
         metadata.insert("issue_key".to_string(), serde_json::json!(issue.key));
         metadata.insert("issue_type".to_string(), serde_json::json!(issue.fields.issuetype.name));
         metadata.insert("project_id".to_string(), serde_json::json!(issue.fields.project.id));
@@ -865,7 +868,8 @@ impl JiraPlatform {
 
         // Message ID from issue and timestamp (use current time if not provided)
         let ts = payload.timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-        let message_id = format!("jira-{}-{}-{}", issue.id, event_type, ts);
+        let issue_id = issue.id.as_deref().unwrap_or(&issue.key);
+        let message_id = format!("jira-{}-{}-{}", issue_id, event_type, ts);
 
         // Thread ID from issue key
         let thread_id = Some(issue.key.clone());
