@@ -431,8 +431,25 @@ impl JiraPlatform {
         Ok(Self { config, client })
     }
 
-    /// Verify HMAC-SHA256 signature from Jira webhook
+    /// Verify signature from Jira webhook
+    /// Supports multiple modes:
+    /// 1. HMAC-SHA256 signature (prefixed with "sha256=" or raw hex)
+    /// 2. Static shared secret (direct comparison for Jira Automation)
     fn verify_jira_signature(&self, payload: &[u8], signature: &str) -> bool {
+        // Strip common prefixes like "sha256=" or "sha1=" if present
+        let provided_signature = signature
+            .strip_prefix("sha256=")
+            .or_else(|| signature.strip_prefix("sha1="))
+            .unwrap_or(signature);
+
+        // Mode 1: Direct secret comparison (for Jira Automation static secrets)
+        // Jira Automation sends the secret value directly in the header
+        if provided_signature == self.config.webhook_secret {
+            debug!("Jira signature verified via direct secret match");
+            return true;
+        }
+
+        // Mode 2: HMAC-SHA256 verification (for computed signatures)
         let mut mac = match HmacSha256::new_from_slice(self.config.webhook_secret.as_bytes()) {
             Ok(m) => m,
             Err(e) => {
@@ -445,14 +462,14 @@ impl JiraPlatform {
         let result = mac.finalize();
         let computed_signature = hex::encode(result.into_bytes());
 
-        if computed_signature == signature {
-            debug!("Jira signature verified successfully");
+        if computed_signature == provided_signature {
+            debug!("Jira signature verified via HMAC-SHA256");
             true
         } else {
             debug!(
-                "Signature mismatch - computed: {}, provided: {}",
-                &computed_signature[..8],
-                &signature[..8.min(signature.len())]
+                "Signature mismatch - computed HMAC: {}..., provided: {}...",
+                &computed_signature[..8.min(computed_signature.len())],
+                &provided_signature[..8.min(provided_signature.len())]
             );
             false
         }

@@ -406,10 +406,19 @@ spec:
   platforms:
     jira:
       enabled: true
-      cloud_id_env: JIRA_CLOUD_ID
+      # Use base_url for direct Atlassian URL (recommended)
+      base_url: https://your-domain.atlassian.net
+      # Or use cloud_id_env for Cloud ID based URL construction
+      # cloud_id_env: JIRA_CLOUD_ID
       user_email_env: JIRA_USER_EMAIL
       api_token_env: JIRA_API_TOKEN
       webhook_secret_env: JIRA_WEBHOOK_SECRET
+      bot_name: aof-automation  # Optional: name for comments
+
+      # Optional: Restrict to specific projects
+      # allowed_projects:
+      #   - PROJ
+      #   - DEV
 
   # Resource directories
   triggers:
@@ -425,7 +434,9 @@ spec:
     task_timeout_secs: 300
 ```
 
-**Webhook endpoint**: `http://your-domain:3000/webhook/jira`
+**Webhook endpoint**: `https://your-domain.com/webhook/jira`
+
+> **Important**: Configure your Jira automation rules to POST to `/webhook/jira`, not just the base URL.
 
 ## Step 9: Start the AOF Daemon
 
@@ -458,25 +469,192 @@ Deploy to a server with HTTPS:
 # Webhook URL: https://aof.example.com/webhook/jira
 ```
 
-## Step 11: Configure Jira Webhook
+## Step 11: Configure Jira Automation Webhook
+
+Jira Automation requires you to explicitly configure the webhook body. Here's how:
+
+### Creating the Automation Rule
 
 1. Go to your Jira project
 2. Navigate to **Project Settings** → **Automation**
-3. Click **Create rule** → **When: Issue created**
-4. Add action → **Send web request**
-5. Configure:
-   - **URL**: `https://your-domain.com/webhook/jira`
-   - **Headers**: Add `X-Hub-Signature` with webhook secret
-   - **HTTP method**: POST
-   - **Webhook body**: Issue data
-   - **Events**: Issue created, Issue updated
-6. Click **Turn it on**
+3. Click **Create rule**
+4. Choose a trigger (e.g., **When: Issue created**)
+5. Add action → **Send web request**
 
-**Alternative (Jira Cloud)**:
-- Settings → System → Webhooks → Create Webhook
-- URL: `https://your-domain.com/webhook/jira`
-- Events: Issue created, updated, commented
-- Secret: Your webhook secret
+### Configuring the Web Request
+
+**URL**:
+```
+https://your-domain.com/webhook/jira
+```
+
+**HTTP method**: `POST`
+
+**Headers** (click "Add another header"):
+
+| Key | Value |
+|-----|-------|
+| `Content-Type` | `application/json` |
+| `X-Hub-Signature` | `<your JIRA_WEBHOOK_SECRET value>` |
+
+**Web request body**: Select **Custom data** and paste the appropriate template below.
+
+### Payload Templates by Event Type
+
+#### Issue Created / Issue Updated
+
+```json
+{
+  "webhookEvent": "jira:issue_created",
+  "timestamp": {{now.asLong}},
+  "issue": {
+    "id": "{{issue.id}}",
+    "key": "{{issue.key}}",
+    "fields": {
+      "summary": "{{issue.summary}}",
+      "description": "{{issue.description}}",
+      "issuetype": {
+        "name": "{{issue.issueType.name}}"
+      },
+      "status": {
+        "name": "{{issue.status.name}}"
+      },
+      "priority": {
+        "name": "{{issue.priority.name}}"
+      },
+      "project": {
+        "key": "{{issue.project.key}}",
+        "name": "{{issue.project.name}}"
+      },
+      "assignee": {
+        "displayName": "{{issue.assignee.displayName}}",
+        "accountId": "{{issue.assignee.accountId}}"
+      },
+      "reporter": {
+        "displayName": "{{issue.reporter.displayName}}",
+        "accountId": "{{issue.reporter.accountId}}"
+      },
+      "labels": {{issue.labels.asJsonArray}}
+    }
+  },
+  "user": {
+    "accountId": "{{initiator.accountId}}",
+    "displayName": "{{initiator.displayName}}"
+  }
+}
+```
+
+> **Note**: Change `"webhookEvent": "jira:issue_created"` to `"jira:issue_updated"` for update triggers.
+
+#### Comment Created
+
+```json
+{
+  "webhookEvent": "comment_created",
+  "timestamp": {{now.asLong}},
+  "issue": {
+    "id": "{{issue.id}}",
+    "key": "{{issue.key}}",
+    "fields": {
+      "summary": "{{issue.summary}}",
+      "project": {
+        "key": "{{issue.project.key}}",
+        "name": "{{issue.project.name}}"
+      }
+    }
+  },
+  "comment": {
+    "id": "{{comment.id}}",
+    "body": "{{comment.body}}",
+    "author": {
+      "accountId": "{{comment.author.accountId}}",
+      "displayName": "{{comment.author.displayName}}"
+    }
+  },
+  "user": {
+    "accountId": "{{initiator.accountId}}",
+    "displayName": "{{initiator.displayName}}"
+  }
+}
+```
+
+#### Work Logged
+
+```json
+{
+  "webhookEvent": "worklog_created",
+  "timestamp": {{now.asLong}},
+  "issue": {
+    "id": "{{issue.id}}",
+    "key": "{{issue.key}}",
+    "fields": {
+      "summary": "{{issue.summary}}",
+      "description": "{{issue.description}}",
+      "issuetype": {
+        "name": "{{issue.issueType.name}}"
+      },
+      "status": {
+        "name": "{{issue.status.name}}"
+      },
+      "priority": {
+        "name": "{{issue.priority.name}}"
+      },
+      "project": {
+        "key": "{{issue.project.key}}",
+        "name": "{{issue.project.name}}"
+      }
+    }
+  },
+  "user": {
+    "accountId": "{{initiator.accountId}}",
+    "displayName": "{{initiator.displayName}}"
+  }
+}
+```
+
+#### Sprint Started / Sprint Closed
+
+```json
+{
+  "webhookEvent": "sprint_started",
+  "timestamp": {{now.asLong}},
+  "sprint": {
+    "id": {{sprint.id}},
+    "name": "{{sprint.name}}",
+    "state": "{{sprint.state}}",
+    "goal": "{{sprint.goal}}"
+  },
+  "user": {
+    "accountId": "{{initiator.accountId}}",
+    "displayName": "{{initiator.displayName}}"
+  }
+}
+```
+
+### Important Notes
+
+1. **The `X-Hub-Signature` header value must exactly match your `JIRA_WEBHOOK_SECRET` environment variable** (case-sensitive)
+
+2. **Jira Automation sends a static secret**, not a computed HMAC signature. AOF supports both modes.
+
+3. **Smart values**: The `{{...}}` placeholders are Jira smart values that get replaced with actual data when the webhook fires.
+
+4. **Test your webhook**: After saving, use Jira's "Validate" button to test the configuration.
+
+### Alternative: System Webhooks (Admin Only)
+
+If you have Jira admin access, you can use built-in webhooks which automatically include full payloads:
+
+1. Go to **Settings** → **System** → **WebHooks**
+2. Click **Create a WebHook**
+3. Configure:
+   - **Name**: AOF Integration
+   - **URL**: `https://your-domain.com/webhook/jira`
+   - **Secret**: Your webhook secret (for HMAC verification)
+   - **Events**: Select desired events
+4. Click **Create**
+
+System webhooks automatically send complete payloads without manual body configuration.
 
 ## Step 12: Test Bug Triage
 

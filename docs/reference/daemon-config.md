@@ -25,6 +25,7 @@ spec:
     telegram: object
     discord: object
     whatsapp: object
+    jira: object
   agents:                   # Required: Agent discovery
     directory: string
   fleets:                   # Optional: Fleet discovery
@@ -165,6 +166,65 @@ spec:
       phone_number_id_env: WHATSAPP_PHONE_NUMBER_ID
       access_token_env: WHATSAPP_ACCESS_TOKEN
       verify_token_env: WHATSAPP_VERIFY_TOKEN
+```
+
+### Jira Platform
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | bool | Yes | Enable Jira Cloud integration |
+| `base_url` | string | Yes* | Jira instance URL (e.g., `https://your-domain.atlassian.net`) |
+| `cloud_id_env` | string | Yes* | Env var for Jira Cloud ID (alternative to base_url) |
+| `user_email_env` | string | Yes | Env var for user email for API authentication |
+| `api_token_env` | string | Yes | Env var for API token |
+| `webhook_secret_env` | string | Yes | Env var for webhook secret (for signature verification) |
+| `bot_name` | string | No | Bot name for comments (default: "aofbot") |
+| `allowed_projects` | array | No | Project keys allowed to trigger (whitelist) |
+| `allowed_events` | array | No | Event types to handle (whitelist) |
+
+*Either `base_url` or `cloud_id_env` must be provided.
+
+**Supported Events:**
+- `jira:issue_created` - Issue created
+- `jira:issue_updated` - Issue updated
+- `jira:issue_deleted` - Issue deleted
+- `comment_created` - Comment added
+- `comment_updated` - Comment updated
+- `comment_deleted` - Comment deleted
+- `sprint_started` - Sprint started
+- `sprint_closed` - Sprint closed
+- `worklog_created` - Work logged
+- `worklog_updated` - Worklog updated
+
+**Example:**
+```yaml
+spec:
+  platforms:
+    jira:
+      enabled: true
+      base_url: https://your-domain.atlassian.net
+      user_email_env: JIRA_USER_EMAIL
+      api_token_env: JIRA_API_TOKEN
+      webhook_secret_env: JIRA_WEBHOOK_SECRET
+      bot_name: aof-automation
+
+      # Optional: Restrict to specific projects
+      allowed_projects:
+        - SCRUM
+        - OPS
+
+      # Optional: Only handle these events
+      allowed_events:
+        - jira:issue_created
+        - jira:issue_updated
+        - comment_created
+```
+
+**Setting up Jira Automation webhook URL:**
+
+Configure your Jira Automation rules to POST to:
+```
+https://your-domain/webhook/jira
 ```
 
 ---
@@ -379,6 +439,7 @@ DaemonConfig references environment variables for sensitive data. Never hardcode
 | Telegram | `TELEGRAM_BOT_TOKEN` |
 | Discord | `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID` |
 | WhatsApp | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN` |
+| Jira | `JIRA_USER_EMAIL`, `JIRA_API_TOKEN`, `JIRA_WEBHOOK_SECRET` (+ `JIRA_CLOUD_ID` or `base_url` in config) |
 
 **LLM API keys:**
 | Provider | Variable |
@@ -478,6 +539,7 @@ The server exposes these endpoints for each platform:
 | GitHub | `https://your-domain/webhook/github` |
 | GitLab | `https://your-domain/webhook/gitlab` |
 | Bitbucket | `https://your-domain/webhook/bitbucket` |
+| Jira | `https://your-domain/webhook/jira` |
 
 ---
 
