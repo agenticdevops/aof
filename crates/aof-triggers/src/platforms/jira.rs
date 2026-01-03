@@ -242,7 +242,8 @@ pub struct JiraProject {
     #[serde(default)]
     pub id: Option<String>,
     pub key: String,
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// Jira status
