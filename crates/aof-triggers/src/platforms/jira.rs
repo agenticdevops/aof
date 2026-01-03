@@ -229,7 +229,8 @@ pub struct JiraIssueFields {
 /// Jira issue type
 #[derive(Debug, Clone, Deserialize)]
 pub struct JiraIssueType {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -238,7 +239,8 @@ pub struct JiraIssueType {
 /// Jira project information
 #[derive(Debug, Clone, Deserialize)]
 pub struct JiraProject {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub key: String,
     pub name: String,
 }
@@ -247,7 +249,8 @@ pub struct JiraProject {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraStatus {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub status_category: Option<JiraStatusCategory>,
@@ -257,15 +260,18 @@ pub struct JiraStatus {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraStatusCategory {
-    pub id: i64,
-    pub key: String,
+    #[serde(default)]
+    pub id: Option<i64>,
+    #[serde(default)]
+    pub key: Option<String>,
     pub name: String,
 }
 
 /// Jira priority
 #[derive(Debug, Clone, Deserialize)]
 pub struct JiraPriority {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
 }
 
@@ -274,8 +280,8 @@ pub struct JiraPriority {
 pub struct JiraIssue {
     pub id: String,
     pub key: String,
-    #[serde(rename = "self")]
-    pub self_url: String,
+    #[serde(rename = "self", default)]
+    pub self_url: Option<String>,
     pub fields: JiraIssueFields,
 }
 
@@ -283,15 +289,17 @@ pub struct JiraIssue {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraComment {
-    pub id: String,
-    #[serde(rename = "self")]
-    pub self_url: String,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(rename = "self", default)]
+    pub self_url: Option<String>,
     pub body: String,
     #[serde(default)]
     pub author: Option<JiraUser>,
     #[serde(default)]
     pub update_author: Option<JiraUser>,
-    pub created: String,
+    #[serde(default)]
+    pub created: Option<String>,
     #[serde(default)]
     pub updated: Option<String>,
 }
@@ -884,6 +892,14 @@ impl TriggerPlatform for JiraPlatform {
         raw: &[u8],
         headers: &HashMap<String, String>,
     ) -> Result<TriggerMessage, PlatformError> {
+        // Log raw payload for debugging
+        if let Ok(raw_str) = std::str::from_utf8(raw) {
+            debug!("Jira webhook raw payload ({} bytes): {}", raw.len(),
+                   if raw_str.len() > 500 { &raw_str[..500] } else { raw_str });
+        } else {
+            debug!("Jira webhook raw payload ({} bytes): <binary>", raw.len());
+        }
+
         // Verify signature if present
         if let Some(signature) = headers.get("x-hub-signature") {
             if !self.verify_jira_signature(raw, signature) {
