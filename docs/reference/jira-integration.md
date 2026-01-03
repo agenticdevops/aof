@@ -75,13 +75,25 @@ spec:
   platforms:
     jira:
       enabled: true
-      base_url: https://yourcompany.atlassian.net  # Jira Cloud URL
-      auth:
-        type: api_token                            # api_token, oauth2, or pat
-        email_env: JIRA_EMAIL                      # For API token auth
-        token_env: JIRA_API_TOKEN
+      # Use base_url for direct Atlassian URL (recommended)
+      base_url: https://yourcompany.atlassian.net
+      # Or use cloud_id_env for Cloud ID based URL construction
+      # cloud_id_env: JIRA_CLOUD_ID
+      user_email_env: JIRA_USER_EMAIL
+      api_token_env: JIRA_API_TOKEN
       webhook_secret_env: JIRA_WEBHOOK_SECRET
-      bot_name: aofbot                             # Optional: for @mentions
+      bot_name: aofbot  # Optional: name for comments
+
+      # Optional: Restrict to specific projects
+      allowed_projects:
+        - PROJ
+        - DEV
+
+      # Optional: Filter by event types
+      allowed_events:
+        - jira:issue_created
+        - jira:issue_updated
+        - comment_created
 
   # Resource discovery
   triggers:
@@ -103,70 +115,43 @@ spec:
     task_timeout_secs: 300
 ```
 
+**Webhook endpoint**: `https://your-domain.com/webhook/jira`
+
+> **Important**: When configuring Jira automation rules, use the full URL with `/webhook/jira` path, not just the base domain.
+
 ### Platform Configuration Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `enabled` | bool | Yes | Enable Jira webhook endpoint (`/webhook/jira`) |
-| `base_url` | string | Yes | Jira instance URL (Cloud or self-hosted) |
-| `auth.type` | string | Yes | Authentication type: `api_token`, `oauth2`, or `pat` |
-| `auth.email_env` | string | Conditional | Required for `api_token` auth |
-| `auth.token_env` | string | Yes | Environment variable name for token/PAT |
+| `base_url` | string | Yes* | Jira instance URL (e.g., `https://your-domain.atlassian.net`) |
+| `cloud_id_env` | string | Yes* | Environment variable for Jira Cloud ID (alternative to base_url) |
+| `user_email_env` | string | Yes | Environment variable name for user email |
+| `api_token_env` | string | Yes | Environment variable name for API token |
 | `webhook_secret_env` | string | Yes | Environment variable name for webhook secret |
-| `bot_name` | string | No | Bot name for @mentions (default: "aofbot") |
+| `bot_name` | string | No | Bot name for comments (default: "aofbot") |
+| `allowed_projects` | array | No | Project keys allowed to trigger (whitelist) |
+| `allowed_events` | array | No | Event types to handle (whitelist) |
 
-#### Authentication Types
-
-**API Token (Recommended for Cloud):**
-```yaml
-auth:
-  type: api_token
-  email_env: JIRA_EMAIL
-  token_env: JIRA_API_TOKEN
-```
-
-**Personal Access Token (Server/Data Center):**
-```yaml
-auth:
-  type: pat
-  token_env: JIRA_PAT
-```
-
-**OAuth 2.0 (Advanced):**
-```yaml
-auth:
-  type: oauth2
-  token_env: JIRA_OAUTH_TOKEN
-  # Additional OAuth config...
-```
+*Either `base_url` or `cloud_id_env` must be provided.
 
 ### Self-Hosted Jira Configuration
 
-For Jira Server or Data Center deployments:
+For Jira Server or Data Center deployments, use `base_url` pointing to your internal instance:
 
 ```yaml
 platforms:
   jira:
     enabled: true
     base_url: https://jira.yourcompany.com  # Self-hosted URL
-    auth:
-      type: pat
-      token_env: JIRA_PAT
+    user_email_env: JIRA_USER_EMAIL
+    api_token_env: JIRA_API_TOKEN  # Use PAT for Server/DC
     webhook_secret_env: JIRA_WEBHOOK_SECRET
-
-    # Optional: Proxy configuration
-    proxy:
-      http_proxy: http://proxy.company.com:8080
-      https_proxy: https://proxy.company.com:8080
-      no_proxy: localhost,127.0.0.1
-
-    # Optional: TLS configuration
-    tls:
-      verify: true
-      ca_cert_path: /etc/ssl/certs/company-ca.pem
 ```
 
-> **Note**: Event filtering, project filtering, and command routing are configured in **Trigger** files, not in DaemonConfig. This separation keeps daemon config minimal and allows per-trigger customization.
+> **Note**: For Jira Server/Data Center, create a Personal Access Token (PAT) instead of an API token. The configuration is the same - just store the PAT in `JIRA_API_TOKEN`.
+
+> **Note**: Event filtering, project filtering, and command routing can also be configured in **Trigger** files for per-trigger customization.
 
 ### Trigger Configuration
 
@@ -1338,7 +1323,133 @@ spec:
 
 ## Webhook Setup
 
-### 1. Create Webhook in Jira
+There are two ways to configure Jira webhooks:
+
+### Option A: Jira Automation Rules (Project-Level)
+
+Use this method if you don't have Jira admin access or want per-project control.
+
+#### 1. Create Automation Rule
+
+1. Go to your Jira project
+2. Navigate to **Project Settings** → **Automation**
+3. Click **Create rule**
+4. Choose a trigger (e.g., **When: Issue created**)
+5. Add action → **Send web request**
+
+#### 2. Configure Web Request
+
+**URL**: `https://your-domain.com/webhook/jira`
+
+**HTTP method**: `POST`
+
+**Headers**:
+| Key | Value |
+|-----|-------|
+| `Content-Type` | `application/json` |
+| `X-Hub-Signature` | `<your JIRA_WEBHOOK_SECRET value>` |
+
+**Web request body**: Select **Custom data** and use a payload template.
+
+#### 3. Payload Templates
+
+AOF accepts flexible payloads - most fields are optional. Use minimal templates or add more fields as needed.
+
+**Issue Created/Updated (Minimal):**
+```json
+{
+  "webhookEvent": "jira:issue_created",
+  "timestamp": {{now.epochMillis}},
+  "issue": {
+    "id": "{{issue.id}}",
+    "key": "{{issue.key}}",
+    "fields": {
+      "summary": "{{issue.summary}}",
+      "issuetype": { "name": "{{issue.issueType.name}}" },
+      "status": { "name": "{{issue.status.name}}" },
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
+    }
+  },
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
+}
+```
+
+**Comment Created:**
+```json
+{
+  "webhookEvent": "comment_created",
+  "timestamp": {{now.epochMillis}},
+  "issue": {
+    "id": "{{issue.id}}",
+    "key": "{{issue.key}}",
+    "fields": {
+      "summary": "{{issue.summary}}",
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
+    }
+  },
+  "comment": {
+    "body": "{{comment.body}}",
+    "author": { "accountId": "{{comment.author.accountId}}", "displayName": "{{comment.author.displayName}}" }
+  },
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
+}
+```
+
+**Work Logged:**
+```json
+{
+  "webhookEvent": "worklog_created",
+  "timestamp": {{now.epochMillis}},
+  "issue": {
+    "id": "{{issue.id}}",
+    "key": "{{issue.key}}",
+    "fields": {
+      "summary": "{{issue.summary}}",
+      "issuetype": { "name": "{{issue.issueType.name}}" },
+      "status": { "name": "{{issue.status.name}}" },
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
+    }
+  },
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
+}
+```
+
+> **Important**: The `{{...}}` placeholders are Jira smart values. They get replaced with actual data when the webhook fires.
+
+#### Testing with curl
+
+Test the endpoint before configuring Jira:
+
+```bash
+curl -X POST https://your-domain.com/webhook/jira \
+  -H "Content-Type: application/json" \
+  -H "X-Hub-Signature: YOUR_SECRET_HERE" \
+  -d '{
+    "webhookEvent": "jira:issue_created",
+    "timestamp": 1735897519000,
+    "issue": {
+      "id": "10005",
+      "key": "PROJ-123",
+      "fields": {
+        "summary": "Test issue",
+        "issuetype": { "name": "Bug" },
+        "status": { "name": "To Do" },
+        "project": { "key": "PROJ", "name": "My Project" }
+      }
+    },
+    "user": { "accountId": "test", "displayName": "Test User" }
+  }'
+```
+
+#### 4. Signature Verification
+
+Jira Automation sends the `X-Hub-Signature` header value as a **static secret** (not computed HMAC). Your `JIRA_WEBHOOK_SECRET` environment variable must **exactly match** the value you configure in the header.
+
+---
+
+### Option B: System Webhooks (Admin Only)
+
+Use this method if you have Jira admin access. System webhooks automatically include complete payloads.
 
 #### Jira Cloud
 
@@ -1348,8 +1459,8 @@ spec:
    - **Name**: AOF Automation
    - **Status**: Enabled
    - **URL**: `https://your-domain.com/webhook/jira`
-   - **Secret**: Your `JIRA_WEBHOOK_SECRET` value
-   - **Events**: Select desired events or check "All issues"
+   - **Secret**: Your `JIRA_WEBHOOK_SECRET` value (enables HMAC verification)
+   - **Events**: Select desired events
    - **Exclude body**: Uncheck (AOF needs full payload)
 
 #### Jira Server/Data Center
@@ -1358,7 +1469,9 @@ spec:
 2. Create webhook with same configuration as Cloud
 3. Ensure firewall allows webhook traffic to AOF daemon
 
-### 2. Expose Endpoint
+---
+
+### Expose Endpoint
 
 **For production:**
 ```bash
@@ -1380,19 +1493,19 @@ ngrok http 3000
 
 Use tunnel URL as webhook URL in Jira.
 
-### 3. Verify Webhook
+### Verify Webhook
 
-1. Test webhook in Jira webhook settings
-2. Check webhook delivery logs in Jira
-3. Verify AOF logs show received event
+1. Test webhook using Jira's "Validate" button (Automation) or delivery logs (System webhooks)
+2. Check AOF daemon logs for received events
 
 ```bash
 # Check logs
-tail -f /var/log/aof/daemon.log
+RUST_LOG=debug aofctl serve --config daemon.yaml
 
 # Look for:
-# INFO  Jira webhook received: issue_created
-# INFO  Posted comment to PROJ-123
+# INFO  Received webhook for platform: jira
+# DEBUG Jira signature verified via direct secret match
+# INFO  Processing event: jira:issue_created
 ```
 
 ---

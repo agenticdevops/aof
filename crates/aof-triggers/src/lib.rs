@@ -54,6 +54,7 @@ pub use platforms::{
     TelegramConfig, TelegramPlatform,
     WhatsAppConfig, WhatsAppPlatform,
     GitHubConfig, GitHubPlatform,
+    JiraConfig, JiraPlatform,
     PagerDutyConfig, PagerDutyPlatform,
     TypedPlatformConfig,
     // Platform registry for extensibility
