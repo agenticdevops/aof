@@ -347,8 +347,9 @@ pub struct JiraChangelog {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraWebhookPayload {
-    /// Webhook event timestamp
-    pub timestamp: i64,
+    /// Webhook event timestamp (optional - may not be provided by Jira Automation)
+    #[serde(default)]
+    pub timestamp: Option<i64>,
 
     /// Event type
     pub webhook_event: String,
@@ -861,8 +862,9 @@ impl JiraPlatform {
             metadata.insert("changelog".to_string(), serde_json::to_value(changelog).unwrap_or_default());
         }
 
-        // Message ID from issue and timestamp
-        let message_id = format!("jira-{}-{}-{}", issue.id, event_type, payload.timestamp);
+        // Message ID from issue and timestamp (use current time if not provided)
+        let ts = payload.timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let message_id = format!("jira-{}-{}-{}", issue.id, event_type, ts);
 
         // Thread ID from issue key
         let thread_id = Some(issue.key.clone());
@@ -873,7 +875,7 @@ impl JiraPlatform {
             channel_id,
             user: trigger_user,
             text,
-            timestamp: chrono::DateTime::from_timestamp(payload.timestamp / 1000, 0).unwrap_or_else(chrono::Utc::now),
+            timestamp: chrono::DateTime::from_timestamp(ts / 1000, 0).unwrap_or_else(chrono::Utc::now),
             metadata,
             thread_id,
             reply_to: None,
