@@ -501,46 +501,49 @@ https://your-domain.com/webhook/jira
 
 ### Payload Templates by Event Type
 
-#### Issue Created / Issue Updated
+AOF accepts flexible payloads - most fields are optional. Use the minimal templates below, or add more fields as needed.
+
+#### Issue Created / Issue Updated (Minimal)
 
 ```json
 {
   "webhookEvent": "jira:issue_created",
-  "timestamp": {{now.asLong}},
+  "timestamp": {{now.epochMillis}},
+  "issue": {
+    "id": "{{issue.id}}",
+    "key": "{{issue.key}}",
+    "fields": {
+      "summary": "{{issue.summary}}",
+      "issuetype": { "name": "{{issue.issueType.name}}" },
+      "status": { "name": "{{issue.status.name}}" },
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
+    }
+  },
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
+}
+```
+
+#### Issue Created / Issue Updated (Full)
+
+```json
+{
+  "webhookEvent": "jira:issue_created",
+  "timestamp": {{now.epochMillis}},
   "issue": {
     "id": "{{issue.id}}",
     "key": "{{issue.key}}",
     "fields": {
       "summary": "{{issue.summary}}",
       "description": "{{issue.description}}",
-      "issuetype": {
-        "name": "{{issue.issueType.name}}"
-      },
-      "status": {
-        "name": "{{issue.status.name}}"
-      },
-      "priority": {
-        "name": "{{issue.priority.name}}"
-      },
-      "project": {
-        "key": "{{issue.project.key}}",
-        "name": "{{issue.project.name}}"
-      },
-      "assignee": {
-        "displayName": "{{issue.assignee.displayName}}",
-        "accountId": "{{issue.assignee.accountId}}"
-      },
-      "reporter": {
-        "displayName": "{{issue.reporter.displayName}}",
-        "accountId": "{{issue.reporter.accountId}}"
-      },
-      "labels": {{issue.labels.asJsonArray}}
+      "issuetype": { "name": "{{issue.issueType.name}}" },
+      "status": { "name": "{{issue.status.name}}" },
+      "priority": { "name": "{{issue.priority.name}}" },
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" },
+      "assignee": { "displayName": "{{issue.assignee.displayName}}", "accountId": "{{issue.assignee.accountId}}" },
+      "reporter": { "displayName": "{{issue.reporter.displayName}}", "accountId": "{{issue.reporter.accountId}}" }
     }
   },
-  "user": {
-    "accountId": "{{initiator.accountId}}",
-    "displayName": "{{initiator.displayName}}"
-  }
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
 }
 ```
 
@@ -551,30 +554,20 @@ https://your-domain.com/webhook/jira
 ```json
 {
   "webhookEvent": "comment_created",
-  "timestamp": {{now.asLong}},
+  "timestamp": {{now.epochMillis}},
   "issue": {
     "id": "{{issue.id}}",
     "key": "{{issue.key}}",
     "fields": {
       "summary": "{{issue.summary}}",
-      "project": {
-        "key": "{{issue.project.key}}",
-        "name": "{{issue.project.name}}"
-      }
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
     }
   },
   "comment": {
-    "id": "{{comment.id}}",
     "body": "{{comment.body}}",
-    "author": {
-      "accountId": "{{comment.author.accountId}}",
-      "displayName": "{{comment.author.displayName}}"
-    }
+    "author": { "accountId": "{{comment.author.accountId}}", "displayName": "{{comment.author.displayName}}" }
   },
-  "user": {
-    "accountId": "{{initiator.accountId}}",
-    "displayName": "{{initiator.displayName}}"
-  }
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
 }
 ```
 
@@ -583,32 +576,19 @@ https://your-domain.com/webhook/jira
 ```json
 {
   "webhookEvent": "worklog_created",
-  "timestamp": {{now.asLong}},
+  "timestamp": {{now.epochMillis}},
   "issue": {
     "id": "{{issue.id}}",
     "key": "{{issue.key}}",
     "fields": {
       "summary": "{{issue.summary}}",
-      "description": "{{issue.description}}",
-      "issuetype": {
-        "name": "{{issue.issueType.name}}"
-      },
-      "status": {
-        "name": "{{issue.status.name}}"
-      },
-      "priority": {
-        "name": "{{issue.priority.name}}"
-      },
-      "project": {
-        "key": "{{issue.project.key}}",
-        "name": "{{issue.project.name}}"
-      }
+      "issuetype": { "name": "{{issue.issueType.name}}" },
+      "status": { "name": "{{issue.status.name}}" },
+      "priority": { "name": "{{issue.priority.name}}" },
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
     }
   },
-  "user": {
-    "accountId": "{{initiator.accountId}}",
-    "displayName": "{{initiator.displayName}}"
-  }
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
 }
 ```
 
@@ -617,19 +597,43 @@ https://your-domain.com/webhook/jira
 ```json
 {
   "webhookEvent": "sprint_started",
-  "timestamp": {{now.asLong}},
+  "timestamp": {{now.epochMillis}},
   "sprint": {
     "id": {{sprint.id}},
     "name": "{{sprint.name}}",
     "state": "{{sprint.state}}",
     "goal": "{{sprint.goal}}"
   },
-  "user": {
-    "accountId": "{{initiator.accountId}}",
-    "displayName": "{{initiator.displayName}}"
-  }
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
 }
 ```
+
+### Testing with curl
+
+Before configuring Jira, test the endpoint directly:
+
+```bash
+curl -X POST https://your-ngrok-url.ngrok-free.dev/webhook/jira \
+  -H "Content-Type: application/json" \
+  -H "X-Hub-Signature: YOUR_SECRET_HERE" \
+  -d '{
+    "webhookEvent": "worklog_created",
+    "timestamp": 1735897519000,
+    "issue": {
+      "id": "10005",
+      "key": "SCRUM-5",
+      "fields": {
+        "summary": "Test issue",
+        "issuetype": { "name": "Task" },
+        "status": { "name": "To Do" },
+        "project": { "key": "SCRUM", "name": "Team Astro" }
+      }
+    },
+    "user": { "accountId": "test", "displayName": "Test User" }
+  }'
+```
+
+Replace `YOUR_SECRET_HERE` with your `JIRA_WEBHOOK_SECRET` value.
 
 ### Important Notes
 

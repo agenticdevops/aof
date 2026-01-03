@@ -1353,39 +1353,24 @@ Use this method if you don't have Jira admin access or want per-project control.
 
 #### 3. Payload Templates
 
-**Issue Created/Updated:**
+AOF accepts flexible payloads - most fields are optional. Use minimal templates or add more fields as needed.
+
+**Issue Created/Updated (Minimal):**
 ```json
 {
   "webhookEvent": "jira:issue_created",
-  "timestamp": {{now.asLong}},
+  "timestamp": {{now.epochMillis}},
   "issue": {
     "id": "{{issue.id}}",
     "key": "{{issue.key}}",
     "fields": {
       "summary": "{{issue.summary}}",
-      "description": "{{issue.description}}",
       "issuetype": { "name": "{{issue.issueType.name}}" },
       "status": { "name": "{{issue.status.name}}" },
-      "priority": { "name": "{{issue.priority.name}}" },
-      "project": {
-        "key": "{{issue.project.key}}",
-        "name": "{{issue.project.name}}"
-      },
-      "assignee": {
-        "displayName": "{{issue.assignee.displayName}}",
-        "accountId": "{{issue.assignee.accountId}}"
-      },
-      "reporter": {
-        "displayName": "{{issue.reporter.displayName}}",
-        "accountId": "{{issue.reporter.accountId}}"
-      },
-      "labels": {{issue.labels.asJsonArray}}
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
     }
   },
-  "user": {
-    "accountId": "{{initiator.accountId}}",
-    "displayName": "{{initiator.displayName}}"
-  }
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
 }
 ```
 
@@ -1393,30 +1378,20 @@ Use this method if you don't have Jira admin access or want per-project control.
 ```json
 {
   "webhookEvent": "comment_created",
-  "timestamp": {{now.asLong}},
+  "timestamp": {{now.epochMillis}},
   "issue": {
     "id": "{{issue.id}}",
     "key": "{{issue.key}}",
     "fields": {
       "summary": "{{issue.summary}}",
-      "project": {
-        "key": "{{issue.project.key}}",
-        "name": "{{issue.project.name}}"
-      }
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
     }
   },
   "comment": {
-    "id": "{{comment.id}}",
     "body": "{{comment.body}}",
-    "author": {
-      "accountId": "{{comment.author.accountId}}",
-      "displayName": "{{comment.author.displayName}}"
-    }
+    "author": { "accountId": "{{comment.author.accountId}}", "displayName": "{{comment.author.displayName}}" }
   },
-  "user": {
-    "accountId": "{{initiator.accountId}}",
-    "displayName": "{{initiator.displayName}}"
-  }
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
 }
 ```
 
@@ -1424,7 +1399,7 @@ Use this method if you don't have Jira admin access or want per-project control.
 ```json
 {
   "webhookEvent": "worklog_created",
-  "timestamp": {{now.asLong}},
+  "timestamp": {{now.epochMillis}},
   "issue": {
     "id": "{{issue.id}}",
     "key": "{{issue.key}}",
@@ -1432,21 +1407,39 @@ Use this method if you don't have Jira admin access or want per-project control.
       "summary": "{{issue.summary}}",
       "issuetype": { "name": "{{issue.issueType.name}}" },
       "status": { "name": "{{issue.status.name}}" },
-      "priority": { "name": "{{issue.priority.name}}" },
-      "project": {
-        "key": "{{issue.project.key}}",
-        "name": "{{issue.project.name}}"
-      }
+      "project": { "key": "{{issue.project.key}}", "name": "{{issue.project.name}}" }
     }
   },
-  "user": {
-    "accountId": "{{initiator.accountId}}",
-    "displayName": "{{initiator.displayName}}"
-  }
+  "user": { "accountId": "{{initiator.accountId}}", "displayName": "{{initiator.displayName}}" }
 }
 ```
 
 > **Important**: The `{{...}}` placeholders are Jira smart values. They get replaced with actual data when the webhook fires.
+
+#### Testing with curl
+
+Test the endpoint before configuring Jira:
+
+```bash
+curl -X POST https://your-domain.com/webhook/jira \
+  -H "Content-Type: application/json" \
+  -H "X-Hub-Signature: YOUR_SECRET_HERE" \
+  -d '{
+    "webhookEvent": "jira:issue_created",
+    "timestamp": 1735897519000,
+    "issue": {
+      "id": "10005",
+      "key": "PROJ-123",
+      "fields": {
+        "summary": "Test issue",
+        "issuetype": { "name": "Bug" },
+        "status": { "name": "To Do" },
+        "project": { "key": "PROJ", "name": "My Project" }
+      }
+    },
+    "user": { "accountId": "test", "displayName": "Test User" }
+  }'
+```
 
 #### 4. Signature Verification
 
