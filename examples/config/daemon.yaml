@@ -84,7 +84,7 @@ spec:
     # Scopes: repo, write:discussion (for PR comments/reviews)
     github:
       enabled: true
-      token_env: GITHUB_TOKEN
+      #token_env: GITHUB_TOKEN
       webhook_secret_env: GITHUB_WEBHOOK_SECRET
       # Optional: Bot name for @mentions
       bot_name: aofbot

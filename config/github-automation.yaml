@@ -1,0 +1,79 @@
+version: v1
+kind: TriggerConfig
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  base_path: "/webhooks"
+
+platforms:
+  github:
+    type: github
+
+    # Authentication (choose one)
+    # Option A: Personal Access Token
+    #token: "${GITHUB_TOKEN}"
+
+    # Option B: GitHub App (preferred)
+    # app_id: "${GITHUB_APP_ID}"
+    # private_key_path: "/etc/aof/github-app-private-key.pem"
+    # installation_id: "${GITHUB_INSTALLATION_ID}"
+
+    # Webhook verification
+    webhook_secret: "${GITHUB_WEBHOOK_SECRET}"
+
+    # Bot identity for comments
+    bot_name: "AOFBot"
+
+    # Repository filters (empty = all repos app has access to)
+    allowed_repos:
+      - "gouravshah/instavote-kustomize"
+      - "myorg/web"
+      - "myorg/infrastructure"
+
+    # Event filters
+    allowed_events:
+      - "pull_request"
+      - "push"
+      - "issues"
+      - "workflow_run"
+      - "check_run"
+      - "release"
+
+    # User filters for sensitive operations
+    allowed_users:
+      - "initcron"
+      - "gops123"
+      - "sre-team"
+
+# Event routing
+routing:
+  default_flow: "github-event-logger"
+
+  # Route by event type and action
+  events:
+    pull_request:
+      opened: "pr-review-flow"
+      synchronize: "pr-review-flow"
+      closed: "pr-cleanup-flow"
+
+    push:
+      # Route by branch
+      branches:
+        main: "production-deploy-flow"
+        develop: "staging-deploy-flow"
+        "release/*": "release-deploy-flow"
+
+    issues:
+      opened: "issue-triage-flow"
+      labeled: "issue-handler-flow"
+
+    workflow_run:
+      completed: "workflow-result-handler"
+
+    release:
+      published: "release-announce-flow"
+
+flows:
+  directory: "./flows/github"
+  watch: true

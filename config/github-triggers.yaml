@@ -1,0 +1,30 @@
+apiVersion: aof.dev/v1
+kind: Trigger
+metadata:
+  name: github-pr-automation
+  labels:
+    platform: github
+
+spec:
+  type: GitHub
+
+  config:
+    webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+    github_events:
+      - pull_request
+
+  # Map PR events to the review flow (not agent!)
+  # AgentFlows execute steps deterministically
+  # Agents just respond to messages (LLM decides what to do)
+  commands:
+    pull_request.opened:
+      flow: github-pr-review
+      description: "AI code review for new PRs"
+
+    pull_request.synchronize:
+      flow: github-pr-review
+      description: "AI code review for updated PRs"
+
+    pull_request.reopened:
+      flow: github-pr-review
+      description: "AI code review for reopened PRs"

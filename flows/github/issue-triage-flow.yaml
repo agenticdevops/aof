@@ -1,0 +1,132 @@
+apiVersion: aof.sh/v1alpha1
+kind: AgentFlow
+metadata:
+  name: issue-triage
+  description: Automatically triage new issues
+
+triggers:
+  - platform: github
+    events:
+      - issues.opened
+
+steps:
+  # Analyze issue content
+  - name: analyze-issue
+    agent: issue-analyzer
+    action: analyze
+    input:
+      title: "\{\{ event.issue.title \}\}"
+      body: "\{\{ event.issue.body \}\}"
+    rules:
+      # Bug detection
+      - patterns: ["bug", "error", "crash", "not working", "broken"]
+        label: "bug"
+        priority: "high"
+      # Feature request
+      - patterns: ["feature", "enhancement", "request", "would be nice", "suggestion"]
+        label: "enhancement"
+        priority: "medium"
+      # Question
+      - patterns: ["how to", "question", "help", "?"]
+        label: "question"
+        priority: "low"
+      # Security
+      - patterns: ["security", "vulnerability", "cve", "exploit"]
+        label: "security"
+        priority: "critical"
+        notify: "security-team"
+
+  # Determine component
+  - name: determine-component
+    agent: classifier
+    action: classify
+    input:
+      text: "\{\{ event.issue.title \}\} \{\{ event.issue.body \}\}"
+    categories:
+      - name: "api"
+        patterns: ["api", "endpoint", "rest", "graphql"]
+      - name: "frontend"
+        patterns: ["ui", "frontend", "css", "react", "button", "page"]
+      - name: "database"
+        patterns: ["database", "db", "postgres", "migration", "query"]
+      - name: "infrastructure"
+        patterns: ["kubernetes", "k8s", "docker", "deployment", "ci/cd"]
+      - name: "documentation"
+        patterns: ["docs", "readme", "documentation", "example"]
+
+  # Apply labels
+  - name: apply-labels
+    agent: github
+    action: add_labels
+    input:
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.issue.number \}\}"
+      labels:
+        - "\{\{ steps.analyze-issue.output.label \}\}"
+        - "priority/\{\{ steps.analyze-issue.output.priority \}\}"
+        - "component/\{\{ steps.determine-component.output.category \}\}"
+        - "needs-triage"
+
+  # Assign to team
+  - name: assign-team
+    agent: github
+    action: add_assignees
+    input:
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.issue.number \}\}"
+      assignees: "\{\{ team_mapping[steps.determine-component.output.category] \}\}"
+    variables:
+      team_mapping:
+        api: ["backend-team"]
+        frontend: ["frontend-team"]
+        database: ["dba-team"]
+        infrastructure: ["platform-team"]
+        documentation: ["docs-team"]
+
+  # Post welcome comment
+  - name: welcome-comment
+    agent: github
+    action: post_comment
+    input:
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.issue.number \}\}"
+      body: |
+        Thanks for opening this issue, @\{\{ event.issue.user.login \}\}! 👋
+
+        I've automatically classified this as:
+        - **Type**: \{\{ steps.analyze-issue.output.label \}\}
+        - **Priority**: \{\{ steps.analyze-issue.output.priority \}\}
+        - **Component**: \{\{ steps.determine-component.output.category \}\}
+
+        {% if steps.analyze-issue.output.label == 'bug' %}
+        To help us investigate, please ensure you've provided:
+        - [ ] Steps to reproduce
+        - [ ] Expected behavior
+        - [ ] Actual behavior
+        - [ ] Environment details (OS, version, etc.)
+        {% elif steps.analyze-issue.output.label == 'enhancement' %}
+        To help us understand your request:
+        - [ ] Use case / problem being solved
+        - [ ] Proposed solution
+        - [ ] Alternatives considered
+        {% endif %}
+
+        A team member will review this shortly.
+
+  # Notify on critical issues
+  - name: notify-critical
+    condition: "\{\{ steps.analyze-issue.output.priority == 'critical' \}\}"
+    agent: multi-channel
+    action: notify
+    input:
+      channels:
+        - "slack:#security-alerts"
+        - "pagerduty:security-team"
+      message: |
+        🚨 Critical security issue opened
+
+        Repo: \{\{ event.repository.full_name \}\}
+        Issue: #\{\{ event.issue.number \}\} - \{\{ event.issue.title \}\}
+        Author: @\{\{ event.issue.user.login \}\}
+
+        \{\{ event.issue.html_url \}\}

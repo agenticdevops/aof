@@ -1908,6 +1908,19 @@ impl TriggerHandler {
                     return (Some(cmd_name), Some(message.text.clone()));
                 }
             }
+
+            // Check GitHub/GitLab style: event_type + action = command
+            // e.g., event_type="pull_request", action="opened" -> "pull_request.opened"
+            if let Some(action) = message.metadata.get("action").and_then(|v| v.as_str()) {
+                let cmd_name = format!("{}.{}", event_type, action);
+                info!("Constructed GitHub command from event: {}", cmd_name);
+
+                // Check if we have a binding for this command
+                if self.config.command_bindings.contains_key(&cmd_name) {
+                    info!("Found command binding for GitHub event: {}", cmd_name);
+                    return (Some(cmd_name), Some(message.text.clone()));
+                }
+            }
         }
 
         // Check Telegram/WhatsApp/CLI style: message starts with /command

@@ -1,0 +1,73 @@
+apiVersion: aof.sh/v1alpha1
+kind: AgentFlow
+metadata:
+  name: pr-labeler
+  description: Auto-label PRs by size and risk
+
+triggers:
+  - platform: github
+    events:
+      - pull_request.opened
+      - pull_request.synchronize
+
+steps:
+  - name: analyze-size
+    agent: pr-analyzer
+    action: analyze_size
+    input:
+      additions: "\{\{ event.pull_request.additions \}\}"
+      deletions: "\{\{ event.pull_request.deletions \}\}"
+      files_changed: "\{\{ event.pull_request.changed_files \}\}"
+    rules:
+      - condition: "\{\{ additions + deletions < 50 \}\}"
+        label: "size/XS"
+      - condition: "\{\{ additions + deletions < 200 \}\}"
+        label: "size/S"
+      - condition: "\{\{ additions + deletions < 500 \}\}"
+        label: "size/M"
+      - condition: "\{\{ additions + deletions < 1000 \}\}"
+        label: "size/L"
+      - default:
+        label: "size/XL"
+
+  - name: analyze-risk
+    agent: pr-analyzer
+    action: analyze_risk
+    input:
+      files: "\{\{ event.pull_request.files \}\}"
+    rules:
+      # High risk areas
+      - pattern: "^.*/(auth|security|crypto)/"
+        label: "risk/high"
+        requires_review_from: ["security-team"]
+      - pattern: "^.*/migrations/"
+        label: "risk/high"
+        requires_review_from: ["dba-team"]
+      - pattern: "^Dockerfile|docker-compose|k8s/"
+        label: "infrastructure"
+        requires_review_from: ["platform-team"]
+      # Documentation
+      - pattern: "^docs/|README|CHANGELOG"
+        label: "documentation"
+      # Tests
+      - pattern: "^.*_test\\.go|^.*\\.test\\.(js|ts)|^test/"
+        label: "tests"
+
+  - name: apply-labels
+    agent: github
+    action: add_labels
+    input:
+      repo: "\{\{ event.repository.full_name \}\}"
+      issue_number: "\{\{ event.pull_request.number \}\}"
+      labels:
+        - "\{\{ steps.analyze-size.output.label \}\}"
+        - "\{\{ steps.analyze-risk.output.labels \}\}"
+
+  - name: request-reviewers
+    condition: "\{\{ steps.analyze-risk.output.required_reviewers | length > 0 \}\}"
+    agent: github
+    action: request_reviewers
+    input:
+      repo: "\{\{ event.repository.full_name \}\}"
+      pr_number: "\{\{ event.pull_request.number \}\}"
+      teams: "\{\{ steps.analyze-risk.output.required_reviewers \}\}"

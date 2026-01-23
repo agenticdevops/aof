@@ -1,0 +1,25 @@
+apiVersion: aof.dev/v1
+kind: AgentFlow
+metadata:
+  name: github-pr-review
+  labels:
+    platform: github
+    event: pull_request
+
+spec:
+  description: "Automated AI code review for GitHub PRs"
+
+  nodes:
+    - id: run-review
+      type: Script
+      config:
+        scriptConfig:
+          command: ./scripts/flow-pr-review.sh
+          timeout_seconds: 180
+          fail_on_error: true
+          env:
+            AOF_TRIGGER_DATA: "${event}"
+
+  connections:
+    - from: start
+      to: run-review
