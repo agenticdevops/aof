@@ -77,13 +77,13 @@ rand = "0.8"
 regex = "1.10"
 
 # Internal workspace dependencies (path for local dev, version for crates.io)
-aof-core = { path = "crates/aof-core", version = "0.3.2-beta" }
-aof-mcp = { path = "crates/aof-mcp", version = "0.3.2-beta" }
-aof-llm = { path = "crates/aof-llm", version = "0.3.2-beta" }
-aof-runtime = { path = "crates/aof-runtime", version = "0.3.2-beta" }
-aof-memory = { path = "crates/aof-memory", version = "0.3.2-beta" }
-aof-triggers = { path = "crates/aof-triggers", version = "0.3.2-beta" }
-aof-tools = { path = "crates/aof-tools", version = "0.3.2-beta" }
+aof-core = { path = "crates/aof-core", version = "0.4.0-beta" }
+aof-mcp = { path = "crates/aof-mcp", version = "0.4.0-beta" }
+aof-llm = { path = "crates/aof-llm", version = "0.4.0-beta" }
+aof-runtime = { path = "crates/aof-runtime", version = "0.4.0-beta" }
+aof-memory = { path = "crates/aof-memory", version = "0.4.0-beta" }
+aof-triggers = { path = "crates/aof-triggers", version = "0.4.0-beta" }
+aof-tools = { path = "crates/aof-tools", version = "0.4.0-beta" }
 
 # File utilities
 glob = "0.3"
