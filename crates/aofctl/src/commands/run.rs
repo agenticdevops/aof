@@ -530,7 +530,7 @@ async fn run_agent(
 
 /// Application state for TUI
 struct AppState {
-    chat_history: Vec<(String, String)>, // (role, message)
+    chat_history: Vec<(String, String, chrono::DateTime<chrono::Utc>)>, // (role, message, timestamp)
     current_input: String,
     logs: Vec<String>,
     activities: Vec<ActivityEvent>, // Agent activity events
@@ -553,6 +553,11 @@ struct AppState {
     session: Session, // Current session for persistence
     cancellation_token: CancellationToken, // For stopping execution
     agent_name: String, // Agent name for session
+    session_start: chrono::DateTime<chrono::Utc>, // When session started
+    current_tool: Option<String>, // Currently executing tool
+    tool_count: usize, // Total tools executed this session
+    llm_calls: usize, // Total LLM calls this session
+    activity_scroll: usize, // Scroll offset for activity panel
 }
 
 impl AppState {
@@ -589,8 +594,9 @@ aof.sh
 
 Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
 
+        let now = chrono::Utc::now();
         let mut chat_history = Vec::new();
-        chat_history.push(("system".to_string(), greeting.to_string()));
+        chat_history.push(("system".to_string(), greeting.to_string(), now));
 
         // Create a new session
         let session = Session::new(&agent_name, &model_name);
@@ -619,6 +625,11 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
             session,
             cancellation_token: CancellationToken::new(),
             agent_name,
+            session_start: now,
+            current_tool: None,
+            tool_count: 0,
+            llm_calls: 0,
+            activity_scroll: 0,
         }
     }
 
@@ -641,11 +652,16 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
             _ => 128000,
         };
 
-        // Convert session messages to chat history
-        let mut chat_history: Vec<(String, String)> = session.to_chat_history();
+        // Convert session messages to chat history with timestamps
+        let now = chrono::Utc::now();
+        let mut chat_history: Vec<(String, String, chrono::DateTime<chrono::Utc>)> = session
+            .to_chat_history()
+            .into_iter()
+            .map(|(role, msg)| (role, msg, now))
+            .collect();
 
         // Add resume indicator
-        chat_history.push(("system".to_string(), "── Session Resumed ──".to_string()));
+        chat_history.push(("system".to_string(), "── Session Resumed ──".to_string(), now));
 
         Self {
             chat_history,
@@ -671,6 +687,11 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
             session,
             cancellation_token: CancellationToken::new(),
             agent_name,
+            session_start: now,
+            current_tool: None,
+            tool_count: 0,
+            llm_calls: 0,
+            activity_scroll: 0,
         }
     }
 
@@ -688,6 +709,29 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
     fn consume_activities(&mut self) {
         // Drain all available activities from the receiver (non-blocking)
         while let Ok(activity) = self.activity_receiver.try_recv() {
+            // Track tool and LLM statistics
+            match &activity.activity_type {
+                ActivityType::ToolExecuting => {
+                    // Extract tool name from activity details or message
+                    if let Some(ref details) = activity.details {
+                        self.current_tool = details.tool_name.clone();
+                    } else {
+                        // Try to extract from message "Executing tool: X"
+                        if let Some(name) = activity.message.strip_prefix("Executing tool: ") {
+                            self.current_tool = Some(name.to_string());
+                        }
+                    }
+                }
+                ActivityType::ToolComplete | ActivityType::ToolFailed => {
+                    self.tool_count += 1;
+                    self.current_tool = None;
+                }
+                ActivityType::LlmCall => {
+                    self.llm_calls += 1;
+                }
+                _ => {}
+            }
+
             // Add to session activity log
             self.session.add_activity(
                 activity.activity_type.label(),
@@ -906,7 +950,7 @@ async fn run_agent_interactive_with_resume(
                                 app_state.activities.clear();
                                 app_state.input_tokens = 0;
                                 app_state.output_tokens = 0;
-                                app_state.chat_history.push(("system".to_string(), "── New Session ──".to_string()));
+                                app_state.chat_history.push(("system".to_string(), "── New Session ──".to_string(), chrono::Utc::now()));
                             }
                         }
                         KeyCode::PageUp => {
@@ -935,10 +979,10 @@ async fn run_agent_interactive_with_resume(
                             break;
                         } else if input_str.to_lowercase() == "help" {
                             app_state.chat_history.push(("system".to_string(),
-                                "Available: help, exit, quit. Type normally to chat with agent.".to_string()));
+                                "Available: help, exit, quit. Type normally to chat with agent.".to_string(), chrono::Utc::now()));
                         } else {
                             // Execute agent with timer updates during execution
-                            app_state.chat_history.push(("user".to_string(), input_str.clone()));
+                            app_state.chat_history.push(("user".to_string(), input_str.clone(), chrono::Utc::now()));
 
                             // Add to session
                             let input_tokens_estimate = (input_str.len() / 4) as u32;
@@ -978,7 +1022,7 @@ async fn run_agent_interactive_with_resume(
                                     // Check for cancellation
                                     _ = cancel_token.cancelled() => {
                                         cancelled = true;
-                                        app_state.chat_history.push(("system".to_string(), "⏹ Execution cancelled by user".to_string()));
+                                        app_state.chat_history.push(("system".to_string(), "⏹ Execution cancelled by user".to_string(), chrono::Utc::now()));
                                         app_state.session.add_message("system", "Execution cancelled by user", None);
                                         app_state.agent_busy = false;
                                         app_state.update_execution_time();
@@ -991,7 +1035,7 @@ async fn run_agent_interactive_with_resume(
                                             Ok(response) => {
                                                 if response.is_empty() {
                                                     let error_msg = "Error: Empty response from agent".to_string();
-                                                    app_state.chat_history.push(("error".to_string(), error_msg.clone()));
+                                                    app_state.chat_history.push(("error".to_string(), error_msg.clone(), chrono::Utc::now()));
                                                     app_state.session.add_message("error", &error_msg, None);
                                                     app_state.last_error = Some(error_msg);
                                                     app_state.add_activity(ActivityEvent::error("Empty response received"));
@@ -999,7 +1043,7 @@ async fn run_agent_interactive_with_resume(
                                                     // Update output tokens based on response length
                                                     let output_tokens = (response.len() / 4) as u32;
                                                     app_state.update_token_count(&response);
-                                                    app_state.chat_history.push(("assistant".to_string(), response.clone()));
+                                                    app_state.chat_history.push(("assistant".to_string(), response.clone(), chrono::Utc::now()));
 
                                                     // Add to session
                                                     app_state.session.add_message(
@@ -1018,7 +1062,7 @@ async fn run_agent_interactive_with_resume(
                                             }
                                             Err(e) => {
                                                 let error_msg = format!("Error: {}", e);
-                                                app_state.chat_history.push(("error".to_string(), error_msg.clone()));
+                                                app_state.chat_history.push(("error".to_string(), error_msg.clone(), chrono::Utc::now()));
                                                 app_state.session.add_message("error", &error_msg, None);
                                                 app_state.last_error = Some(error_msg.clone());
                                                 app_state.add_activity(ActivityEvent::error(error_msg));
@@ -1121,84 +1165,182 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         app.tools.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
     };
 
-    // Minimalist black and white color scheme
+    // Professional color scheme
     let primary_white = Color::White;
+    let accent_cyan = Color::Cyan;
+    let accent_green = Color::Green;
 
-    // Main layout with footer for metrics
+    // Main layout: Header (3) | Content (flex) | Footer (3)
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([Constraint::Min(10), Constraint::Length(3)])
+        .margin(0)
+        .constraints([
+            Constraint::Length(3),  // Header bar
+            Constraint::Min(10),    // Content area
+            Constraint::Length(3),  // Footer bar
+        ])
         .split(f.size());
 
-    // Content area
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(main_layout[0]);
+    // ═══════════════════════════════════════════════════════════════════════
+    // HEADER BAR - Agent status and session info
+    // ═══════════════════════════════════════════════════════════════════════
+    let status_icon = if app.agent_busy { "●" } else { "○" };
+    let status_color = if app.agent_busy { Color::Yellow } else { accent_green };
 
-    // Left panel - Chat Interface
+    let elapsed = chrono::Utc::now().signed_duration_since(app.session_start);
+    let session_duration = format!("{}:{:02}:{:02}",
+        elapsed.num_hours(),
+        elapsed.num_minutes() % 60,
+        elapsed.num_seconds() % 60
+    );
+
+    let current_tool_str = app.current_tool.as_ref()
+        .map(|t| format!(" │ ⚙ {}", t))
+        .unwrap_or_default();
+
+    let header_left = format!(
+        " {} {} │ {} │ Tools: {} │ LLM Calls: {}{}",
+        status_icon,
+        agent_name.to_uppercase(),
+        app.model_name,
+        app.tool_count,
+        app.llm_calls,
+        current_tool_str
+    );
+
+    let header_right = format!("Session: {} ", session_duration);
+
+    let header_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Double)
+        .border_style(Style::default().fg(accent_cyan))
+        .style(Style::default().bg(Color::Black));
+
+    let header_inner = header_block.inner(main_layout[0]);
+    f.render_widget(header_block, main_layout[0]);
+
+    // Render header text with left and right sections
+    let header_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(20), Constraint::Length(header_right.len() as u16 + 2)])
+        .split(header_inner);
+
+    let header_left_para = Paragraph::new(header_left)
+        .style(Style::default().fg(status_color).add_modifier(Modifier::BOLD));
+    f.render_widget(header_left_para, header_layout[0]);
+
+    let header_right_para = Paragraph::new(header_right)
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Right);
+    f.render_widget(header_right_para, header_layout[1]);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // CONTENT AREA - Split horizontally
+    // ═══════════════════════════════════════════════════════════════════════
+    let content_with_padding = Layout::default()
+        .direction(Direction::Horizontal)
+        .margin(1)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(main_layout[1]);
+
+    let chunks = content_with_padding;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // LEFT PANEL - Chat Interface
+    // ═══════════════════════════════════════════════════════════════════════
+    let chat_title = format!(" CONVERSATION ({} messages) ", app.message_count / 2);
     let chat_block = Block::default()
         .title(Span::styled(
-            format!(" {} ", agent_name.to_uppercase()),
-            Style::default().fg(primary_white).add_modifier(Modifier::BOLD),
+            chat_title,
+            Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Thick)
-        .border_style(Style::default().fg(primary_white))
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(Color::DarkGray))
         .padding(ratatui::widgets::Padding::symmetric(1, 0));
 
     let mut chat_lines = Vec::new();
 
-    // Add conversation history
-    for (role, msg) in &app.chat_history {
-        let (style, prefix) = match role.as_str() {
+    // Add conversation history with timestamps
+    for (role, msg, timestamp) in &app.chat_history {
+        let time_str = timestamp.format("%H:%M").to_string();
+        let (style, prefix, role_color) = match role.as_str() {
             "user" => (
                 Style::default().fg(Color::White),
-                " ❯ ",
+                "YOU",
+                Color::Cyan,
             ),
             "assistant" => (
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-                " ◈ ",
+                Style::default().fg(Color::White),
+                "AI",
+                Color::Green,
             ),
             "error" => (
-                Style::default().fg(Color::White),
-                " ✗ ",
+                Style::default().fg(Color::Red),
+                "ERR",
+                Color::Red,
             ),
             _ => (
                 Style::default().fg(Color::Gray),
-                " ► ",
+                "SYS",
+                Color::Gray,
             ),
         };
 
+        // Message header with timestamp and role
+        chat_lines.push(Line::from(vec![
+            Span::styled(format!("{} ", time_str), Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("[{}]", prefix), Style::default().fg(role_color).add_modifier(Modifier::BOLD)),
+        ]));
+
+        // Message content (indented)
         for line in msg.lines() {
             chat_lines.push(Line::from(vec![
-                Span::styled(prefix, style),
+                Span::raw("  "),
                 Span::styled(line, style),
             ]));
         }
-        chat_lines.push(Line::from("")); // Spacing
+        chat_lines.push(Line::from("")); // Spacing between messages
     }
 
     // Input line with active indicator
+    chat_lines.push(Line::from(Span::styled(
+        "─".repeat(40),
+        Style::default().fg(Color::DarkGray),
+    )));
+
     if app.agent_busy {
         let time_str = format!("{}ms", app.execution_time_ms);
-        let busy_indicator = format!("{} Processing... {}", app.get_spinner(), time_str);
+        let tool_hint = app.current_tool.as_ref()
+            .map(|t| format!(" [{}]", t))
+            .unwrap_or_default();
+        let busy_indicator = format!(" {} Processing...{} {}", app.get_spinner(), tool_hint, time_str);
         chat_lines.push(Line::from(Span::styled(
             busy_indicator,
-            Style::default().fg(Color::White).add_modifier(Modifier::DIM),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
         )));
     } else {
-        let mut input_spans = vec![Span::raw(" ❯ ")];
+        // Character count indicator
+        let char_count = app.current_input.len();
+        let char_hint = if char_count > 0 {
+            format!(" ({} chars)", char_count)
+        } else {
+            String::new()
+        };
+
+        let mut input_spans = vec![
+            Span::styled(" ❯ ", Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
+        ];
 
         // Show input with cursor
         if app.current_input.is_empty() {
-            input_spans.push(Span::styled("_", Style::default().fg(Color::Gray).add_modifier(Modifier::DIM)));
+            input_spans.push(Span::styled("Type your message...", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)));
         } else {
             input_spans.push(Span::raw(&app.current_input));
-            input_spans.push(Span::styled("_", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)));
         }
+        input_spans.push(Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)));
+        input_spans.push(Span::styled(char_hint, Style::default().fg(Color::DarkGray)));
         chat_lines.push(Line::from(input_spans));
     }
 
@@ -1248,25 +1390,24 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
         .split(chunks[1]);
 
-    // Top row - Agent Activity Log (replaced System Logs)
-    let activity_title = if app.activities.is_empty() {
-        " AGENT ACTIVITY "
-    } else {
-        " AGENT ACTIVITY "
-    };
+    // ═══════════════════════════════════════════════════════════════════════
+    // RIGHT TOP - Agent Activity Log with tool details
+    // ═══════════════════════════════════════════════════════════════════════
+    let activity_count = app.activities.len();
+    let activity_title = format!(" AGENT ACTIVITY ({}) ", activity_count);
 
     let logs_block = Block::default()
         .title(Span::styled(
             activity_title,
-            Style::default().fg(primary_white).add_modifier(Modifier::BOLD),
+            Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Thick)
-        .border_style(Style::default().fg(primary_white))
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(Color::DarkGray))
         .padding(ratatui::widgets::Padding::symmetric(1, 0));
 
-    // Render activities with color coding
+    // Render activities with color coding and detailed tool information
     let activity_lines: Vec<Line> = if app.activities.is_empty() {
         // Show placeholder when no activities
         vec![
@@ -1281,65 +1422,113 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
             )),
             Line::from(vec![
                 Span::styled("  🧠 ", Style::default()),
-                Span::styled("Thinking", Style::default().fg(Color::Cyan)),
+                Span::styled("Thinking/Analyzing", Style::default().fg(Color::Cyan)),
             ]),
             Line::from(vec![
-                Span::styled("  ⚙️ ", Style::default()),
+                Span::styled("  ⚙ ", Style::default()),
                 Span::styled("Tool execution", Style::default().fg(Color::Yellow)),
             ]),
             Line::from(vec![
                 Span::styled("  📤 ", Style::default()),
-                Span::styled("LLM calls", Style::default().fg(Color::Blue)),
+                Span::styled("LLM request/response", Style::default().fg(Color::Blue)),
             ]),
             Line::from(vec![
                 Span::styled("  ✓ ", Style::default()),
                 Span::styled("Completed", Style::default().fg(Color::Green)),
             ]),
+            Line::from(vec![
+                Span::styled("  ✗ ", Style::default()),
+                Span::styled("Failed/Error", Style::default().fg(Color::Red)),
+            ]),
         ]
     } else {
-        app.activities.iter()
-            .map(|activity| {
-                let (icon, color) = match &activity.activity_type {
-                    ActivityType::Thinking | ActivityType::Analyzing => ("🧠", Color::Cyan),
-                    ActivityType::LlmCall | ActivityType::LlmWaiting => ("📤", Color::Blue),
-                    ActivityType::LlmResponse => ("📥", Color::Blue),
-                    ActivityType::ToolDiscovery => ("🔧", Color::Magenta),
-                    ActivityType::ToolExecuting => ("⚙️", Color::Yellow),
-                    ActivityType::ToolComplete => ("✓", Color::Green),
-                    ActivityType::ToolFailed => ("✗", Color::Red),
-                    ActivityType::Memory => ("💾", Color::Cyan),
-                    ActivityType::McpCall => ("🔌", Color::Magenta),
-                    ActivityType::Validation => ("📋", Color::Blue),
-                    ActivityType::Warning => ("⚠", Color::Yellow),
-                    ActivityType::Error => ("❌", Color::Red),
-                    ActivityType::Info | ActivityType::Debug => ("ℹ", Color::Gray),
-                    ActivityType::Started => ("▶", Color::Green),
-                    ActivityType::Completed => ("●", Color::Green),
-                    ActivityType::Cancelled => ("⏹", Color::Yellow),
-                };
+        let mut lines = Vec::new();
+        for activity in app.activities.iter() {
+            let (icon, color) = match &activity.activity_type {
+                ActivityType::Thinking | ActivityType::Analyzing => ("🧠", Color::Cyan),
+                ActivityType::LlmCall | ActivityType::LlmWaiting => ("📤", Color::Blue),
+                ActivityType::LlmResponse => ("📥", Color::LightBlue),
+                ActivityType::ToolDiscovery => ("🔧", Color::Magenta),
+                ActivityType::ToolExecuting => ("⚙", Color::Yellow),
+                ActivityType::ToolComplete => ("✓", Color::Green),
+                ActivityType::ToolFailed => ("✗", Color::Red),
+                ActivityType::Memory => ("💾", Color::Cyan),
+                ActivityType::McpCall => ("🔌", Color::Magenta),
+                ActivityType::Validation => ("📋", Color::Blue),
+                ActivityType::Warning => ("⚠", Color::Yellow),
+                ActivityType::Error => ("❌", Color::Red),
+                ActivityType::Info | ActivityType::Debug => ("ℹ", Color::Gray),
+                ActivityType::Started => ("▶", Color::Green),
+                ActivityType::Completed => ("●", Color::Green),
+                ActivityType::Cancelled => ("⏹", Color::Yellow),
+            };
 
-                let time_str = activity.timestamp.format("%H:%M:%S").to_string();
-                let max_width = right_panel[0].width.saturating_sub(14) as usize;
-                let msg = if activity.message.len() > max_width {
-                    format!("{}...", &activity.message[..max_width.saturating_sub(3)])
-                } else {
-                    activity.message.clone()
-                };
+            let time_str = activity.timestamp.format("%H:%M:%S").to_string();
+            let max_width = right_panel[0].width.saturating_sub(16) as usize;
 
-                // Add duration if available
-                let duration_str = activity.details.as_ref()
-                    .and_then(|d| d.duration_ms)
-                    .map(|ms| format!(" ({}ms)", ms))
-                    .unwrap_or_default();
+            // Extract tool name and details if available
+            let (tool_name, tool_args, duration_ms, tokens) = activity.details.as_ref()
+                .map(|d| (
+                    d.tool_name.clone(),
+                    d.tool_args.clone(),
+                    d.duration_ms,
+                    d.tokens.as_ref().map(|t| (t.input, t.output)),
+                ))
+                .unwrap_or((None, None, None, None));
 
-                Line::from(vec![
-                    Span::styled(format!("{} ", time_str), Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("{} ", icon), Style::default()),
-                    Span::styled(msg, Style::default().fg(color)),
-                    Span::styled(duration_str, Style::default().fg(Color::DarkGray)),
-                ])
-            })
-            .collect()
+            // Format the main message line
+            let msg = if activity.message.len() > max_width {
+                format!("{}...", &activity.message[..max_width.saturating_sub(3)])
+            } else {
+                activity.message.clone()
+            };
+
+            // Build duration/tokens suffix
+            let mut suffix_parts = Vec::new();
+            if let Some(ms) = duration_ms {
+                suffix_parts.push(format!("{}ms", ms));
+            }
+            if let Some((inp, out)) = tokens {
+                suffix_parts.push(format!("{}→{}", inp, out));
+            }
+            let suffix = if suffix_parts.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", suffix_parts.join(" "))
+            };
+
+            // Main activity line
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", time_str), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{} ", icon), Style::default()),
+                Span::styled(msg, Style::default().fg(color)),
+                Span::styled(suffix, Style::default().fg(Color::DarkGray)),
+            ]));
+
+            // Show tool details for tool-related activities
+            if matches!(activity.activity_type, ActivityType::ToolExecuting | ActivityType::ToolComplete | ActivityType::ToolFailed) {
+                if let Some(ref name) = tool_name {
+                    let detail_line = format!("         └─ {}", name);
+                    lines.push(Line::from(Span::styled(
+                        detail_line,
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
+                if let Some(ref args) = tool_args {
+                    let truncated_args = if args.len() > 50 {
+                        format!("{}...", &args[..47])
+                    } else {
+                        args.clone()
+                    };
+                    let args_line = format!("            args: {}", truncated_args);
+                    lines.push(Line::from(Span::styled(
+                        args_line,
+                        Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                    )));
+                }
+            }
+        }
+        lines
     };
 
     let logs_para = Paragraph::new(activity_lines)
@@ -1352,7 +1541,9 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
 
     f.render_widget(logs_para, right_panel[0]);
 
-    // Bottom row - Context Stats
+    // ═══════════════════════════════════════════════════════════════════════
+    // RIGHT BOTTOM - Context Stats Gauge
+    // ═══════════════════════════════════════════════════════════════════════
     let context_used = app.input_tokens + app.output_tokens;
     let context_percentage = if app.context_window > 0 {
         (context_used as f64 / app.context_window as f64) * 100.0
@@ -1360,56 +1551,81 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         0.0
     };
 
+    // Color based on usage level
+    let gauge_color = if context_percentage > 80.0 {
+        Color::Red
+    } else if context_percentage > 60.0 {
+        Color::Yellow
+    } else {
+        accent_green
+    };
+
     // Create gauge for visual representation
     let gauge = Gauge::default()
         .block(
             Block::default()
                 .title(Span::styled(
-                    " CONTEXT USAGE ",
-                    Style::default().fg(primary_white).add_modifier(Modifier::BOLD),
+                    " TOKEN USAGE ",
+                    Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD),
                 ))
                 .title_alignment(Alignment::Left)
                 .borders(Borders::ALL)
-                .border_type(ratatui::widgets::BorderType::Thick)
-                .border_style(Style::default().fg(primary_white))
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(Color::DarkGray))
         )
-        .gauge_style(Style::default().fg(Color::Green))
-        .ratio(context_percentage / 100.0)
+        .gauge_style(Style::default().fg(gauge_color))
+        .ratio((context_percentage / 100.0).min(1.0))
         .label(Span::raw(format!(
-            "  IN: {} │ OUT: {} │ TOTAL: {} / {} ({:.1}%)",
+            " IN:{} OUT:{} │ {}/{} ({:.0}%)",
             app.input_tokens, app.output_tokens, context_used, app.context_window, context_percentage
         )));
 
     f.render_widget(gauge, right_panel[1]);
 
-    // Footer metrics bar with keybinding hints
-    let metrics_text = if app.agent_busy {
-        format!(
-            "  {} {:>5}ms │ {} msgs │ {} │ {} │ ESC:cancel  Ctrl+C:quit",
-            app.get_spinner(),
-            app.execution_time_ms,
-            app.message_count / 2,
-            app.model_name,
-            tools_str
-        )
+    // ═══════════════════════════════════════════════════════════════════════
+    // FOOTER BAR - Keyboard shortcuts and status
+    // ═══════════════════════════════════════════════════════════════════════
+    let footer_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Double)
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    let footer_inner = footer_block.inner(main_layout[2]);
+    f.render_widget(footer_block, main_layout[2]);
+
+    let shortcuts = if app.agent_busy {
+        vec![
+            ("ESC", "Cancel"),
+            ("Ctrl+C", "Quit"),
+        ]
     } else {
-        format!(
-            "  ✓ {} msgs │ {} │ {} │ ?:help  Ctrl+S:save  Ctrl+L:new  Ctrl+C:quit",
-            app.message_count / 2,
-            app.model_name,
-            tools_str
-        )
+        vec![
+            ("Enter", "Send"),
+            ("?", "Help"),
+            ("Ctrl+S", "Save"),
+            ("Ctrl+L", "New"),
+            ("↑/↓", "Scroll"),
+            ("Ctrl+C", "Quit"),
+        ]
     };
 
-    let metrics_block = Block::default()
-        .style(Style::default().fg(Color::White).bg(Color::Black))
-        .padding(ratatui::widgets::Padding::symmetric(1, 0));
+    let footer_spans: Vec<Span> = shortcuts.iter().enumerate()
+        .flat_map(|(i, (key, action))| {
+            let mut spans = vec![
+                Span::styled(format!(" {} ", key), Style::default().fg(Color::Black).bg(Color::DarkGray)),
+                Span::styled(format!(" {} ", action), Style::default().fg(Color::Gray)),
+            ];
+            if i < shortcuts.len() - 1 {
+                spans.push(Span::raw(" │"));
+            }
+            spans
+        })
+        .collect();
 
-    let metrics_para = Paragraph::new(metrics_text)
-        .block(metrics_block)
-        .style(Style::default().fg(Color::Green));
+    let footer_para = Paragraph::new(Line::from(footer_spans))
+        .alignment(Alignment::Center);
 
-    f.render_widget(metrics_para, main_layout[1]);
+    f.render_widget(footer_para, footer_inner);
 
     // Render help overlay if enabled
     if app.show_help {

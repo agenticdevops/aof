@@ -81,11 +81,29 @@ spec:
 aofctl run agent docker-health.yaml
 ```
 
-This opens a full-featured terminal UI with:
-- **Chat Panel** - Conversation history with syntax highlighting
-- **Activity Log** - Real-time agent activity (thinking, tool calls, LLM calls)
-- **Context Gauge** - Token usage and execution time
-- **Keyboard Shortcuts** - Press `?` for help
+This opens a professional terminal UI with:
+
+**Header Bar** - Shows agent status, model, statistics:
+- Agent name and status indicator (● running, ○ idle)
+- Current tool being executed
+- Tool count and LLM call statistics
+- Session duration timer
+
+**Chat Panel** (left) - Conversation with timestamps:
+- Timestamped messages with role indicators (YOU/AI)
+- Character count while typing
+- Animated cursor
+- Scroll support for long conversations
+
+**Activity Log** (right) - Real-time agent activity:
+- 🧠 Thinking/Analyzing
+- ⚙ Tool execution with name, arguments, and duration
+- 📤 LLM calls with token counts
+- ✓ Completion status
+
+**Token Usage Gauge** - Color-coded usage (green/yellow/red)
+
+**Footer Bar** - Context-aware keyboard shortcuts
 
 **Keyboard Shortcuts:**
 | Key | Action |
@@ -95,6 +113,8 @@ This opens a full-featured terminal UI with:
 | `?` | Toggle help panel |
 | `Ctrl+S` | Save session |
 | `Ctrl+L` | Clear / New session |
+| `Shift+↑/↓` | Scroll chat |
+| `PageUp/Down` | Scroll 5 lines |
 | `Ctrl+C` | Quit |
 
 **Non-Interactive Mode** - For scripts and automation:

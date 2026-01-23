@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Enhanced
+- **TUI Professional Layout** - Complete redesign of interactive mode
+  - Header bar with agent status, model, tool count, LLM calls, session timer
+  - Current tool indicator shows which tool is being executed
+  - Activity panel shows detailed tool information (name, arguments, duration)
+  - Token counts displayed in activity log for LLM responses
+  - Timestamped chat messages with role indicators (YOU/AI/SYS/ERR)
+  - Character count while typing
+  - Animated cursor with placeholder text
+  - Color-coded token gauge (green/yellow/red based on usage)
+  - Professional footer with context-aware keyboard shortcuts
+
 ## [0.4.0-beta] - 2026-01-23
 
 ### Added
