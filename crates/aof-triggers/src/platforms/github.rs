@@ -1401,7 +1401,7 @@ mod tests {
 
         let message = result.unwrap();
         assert_eq!(message.platform, "github");
-        assert_eq!(message.channel_id, "owner/repo");
+        assert_eq!(message.channel_id, "owner/repo#42"); // Includes PR number for comment posting
         assert!(message.text.contains("pr:opened"));
         assert_eq!(message.user.id, "456");
         assert_eq!(message.user.username, Some("testuser".to_string()));
