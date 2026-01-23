@@ -404,38 +404,52 @@ spec:
 
 ```yaml
 # daemon.yaml
-apiVersion: aof.dev/v1alpha1
+apiVersion: aof.dev/v1
 kind: DaemonConfig
 metadata:
   name: aof-daemon
 
 spec:
   server:
-    host: 0.0.0.0
+    host: "0.0.0.0"
     port: 3000
+    cors: true
+    timeout_secs: 60
 
   platforms:
-    - type: Jira
-      config:
-        webhook_secret: ${JIRA_WEBHOOK_SECRET}
-        webhook_path: /webhook/jira  # Default path
+    jira:
+      enabled: true
+      # Use base_url for direct Atlassian URL (recommended)
+      base_url: https://your-domain.atlassian.net
+      # Authentication credentials via environment variables
+      user_email_env: JIRA_USER_EMAIL
+      api_token_env: JIRA_API_TOKEN
+      webhook_secret_env: JIRA_WEBHOOK_SECRET
+      bot_name: aofbot  # Optional: name displayed in comments
 
-        # Optional: Filter at platform level
-        allowed_projects:
-          - PROJ
-          - DEV
+      # Optional: Restrict to specific projects
+      allowed_projects:
+        - PROJ
+        - DEV
 
-        # Jira API credentials for agent actions
-        api_config:
-          instance_url: ${JIRA_CLOUD_INSTANCE_URL}
-          user_email: ${JIRA_USER_EMAIL}
-          api_token: ${JIRA_API_TOKEN}
+  # Resource directories
+  triggers:
+    directory: "./triggers"
+    watch: true
+
+  agents:
+    directory: "./agents"
 
   flows:
-    - path: flows/bug-triage.yaml
-    - path: flows/sprint-planning.yaml
-    - path: flows/standup-summary.yaml
+    directory: "./flows"
+    enabled: true
+
+  runtime:
+    max_concurrent_tasks: 10
+    task_timeout_secs: 300
 ```
+
+**Webhook endpoint**: `https://your-domain.com/webhook/jira`
 
 ### Trigger with Interactive Commands
 

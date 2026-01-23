@@ -18,6 +18,7 @@ use aof_triggers::{
     TelegramPlatform, TelegramConfig,
     WhatsAppPlatform, WhatsAppConfig,
     GitHubPlatform, GitHubConfig,
+    JiraPlatform, JiraConfig,
     CommandBinding as HandlerCommandBinding,
     flow::{FlowRegistry, FlowRouter},
 };
@@ -138,6 +139,9 @@ pub struct PlatformConfigs {
 
     /// GitHub configuration
     pub github: Option<GitHubPlatformConfig>,
+
+    /// Jira configuration
+    pub jira: Option<JiraPlatformConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,6 +235,43 @@ pub struct GitHubPlatformConfig {
     /// Allowed GitHub organizations (optional whitelist)
     #[serde(default)]
     pub allowed_orgs: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JiraPlatformConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Jira Cloud ID (for cloud instances)
+    pub cloud_id: Option<String>,
+    pub cloud_id_env: Option<String>,
+
+    /// Base URL (e.g., https://your-domain.atlassian.net)
+    pub base_url: Option<String>,
+
+    /// User email for API authentication
+    pub user_email: Option<String>,
+    pub user_email_env: Option<String>,
+
+    /// API token for authentication
+    pub api_token: Option<String>,
+    pub api_token_env: Option<String>,
+
+    /// Webhook secret for signature verification
+    pub webhook_secret: Option<String>,
+    pub webhook_secret_env: Option<String>,
+
+    /// Bot name for identification in comments
+    #[serde(default)]
+    pub bot_name: Option<String>,
+
+    /// Allowed project keys (whitelist)
+    #[serde(default)]
+    pub allowed_projects: Option<Vec<String>>,
+
+    /// Allowed event types (whitelist)
+    #[serde(default)]
+    pub allowed_events: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -586,6 +627,65 @@ pub async fn execute(
                 }
             } else {
                 eprintln!("  GitHub enabled but missing webhook_secret");
+            }
+        }
+    }
+
+    // Jira
+    if let Some(jira_config) = &config.spec.platforms.jira {
+        if jira_config.enabled {
+            let api_token = resolve_env_value(
+                jira_config.api_token.as_deref(),
+                jira_config.api_token_env.as_deref(),
+            );
+            let user_email = resolve_env_value(
+                jira_config.user_email.as_deref(),
+                jira_config.user_email_env.as_deref(),
+            );
+            let webhook_secret = resolve_env_value(
+                jira_config.webhook_secret.as_deref(),
+                jira_config.webhook_secret_env.as_deref(),
+            );
+
+            // Build base URL from cloud_id or use provided base_url
+            let base_url = if let Some(ref url) = jira_config.base_url {
+                Some(url.clone())
+            } else {
+                let cloud_id = resolve_env_value(
+                    jira_config.cloud_id.as_deref(),
+                    jira_config.cloud_id_env.as_deref(),
+                );
+                cloud_id.map(|id| format!("https://api.atlassian.com/ex/jira/{}", id))
+            };
+
+            if let (Some(token), Some(email), Some(secret), Some(url)) =
+                (api_token, user_email, webhook_secret, base_url)
+            {
+                let platform_config = JiraConfig {
+                    base_url: url,
+                    email,
+                    api_token: token,
+                    webhook_secret: secret,
+                    bot_name: jira_config.bot_name.clone().unwrap_or_else(|| "aofbot".to_string()),
+                    allowed_projects: jira_config.allowed_projects.clone(),
+                    allowed_events: jira_config.allowed_events.clone(),
+                    allowed_users: None,
+                    enable_comments: true,
+                    enable_updates: true,
+                    enable_transitions: true,
+                };
+                match JiraPlatform::new(platform_config) {
+                    Ok(platform) => {
+                        handler.register_platform(Arc::new(platform));
+                        println!("  Registered platform: jira");
+                        platforms_registered += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("  Failed to create Jira platform: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("  Jira enabled but missing required config (api_token, user_email, webhook_secret, and base_url or cloud_id)");
             }
         }
     }
