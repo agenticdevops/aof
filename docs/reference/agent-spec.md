@@ -38,6 +38,10 @@ spec:
       args: []
       env: {}
   memory: string|object     # Optional: "InMemory", "File:./path", or structured config
+  output_schema:            # Optional: JSON Schema for structured responses
+    type: string            # object, array, string, number, boolean
+    properties: {}          # Property definitions (for object type)
+    required: []            # Required fields
 ```
 
 ## Metadata Fields
@@ -481,6 +485,108 @@ spec:
 
 ---
 
+## Output Schema (Structured I/O)
+
+### `spec.output_schema`
+**Type:** `object`
+**Required:** No
+**Description:** JSON Schema definition for structured agent responses. When specified, the agent will return validated JSON instead of free-form text.
+
+Structured I/O enables:
+- Type-safe agent responses
+- Validated, parseable output
+- Better composability in flows
+- Auto-generated documentation
+
+**Basic Example:**
+```yaml
+spec:
+  output_schema:
+    type: object
+    properties:
+      status:
+        type: string
+        enum: [healthy, degraded, critical]
+      message:
+        type: string
+      count:
+        type: integer
+    required: [status, message]
+```
+
+**Schema Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Schema type: `object`, `array`, `string`, `number`, `boolean`, `integer` |
+| `properties` | object | Property definitions (for object types) |
+| `required` | array | Required property names |
+| `items` | object | Item schema (for array types) |
+| `enum` | array | Allowed values |
+| `description` | string | Field description |
+| `additionalProperties` | boolean | Allow extra properties (default: false) |
+| `validation_mode` | string | `strict` (default), `lenient`, or `coerce` |
+| `on_validation_error` | string | `fail` (default), `retry`, or `passthrough` |
+| `max_retries` | integer | Retry attempts on validation failure (default: 2) |
+
+**Advanced Example with Validation:**
+```yaml
+spec:
+  model: google:gemini-2.5-flash
+  instructions: |
+    Analyze infrastructure and report findings.
+    Always respond in the JSON format matching the schema.
+
+  output_schema:
+    type: object
+    properties:
+      status:
+        type: string
+        enum: [healthy, degraded, critical, unknown]
+        description: Overall health status
+      issues:
+        type: array
+        items:
+          type: object
+          properties:
+            resource:
+              type: string
+            severity:
+              type: string
+              enum: [low, medium, high, critical]
+            message:
+              type: string
+          required: [resource, severity, message]
+      summary:
+        type: string
+    required: [status, issues, summary]
+    validation_mode: strict
+    on_validation_error: retry
+    max_retries: 2
+```
+
+**Using Output in Flows:**
+```yaml
+# AgentFlow using structured output
+spec:
+  nodes:
+    - id: analyze
+      type: Agent
+      config:
+        agent: my-analyzer
+        prompt: "Check status"
+    - id: route
+      type: Conditional
+      config:
+        conditions:
+          - condition: "{{analyze.output.status}} == 'critical'"
+            target: alert
+```
+
+For comprehensive documentation on Structured I/O including all schema types, use cases, and best practices, see the [Structured I/O Reference](structured-io.md).
+
+---
+
 ## Complete Examples
 
 ### Minimal Agent
@@ -570,6 +676,55 @@ spec:
   max_context_messages: 30  # More context for complex DevOps tasks
 ```
 
+### Agent with Structured Output
+
+```yaml
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: incident-classifier
+
+spec:
+  model: google:gemini-2.5-flash
+
+  model_config:
+    temperature: 0.2  # Lower for consistent structured output
+
+  instructions: |
+    You are an incident classification system.
+    Analyze incident descriptions and classify them.
+    Always respond with valid JSON matching the schema.
+
+  output_schema:
+    type: object
+    properties:
+      severity:
+        type: string
+        enum: [P1, P2, P3, P4]
+        description: Priority level (P1=critical, P4=low)
+      category:
+        type: string
+        enum: [infrastructure, application, security, network, database]
+      affected_services:
+        type: array
+        items:
+          type: string
+      estimated_impact:
+        type: string
+      recommended_runbook:
+        type: string
+    required: [severity, category, affected_services]
+    validation_mode: strict
+    on_validation_error: retry
+    max_retries: 2
+
+  tools:
+    - shell
+    - kubectl
+
+  memory: "File:./incident-memory.json"
+```
+
 ---
 
 ## Best Practices
@@ -603,6 +758,15 @@ spec:
 - **Production**: `"File:./memory.json:1000"` (with entry limit)
 - **Testing**: `"InMemory"` (clean state each run)
 - **Conversation History**: Use `"File:./path.json:N"` to keep last N interactions
+
+### Output Schema (Structured I/O)
+- ✅ Include schema requirements in instructions
+- ✅ Use descriptive field names and descriptions
+- ✅ Start with simple schemas and expand as needed
+- ✅ Use `enum` for fields with fixed values
+- ✅ Set `validation_mode: strict` for critical workflows
+- ❌ Don't create deeply nested schemas (>3 levels)
+- ❌ Don't mix free-form text with structured output
 
 ---
 
@@ -651,5 +815,6 @@ aofctl agent get my-agent -o yaml
 
 - AgentFleet Spec (coming soon) - Multi-agent teams
 - [AgentFlow Spec](agentflow-spec.md) - Workflow automation
+- [Structured I/O Reference](structured-io.md) - Output schemas and validation
 - [aofctl CLI](aofctl.md) - Command reference
 - [Examples](../examples/) - Copy-paste configurations

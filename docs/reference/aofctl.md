@@ -87,6 +87,38 @@ aofctl get agents pod-doctor --library
 
 # Get library agents as JSON
 aofctl get agents --library -o json
+
+# List all saved sessions
+aofctl get sessions
+
+# List sessions for a specific agent
+aofctl get sessions my-agent
+```
+
+### Session Management
+
+List and manage saved conversation sessions:
+
+```bash
+# List all sessions across all agents
+aofctl get sessions
+
+# List sessions for a specific agent
+aofctl get sessions k8s-agent
+
+# Output in JSON format
+aofctl get sessions -o json
+```
+
+**Session Output:**
+```
+ID         AGENT              MODEL                    MSGS   TOKENS AGE
+abc12345   k8s-agent          google:gemini-2.5-flash    12     2450 2h
+def67890   researcher-agent   anthropic:claude-3-5-sonnet    8     1830 1d
+
+To resume a session:
+  aofctl run agent <config.yaml> --resume
+  aofctl run agent <config.yaml> --session <session-id>
 ```
 
 **Output (default):**
@@ -187,6 +219,10 @@ aofctl run <resource_type> <name_or_file> [flags]
 **Flags:**
 - `-i, --input string` - Input/query for the agent (alias: `--prompt`)
 - `-o, --output string` - Output format: json|yaml|text (default: text)
+- `--output-schema string` - Output schema for structured responses
+- `--output-schema-file string` - Path to JSON schema file
+- `--resume` - Resume the latest session for this agent (interactive mode only)
+- `--session string` - Resume a specific session by ID (interactive mode only)
 
 **Agent Sources:**
 - **File path**: `aofctl run agent my-agent.yaml`
@@ -194,8 +230,14 @@ aofctl run <resource_type> <name_or_file> [flags]
 
 **Examples:**
 ```bash
-# Interactive mode (opens REPL)
+# Interactive mode (opens TUI)
 aofctl run agent my-agent.yaml
+
+# Resume previous conversation
+aofctl run agent my-agent.yaml --resume
+
+# Resume specific session by ID
+aofctl run agent my-agent.yaml --session abc12345
 
 # With query (non-interactive)
 aofctl run agent my-agent.yaml --input "Show me all pods"
@@ -212,6 +254,48 @@ aofctl run agent library://incident/rca-agent --prompt "Analyze high latency" -o
 # Run workflow
 aofctl run workflow incident-response.yaml
 ```
+
+### Interactive TUI Mode
+
+When running an agent without the `--input` option, aofctl launches an interactive terminal user interface (TUI) with:
+
+- **Chat Panel**: Shows conversation history with syntax highlighting
+- **Activity Log**: Real-time display of agent activities (thinking, tool use, LLM calls)
+- **Context Gauge**: Shows token usage and execution time
+- **Input Bar**: Type messages to send to the agent
+- **Help Panel**: Press `?` to view keyboard shortcuts
+
+**Keyboard Shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send message to agent |
+| `ESC` | Cancel running execution / Close help panel |
+| `?` | Toggle help panel |
+| `Ctrl+S` | Save session manually |
+| `Ctrl+L` | Clear chat / Start new session |
+| `Ctrl+C` | Quit application |
+| `Shift+↑/↓` | Scroll chat history |
+| `PageUp/Down` | Scroll 5 lines |
+
+**Activity Log Events:**
+
+The activity log shows real-time agent status:
+- 🤔 **Thinking** - Agent is processing
+- 🔍 **Analyzing** - Agent is analyzing input
+- 📡 **LLM Call** - Calling the language model
+- 🔧 **Tool Use** - Executing a tool
+- ✓ **Tool Complete** - Tool execution finished
+- ⚠ **Warning** - Non-critical issue
+- ✗ **Error** - Execution error
+
+**Session Persistence:**
+
+Sessions are automatically saved to `~/.aof/sessions/<agent-name>/` and include:
+- Complete conversation history
+- Token usage statistics
+- Activity log entries
+- Timestamps for each message
 
 **Library Domains:**
 - `kubernetes` - Pod diagnostics, resource optimization

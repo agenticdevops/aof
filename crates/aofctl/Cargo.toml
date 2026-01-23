@@ -41,6 +41,9 @@ ratatui = "0.26"
 atty = "0.2"
 comfy-table = "7.1"
 colored = "2.1"
+uuid = { version = "1.6", features = ["v4"] }
+dirs = "5.0"
+tokio-util = { version = "0.7", features = ["rt"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

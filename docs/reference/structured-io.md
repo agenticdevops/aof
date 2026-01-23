@@ -451,6 +451,6 @@ output_schema:
 
 ## Related
 
-- [Agent Configuration](/docs/reference/agent-spec)
-- [AgentFlow Variables](/docs/agentflow/variables)
+- [Agent Configuration](agent-spec.md)
+- [AgentFlow Specification](agentflow-spec.md)
 - [JSON Schema Reference](https://json-schema.org/)

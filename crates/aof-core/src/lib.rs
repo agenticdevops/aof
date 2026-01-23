@@ -3,6 +3,7 @@
 // This crate provides zero-cost abstractions for building high-performance
 // agentic systems targeting DevOps and SRE workflows.
 
+pub mod activity;
 pub mod agent;
 pub mod agentflow;
 pub mod binding;
@@ -72,6 +73,9 @@ pub use registry::{
 pub use trigger::{
     CommandBinding, StandaloneTriggerConfig, StandaloneTriggerType, Trigger, TriggerMetadata,
     TriggerSpec,
+};
+pub use activity::{
+    ActivityDetails, ActivityEvent, ActivityLogger, ActivityType, NoopActivityLogger, TokenCount,
 };
 
 /// Version information

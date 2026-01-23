@@ -54,6 +54,14 @@ pub enum Commands {
         /// Path to JSON schema file for output validation
         #[arg(long, conflicts_with = "output_schema")]
         output_schema_file: Option<String>,
+
+        /// Resume the latest session for this agent (interactive mode only)
+        #[arg(long)]
+        resume: bool,
+
+        /// Resume a specific session by ID (interactive mode only)
+        #[arg(long, conflicts_with = "resume")]
+        session: Option<String>,
     },
 
     /// Get resources (verb-first: get agents, get agent <name>)
@@ -240,6 +248,8 @@ impl Cli {
                 output,
                 output_schema,
                 output_schema_file,
+                resume,
+                session,
             } => {
                 commands::run::execute(
                     &resource_type,
@@ -249,6 +259,8 @@ impl Cli {
                     output_schema.as_deref(),
                     output_schema_file.as_deref(),
                     context.as_ref(),
+                    resume,
+                    session.as_deref(),
                 )
                 .await
             }

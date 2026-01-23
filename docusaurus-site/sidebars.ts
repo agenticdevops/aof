@@ -181,6 +181,7 @@ const sidebars: SidebarsConfig = {
         'reference/fleet-spec',
         'reference/trigger-spec',
         'reference/context-spec',
+        'reference/structured-io',
       ],
     },
     {

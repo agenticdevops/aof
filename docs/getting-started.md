@@ -74,8 +74,33 @@ spec:
 
 ### Run It
 
+**Interactive Mode (TUI)** - Just run the agent without `--input`:
+
 ```bash
-# Check container status
+# Launch interactive chat TUI
+aofctl run agent docker-health.yaml
+```
+
+This opens a full-featured terminal UI with:
+- **Chat Panel** - Conversation history with syntax highlighting
+- **Activity Log** - Real-time agent activity (thinking, tool calls, LLM calls)
+- **Context Gauge** - Token usage and execution time
+- **Keyboard Shortcuts** - Press `?` for help
+
+**Keyboard Shortcuts:**
+| Key | Action |
+|-----|--------|
+| `Enter` | Send message |
+| `ESC` | Cancel running agent |
+| `?` | Toggle help panel |
+| `Ctrl+S` | Save session |
+| `Ctrl+L` | Clear / New session |
+| `Ctrl+C` | Quit |
+
+**Non-Interactive Mode** - For scripts and automation:
+
+```bash
+# Single query with --input flag
 aofctl run agent docker-health.yaml --input "what containers are running?"
 
 # Get more details
@@ -83,6 +108,19 @@ aofctl run agent docker-health.yaml --input "show me stats for all containers"
 
 # Investigate issues
 aofctl run agent docker-health.yaml --input "check logs for any unhealthy containers"
+```
+
+**Resume Previous Sessions:**
+
+```bash
+# Resume the latest session
+aofctl run agent docker-health.yaml --resume
+
+# List all saved sessions
+aofctl get sessions
+
+# Resume a specific session by ID
+aofctl run agent docker-health.yaml --session abc12345
 ```
 
 **That's it!** You have a working AI agent.
