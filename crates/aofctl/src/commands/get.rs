@@ -13,6 +13,11 @@ pub async fn execute(
     let rt = ResourceType::from_str(resource_type)
         .ok_or_else(|| anyhow::anyhow!("Unknown resource type: {}", resource_type))?;
 
+    // Handle Session resource type specially
+    if matches!(rt, ResourceType::Session) {
+        return list_sessions(name, output).await;
+    }
+
     // Build resource list - either from library or mock data
     let resources = if library {
         get_library_resources(&rt, name)?
@@ -61,6 +66,173 @@ pub async fn execute(
     }
 
     Ok(())
+}
+
+/// List sessions for agents
+async fn list_sessions(agent_name: Option<&str>, output: &str) -> Result<()> {
+    use crate::session::SessionManager;
+    use chrono::Utc;
+
+    let manager = SessionManager::new()?;
+
+    // If agent name provided, list sessions for that agent
+    // Otherwise, list all agents with sessions
+    let sessions_data: Vec<serde_json::Value> = if let Some(agent) = agent_name {
+        let sessions = manager.list(agent)?;
+        sessions.iter().map(|s| {
+            let age = format_age(s.updated_at);
+            serde_json::json!({
+                "metadata": {
+                    "name": &s.id[..8],
+                    "fullId": &s.id,
+                    "agent": &s.agent_name,
+                    "createdAt": s.created_at.to_rfc3339(),
+                    "updatedAt": s.updated_at.to_rfc3339(),
+                },
+                "spec": {
+                    "model": &s.model,
+                    "messageCount": s.message_count,
+                    "totalTokens": s.total_tokens,
+                },
+                "status": {
+                    "phase": "Saved",
+                    "age": age,
+                }
+            })
+        }).collect()
+    } else {
+        // List all agents with sessions
+        let agents = manager.list_agents()?;
+        let mut all_sessions = Vec::new();
+        for agent in agents {
+            if let Ok(sessions) = manager.list(&agent) {
+                for s in sessions {
+                    let age = format_age(s.updated_at);
+                    all_sessions.push(serde_json::json!({
+                        "metadata": {
+                            "name": &s.id[..8],
+                            "fullId": &s.id,
+                            "agent": &s.agent_name,
+                            "createdAt": s.created_at.to_rfc3339(),
+                            "updatedAt": s.updated_at.to_rfc3339(),
+                        },
+                        "spec": {
+                            "model": &s.model,
+                            "messageCount": s.message_count,
+                            "totalTokens": s.total_tokens,
+                        },
+                        "status": {
+                            "phase": "Saved",
+                            "age": age,
+                        }
+                    }));
+                }
+            }
+        }
+        all_sessions
+    };
+
+    match output {
+        "json" => {
+            let output = serde_json::json!({
+                "apiVersion": "cli/v1",
+                "kind": "SessionList",
+                "items": sessions_data
+            });
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        }
+        "yaml" => {
+            let output = serde_json::json!({
+                "apiVersion": "cli/v1",
+                "kind": "SessionList",
+                "items": sessions_data
+            });
+            println!("{}", serde_yaml::to_string(&output)?);
+        }
+        "name" => {
+            for session in &sessions_data {
+                if let Some(name) = session.get("metadata")
+                    .and_then(|m| m.get("fullId"))
+                    .and_then(|n| n.as_str()) {
+                    let agent = session.get("metadata")
+                        .and_then(|m| m.get("agent"))
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("unknown");
+                    println!("session/{}/{}", agent, name);
+                }
+            }
+        }
+        "wide" | _ => {
+            if sessions_data.is_empty() {
+                println!("\nNo sessions found.");
+                println!("Run an agent interactively to create a session:");
+                println!("  aofctl run agent <config.yaml>");
+                return Ok(());
+            }
+
+            // Table format
+            println!("\n{:<10} {:<18} {:<24} {:>6} {:>8} {:<10}",
+                "ID", "AGENT", "MODEL", "MSGS", "TOKENS", "AGE");
+            println!("{}", "=".repeat(85));
+
+            for session in &sessions_data {
+                let id = session.get("metadata")
+                    .and_then(|m| m.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown");
+                let agent = session.get("metadata")
+                    .and_then(|m| m.get("agent"))
+                    .and_then(|a| a.as_str())
+                    .unwrap_or("unknown");
+                let model = session.get("spec")
+                    .and_then(|s| s.get("model"))
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("unknown");
+                let msgs = session.get("spec")
+                    .and_then(|s| s.get("messageCount"))
+                    .and_then(|m| m.as_u64())
+                    .unwrap_or(0);
+                let tokens = session.get("spec")
+                    .and_then(|s| s.get("totalTokens"))
+                    .and_then(|t| t.as_u64())
+                    .unwrap_or(0);
+                let age = session.get("status")
+                    .and_then(|s| s.get("age"))
+                    .and_then(|a| a.as_str())
+                    .unwrap_or("-");
+
+                // Truncate model if too long
+                let model_display = if model.len() > 24 {
+                    format!("{}...", &model[..21])
+                } else {
+                    model.to_string()
+                };
+
+                println!("{:<10} {:<18} {:<24} {:>6} {:>8} {:<10}",
+                    id, agent, model_display, msgs, tokens, age);
+            }
+
+            println!("\nTo resume a session:");
+            println!("  aofctl run agent <config.yaml> --resume");
+            println!("  aofctl run agent <config.yaml> --session <session-id>");
+        }
+    }
+
+    Ok(())
+}
+
+/// Format age from DateTime to human-readable string
+fn format_age(dt: chrono::DateTime<chrono::Utc>) -> String {
+    let age = chrono::Utc::now().signed_duration_since(dt);
+    if age.num_days() > 0 {
+        format!("{}d", age.num_days())
+    } else if age.num_hours() > 0 {
+        format!("{}h", age.num_hours())
+    } else if age.num_minutes() > 0 {
+        format!("{}m", age.num_minutes())
+    } else {
+        "now".to_string()
+    }
 }
 
 /// Get resources from the built-in library directory

@@ -1549,6 +1549,7 @@ mod tests {
             max_iterations: 10,
             temperature: 0.7,
             max_tokens: Some(1000),
+            output_schema: None,
             extra: HashMap::new(),
         };
 
@@ -1587,6 +1588,7 @@ mod tests {
             max_iterations: 2,
             temperature: 0.7,
             max_tokens: None,
+            output_schema: None,
             extra: HashMap::new(),
         };
 

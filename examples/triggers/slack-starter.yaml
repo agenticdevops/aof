@@ -41,9 +41,10 @@ spec:
     #   - devops
 
   # Slash commands - maps /command to handlers
+  # Use "agent: builtin" for built-in interactive menus (/help, /agent, /fleet)
   commands:
     /help:
-      agent: devops
+      agent: builtin  # Use built-in help handler with interactive menu
       description: "Show available commands"
 
     /status:

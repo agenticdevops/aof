@@ -171,8 +171,8 @@ const config: Config = {
               to: '/docs/reference/agentflow-spec',
             },
             {
-              label: 'GitHub Integration',
-              to: '/docs/reference/github-integration',
+              label: 'Structured I/O',
+              to: '/docs/reference/structured-io',
             },
             {
               label: 'CLI Reference',

@@ -79,6 +79,10 @@ aofctl run agent <config-file> [options]
 **Options:**
 - `-i, --input <input>`: Input/query for the agent
 - `-o, --output <format>`: Output format (json, yaml, text) [default: text]
+- `--output-schema <schema>`: Output schema for structured responses
+- `--output-schema-file <file>`: Path to JSON schema file
+- `--resume`: Resume the latest session for this agent (interactive mode only)
+- `--session <id>`: Resume a specific session by ID (interactive mode only)
 
 **Examples:**
 ```bash
@@ -87,6 +91,15 @@ aofctl run agent k8s-agent.yaml --input "list all pods"
 
 # Run agent with JSON output
 aofctl run agent agent.yaml -i "summarize logs" -o json
+
+# Run agent in interactive TUI mode (no input provided)
+aofctl run agent k8s-agent.yaml
+
+# Resume previous conversation session
+aofctl run agent k8s-agent.yaml --resume
+
+# Resume a specific session by ID
+aofctl run agent k8s-agent.yaml --session abc12345
 
 # Run workflow with initial state
 aofctl run workflow incident-response.yaml --input '{"severity": "high", "incidentId": "INC-123"}'
@@ -100,6 +113,36 @@ aofctl run flow slack-bot-flow.yaml
 # Run AgentFlow with mock event input
 aofctl run flow slack-bot-flow.yaml --input '{"event": {"text": "show pods", "user": "U123", "channel": "C456"}}'
 ```
+
+#### Interactive TUI Mode
+
+When running an agent without the `--input` option, aofctl launches an interactive terminal user interface (TUI) with:
+
+- **Chat Panel**: Shows conversation history with syntax-highlighted messages
+- **Activity Log**: Real-time display of agent activities (thinking, tool use, etc.)
+- **Context Gauge**: Shows token usage and execution time
+- **Input Bar**: Type messages to send to the agent
+
+**Keyboard Shortcuts:**
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Send message to agent |
+| `ESC` | Cancel running execution / Close help |
+| `?` | Toggle help panel |
+| `Ctrl+S` | Save session manually |
+| `Ctrl+L` | Clear chat / Start new session |
+| `Ctrl+C` | Quit application |
+| `Shift+↑/↓` | Scroll chat history |
+| `PageUp/Down` | Scroll 5 lines |
+
+**Session Persistence:**
+
+Sessions are automatically saved to `~/.aof/sessions/<agent-name>/` and include:
+- Complete conversation history
+- Token usage statistics
+- Activity log entries
+- Timestamps for each message
 
 ### get
 
@@ -116,10 +159,12 @@ aofctl get <resource-type> [name] [options]
 - `tools` / `tool`: List available tools
 - `mcpservers` / `mcpserver`: List MCP servers
 - `jobs` / `job`: List running jobs
+- `sessions` / `session`: List saved conversation sessions
 
 **Options:**
 - `-o, --output <format>`: Output format (json, yaml, wide, name) [default: wide]
 - `--all-namespaces`: Show resources in all namespaces
+- `--library`: List resources from the built-in library
 
 **Examples:**
 ```bash
@@ -131,6 +176,41 @@ aofctl get agent my-agent -o yaml
 
 # List all MCP tools
 aofctl get tools -o json
+
+# List agents from the built-in library
+aofctl get agents --library
+
+# List all saved sessions
+aofctl get sessions
+
+# List sessions for a specific agent
+aofctl get sessions my-agent
+```
+
+#### Session Management
+
+List and manage saved conversation sessions:
+
+```bash
+# List all sessions across all agents
+aofctl get sessions
+
+# List sessions for a specific agent
+aofctl get sessions k8s-agent
+
+# Output in JSON format
+aofctl get sessions -o json
+```
+
+**Session Output:**
+```
+ID         AGENT              MODEL                    MSGS   TOKENS AGE
+abc12345   k8s-agent          google:gemini-2.5-flash    12     2450 2h
+def67890   researcher-agent   claude-sonnet-4             8     1830 1d
+
+To resume a session:
+  aofctl run agent <config.yaml> --resume
+  aofctl run agent <config.yaml> --session <session-id>
 ```
 
 ### apply

@@ -18,6 +18,7 @@ use aof_triggers::{
     TelegramPlatform, TelegramConfig,
     WhatsAppPlatform, WhatsAppConfig,
     GitHubPlatform, GitHubConfig,
+    JiraPlatform, JiraConfig,
     CommandBinding as HandlerCommandBinding,
     flow::{FlowRegistry, FlowRouter},
 };
@@ -135,6 +136,12 @@ pub struct PlatformConfigs {
 
     /// WhatsApp configuration
     pub whatsapp: Option<WhatsAppPlatformConfig>,
+
+    /// GitHub configuration
+    pub github: Option<GitHubPlatformConfig>,
+
+    /// Jira configuration
+    pub jira: Option<JiraPlatformConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,6 +208,70 @@ pub struct WhatsAppPlatformConfig {
     pub verify_token: Option<String>,
     pub phone_number_id: Option<String>,
     pub app_secret: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitHubPlatformConfig {
+    /// Enable this platform
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// GitHub token (or env var name with _env suffix)
+    pub token: Option<String>,
+    pub token_env: Option<String>,
+
+    /// Webhook secret (or env var name)
+    pub webhook_secret: Option<String>,
+    pub webhook_secret_env: Option<String>,
+
+    /// Bot/App name for identification
+    pub bot_name: Option<String>,
+
+    /// Allowed repository filter (optional whitelist)
+    /// Format: ["owner/repo", "owner/*", "*"]
+    #[serde(default)]
+    pub allowed_repos: Option<Vec<String>>,
+
+    /// Allowed GitHub organizations (optional whitelist)
+    #[serde(default)]
+    pub allowed_orgs: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JiraPlatformConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Jira Cloud ID (for cloud instances)
+    pub cloud_id: Option<String>,
+    pub cloud_id_env: Option<String>,
+
+    /// Base URL (e.g., https://your-domain.atlassian.net)
+    pub base_url: Option<String>,
+
+    /// User email for API authentication
+    pub user_email: Option<String>,
+    pub user_email_env: Option<String>,
+
+    /// API token for authentication
+    pub api_token: Option<String>,
+    pub api_token_env: Option<String>,
+
+    /// Webhook secret for signature verification
+    pub webhook_secret: Option<String>,
+    pub webhook_secret_env: Option<String>,
+
+    /// Bot name for identification in comments
+    #[serde(default)]
+    pub bot_name: Option<String>,
+
+    /// Allowed project keys (whitelist)
+    #[serde(default)]
+    pub allowed_projects: Option<Vec<String>>,
+
+    /// Allowed event types (whitelist)
+    #[serde(default)]
+    pub allowed_events: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -366,6 +437,7 @@ pub async fn execute(
         command_timeout_secs: config.spec.runtime.task_timeout_secs,
         default_agent: config.spec.runtime.default_agent.clone(),
         command_bindings: std::collections::HashMap::new(), // Loaded from Trigger CRDs
+        max_message_age_secs: 60, // Drop messages older than 1 minute (handles queued messages)
     };
 
     if let Some(ref agent) = config.spec.runtime.default_agent {
@@ -508,6 +580,112 @@ pub async fn execute(
                 }
             } else {
                 eprintln!("  WhatsApp enabled but missing access_token");
+            }
+        }
+    }
+
+    // GitHub
+    if let Some(github_config) = &config.spec.platforms.github {
+        if github_config.enabled {
+            let token = resolve_env_value(
+                github_config.token.as_deref(),
+                github_config.token_env.as_deref(),
+            );
+            let webhook_secret = resolve_env_value(
+                github_config.webhook_secret.as_deref(),
+                github_config.webhook_secret_env.as_deref(),
+            );
+
+            if let Some(secret) = webhook_secret {
+                let platform_config = GitHubConfig {
+                    token: token.unwrap_or_default(), // Token is optional, webhook_secret is required
+                    webhook_secret: secret,
+                    bot_name: github_config.bot_name.clone().unwrap_or_else(|| "aofbot".to_string()),
+                    api_url: "https://api.github.com".to_string(),
+                    allowed_repos: github_config.allowed_repos.clone(),
+                    allowed_events: None,
+                    allowed_users: None,
+                    auto_approve_patterns: None,
+                    enable_status_checks: true,
+                    enable_reviews: true,
+                    enable_comments: true,
+                };
+
+                if platform_config.token.is_empty() {
+                    eprintln!("  GitHub: GITHUB_TOKEN not set, API features (posting comments) disabled");
+                }
+
+                match GitHubPlatform::new(platform_config) {
+                    Ok(platform) => {
+                        handler.register_platform(Arc::new(platform));
+                        println!("  Registered platform: github");
+                        platforms_registered += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("  Failed to create GitHub platform: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("  GitHub enabled but missing webhook_secret");
+            }
+        }
+    }
+
+    // Jira
+    if let Some(jira_config) = &config.spec.platforms.jira {
+        if jira_config.enabled {
+            let api_token = resolve_env_value(
+                jira_config.api_token.as_deref(),
+                jira_config.api_token_env.as_deref(),
+            );
+            let user_email = resolve_env_value(
+                jira_config.user_email.as_deref(),
+                jira_config.user_email_env.as_deref(),
+            );
+            let webhook_secret = resolve_env_value(
+                jira_config.webhook_secret.as_deref(),
+                jira_config.webhook_secret_env.as_deref(),
+            );
+
+            // Build base URL from cloud_id or use provided base_url
+            let base_url = if let Some(ref url) = jira_config.base_url {
+                Some(url.clone())
+            } else {
+                let cloud_id = resolve_env_value(
+                    jira_config.cloud_id.as_deref(),
+                    jira_config.cloud_id_env.as_deref(),
+                );
+                cloud_id.map(|id| format!("https://api.atlassian.com/ex/jira/{}", id))
+            };
+
+            if let (Some(token), Some(email), Some(secret), Some(url)) =
+                (api_token, user_email, webhook_secret, base_url)
+            {
+                let platform_config = JiraConfig {
+                    base_url: url,
+                    email,
+                    api_token: token,
+                    webhook_secret: secret,
+                    bot_name: jira_config.bot_name.clone().unwrap_or_else(|| "aofbot".to_string()),
+                    allowed_projects: jira_config.allowed_projects.clone(),
+                    allowed_events: jira_config.allowed_events.clone(),
+                    allowed_users: None,
+                    enable_comments: true,
+                    enable_updates: true,
+                    enable_transitions: true,
+                };
+                match JiraPlatform::new(platform_config) {
+                    Ok(platform) => {
+                        handler.register_platform(Arc::new(platform));
+                        println!("  Registered platform: jira");
+                        platforms_registered += 1;
+                    }
+                    Err(e) => {
+                        eprintln!("  Failed to create Jira platform: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("  Jira enabled but missing required config (api_token, user_email, webhook_secret, and base_url or cloud_id)");
             }
         }
     }

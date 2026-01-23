@@ -3,6 +3,7 @@
 // This crate provides zero-cost abstractions for building high-performance
 // agentic systems targeting DevOps and SRE workflows.
 
+pub mod activity;
 pub mod agent;
 pub mod agentflow;
 pub mod binding;
@@ -22,8 +23,9 @@ pub mod workflow;
 // Re-export core types
 pub use agent::{
     Agent, AgentConfig, AgentContext, AgentMetadata, ExecutionMetadata, HttpToolConfig,
-    MemorySpec, Message, MessageRole, QualifiedToolSpec, ShellToolConfig, StructuredMemoryConfig,
-    ToolResult as AgentToolResult, ToolSource, ToolSpec, TypeBasedToolSpec, TypeBasedToolType,
+    MemorySpec, Message, MessageRole, OutputSchemaSpec, QualifiedToolSpec, ShellToolConfig,
+    StructuredMemoryConfig, ToolResult as AgentToolResult, ToolSource, ToolSpec, TypeBasedToolSpec,
+    TypeBasedToolType,
 };
 pub use error::{AofError, AofResult};
 pub use error_tracker::{ErrorKnowledgeBase, ErrorRecord, ErrorStats};
@@ -71,6 +73,9 @@ pub use registry::{
 pub use trigger::{
     CommandBinding, StandaloneTriggerConfig, StandaloneTriggerType, Trigger, TriggerMetadata,
     TriggerSpec,
+};
+pub use activity::{
+    ActivityDetails, ActivityEvent, ActivityLogger, ActivityType, NoopActivityLogger, TokenCount,
 };
 
 /// Version information

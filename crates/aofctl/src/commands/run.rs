@@ -1,14 +1,17 @@
 use anyhow::{Context as AnyhowContext, Result, anyhow};
 use aof_core::{AgentConfig, AgentContext, Context as AofContext, OutputSchema};
+use aof_core::{ActivityEvent, ActivityType};
 use aof_runtime::Runtime;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{mpsc as tokio_mpsc, RwLock};
-use tracing::info;
+use tokio_util::sync::CancellationToken;
+use tracing::{info, warn};
 use crate::resources::ResourceType;
 use crate::output::{Spinner, FlowOutput};
+use crate::session::{Session, SessionManager, MessageTokens};
 
 /// Internal struct to try parsing K8s format explicitly for better errors
 #[derive(serde::Deserialize)]
@@ -229,6 +232,8 @@ pub async fn execute(
     output_schema: Option<&str>,
     output_schema_file: Option<&str>,
     context: Option<&AofContext>,
+    resume: bool,
+    session_id: Option<&str>,
 ) -> Result<()> {
     // Log context if provided
     if let Some(ctx) = context {
@@ -249,7 +254,7 @@ pub async fn execute(
     let schema = parse_output_schema(output_schema, output_schema_file)?;
 
     match rt {
-        ResourceType::Agent => run_agent(name_or_config, input, output, schema, context).await,
+        ResourceType::Agent => run_agent(name_or_config, input, output, schema, context, resume, session_id).await,
         ResourceType::Workflow | ResourceType::Flow => run_workflow(name_or_config, input, output).await,
         ResourceType::Fleet => run_fleet(name_or_config, input, output).await,
         ResourceType::Job => run_job(name_or_config, input, output).await,
@@ -391,7 +396,11 @@ async fn run_agent(
     output: &str,
     schema: Option<OutputSchema>,
     context: Option<&AofContext>,
+    resume: bool,
+    session_id: Option<&str>,
 ) -> Result<()> {
+    use crate::session::SessionManager;
+
     // Resolve library:// URIs to actual file paths
     let config_path = if config.starts_with("library://") {
         resolve_library_uri(config)?
@@ -419,8 +428,40 @@ async fn run_agent(
             .await
             .with_context(|| "Failed to load agent")?;
 
+        // Handle session resume
+        let resume_session = if resume || session_id.is_some() {
+            let manager = SessionManager::new()?;
+            if let Some(sid) = session_id {
+                // Resume specific session
+                match manager.load(&agent_name, sid) {
+                    Ok(session) => {
+                        info!("Resuming session: {} ({} messages)", sid, session.messages.len());
+                        Some(session)
+                    }
+                    Err(e) => {
+                        warn!("Failed to load session '{}': {}", sid, e);
+                        None
+                    }
+                }
+            } else {
+                // Resume latest session
+                match manager.load_latest(&agent_name) {
+                    Ok(session) => {
+                        info!("Resuming latest session: {} ({} messages)", session.id, session.messages.len());
+                        Some(session)
+                    }
+                    Err(e) => {
+                        info!("No previous session found: {}", e);
+                        None
+                    }
+                }
+            }
+        } else {
+            None
+        };
+
         // Launch interactive REPL mode with TUI log capture
-        run_agent_interactive(&runtime, &agent_name, output).await?;
+        run_agent_interactive_with_resume(&runtime, &agent_name, output, resume_session).await?;
         return Ok(());
     }
 
@@ -492,6 +533,7 @@ struct AppState {
     chat_history: Vec<(String, String)>, // (role, message)
     current_input: String,
     logs: Vec<String>,
+    activities: Vec<ActivityEvent>, // Agent activity events
     agent_busy: bool,
     last_error: Option<String>,
     execution_start: Option<Instant>,
@@ -499,6 +541,7 @@ struct AppState {
     message_count: usize,
     spinner_state: u8,
     log_receiver: Receiver<String>,
+    activity_receiver: Receiver<ActivityEvent>, // Activity event receiver
     model_name: String,
     tools: Vec<String>,
     execution_result_rx: tokio_mpsc::Receiver<Result<String, String>>,
@@ -506,10 +549,20 @@ struct AppState {
     output_tokens: u32,
     context_window: u32, // Max context window for model
     chat_scroll_offset: u16, // Scroll offset for chat history
+    show_help: bool, // Toggle help panel
+    session: Session, // Current session for persistence
+    cancellation_token: CancellationToken, // For stopping execution
+    agent_name: String, // Agent name for session
 }
 
 impl AppState {
-    fn new(log_receiver: Receiver<String>, model_name: String, tools: Vec<String>) -> Self {
+    fn new(
+        log_receiver: Receiver<String>,
+        activity_receiver: Receiver<ActivityEvent>,
+        model_name: String,
+        tools: Vec<String>,
+        agent_name: String,
+    ) -> Self {
         let (tx, rx) = tokio_mpsc::channel(1);
         let _ = tx; // Drop sender since we only use the receiver
 
@@ -532,15 +585,21 @@ impl AppState {
 ╚═╝ ╚═╝ ╚═══╝ ╚═╝
 
 Agentic Ops Framework
-aof.sh"#;
+aof.sh
+
+Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
 
         let mut chat_history = Vec::new();
         chat_history.push(("system".to_string(), greeting.to_string()));
+
+        // Create a new session
+        let session = Session::new(&agent_name, &model_name);
 
         Self {
             chat_history,
             current_input: String::new(),
             logs: Vec::new(),
+            activities: Vec::new(),
             agent_busy: false,
             last_error: None,
             execution_start: None,
@@ -548,6 +607,7 @@ aof.sh"#;
             message_count: 0,
             spinner_state: 0,
             log_receiver,
+            activity_receiver,
             model_name,
             tools,
             execution_result_rx: rx,
@@ -555,6 +615,62 @@ aof.sh"#;
             output_tokens: 0,
             context_window,
             chat_scroll_offset: 0,
+            show_help: false,
+            session,
+            cancellation_token: CancellationToken::new(),
+            agent_name,
+        }
+    }
+
+    fn restore_from_session(
+        log_receiver: Receiver<String>,
+        activity_receiver: Receiver<ActivityEvent>,
+        model_name: String,
+        tools: Vec<String>,
+        agent_name: String,
+        session: Session,
+    ) -> Self {
+        let (tx, rx) = tokio_mpsc::channel(1);
+        let _ = tx;
+
+        let context_window = match model_name.as_str() {
+            "google:gemini-2.5-flash" => 1000000,
+            "google:gemini-2.0-flash" => 1000000,
+            "openai:gpt-4-turbo" => 128000,
+            "openai:gpt-4" => 8192,
+            _ => 128000,
+        };
+
+        // Convert session messages to chat history
+        let mut chat_history: Vec<(String, String)> = session.to_chat_history();
+
+        // Add resume indicator
+        chat_history.push(("system".to_string(), "── Session Resumed ──".to_string()));
+
+        Self {
+            chat_history,
+            current_input: String::new(),
+            logs: Vec::new(),
+            activities: Vec::new(),
+            agent_busy: false,
+            last_error: None,
+            execution_start: None,
+            execution_time_ms: 0,
+            message_count: session.message_count(),
+            spinner_state: 0,
+            log_receiver,
+            activity_receiver,
+            model_name,
+            tools,
+            execution_result_rx: rx,
+            input_tokens: session.token_usage.total_input,
+            output_tokens: session.token_usage.total_output,
+            context_window,
+            chat_scroll_offset: 0,
+            show_help: false,
+            session,
+            cancellation_token: CancellationToken::new(),
+            agent_name,
         }
     }
 
@@ -567,6 +683,43 @@ aof.sh"#;
             }
             self.logs.push(log);
         }
+    }
+
+    fn consume_activities(&mut self) {
+        // Drain all available activities from the receiver (non-blocking)
+        while let Ok(activity) = self.activity_receiver.try_recv() {
+            // Add to session activity log
+            self.session.add_activity(
+                activity.activity_type.label(),
+                &activity.message,
+            );
+            // Keep only last 500 activities to avoid memory bloat
+            if self.activities.len() >= 500 {
+                self.activities.remove(0);
+            }
+            self.activities.push(activity);
+        }
+    }
+
+    fn add_activity(&mut self, activity: ActivityEvent) {
+        self.session.add_activity(
+            activity.activity_type.label(),
+            &activity.message,
+        );
+        if self.activities.len() >= 500 {
+            self.activities.remove(0);
+        }
+        self.activities.push(activity);
+    }
+
+    fn toggle_help(&mut self) {
+        self.show_help = !self.show_help;
+    }
+
+    fn save_session(&mut self) -> Result<()> {
+        let manager = SessionManager::new()?;
+        manager.save(&self.session)?;
+        Ok(())
     }
 
     fn update_execution_time(&mut self) {
@@ -610,6 +763,16 @@ aof.sh"#;
 
 /// Run agent in interactive REPL mode with two-column TUI
 async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &str) -> Result<()> {
+    run_agent_interactive_with_resume(runtime, agent_name, _output, None).await
+}
+
+/// Run agent in interactive REPL mode with optional session resume
+async fn run_agent_interactive_with_resume(
+    runtime: &Runtime,
+    agent_name: &str,
+    _output: &str,
+    resume_session: Option<Session>,
+) -> Result<()> {
     // Extract model and tools from runtime
     let model_name = runtime
         .get_agent(agent_name)
@@ -623,6 +786,9 @@ async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &st
 
     // Create log channel
     let (log_tx, log_rx) = channel::<String>();
+
+    // Create activity channel
+    let (activity_tx, activity_rx) = channel::<ActivityEvent>();
 
     // Setup tracing to capture logs into the channel instead of stdout
     let log_tx_clone = Arc::new(Mutex::new(log_tx));
@@ -659,13 +825,30 @@ async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &st
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Initialize app state with log receiver
-    let mut app_state = AppState::new(log_rx, model_name, tools);
+    // Initialize app state with log and activity receivers
+    let mut app_state = if let Some(session) = resume_session {
+        AppState::restore_from_session(
+            log_rx,
+            activity_rx,
+            model_name,
+            tools,
+            agent_name.to_string(),
+            session,
+        )
+    } else {
+        AppState::new(
+            log_rx,
+            activity_rx,
+            model_name,
+            tools,
+            agent_name.to_string(),
+        )
+    };
+
     let should_quit = Arc::new(Mutex::new(false));
 
-    // Don't add welcome message yet - it will show after greeting is dismissed
-    // app_state.chat_history.push(("system".to_string(),
-    //     format!("Connected to agent: {}\nType your query and press Enter. Commands: help, exit, quit", agent_name)));
+    // Store activity sender for use during execution
+    let activity_sender = Arc::new(Mutex::new(activity_tx));
 
     // Draw initial screen with greeting
     terminal.draw(|f| ui(f, agent_name, &app_state))?;
@@ -684,7 +867,47 @@ async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &st
                 Event::Key(key) => {
                     match key.code {
                         KeyCode::Char('c') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                            // Save session before quitting
+                            if let Err(e) = app_state.save_session() {
+                                eprintln!("Failed to save session: {}", e);
+                            }
                             break;
+                        }
+                        KeyCode::Esc => {
+                            if app_state.show_help {
+                                // Close help panel
+                                app_state.show_help = false;
+                            } else if app_state.agent_busy {
+                                // Cancel running execution
+                                app_state.cancellation_token.cancel();
+                                app_state.add_activity(ActivityEvent::cancelled());
+                            }
+                        }
+                        KeyCode::Char('?') if !app_state.agent_busy => {
+                            // Toggle help panel
+                            app_state.toggle_help();
+                        }
+                        KeyCode::Char('s') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                            // Manual save session
+                            if let Err(e) = app_state.save_session() {
+                                app_state.add_activity(ActivityEvent::error(format!("Failed to save: {}", e)));
+                            } else {
+                                app_state.add_activity(ActivityEvent::info("Session saved".to_string()));
+                            }
+                        }
+                        KeyCode::Char('l') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                            // Clear chat (start new session)
+                            if !app_state.agent_busy {
+                                // Save current session first
+                                let _ = app_state.save_session();
+                                // Create new session
+                                app_state.session = Session::new(&app_state.agent_name, &app_state.model_name);
+                                app_state.chat_history.clear();
+                                app_state.activities.clear();
+                                app_state.input_tokens = 0;
+                                app_state.output_tokens = 0;
+                                app_state.chat_history.push(("system".to_string(), "── New Session ──".to_string()));
+                            }
                         }
                         KeyCode::PageUp => {
                             app_state.scroll_up(5);
@@ -698,56 +921,107 @@ async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &st
                         KeyCode::Down if key.modifiers == crossterm::event::KeyModifiers::SHIFT => {
                             app_state.scroll_down(1);
                         }
+                        KeyCode::Enter if app_state.show_help => {
+                            // Close help with Enter
+                            app_state.show_help = false;
+                        }
                         KeyCode::Enter => {
-                        let trimmed = app_state.current_input.trim();
+                        // Clone input early to avoid borrow issues
+                        let input_str = app_state.current_input.trim().to_string();
 
-                        if trimmed.is_empty() {
+                        if input_str.is_empty() {
                             // Do nothing for empty input
-                        } else if trimmed.to_lowercase() == "exit" || trimmed.to_lowercase() == "quit" {
+                        } else if input_str.to_lowercase() == "exit" || input_str.to_lowercase() == "quit" {
                             break;
-                        } else if trimmed.to_lowercase() == "help" {
+                        } else if input_str.to_lowercase() == "help" {
                             app_state.chat_history.push(("system".to_string(),
                                 "Available: help, exit, quit. Type normally to chat with agent.".to_string()));
                         } else {
                             // Execute agent with timer updates during execution
-                            app_state.chat_history.push(("user".to_string(), trimmed.to_string()));
-                            // Update input tokens based on user query length
-                            let input_tokens_estimate = (trimmed.len() / 4) as u32;
+                            app_state.chat_history.push(("user".to_string(), input_str.clone()));
+
+                            // Add to session
+                            let input_tokens_estimate = (input_str.len() / 4) as u32;
+                            app_state.session.add_message(
+                                "user",
+                                &input_str,
+                                Some(MessageTokens { input: input_tokens_estimate, output: 0 }),
+                            );
+
                             app_state.input_tokens = app_state.input_tokens.saturating_add(input_tokens_estimate);
                             app_state.agent_busy = true;
                             app_state.last_error = None;
                             app_state.execution_start = Some(Instant::now());
                             app_state.message_count = app_state.chat_history.len();
 
+                            // Reset cancellation token for new execution
+                            app_state.cancellation_token = CancellationToken::new();
+
+                            // Emit activity events
+                            app_state.add_activity(ActivityEvent::started(agent_name));
+                            app_state.add_activity(ActivityEvent::thinking("Processing user request..."));
+
                             // Draw busy state before execution
                             terminal.draw(|f| ui(f, agent_name, &app_state))?;
-
-                            // Execute with periodic UI updates using select! for timer
-                            let input_str = trimmed.to_string();
                             let mut exec_future = Box::pin(runtime.execute(agent_name, &input_str));
                             let mut timer_handle = tokio::time::interval(std::time::Duration::from_millis(100));
+                            let cancel_token = app_state.cancellation_token.clone();
 
+                            // Emit LLM call activity
+                            app_state.add_activity(ActivityEvent::llm_call(format!("Calling {}", app_state.model_name)));
+
+                            let mut cancelled = false;
                             loop {
                                 tokio::select! {
+                                    biased;
+
+                                    // Check for cancellation
+                                    _ = cancel_token.cancelled() => {
+                                        cancelled = true;
+                                        app_state.chat_history.push(("system".to_string(), "⏹ Execution cancelled by user".to_string()));
+                                        app_state.session.add_message("system", "Execution cancelled by user", None);
+                                        app_state.agent_busy = false;
+                                        app_state.update_execution_time();
+                                        break;
+                                    }
+
                                     result = &mut exec_future => {
+                                        let duration_ms = app_state.execution_time_ms as u64;
                                         match result {
                                             Ok(response) => {
                                                 if response.is_empty() {
                                                     let error_msg = "Error: Empty response from agent".to_string();
                                                     app_state.chat_history.push(("error".to_string(), error_msg.clone()));
+                                                    app_state.session.add_message("error", &error_msg, None);
                                                     app_state.last_error = Some(error_msg);
+                                                    app_state.add_activity(ActivityEvent::error("Empty response received"));
                                                 } else {
                                                     // Update output tokens based on response length
+                                                    let output_tokens = (response.len() / 4) as u32;
                                                     app_state.update_token_count(&response);
-                                                    app_state.chat_history.push(("assistant".to_string(), response));
+                                                    app_state.chat_history.push(("assistant".to_string(), response.clone()));
+
+                                                    // Add to session
+                                                    app_state.session.add_message(
+                                                        "assistant",
+                                                        &response,
+                                                        Some(MessageTokens { input: 0, output: output_tokens }),
+                                                    );
+
                                                     // Auto-scroll to latest message
                                                     app_state.auto_scroll_to_bottom();
+
+                                                    // Emit completion activity
+                                                    app_state.add_activity(ActivityEvent::llm_response(input_tokens_estimate, output_tokens));
+                                                    app_state.add_activity(ActivityEvent::completed(duration_ms));
                                                 }
                                             }
                                             Err(e) => {
                                                 let error_msg = format!("Error: {}", e);
                                                 app_state.chat_history.push(("error".to_string(), error_msg.clone()));
-                                                app_state.last_error = Some(error_msg);
+                                                app_state.session.add_message("error", &error_msg, None);
+                                                app_state.last_error = Some(error_msg.clone());
+                                                app_state.add_activity(ActivityEvent::error(error_msg));
                                             }
                                         }
                                         app_state.agent_busy = false;
@@ -759,8 +1033,18 @@ async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &st
                                         app_state.next_spinner();
                                         app_state.update_execution_time();
 
-                                        // Consume any new logs
+                                        // Consume any new logs and activities
                                         app_state.consume_logs();
+                                        app_state.consume_activities();
+
+                                        // Check for key events during execution (for ESC)
+                                        if crossterm::event::poll(std::time::Duration::from_millis(0))? {
+                                            if let Event::Key(key) = event::read()? {
+                                                if key.code == KeyCode::Esc {
+                                                    cancel_token.cancel();
+                                                }
+                                            }
+                                        }
 
                                         // Redraw to show timer updates
                                         terminal.draw(|f| ui(f, agent_name, &app_state))?;
@@ -802,11 +1086,17 @@ async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &st
             app_state.update_execution_time();
         }
 
-        // Consume any new log messages from the channel
+        // Consume any new log messages and activities from the channels
         app_state.consume_logs();
+        app_state.consume_activities();
 
         // Redraw UI
         terminal.draw(|f| ui(f, agent_name, &app_state))?;
+    }
+
+    // Save session before exit
+    if let Err(e) = app_state.save_session() {
+        eprintln!("Warning: Failed to save session: {}", e);
     }
 
     // Restore terminal
@@ -818,7 +1108,8 @@ async fn run_agent_interactive(runtime: &Runtime, agent_name: &str, _output: &st
     )?;
     terminal.show_cursor()?;
 
-    println!("\n-- Exiting Agentic Ops Framework --\n");
+    println!("\n-- Exiting Agentic Ops Framework --");
+    println!("Session saved. Use --resume to continue later.\n");
     Ok(())
 }
 
@@ -957,10 +1248,16 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
         .split(chunks[1]);
 
-    // Top row - System Logs
+    // Top row - Agent Activity Log (replaced System Logs)
+    let activity_title = if app.activities.is_empty() {
+        " AGENT ACTIVITY "
+    } else {
+        " AGENT ACTIVITY "
+    };
+
     let logs_block = Block::default()
         .title(Span::styled(
-            " SYSTEM LOG ",
+            activity_title,
             Style::default().fg(primary_white).add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Left)
@@ -969,30 +1266,87 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         .border_style(Style::default().fg(primary_white))
         .padding(ratatui::widgets::Padding::symmetric(1, 0));
 
-    let log_lines: Vec<Line> = app.logs.iter()
-        .map(|log| {
-            let style = if log.contains("ERROR") {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-            } else if log.contains("WARN") {
-                Style::default().fg(Color::White)
-            } else if log.contains("DEBUG") {
-                Style::default().fg(Color::Gray).add_modifier(Modifier::DIM)
-            } else if log.contains("INFO") {
-                Style::default().fg(Color::White).add_modifier(Modifier::DIM)
-            } else {
-                Style::default().fg(Color::Gray)
-            };
+    // Render activities with color coding
+    let activity_lines: Vec<Line> = if app.activities.is_empty() {
+        // Show placeholder when no activities
+        vec![
+            Line::from(Span::styled(
+                "Waiting for agent activity...",
+                Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Activity types:",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(vec![
+                Span::styled("  🧠 ", Style::default()),
+                Span::styled("Thinking", Style::default().fg(Color::Cyan)),
+            ]),
+            Line::from(vec![
+                Span::styled("  ⚙️ ", Style::default()),
+                Span::styled("Tool execution", Style::default().fg(Color::Yellow)),
+            ]),
+            Line::from(vec![
+                Span::styled("  📤 ", Style::default()),
+                Span::styled("LLM calls", Style::default().fg(Color::Blue)),
+            ]),
+            Line::from(vec![
+                Span::styled("  ✓ ", Style::default()),
+                Span::styled("Completed", Style::default().fg(Color::Green)),
+            ]),
+        ]
+    } else {
+        app.activities.iter()
+            .map(|activity| {
+                let (icon, color) = match &activity.activity_type {
+                    ActivityType::Thinking | ActivityType::Analyzing => ("🧠", Color::Cyan),
+                    ActivityType::LlmCall | ActivityType::LlmWaiting => ("📤", Color::Blue),
+                    ActivityType::LlmResponse => ("📥", Color::Blue),
+                    ActivityType::ToolDiscovery => ("🔧", Color::Magenta),
+                    ActivityType::ToolExecuting => ("⚙️", Color::Yellow),
+                    ActivityType::ToolComplete => ("✓", Color::Green),
+                    ActivityType::ToolFailed => ("✗", Color::Red),
+                    ActivityType::Memory => ("💾", Color::Cyan),
+                    ActivityType::McpCall => ("🔌", Color::Magenta),
+                    ActivityType::Validation => ("📋", Color::Blue),
+                    ActivityType::Warning => ("⚠", Color::Yellow),
+                    ActivityType::Error => ("❌", Color::Red),
+                    ActivityType::Info | ActivityType::Debug => ("ℹ", Color::Gray),
+                    ActivityType::Started => ("▶", Color::Green),
+                    ActivityType::Completed => ("●", Color::Green),
+                    ActivityType::Cancelled => ("⏹", Color::Yellow),
+                };
 
-            let trimmed = log.chars().take(right_panel[0].width.saturating_sub(4) as usize).collect::<String>();
-            Line::from(Span::styled(trimmed, style))
-        })
-        .collect();
+                let time_str = activity.timestamp.format("%H:%M:%S").to_string();
+                let max_width = right_panel[0].width.saturating_sub(14) as usize;
+                let msg = if activity.message.len() > max_width {
+                    format!("{}...", &activity.message[..max_width.saturating_sub(3)])
+                } else {
+                    activity.message.clone()
+                };
 
-    let logs_para = Paragraph::new(log_lines)
+                // Add duration if available
+                let duration_str = activity.details.as_ref()
+                    .and_then(|d| d.duration_ms)
+                    .map(|ms| format!(" ({}ms)", ms))
+                    .unwrap_or_default();
+
+                Line::from(vec![
+                    Span::styled(format!("{} ", time_str), Style::default().fg(Color::DarkGray)),
+                    Span::styled(format!("{} ", icon), Style::default()),
+                    Span::styled(msg, Style::default().fg(color)),
+                    Span::styled(duration_str, Style::default().fg(Color::DarkGray)),
+                ])
+            })
+            .collect()
+    };
+
+    let logs_para = Paragraph::new(activity_lines)
         .block(logs_block)
         .wrap(Wrap { trim: true })
         .scroll((
-            (app.logs.len() as u16).saturating_sub(right_panel[0].height.saturating_sub(3) / 2),
+            (app.activities.len() as u16).saturating_sub(right_panel[0].height.saturating_sub(3)),
             0,
         ));
 
@@ -1028,23 +1382,22 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
 
     f.render_widget(gauge, right_panel[1]);
 
-    // Footer metrics bar
+    // Footer metrics bar with keybinding hints
     let metrics_text = if app.agent_busy {
         format!(
-            "  ⧖ {:>5}ms  │  {} {} messages  │  Model: {}  │  Tools: {}  │  Status: Active",
-            app.execution_time_ms,
+            "  {} {:>5}ms │ {} msgs │ {} │ {} │ ESC:cancel  Ctrl+C:quit",
             app.get_spinner(),
+            app.execution_time_ms,
             app.message_count / 2,
             app.model_name,
             tools_str
         )
     } else {
         format!(
-            "  ✓ Completed  │  {} messages  │  Model: {}  │  Tools: {}  │  Last execution: {}ms",
+            "  ✓ {} msgs │ {} │ {} │ ?:help  Ctrl+S:save  Ctrl+L:new  Ctrl+C:quit",
             app.message_count / 2,
             app.model_name,
-            tools_str,
-            app.execution_time_ms
+            tools_str
         )
     };
 
@@ -1054,9 +1407,122 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
 
     let metrics_para = Paragraph::new(metrics_text)
         .block(metrics_block)
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(Color::Green));
 
     f.render_widget(metrics_para, main_layout[1]);
+
+    // Render help overlay if enabled
+    if app.show_help {
+        render_help_overlay(f);
+    }
+}
+
+/// Render the help overlay panel
+fn render_help_overlay(f: &mut Frame) {
+    let area = f.size();
+
+    // Create centered popup area (60% width, 70% height)
+    let popup_width = (area.width as f32 * 0.6) as u16;
+    let popup_height = (area.height as f32 * 0.7) as u16;
+    let popup_x = (area.width - popup_width) / 2;
+    let popup_y = (area.height - popup_height) / 2;
+
+    let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
+
+    // Clear the area with a semi-transparent background
+    let clear_block = Block::default()
+        .style(Style::default().bg(Color::Black));
+    f.render_widget(clear_block, popup_area);
+
+    // Create help content
+    let help_block = Block::default()
+        .title(Span::styled(
+            " ⌨ KEYBOARD SHORTCUTS ",
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan))
+        .padding(ratatui::widgets::Padding::uniform(1));
+
+    let help_lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Shift+↑/↓    ", Style::default().fg(Color::White)),
+            Span::styled("Scroll chat history", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    PageUp/Down  ", Style::default().fg(Color::White)),
+            Span::styled("Scroll 5 lines", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Mouse scroll ", Style::default().fg(Color::White)),
+            Span::styled("Scroll chat history", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  EXECUTION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Enter        ", Style::default().fg(Color::White)),
+            Span::styled("Send message to agent", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    ESC          ", Style::default().fg(Color::White)),
+            Span::styled("Cancel running execution", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  SESSION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+S       ", Style::default().fg(Color::White)),
+            Span::styled("Save session manually", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+L       ", Style::default().fg(Color::White)),
+            Span::styled("Clear chat / new session", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  GENERAL", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("    ?            ", Style::default().fg(Color::White)),
+            Span::styled("Toggle this help panel", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+C       ", Style::default().fg(Color::White)),
+            Span::styled("Quit application", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  COMMANDS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("    help         ", Style::default().fg(Color::White)),
+            Span::styled("Show available commands", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    exit/quit    ", Style::default().fg(Color::White)),
+            Span::styled("Exit the application", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "           Press ESC or Enter to close           ",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        )),
+    ];
+
+    let help_para = Paragraph::new(help_lines)
+        .block(help_block)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(help_para, popup_area);
 }
 
 /// Extract JSON from markdown code blocks (```json ... ```)

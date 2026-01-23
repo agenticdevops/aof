@@ -26,6 +26,9 @@ pub enum ResourceType {
     // Storage resources
     Memory,
     State,
+
+    // Session resources
+    Session,
 }
 
 impl ResourceType {
@@ -46,6 +49,7 @@ impl ResourceType {
             ResourceType::Task,
             ResourceType::Memory,
             ResourceType::State,
+            ResourceType::Session,
         ]
     }
 
@@ -66,6 +70,7 @@ impl ResourceType {
             ResourceType::Task => "task",
             ResourceType::Memory => "memory",
             ResourceType::State => "state",
+            ResourceType::Session => "session",
         }
     }
 
@@ -86,6 +91,7 @@ impl ResourceType {
             ResourceType::Task => "tasks",
             ResourceType::Memory => "memories",
             ResourceType::State => "states",
+            ResourceType::Session => "sessions",
         }
     }
 
@@ -106,6 +112,7 @@ impl ResourceType {
             ResourceType::Task => vec!["tsk"],
             ResourceType::Memory => vec!["mem"],
             ResourceType::State => vec!["st"],
+            ResourceType::Session => vec!["sess"],
         }
     }
 
@@ -118,13 +125,14 @@ impl ResourceType {
             ResourceType::McpServer | ResourceType::McpTool => "mcp/v1",
             ResourceType::Job | ResourceType::Task => "batch/v1",
             ResourceType::Memory | ResourceType::State => "storage/v1",
+            ResourceType::Session => "cli/v1",
         }
     }
 
     /// Check if this resource is namespaced
     pub fn is_namespaced(&self) -> bool {
         match self {
-            ResourceType::Config | ResourceType::McpServer => false,
+            ResourceType::Config | ResourceType::McpServer | ResourceType::Session => false,
             _ => true,
         }
     }
@@ -146,6 +154,7 @@ impl ResourceType {
             ResourceType::Task => "Task",
             ResourceType::Memory => "Memory",
             ResourceType::State => "State",
+            ResourceType::Session => "Session",
         }
     }
 

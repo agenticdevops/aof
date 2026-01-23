@@ -711,6 +711,7 @@ mod tests {
             max_iterations: 10,
             temperature: 0.7,
             max_tokens: None,
+            output_schema: None,
             extra: HashMap::new(),
         };
 

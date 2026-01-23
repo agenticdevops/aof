@@ -167,6 +167,7 @@ const sidebars: SidebarsConfig = {
         'guides/quickstart-whatsapp',
         'guides/quickstart-teams',
         'guides/quickstart-discord',
+        'guides/builtin-commands',
         'guides/approval-workflow',
         'guides/deployment',
       ],
@@ -180,6 +181,7 @@ const sidebars: SidebarsConfig = {
         'reference/fleet-spec',
         'reference/trigger-spec',
         'reference/context-spec',
+        'reference/structured-io',
       ],
     },
     {

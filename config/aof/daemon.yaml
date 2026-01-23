@@ -32,6 +32,19 @@ spec:
       bot_token_env: TELEGRAM_BOT_TOKEN
       webhook_secret: null
 
+    # GitHub - Enable with GITHUB_TOKEN and GITHUB_WEBHOOK_SECRET
+    github:
+      enabled: true
+      token_env: GITHUB_TOKEN
+      webhook_secret_env: GITHUB_WEBHOOK_SECRET
+      bot_name: "aofbot"
+      # Optional: Restrict to specific repositories
+      # allowed_repos:
+      #   - "yourorg/yourrepo"
+      # Optional: Restrict to specific organizations
+      # allowed_orgs:
+      #   - "yourorg"
+
     # Discord Bot (not yet implemented)
     # discord:
     #   enabled: false
@@ -45,12 +58,16 @@ spec:
     #   access_token_env: WHATSAPP_ACCESS_TOKEN
     #   verify_token_env: WHATSAPP_VERIFY_TOKEN
 
+  triggers:
+    directory: ./config
+    watch: true
+
   agents:
-    directory: /app/agents
+    directory: ./agents
     watch: true
 
   flows:
-    directory: /app/flows
+    directory: ./flows
     watch: true
     enabled: true
 
@@ -58,4 +75,4 @@ spec:
     max_concurrent_tasks: 10
     task_timeout_secs: 300
     max_tasks_per_user: 5
-    default_agent: devops
+    default_agent: devops-agent

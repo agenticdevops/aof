@@ -229,7 +229,8 @@ pub struct JiraIssueFields {
 /// Jira issue type
 #[derive(Debug, Clone, Deserialize)]
 pub struct JiraIssueType {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -238,16 +239,19 @@ pub struct JiraIssueType {
 /// Jira project information
 #[derive(Debug, Clone, Deserialize)]
 pub struct JiraProject {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub key: String,
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// Jira status
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraStatus {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
     #[serde(default)]
     pub status_category: Option<JiraStatusCategory>,
@@ -257,25 +261,29 @@ pub struct JiraStatus {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraStatusCategory {
-    pub id: i64,
-    pub key: String,
+    #[serde(default)]
+    pub id: Option<i64>,
+    #[serde(default)]
+    pub key: Option<String>,
     pub name: String,
 }
 
 /// Jira priority
 #[derive(Debug, Clone, Deserialize)]
 pub struct JiraPriority {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
 }
 
 /// Jira issue information
 #[derive(Debug, Clone, Deserialize)]
 pub struct JiraIssue {
-    pub id: String,
+    #[serde(default)]
+    pub id: Option<String>,
     pub key: String,
-    #[serde(rename = "self")]
-    pub self_url: String,
+    #[serde(rename = "self", default)]
+    pub self_url: Option<String>,
     pub fields: JiraIssueFields,
 }
 
@@ -283,15 +291,17 @@ pub struct JiraIssue {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraComment {
-    pub id: String,
-    #[serde(rename = "self")]
-    pub self_url: String,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(rename = "self", default)]
+    pub self_url: Option<String>,
     pub body: String,
     #[serde(default)]
     pub author: Option<JiraUser>,
     #[serde(default)]
     pub update_author: Option<JiraUser>,
-    pub created: String,
+    #[serde(default)]
+    pub created: Option<String>,
     #[serde(default)]
     pub updated: Option<String>,
 }
@@ -339,8 +349,9 @@ pub struct JiraChangelog {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JiraWebhookPayload {
-    /// Webhook event timestamp
-    pub timestamp: i64,
+    /// Webhook event timestamp (optional - may not be provided by Jira Automation)
+    #[serde(default)]
+    pub timestamp: Option<i64>,
 
     /// Event type
     pub webhook_event: String,
@@ -431,8 +442,25 @@ impl JiraPlatform {
         Ok(Self { config, client })
     }
 
-    /// Verify HMAC-SHA256 signature from Jira webhook
+    /// Verify signature from Jira webhook
+    /// Supports multiple modes:
+    /// 1. HMAC-SHA256 signature (prefixed with "sha256=" or raw hex)
+    /// 2. Static shared secret (direct comparison for Jira Automation)
     fn verify_jira_signature(&self, payload: &[u8], signature: &str) -> bool {
+        // Strip common prefixes like "sha256=" or "sha1=" if present
+        let provided_signature = signature
+            .strip_prefix("sha256=")
+            .or_else(|| signature.strip_prefix("sha1="))
+            .unwrap_or(signature);
+
+        // Mode 1: Direct secret comparison (for Jira Automation static secrets)
+        // Jira Automation sends the secret value directly in the header
+        if provided_signature == self.config.webhook_secret {
+            debug!("Jira signature verified via direct secret match");
+            return true;
+        }
+
+        // Mode 2: HMAC-SHA256 verification (for computed signatures)
         let mut mac = match HmacSha256::new_from_slice(self.config.webhook_secret.as_bytes()) {
             Ok(m) => m,
             Err(e) => {
@@ -445,14 +473,14 @@ impl JiraPlatform {
         let result = mac.finalize();
         let computed_signature = hex::encode(result.into_bytes());
 
-        if computed_signature == signature {
-            debug!("Jira signature verified successfully");
+        if computed_signature == provided_signature {
+            debug!("Jira signature verified via HMAC-SHA256");
             true
         } else {
             debug!(
-                "Signature mismatch - computed: {}, provided: {}",
-                &computed_signature[..8],
-                &signature[..8.min(signature.len())]
+                "Signature mismatch - computed HMAC: {}..., provided: {}...",
+                &computed_signature[..8.min(computed_signature.len())],
+                &provided_signature[..8.min(provided_signature.len())]
             );
             false
         }
@@ -810,7 +838,9 @@ impl JiraPlatform {
         // Build metadata with full event details
         let mut metadata = HashMap::new();
         metadata.insert("event_type".to_string(), serde_json::json!(event_type));
-        metadata.insert("issue_id".to_string(), serde_json::json!(issue.id));
+        if let Some(ref id) = issue.id {
+            metadata.insert("issue_id".to_string(), serde_json::json!(id));
+        }
         metadata.insert("issue_key".to_string(), serde_json::json!(issue.key));
         metadata.insert("issue_type".to_string(), serde_json::json!(issue.fields.issuetype.name));
         metadata.insert("project_id".to_string(), serde_json::json!(issue.fields.project.id));
@@ -836,8 +866,10 @@ impl JiraPlatform {
             metadata.insert("changelog".to_string(), serde_json::to_value(changelog).unwrap_or_default());
         }
 
-        // Message ID from issue and timestamp
-        let message_id = format!("jira-{}-{}-{}", issue.id, event_type, payload.timestamp);
+        // Message ID from issue and timestamp (use current time if not provided)
+        let ts = payload.timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let issue_id = issue.id.as_deref().unwrap_or(&issue.key);
+        let message_id = format!("jira-{}-{}-{}", issue_id, event_type, ts);
 
         // Thread ID from issue key
         let thread_id = Some(issue.key.clone());
@@ -848,7 +880,7 @@ impl JiraPlatform {
             channel_id,
             user: trigger_user,
             text,
-            timestamp: chrono::DateTime::from_timestamp(payload.timestamp / 1000, 0).unwrap_or_else(chrono::Utc::now),
+            timestamp: chrono::DateTime::from_timestamp(ts / 1000, 0).unwrap_or_else(chrono::Utc::now),
             metadata,
             thread_id,
             reply_to: None,
@@ -867,6 +899,14 @@ impl TriggerPlatform for JiraPlatform {
         raw: &[u8],
         headers: &HashMap<String, String>,
     ) -> Result<TriggerMessage, PlatformError> {
+        // Log raw payload for debugging
+        if let Ok(raw_str) = std::str::from_utf8(raw) {
+            debug!("Jira webhook raw payload ({} bytes): {}", raw.len(),
+                   if raw_str.len() > 500 { &raw_str[..500] } else { raw_str });
+        } else {
+            debug!("Jira webhook raw payload ({} bytes): <binary>", raw.len());
+        }
+
         // Verify signature if present
         if let Some(signature) = headers.get("x-hub-signature") {
             if !self.verify_jira_signature(raw, signature) {

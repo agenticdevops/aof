@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0-beta] - 2026-01-23
+
+### Added
+- **Interactive TUI Mode** - Full-featured terminal user interface for agent conversations
+  - Launch with `aofctl run agent <config.yaml>` (no `--input` flag)
+  - Chat panel with syntax-highlighted conversation history
+  - Activity log showing real-time agent events (thinking, analyzing, tool use, LLM calls)
+  - Context gauge displaying token usage and execution time
+  - Help overlay with keyboard shortcuts (press `?`)
+  - LazyGit-inspired styling with clear visual hierarchy
+
+- **Agent Cancellation** - Stop running agents with ESC key
+  - Graceful cancellation using tokio CancellationToken
+  - Clean abort of LLM calls and tool executions
+  - Status indicator shows "Cancelling..." during abort
+
+- **Session Persistence** - Conversation history saved automatically
+  - Sessions stored in `~/.aof/sessions/<agent-name>/`
+  - Includes complete message history, token usage, activity logs
+  - JSON format for easy inspection and backup
+
+- **Session Resume** - Continue previous conversations
+  - `--resume` flag to continue latest session: `aofctl run agent config.yaml --resume`
+  - `--session <id>` flag to resume specific session
+  - Restored sessions show previous context to the agent
+
+- **Session Management Commands**
+  - `aofctl get sessions` - List all saved sessions across agents
+  - `aofctl get sessions <agent>` - List sessions for specific agent
+  - Output shows session ID, agent, model, message count, tokens, age
+  - Supports `-o json` and `-o yaml` output formats
+
+- **Activity Event System** - Real-time agent activity tracking
+  - New `ActivityEvent` enum in aof-core with event types:
+    - Thinking, Analyzing, LlmCall, ToolUse, ToolComplete, Warning, Error
+  - `ActivitySender` for emitting events from runtime
+  - `ActivityReceiver` for consuming events in TUI
+
+### Changed
+- TUI keyboard shortcuts updated:
+  - `ESC` now cancels running agent (was: do nothing)
+  - `Ctrl+S` saves session manually
+  - `Ctrl+L` clears chat and starts new session
+  - `Shift+↑/↓` scrolls chat history
+  - `PageUp/Down` scrolls 5 lines
+
+### Documentation
+- Updated getting-started guide with interactive mode examples
+- Added TUI keyboard shortcuts to CLI reference
+- Added session management documentation
+- Updated aofctl reference with --resume and --session flags
+
+## [0.3.2-beta] - 2026-01-02
+
+### Added
+- Built-in command handler support via `agent: builtin` in trigger command bindings
+  - Use `agent: builtin` for `/help`, `/agent`, `/fleet` to get interactive menus
+  - Interactive menus include fleet/agent selection buttons (Telegram/Slack)
+  - Keeps built-in UI handlers separate from LLM-routed commands
+- Stale message filtering for webhook handlers
+  - Messages older than 60 seconds are silently dropped
+  - Prevents processing of queued messages when daemon restarts
+  - Configurable via `max_message_age_secs` in handler config
+- `cargo install aofctl` support via crates.io publishing
+  - All AOF crates now published to crates.io
+  - Automated publishing on tagged releases
+- New documentation: Built-in Commands Guide (`docs/guides/builtin-commands.md`)
+
 ### Fixed
 - `aofctl serve` now produces visible startup output
   - Changed from tracing (default level: error) to println for critical startup messages
@@ -16,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Intermediate acknowledgment messages ("Thinking...", "Processing...") are skipped for Git platforms
   - Only the final response is posted, keeping PR threads clean
   - Slack/Telegram/Discord still show real-time progress indicators
+- Improved `library://` URI path resolution for agent library
 
 ## [0.3.1-beta] - 2025-12-26
 

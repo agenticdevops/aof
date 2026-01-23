@@ -19,11 +19,11 @@ AOF is designed as a **modular, pluggable framework** where components are reusa
 │  │ WhatsApp    │          │ Agent        │      │ Discord    │  │
 │  │ Telegram    │          │ Conditional  │      │ HTTP       │  │
 │  │ GitHub      │          │ Parallel     │      │ Email      │  │
-│  │ HTTP        │          │ Join         │      │ File       │  │
-│  │ Schedule    │          │ Wait         │      │ ...        │  │
-│  │ PagerDuty   │          │ Approval     │      └────────────┘  │
-│  │ Kafka       │          │ Loop         │                       │
-│  │ ...         │          │ ...          │                       │
+│  │ Jira        │          │ Join         │      │ File       │  │
+│  │ HTTP        │          │ Wait         │      │ ...        │  │
+│  │ Schedule    │          │ Approval     │      └────────────┘  │
+│  │ PagerDuty   │          │ Loop         │                       │
+│  │ Opsgenie    │          │ ...          │                       │
 │  └─────────────┘          └──────────────┘                       │
 │                                                                  │
 │  AGENTS                    MEMORY                TOOLS           │
@@ -33,6 +33,8 @@ AOF is designed as a **modular, pluggable framework** where components are reusa
 │  │ Context     │          │ SQLite       │      │ FileSystem │  │
 │  │ Tools       │          │ Redis        │      │ MCP        │  │
 │  └─────────────┘          └──────────────┘      │ kubectl    │  │
+│                                                  │ Grafana    │  │
+│                                                  │ Datadog    │  │
 │                                                  └────────────┘  │
 ├─────────────────────────────────────────────────────────────────┤
 │                    ORCHESTRATION                                 │
@@ -72,7 +74,7 @@ trait NodeExecutor {
 
 ---
 
-## Current Release: v0.1.15
+## Current Release: v0.3.2-beta
 
 ### Implemented Features
 
@@ -85,21 +87,41 @@ trait NodeExecutor {
 | Built-in tools (Shell, HTTP, FileSystem) | ✅ Complete | |
 | AgentFleet multi-agent coordination | ✅ Complete | |
 | AgentFlow workflow orchestration | ✅ Complete | v1 schema with nodes/connections |
+| Agent Library (30 pre-built agents) | ✅ Complete | K8s, Observability, Incident, CI/CD, Security, Cloud |
 
 #### Trigger Types
-| Trigger | Status | Priority | Notes |
-|---------|--------|----------|-------|
-| Slack | ✅ Complete | - | app_mention, message, slash_command |
-| HTTP/Webhook | ✅ Complete | - | POST/GET with variable access |
-| Schedule (Cron) | ✅ Complete | - | With timezone support |
-| Manual (CLI) | ✅ Complete | - | `aofctl run` |
-| Discord | ⚠️ Partial | P2 | message_create events only |
-| Telegram | 🔄 Planned | P1 | [Issue #24](https://github.com/agenticdevops/aof/issues/24) |
-| WhatsApp | 🔄 Planned | P1 | [Issue #23](https://github.com/agenticdevops/aof/issues/23) |
-| GitHub | 🔄 Planned | P1 | [Issue #25](https://github.com/agenticdevops/aof/issues/25) |
-| PagerDuty | 🔄 Planned | P3 | [Issue #26](https://github.com/agenticdevops/aof/issues/26) |
-| Kafka | 🔄 Planned | P3 | Issue TBD |
-| SQS | 🔄 Planned | P3 | Issue TBD |
+| Trigger | Status | Notes |
+|---------|--------|-------|
+| Slack | ✅ Complete | app_mention, message, slash_command |
+| HTTP/Webhook | ✅ Complete | POST/GET with variable access |
+| Schedule (Cron) | ✅ Complete | With timezone support |
+| Manual (CLI) | ✅ Complete | `aofctl run` |
+| Telegram | ✅ Complete | Messages, inline keyboards |
+| WhatsApp | ✅ Complete | Messages, interactive buttons |
+| GitHub | ✅ Complete | PR, Issues, Push, Reviews |
+| Jira | ✅ Complete | Issues, Comments, Automation webhooks |
+| GitLab | ✅ Complete | MR, Issues, Push |
+| Bitbucket | ✅ Complete | PR, Push |
+| PagerDuty | ✅ Complete | Incidents, alerts |
+| Opsgenie | ✅ Complete | Alerts, on-call |
+| Discord | ⚠️ Partial | message_create events only |
+| ServiceNow | 🔄 Planned | [Issue #48] |
+| Kafka | 🔄 Planned | Event streaming |
+| SQS | 🔄 Planned | AWS queue integration |
+
+#### Tools
+| Tool | Status | Notes |
+|------|--------|-------|
+| Shell | ✅ Complete | Command execution |
+| HTTP | ✅ Complete | REST API calls |
+| FileSystem | ✅ Complete | File operations |
+| MCP | ✅ Complete | Model Context Protocol |
+| Grafana | ✅ Complete | Dashboards, alerts |
+| Datadog | ✅ Complete | Metrics, monitors |
+| Prometheus | ✅ Complete | Metrics queries |
+| Loki | ⚠️ Partial | Basic log queries |
+| Jaeger | 🔄 Planned | [Issue #50] |
+| Jenkins | 🔄 Planned | [Issue #55] |
 
 #### Node Types (AgentFlow)
 | Node | Status | Notes |
@@ -125,35 +147,41 @@ trait NodeExecutor {
 | Bot self-approval prevention | ✅ Complete | Auto-detects bot_user_id |
 | Conversation memory | ✅ Complete | Per-channel/thread isolation |
 | Multi-tenant routing | ✅ Complete | FlowRouter with priorities |
+| Built-in commands | ✅ Complete | /help, /agent, /fleet menus |
+| Stale message filtering | ✅ Complete | Drops old queued messages |
 | Config hot-reload | 🔄 Planned | [Issue #22] |
 
 ---
 
 ## Roadmap by Priority
 
-### P0 - Critical (Current Sprint)
+### P0 - Current Focus (v0.3.3)
 - [x] Slack approval workflow
 - [x] Conversation memory
 - [x] Multi-tenant routing
-- [ ] Fix/organize flow examples
+- [x] GitHub/Jira triggers
+- [ ] **Structured I/O Schemas** - Standardize agent outputs ([#74], [#75], [#76])
+- [ ] **MCP Server Catalog** - Document available integrations ([#71])
 
-### P1 - High Priority (Individual Users)
-- [ ] **WhatsApp trigger** - Interactive buttons for approval
-- [ ] **Telegram trigger** - Inline keyboards for bots
-- [ ] **GitHub trigger** - PR/Issue webhooks
-- [ ] Tutorial documentation for individual users
+### P1 - Developer Experience
+- [ ] Structured output schemas for agents
+- [ ] MCP server catalog documentation
+- [ ] More real-world flow examples
+- [ ] Improved error messages (serde_path_to_error)
 
-### P2 - Medium Priority
-- [ ] Discord full implementation
-- [ ] Loop node for batch operations
-- [ ] HTTP node full implementation
-- [ ] State persistence (checkpointing)
+### P2 - Enterprise Features
+- [ ] **Horizontal scaling** - Redis/NATS message queue ([#47])
+- [ ] **Multi-org support** - Per-org credentials ([#46])
+- [ ] **Config hot-reload** - No restart updates ([#22])
+- [ ] **ServiceNow trigger** - Enterprise ITSM ([#48])
 
-### P3 - Lower Priority (Enterprise/SRE)
-- [ ] PagerDuty trigger
+### P3 - Additional Integrations
 - [ ] Kafka trigger
 - [ ] SQS trigger
-- [ ] AgentFleet integration in flows (v1alpha1 syntax)
+- [ ] Jaeger tool ([#50])
+- [ ] Jenkins tool ([#55])
+- [ ] Loki enhancement ([#49])
+- [ ] Loop node for batch operations
 
 ---
 
@@ -205,18 +233,15 @@ spec:
 | `multi-tenant/slack-prod-k8s-bot.yaml` | Slack | Channel filtering |
 | `multi-tenant/slack-staging-k8s-bot.yaml` | Slack | Environment context |
 | `multi-tenant/slack-dev-local-bot.yaml` | Slack | Local development |
+| `flows/github/pr-review-flow.yaml` | GitHub | PR review automation |
+| `flows/github/issue-triage-flow.yaml` | GitHub | Issue labeling |
 
-### Planned Examples (v1alpha1 schema)
-These examples demonstrate future syntax and require additional implementation:
-
+### Planned Examples
 | Example | Requires | Status |
 |---------|----------|--------|
-| `planned/incident-auto-remediation-flow.yaml` | PagerDuty, Fleet | Planned |
-| `planned/pr-review-flow.yaml` | GitHub, Fleet | Planned |
-| `planned/daily-standup-report-flow.yaml` | Cron, Fleet, Jira | Planned |
-| `planned/slack-qa-bot-flow.yaml` | Inline agent spec | Planned |
-| `planned/cost-optimization-flow.yaml` | Schedule, Fleet | Planned |
-| `planned/deploy-notification-flow.yaml` | GitHub, Fleet | Planned |
+| `incident-auto-remediation-flow.yaml` | PagerDuty, Fleet | Planned |
+| `daily-standup-report-flow.yaml` | Cron, Fleet, Jira | Planned |
+| `cost-optimization-flow.yaml` | Schedule, Fleet | Planned |
 
 ---
 
@@ -224,13 +249,28 @@ These examples demonstrate future syntax and require additional implementation:
 
 Track progress on GitHub: https://github.com/agenticdevops/aof/issues
 
-| Issue | Title | Priority | Labels |
-|-------|-------|----------|--------|
-| [#22](https://github.com/agenticdevops/aof/issues/22) | Config hot-reload | P2 | enhancement |
-| [#23](https://github.com/agenticdevops/aof/issues/23) | WhatsApp trigger support | P1 | enhancement |
-| [#24](https://github.com/agenticdevops/aof/issues/24) | Telegram trigger support | P1 | enhancement |
-| [#25](https://github.com/agenticdevops/aof/issues/25) | GitHub webhook trigger | P1 | enhancement |
-| [#26](https://github.com/agenticdevops/aof/issues/26) | PagerDuty trigger | P3 | enhancement |
+### Open Issues
+| Issue | Title | Priority |
+|-------|-------|----------|
+| [#22](https://github.com/agenticdevops/aof/issues/22) | Config hot-reload | P2 |
+| [#46](https://github.com/agenticdevops/aof/issues/46) | Multi-org support | P1 |
+| [#47](https://github.com/agenticdevops/aof/issues/47) | Horizontal scaling | P1 |
+| [#48](https://github.com/agenticdevops/aof/issues/48) | ServiceNow trigger | P2 |
+| [#49](https://github.com/agenticdevops/aof/issues/49) | Loki enhancement | P1 |
+| [#50](https://github.com/agenticdevops/aof/issues/50) | Jaeger tool | P2 |
+| [#55](https://github.com/agenticdevops/aof/issues/55) | Jenkins tool | P2 |
+| [#71](https://github.com/agenticdevops/aof/issues/71) | MCP Server Catalog | P0 |
+| [#74](https://github.com/agenticdevops/aof/issues/74) | Structured I/O | P0 |
+
+### Recently Closed
+| Issue | Title | Release |
+|-------|-------|---------|
+| [#78](https://github.com/agenticdevops/aof/issues/78) | Grafana tool | v0.3.0 |
+| [#79](https://github.com/agenticdevops/aof/issues/79) | PagerDuty trigger | v0.3.0 |
+| [#80](https://github.com/agenticdevops/aof/issues/80) | Datadog tool | v0.3.0 |
+| [#81](https://github.com/agenticdevops/aof/issues/81) | Incident agents | v0.3.0 |
+| [#82](https://github.com/agenticdevops/aof/issues/82) | Opsgenie trigger | v0.3.0 |
+| [#98](https://github.com/agenticdevops/aof/issues/98) | Jira Automation | v0.3.3 |
 
 ---
 

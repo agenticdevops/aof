@@ -5,6 +5,7 @@ mod cli;
 mod commands;
 mod output;
 mod resources;
+pub mod session;
 
 use cli::Cli;
 

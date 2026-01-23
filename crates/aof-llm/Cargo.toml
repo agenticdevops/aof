@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Multi-provider LLM abstraction layer"
+keywords.workspace = true
+categories.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 
 [dependencies]
 aof-core = { workspace = true }
