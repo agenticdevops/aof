@@ -558,6 +558,8 @@ struct AppState {
     tool_count: usize, // Total tools executed this session
     llm_calls: usize, // Total LLM calls this session
     activity_scroll: usize, // Scroll offset for activity panel
+    cursor_position: usize, // Cursor position in current_input
+    last_esc_time: Option<std::time::Instant>, // For double-ESC to exit
 }
 
 impl AppState {
@@ -630,6 +632,8 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
             tool_count: 0,
             llm_calls: 0,
             activity_scroll: 0,
+            cursor_position: 0,
+            last_esc_time: None,
         }
     }
 
@@ -692,6 +696,8 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
             tool_count: 0,
             llm_calls: 0,
             activity_scroll: 0,
+            cursor_position: 0,
+            last_esc_time: None,
         }
     }
 
@@ -758,6 +764,127 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
 
     fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Cursor manipulation methods for input editing
+    // ═══════════════════════════════════════════════════════════════════════
+
+    fn move_cursor_left(&mut self) {
+        if self.cursor_position > 0 {
+            self.cursor_position -= 1;
+        }
+    }
+
+    fn move_cursor_right(&mut self) {
+        if self.cursor_position < self.current_input.len() {
+            self.cursor_position += 1;
+        }
+    }
+
+    fn move_cursor_home(&mut self) {
+        self.cursor_position = 0;
+    }
+
+    fn move_cursor_end(&mut self) {
+        self.cursor_position = self.current_input.len();
+    }
+
+    fn move_cursor_word_left(&mut self) {
+        // Move to start of previous word
+        if self.cursor_position == 0 {
+            return;
+        }
+        let chars: Vec<char> = self.current_input.chars().collect();
+        let mut pos = self.cursor_position - 1;
+
+        // Skip whitespace
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+        // Skip word characters
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+        self.cursor_position = pos;
+    }
+
+    fn move_cursor_word_right(&mut self) {
+        // Move to start of next word
+        let chars: Vec<char> = self.current_input.chars().collect();
+        let len = chars.len();
+        if self.cursor_position >= len {
+            return;
+        }
+        let mut pos = self.cursor_position;
+
+        // Skip current word characters
+        while pos < len && !chars[pos].is_whitespace() {
+            pos += 1;
+        }
+        // Skip whitespace
+        while pos < len && chars[pos].is_whitespace() {
+            pos += 1;
+        }
+        self.cursor_position = pos;
+    }
+
+    fn insert_char(&mut self, c: char) {
+        if self.cursor_position >= self.current_input.len() {
+            self.current_input.push(c);
+        } else {
+            self.current_input.insert(self.cursor_position, c);
+        }
+        self.cursor_position += 1;
+    }
+
+    fn insert_newline(&mut self) {
+        self.insert_char('\n');
+    }
+
+    fn delete_char_before_cursor(&mut self) {
+        // Backspace
+        if self.cursor_position > 0 {
+            self.cursor_position -= 1;
+            self.current_input.remove(self.cursor_position);
+        }
+    }
+
+    fn delete_char_at_cursor(&mut self) {
+        // Delete key
+        if self.cursor_position < self.current_input.len() {
+            self.current_input.remove(self.cursor_position);
+        }
+    }
+
+    fn delete_word_before_cursor(&mut self) {
+        // Ctrl+Backspace / Ctrl+W - delete word before cursor
+        if self.cursor_position == 0 {
+            return;
+        }
+        let chars: Vec<char> = self.current_input.chars().collect();
+        let start_pos = self.cursor_position;
+        let mut pos = self.cursor_position - 1;
+
+        // Skip whitespace
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+        // Skip word characters
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+
+        // Remove characters from pos to start_pos
+        for _ in pos..start_pos {
+            self.current_input.remove(pos);
+        }
+        self.cursor_position = pos;
+    }
+
+    fn clear_input(&mut self) {
+        self.current_input.clear();
+        self.cursor_position = 0;
     }
 
     fn save_session(&mut self) -> Result<()> {
@@ -921,10 +1048,25 @@ async fn run_agent_interactive_with_resume(
                             if app_state.show_help {
                                 // Close help panel
                                 app_state.show_help = false;
+                                app_state.last_esc_time = None;
                             } else if app_state.agent_busy {
                                 // Cancel running execution
                                 app_state.cancellation_token.cancel();
                                 app_state.add_activity(ActivityEvent::cancelled());
+                                app_state.last_esc_time = None;
+                            } else {
+                                // Double-ESC to exit (like vim)
+                                let now = std::time::Instant::now();
+                                if let Some(last_esc) = app_state.last_esc_time {
+                                    if now.duration_since(last_esc).as_millis() < 500 {
+                                        // Double ESC within 500ms - exit
+                                        if let Err(e) = app_state.save_session() {
+                                            eprintln!("Failed to save session: {}", e);
+                                        }
+                                        break;
+                                    }
+                                }
+                                app_state.last_esc_time = Some(now);
                             }
                         }
                         KeyCode::Char('?') if !app_state.agent_busy => {
@@ -1097,13 +1239,70 @@ async fn run_agent_interactive_with_resume(
                             }
                         }
 
-                        app_state.current_input.clear();
+                        app_state.clear_input();
+                    }
+                    // ═══════════════════════════════════════════════════════════════════════
+                    // Cursor movement and editing keys
+                    // ═══════════════════════════════════════════════════════════════════════
+                    KeyCode::Left if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+Left: Move cursor word left
+                        app_state.move_cursor_word_left();
+                    }
+                    KeyCode::Right if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+Right: Move cursor word right
+                        app_state.move_cursor_word_right();
+                    }
+                    KeyCode::Left => {
+                        // Move cursor left
+                        app_state.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        // Move cursor right
+                        app_state.move_cursor_right();
+                    }
+                    KeyCode::Home => {
+                        // Move cursor to start
+                        app_state.move_cursor_home();
+                    }
+                    KeyCode::End => {
+                        // Move cursor to end
+                        app_state.move_cursor_end();
+                    }
+                    KeyCode::Backspace if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+Backspace: Delete word before cursor
+                        app_state.delete_word_before_cursor();
                     }
                     KeyCode::Backspace => {
-                        app_state.current_input.pop();
+                        // Delete character before cursor
+                        app_state.delete_char_before_cursor();
+                    }
+                    KeyCode::Delete => {
+                        // Delete character at cursor
+                        app_state.delete_char_at_cursor();
+                    }
+                    KeyCode::Char('w') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+W: Delete word before cursor (like bash)
+                        app_state.delete_word_before_cursor();
+                    }
+                    KeyCode::Char('a') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+A: Move to start (like bash)
+                        app_state.move_cursor_home();
+                    }
+                    KeyCode::Char('e') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+E: Move to end (like bash)
+                        app_state.move_cursor_end();
+                    }
+                    KeyCode::Char('u') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+U: Clear input (like bash)
+                        app_state.clear_input();
+                    }
+                    KeyCode::Enter if key.modifiers == crossterm::event::KeyModifiers::SHIFT => {
+                        // Shift+Enter: Insert newline for multi-line input
+                        app_state.insert_newline();
                     }
                     KeyCode::Char(c) => {
-                        app_state.current_input.push(c);
+                        // Insert character at cursor position
+                        app_state.insert_char(c);
                     }
                     _ => {}
                     }
@@ -1198,12 +1397,20 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         .map(|t| format!(" │ ⚙ {}", t))
         .unwrap_or_default();
 
+    // Show available tools and executed count
+    let available_tools = app.tools.len();
+    let tools_display = if available_tools > 0 {
+        format!("{} ({} used)", available_tools, app.tool_count)
+    } else {
+        "none".to_string()
+    };
+
     let header_left = format!(
-        " {} {} │ {} │ Tools: {} │ LLM Calls: {}{}",
+        " {} {} │ {} │ Tools: {} │ LLM: {}{}",
         status_icon,
         agent_name.to_uppercase(),
         app.model_name,
-        app.tool_count,
+        tools_display,
         app.llm_calls,
         current_tool_str
     );
@@ -1329,19 +1536,70 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
             String::new()
         };
 
-        let mut input_spans = vec![
-            Span::styled(" ❯ ", Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
-        ];
+        // Show input with cursor at correct position
+        // Handle multi-line input by showing each line
+        let input_lines: Vec<&str> = app.current_input.split('\n').collect();
+        let is_multiline = input_lines.len() > 1;
 
-        // Show input with cursor
         if app.current_input.is_empty() {
-            input_spans.push(Span::styled("Type your message...", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)));
+            // Empty input - show placeholder with cursor
+            let mut input_spans = vec![
+                Span::styled(" ❯ ", Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)),
+                Span::styled(" Type message (Shift+Enter for newline)", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+            ];
+            input_spans.push(Span::styled(char_hint, Style::default().fg(Color::DarkGray)));
+            chat_lines.push(Line::from(input_spans));
+        } else if is_multiline {
+            // Multi-line input - show each line with line numbers
+            let mut chars_before = 0;
+            for (i, line) in input_lines.iter().enumerate() {
+                let line_start = chars_before;
+                let line_end = line_start + line.len();
+
+                let prefix = if i == 0 {
+                    " ❯ "
+                } else {
+                    "   "
+                };
+
+                let mut line_spans = vec![
+                    Span::styled(prefix, Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
+                ];
+
+                // Check if cursor is on this line
+                if app.cursor_position >= line_start && app.cursor_position <= line_end {
+                    let cursor_in_line = app.cursor_position - line_start;
+                    let (before, after) = line.split_at(cursor_in_line.min(line.len()));
+                    line_spans.push(Span::raw(before.to_string()));
+                    line_spans.push(Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)));
+                    line_spans.push(Span::raw(after.to_string()));
+                } else {
+                    line_spans.push(Span::raw(line.to_string()));
+                }
+
+                // Add char count on last line
+                if i == input_lines.len() - 1 {
+                    line_spans.push(Span::styled(char_hint.clone(), Style::default().fg(Color::DarkGray)));
+                }
+
+                chat_lines.push(Line::from(line_spans));
+                chars_before = line_end + 1; // +1 for the newline character
+            }
         } else {
-            input_spans.push(Span::raw(&app.current_input));
+            // Single line input - show cursor at position
+            let mut input_spans = vec![
+                Span::styled(" ❯ ", Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
+            ];
+
+            let cursor_pos = app.cursor_position.min(app.current_input.len());
+            let (before, after) = app.current_input.split_at(cursor_pos);
+            input_spans.push(Span::raw(before.to_string()));
+            input_spans.push(Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)));
+            input_spans.push(Span::raw(after.to_string()));
+            input_spans.push(Span::styled(char_hint, Style::default().fg(Color::DarkGray)));
+            chat_lines.push(Line::from(input_spans));
         }
-        input_spans.push(Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)));
-        input_spans.push(Span::styled(char_hint, Style::default().fg(Color::DarkGray)));
-        chat_lines.push(Line::from(input_spans));
     }
 
     // Calculate scroll position with manual scroll offset
@@ -1665,6 +1923,38 @@ fn render_help_overlay(f: &mut Frame) {
     let help_lines = vec![
         Line::from(""),
         Line::from(vec![
+            Span::styled("  EDITING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("    ←/→          ", Style::default().fg(Color::White)),
+            Span::styled("Move cursor left/right", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+←/→     ", Style::default().fg(Color::White)),
+            Span::styled("Move cursor by word", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Home/End     ", Style::default().fg(Color::White)),
+            Span::styled("Move to start/end", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+A/E     ", Style::default().fg(Color::White)),
+            Span::styled("Start/End (bash-style)", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+W       ", Style::default().fg(Color::White)),
+            Span::styled("Delete word before cursor", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+U       ", Style::default().fg(Color::White)),
+            Span::styled("Clear entire input", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Shift+Enter  ", Style::default().fg(Color::White)),
+            Span::styled("Insert newline (multi-line)", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
             Span::styled("  NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
@@ -1674,10 +1964,6 @@ fn render_help_overlay(f: &mut Frame) {
         Line::from(vec![
             Span::styled("    PageUp/Down  ", Style::default().fg(Color::White)),
             Span::styled("Scroll 5 lines", Style::default().fg(Color::Gray)),
-        ]),
-        Line::from(vec![
-            Span::styled("    Mouse scroll ", Style::default().fg(Color::White)),
-            Span::styled("Scroll chat history", Style::default().fg(Color::Gray)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -1689,7 +1975,7 @@ fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("    ESC          ", Style::default().fg(Color::White)),
-            Span::styled("Cancel running execution", Style::default().fg(Color::Gray)),
+            Span::styled("Cancel (or ESC×2 to quit)", Style::default().fg(Color::Gray)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -1697,11 +1983,11 @@ fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("    Ctrl+S       ", Style::default().fg(Color::White)),
-            Span::styled("Save session manually", Style::default().fg(Color::Gray)),
+            Span::styled("Save session", Style::default().fg(Color::Gray)),
         ]),
         Line::from(vec![
             Span::styled("    Ctrl+L       ", Style::default().fg(Color::White)),
-            Span::styled("Clear chat / new session", Style::default().fg(Color::Gray)),
+            Span::styled("New session", Style::default().fg(Color::Gray)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -1709,7 +1995,7 @@ fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("    ?            ", Style::default().fg(Color::White)),
-            Span::styled("Toggle this help panel", Style::default().fg(Color::Gray)),
+            Span::styled("Toggle this help", Style::default().fg(Color::Gray)),
         ]),
         Line::from(vec![
             Span::styled("    Ctrl+C       ", Style::default().fg(Color::White)),

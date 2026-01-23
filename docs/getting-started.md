@@ -106,15 +106,27 @@ This opens a professional terminal UI with:
 **Footer Bar** - Context-aware keyboard shortcuts
 
 **Keyboard Shortcuts:**
+
+*Editing:*
+| Key | Action |
+|-----|--------|
+| `←/→` | Move cursor |
+| `Ctrl+←/→` | Move by word |
+| `Home/End` | Jump to start/end |
+| `Ctrl+A/E` | Start/End (bash-style) |
+| `Ctrl+W` | Delete word |
+| `Ctrl+U` | Clear input |
+| `Shift+Enter` | Insert newline |
+
+*Navigation & Control:*
 | Key | Action |
 |-----|--------|
 | `Enter` | Send message |
-| `ESC` | Cancel running agent |
+| `ESC` | Cancel agent (ESC×2 to quit) |
 | `?` | Toggle help panel |
 | `Ctrl+S` | Save session |
-| `Ctrl+L` | Clear / New session |
+| `Ctrl+L` | New session |
 | `Shift+↑/↓` | Scroll chat |
-| `PageUp/Down` | Scroll 5 lines |
 | `Ctrl+C` | Quit |
 
 **Non-Interactive Mode** - For scripts and automation:
