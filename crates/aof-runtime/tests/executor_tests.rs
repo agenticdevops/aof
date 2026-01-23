@@ -3,7 +3,7 @@
 use aof_core::{
     AgentConfig, AgentContext, AofResult, Model, ModelConfig, ModelProvider, ModelRequest,
     ModelResponse, RequestMessage, StopReason, StreamChunk, ToolCall, ToolDefinition,
-    ToolExecutor, ToolInput, ToolResult, Usage,
+    ToolExecutor, ToolInput, ToolResult, ToolSpec, Usage,
 };
 use aof_runtime::executor::AgentExecutor;
 use async_trait::async_trait;
@@ -120,9 +120,11 @@ async fn test_executor_simple_execution() {
         tools: vec![],
         mcp_servers: vec![],
         memory: None,
+        max_context_messages: 10,
         max_iterations: 10,
         temperature: 0.7,
         max_tokens: Some(1000),
+        output_schema: None,
         extra: HashMap::new(),
     };
 
@@ -155,12 +157,14 @@ async fn test_executor_with_tool_calls() {
         system_prompt: None,
         model: "test-model".to_string(),
         provider: None,
-        tools: vec!["test_tool".to_string()],
+        tools: vec![ToolSpec::Simple("test_tool".to_string())],
         mcp_servers: vec![],
         memory: None,
+        max_context_messages: 10,
         max_iterations: 10,
         temperature: 0.7,
         max_tokens: None,
+        output_schema: None,
         extra: HashMap::new(),
     };
 
@@ -213,12 +217,14 @@ async fn test_executor_max_iterations() {
         system_prompt: None,
         model: "test-model".to_string(),
         provider: None,
-        tools: vec!["test_tool".to_string()],
+        tools: vec![ToolSpec::Simple("test_tool".to_string())],
         mcp_servers: vec![],
         memory: None,
+        max_context_messages: 10,
         max_iterations: 2,
         temperature: 0.7,
         max_tokens: None,
+        output_schema: None,
         extra: HashMap::new(),
     };
 
@@ -278,12 +284,14 @@ async fn test_executor_tool_failure() {
         system_prompt: None,
         model: "test-model".to_string(),
         provider: None,
-        tools: vec!["test_tool".to_string()],
+        tools: vec![ToolSpec::Simple("test_tool".to_string())],
         mcp_servers: vec![],
         memory: None,
+        max_context_messages: 10,
         max_iterations: 10,
         temperature: 0.7,
         max_tokens: None,
+        output_schema: None,
         extra: HashMap::new(),
     };
 
@@ -338,9 +346,11 @@ async fn test_executor_stop_reasons() {
             tools: vec![],
             mcp_servers: vec![],
             memory: None,
+            max_context_messages: 10,
             max_iterations: 10,
             temperature: 0.7,
             max_tokens: None,
+            output_schema: None,
             extra: HashMap::new(),
         };
 
@@ -372,9 +382,11 @@ async fn test_executor_content_filter() {
         tools: vec![],
         mcp_servers: vec![],
         memory: None,
+        max_context_messages: 10,
         max_iterations: 10,
         temperature: 0.7,
         max_tokens: None,
+        output_schema: None,
         extra: HashMap::new(),
     };
 

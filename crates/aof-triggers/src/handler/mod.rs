@@ -2289,6 +2289,7 @@ impl TriggerHandler {
             max_iterations: 5,
             temperature: 0.7,
             max_tokens: Some(2000),
+            output_schema: None,
             extra: std::collections::HashMap::new(),
         };
 

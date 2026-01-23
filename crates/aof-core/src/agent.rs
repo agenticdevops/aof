@@ -7,6 +7,141 @@ use std::sync::Arc;
 use crate::mcp::McpServerConfig;
 use crate::AofResult;
 
+/// Output schema specification using JSON Schema format
+/// Enables structured, validated agent responses
+///
+/// This is the YAML-friendly version for config files. It gets converted
+/// to `crate::schema::OutputSchema` for runtime use.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutputSchemaSpec {
+    /// JSON Schema type (object, array, string, number, boolean)
+    #[serde(rename = "type")]
+    pub schema_type: String,
+
+    /// Properties for object type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, serde_json::Value>>,
+
+    /// Required properties for object type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<Vec<String>>,
+
+    /// Items schema for array type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Box<serde_json::Value>>,
+
+    /// Enum values for string type
+    #[serde(rename = "enum", skip_serializing_if = "Option::is_none")]
+    pub enum_values: Option<Vec<String>>,
+
+    /// Description of the schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Allow additional properties (default: false for strict validation)
+    #[serde(default, rename = "additionalProperties")]
+    pub additional_properties: Option<bool>,
+
+    /// Validation mode: strict (default), lenient, coerce
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_mode: Option<String>,
+
+    /// Behavior on validation error: fail (default), retry, passthrough
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_validation_error: Option<String>,
+
+    /// Max retries if on_validation_error is "retry"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+
+    /// Additional JSON Schema properties (oneOf, anyOf, etc.)
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
+}
+
+impl OutputSchemaSpec {
+    /// Convert to JSON Schema Value for validation
+    pub fn to_json_schema(&self) -> serde_json::Value {
+        let mut schema = serde_json::json!({
+            "type": self.schema_type
+        });
+
+        if let Some(props) = &self.properties {
+            schema["properties"] = serde_json::json!(props);
+        }
+
+        if let Some(req) = &self.required {
+            schema["required"] = serde_json::json!(req);
+        }
+
+        if let Some(items) = &self.items {
+            schema["items"] = serde_json::json!(items);
+        }
+
+        if let Some(enum_vals) = &self.enum_values {
+            schema["enum"] = serde_json::json!(enum_vals);
+        }
+
+        if let Some(desc) = &self.description {
+            schema["description"] = serde_json::json!(desc);
+        }
+
+        if let Some(additional) = &self.additional_properties {
+            schema["additionalProperties"] = serde_json::json!(additional);
+        }
+
+        // Merge extra fields (oneOf, anyOf, etc.)
+        if let serde_json::Value::Object(ref mut map) = schema {
+            for (key, value) in &self.extra {
+                map.insert(key.clone(), value.clone());
+            }
+        }
+
+        schema
+    }
+
+    /// Get validation mode (defaults to "strict")
+    pub fn get_validation_mode(&self) -> &str {
+        self.validation_mode.as_deref().unwrap_or("strict")
+    }
+
+    /// Get error handling behavior (defaults to "fail")
+    pub fn get_error_behavior(&self) -> &str {
+        self.on_validation_error.as_deref().unwrap_or("fail")
+    }
+
+    /// Generate schema instructions for the LLM
+    pub fn to_instructions(&self) -> String {
+        let schema = self.to_json_schema();
+        format!(
+            "You MUST respond with valid JSON matching this schema:\n```json\n{}\n```\nDo not include any text outside the JSON object.",
+            serde_json::to_string_pretty(&schema).unwrap_or_default()
+        )
+    }
+}
+
+/// Convert YAML-friendly OutputSchemaSpec to runtime OutputSchema
+impl From<OutputSchemaSpec> for crate::schema::OutputSchema {
+    fn from(spec: OutputSchemaSpec) -> Self {
+        // Get validation mode before moving spec
+        let strict = spec.get_validation_mode() == "strict";
+        let description = spec.description.clone();
+
+        let schema = spec.to_json_schema();
+        let mut output = crate::schema::OutputSchema::from_json_schema(schema);
+
+        // Transfer description if present
+        if let Some(desc) = description {
+            output = output.with_description(desc);
+        }
+
+        // Set strict mode based on validation_mode
+        output = output.with_strict(strict);
+
+        output
+    }
+}
+
 /// Memory specification - unified way to configure memory backends
 ///
 /// Supports multiple formats:
@@ -526,6 +661,11 @@ pub struct AgentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<usize>,
 
+    /// Output schema for structured responses (JSON Schema format)
+    /// When specified, agent responses will be validated against this schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<OutputSchemaSpec>,
+
     /// Custom configuration
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -768,6 +908,7 @@ struct AgentSpec {
     #[serde(default = "default_temperature")]
     temperature: f32,
     max_tokens: Option<usize>,
+    output_schema: Option<OutputSchemaSpec>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
 }
@@ -791,6 +932,7 @@ struct FlatAgentConfig {
     #[serde(default = "default_temperature")]
     temperature: f32,
     max_tokens: Option<usize>,
+    output_schema: Option<OutputSchemaSpec>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
 }
@@ -810,6 +952,7 @@ impl From<AgentConfigInput> for AgentConfig {
                 max_iterations: flat.max_iterations,
                 temperature: flat.temperature,
                 max_tokens: flat.max_tokens,
+                output_schema: flat.output_schema,
                 extra: flat.extra,
             },
             AgentConfigInput::Kubernetes(k8s) => {
@@ -825,6 +968,7 @@ impl From<AgentConfigInput> for AgentConfig {
                     max_iterations: k8s.spec.max_iterations,
                     temperature: k8s.spec.temperature,
                     max_tokens: k8s.spec.max_tokens,
+                    output_schema: k8s.spec.output_schema,
                     extra: k8s.spec.extra,
                 }
             }
