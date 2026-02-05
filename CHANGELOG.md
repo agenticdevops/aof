@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Backspace/Delete work at cursor position
   - Ctrl+W to delete word before cursor
   - Ctrl+U to clear entire input
-  - Multi-line input with Shift+Enter
+  - Multi-line input with Alt+Enter, Ctrl+J (cross-terminal compatible)
   - Animated cursor shows position in text
 
 - **Double-ESC to Exit** - Vim-style exit
@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Header Tool Count Fix**
   - Now shows "Tools: X (Y used)" where X = available, Y = executed
+
+- **Real-time Tool Activity Events**
+  - Activity panel now shows tool executions in real-time
+  - Tool name, arguments (truncated), and execution duration displayed
+  - Streaming events from runtime for accurate tool tracking
+  - Current tool indicator in header during execution
 
 ## [0.4.0-beta] - 2026-01-23
 

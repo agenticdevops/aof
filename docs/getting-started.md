@@ -116,7 +116,8 @@ This opens a professional terminal UI with:
 | `Ctrl+A/E` | Start/End (bash-style) |
 | `Ctrl+W` | Delete word |
 | `Ctrl+U` | Clear input |
-| `Shift+Enter` | Insert newline |
+| `Alt+Enter` | Insert newline |
+| `Ctrl+J` | Insert newline (alternative) |
 
 *Navigation & Control:*
 | Key | Action |

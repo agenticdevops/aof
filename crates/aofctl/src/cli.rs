@@ -229,6 +229,15 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: commands::completion::Shell,
     },
+
+    /// Manage agentic skills (codified tribal knowledge)
+    ///
+    /// Skills are SKILL.md files that provide domain expertise to agents.
+    /// Use this command to list, search, and check skill requirements.
+    Skills {
+        #[command(subcommand)]
+        command: commands::skills::SkillsCommands,
+    },
 }
 
 impl Cli {
@@ -326,6 +335,7 @@ impl Cli {
             Commands::Fleet { command } => commands::fleet::execute(command).await,
             Commands::Flow { command } => commands::flow::execute(command).await,
             Commands::Completion { shell } => commands::completion::execute(shell),
+            Commands::Skills { command } => commands::skills::execute(command).await,
         }
     }
 }

@@ -2,6 +2,7 @@ use anyhow::{Context as AnyhowContext, Result, anyhow};
 use aof_core::{AgentConfig, AgentContext, Context as AofContext, OutputSchema};
 use aof_core::{ActivityEvent, ActivityType};
 use aof_runtime::Runtime;
+use aof_runtime::executor::StreamEvent;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::sync::{Arc, Mutex};
@@ -887,6 +888,44 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
         self.cursor_position = 0;
     }
 
+    /// Handle a StreamEvent from the runtime and convert to ActivityEvent
+    fn handle_stream_event(&mut self, event: StreamEvent) {
+        match event {
+            StreamEvent::ToolCallStart { tool_name, arguments, .. } => {
+                // Truncate arguments for display
+                let args_str = arguments.to_string();
+                let truncated_args = if args_str.len() > 100 {
+                    format!("{}...", &args_str[..100])
+                } else {
+                    args_str
+                };
+                self.current_tool = Some(tool_name.clone());
+                self.add_activity(ActivityEvent::tool_executing(&tool_name, Some(truncated_args)));
+            }
+            StreamEvent::ToolCallComplete { tool_name, success, execution_time_ms, error, .. } => {
+                if success {
+                    self.add_activity(ActivityEvent::tool_complete(&tool_name, execution_time_ms));
+                    self.tool_count += 1;
+                } else {
+                    let err_msg = error.unwrap_or_else(|| "Unknown error".to_string());
+                    self.add_activity(ActivityEvent::tool_failed(&tool_name, err_msg));
+                }
+                self.current_tool = None;
+            }
+            StreamEvent::Thinking { content } => {
+                self.add_activity(ActivityEvent::thinking(content));
+            }
+            StreamEvent::IterationStart { iteration, max_iterations } => {
+                if iteration > 1 {
+                    self.add_activity(ActivityEvent::info(format!("Iteration {}/{}", iteration, max_iterations)));
+                }
+            }
+            StreamEvent::TextDelta { .. } | StreamEvent::IterationComplete { .. } | StreamEvent::Done { .. } | StreamEvent::Error { .. } => {
+                // These are handled separately in the main execution flow
+            }
+        }
+    }
+
     fn save_session(&mut self) -> Result<()> {
         let manager = SessionManager::new()?;
         manager.save(&self.session)?;
@@ -1111,6 +1150,18 @@ async fn run_agent_interactive_with_resume(
                             // Close help with Enter
                             app_state.show_help = false;
                         }
+                        KeyCode::Enter if key.modifiers.contains(crossterm::event::KeyModifiers::SHIFT) => {
+                            // Shift+Enter: Insert newline for multi-line input
+                            app_state.insert_newline();
+                        }
+                        KeyCode::Enter if key.modifiers.contains(crossterm::event::KeyModifiers::ALT) => {
+                            // Alt+Enter: Insert newline (alternative for terminals that don't support Shift+Enter)
+                            app_state.insert_newline();
+                        }
+                        KeyCode::Char('j') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                            // Ctrl+J: Insert newline (traditional Unix newline)
+                            app_state.insert_newline();
+                        }
                         KeyCode::Enter => {
                         // Clone input early to avoid borrow issues
                         let input_str = app_state.current_input.trim().to_string();
@@ -1149,7 +1200,10 @@ async fn run_agent_interactive_with_resume(
 
                             // Draw busy state before execution
                             terminal.draw(|f| ui(f, agent_name, &app_state))?;
-                            let mut exec_future = Box::pin(runtime.execute(agent_name, &input_str));
+
+                            // Create stream channel for real-time tool events
+                            let (stream_tx, mut stream_rx) = tokio_mpsc::channel::<StreamEvent>(100);
+                            let mut exec_future = Box::pin(runtime.execute_streaming(agent_name, &input_str, stream_tx));
                             let mut timer_handle = tokio::time::interval(std::time::Duration::from_millis(100));
                             let cancel_token = app_state.cancellation_token.clone();
 
@@ -1171,7 +1225,18 @@ async fn run_agent_interactive_with_resume(
                                         break;
                                     }
 
+                                    // Handle stream events from runtime (tool calls, etc.)
+                                    Some(stream_event) = stream_rx.recv() => {
+                                        app_state.handle_stream_event(stream_event);
+                                        terminal.draw(|f| ui(f, agent_name, &app_state))?;
+                                    }
+
                                     result = &mut exec_future => {
+                                        // Drain remaining stream events
+                                        while let Ok(stream_event) = stream_rx.try_recv() {
+                                            app_state.handle_stream_event(stream_event);
+                                        }
+
                                         let duration_ms = app_state.execution_time_ms as u64;
                                         match result {
                                             Ok(response) => {
@@ -1295,10 +1360,6 @@ async fn run_agent_interactive_with_resume(
                     KeyCode::Char('u') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
                         // Ctrl+U: Clear input (like bash)
                         app_state.clear_input();
-                    }
-                    KeyCode::Enter if key.modifiers == crossterm::event::KeyModifiers::SHIFT => {
-                        // Shift+Enter: Insert newline for multi-line input
-                        app_state.insert_newline();
                     }
                     KeyCode::Char(c) => {
                         // Insert character at cursor position
@@ -1546,7 +1607,7 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
             let mut input_spans = vec![
                 Span::styled(" ❯ ", Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
                 Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)),
-                Span::styled(" Type message (Shift+Enter for newline)", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+                Span::styled(" Type message (Alt+Enter or Ctrl+J for newline)", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
             ];
             input_spans.push(Span::styled(char_hint, Style::default().fg(Color::DarkGray)));
             chat_lines.push(Line::from(input_spans));
@@ -1667,38 +1728,46 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
 
     // Render activities with color coding and detailed tool information
     let activity_lines: Vec<Line> = if app.activities.is_empty() {
-        // Show placeholder when no activities
-        vec![
+        // Show available tools and placeholder when no activities
+        let mut placeholder_lines = vec![
             Line::from(Span::styled(
-                "Waiting for agent activity...",
+                "Available tools:",
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            )),
+        ];
+
+        if app.tools.is_empty() {
+            placeholder_lines.push(Line::from(Span::styled(
+                "  (none configured)",
                 Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Activity types:",
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(vec![
-                Span::styled("  🧠 ", Style::default()),
-                Span::styled("Thinking/Analyzing", Style::default().fg(Color::Cyan)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ⚙ ", Style::default()),
-                Span::styled("Tool execution", Style::default().fg(Color::Yellow)),
-            ]),
-            Line::from(vec![
-                Span::styled("  📤 ", Style::default()),
-                Span::styled("LLM request/response", Style::default().fg(Color::Blue)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ✓ ", Style::default()),
-                Span::styled("Completed", Style::default().fg(Color::Green)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ✗ ", Style::default()),
-                Span::styled("Failed/Error", Style::default().fg(Color::Red)),
-            ]),
-        ]
+            )));
+        } else {
+            for tool in &app.tools {
+                placeholder_lines.push(Line::from(vec![
+                    Span::styled("  • ", Style::default().fg(Color::Green)),
+                    Span::styled(tool.clone(), Style::default().fg(Color::Yellow)),
+                ]));
+            }
+        }
+
+        placeholder_lines.push(Line::from(""));
+        placeholder_lines.push(Line::from(Span::styled(
+            "Waiting for activity...",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        )));
+        placeholder_lines.push(Line::from(""));
+        placeholder_lines.push(Line::from(Span::styled(
+            "Activity legend:",
+            Style::default().fg(Color::DarkGray),
+        )));
+        placeholder_lines.push(Line::from(vec![
+            Span::styled("  🧠 Think  ", Style::default().fg(Color::Cyan)),
+            Span::styled("⚙ Tool  ", Style::default().fg(Color::Yellow)),
+            Span::styled("📤 LLM  ", Style::default().fg(Color::Blue)),
+            Span::styled("✓ Done", Style::default().fg(Color::Green)),
+        ]));
+
+        placeholder_lines
     } else {
         let mut lines = Vec::new();
         for activity in app.activities.iter() {
@@ -1950,8 +2019,12 @@ fn render_help_overlay(f: &mut Frame) {
             Span::styled("Clear entire input", Style::default().fg(Color::Gray)),
         ]),
         Line::from(vec![
-            Span::styled("    Shift+Enter  ", Style::default().fg(Color::White)),
+            Span::styled("    Alt+Enter    ", Style::default().fg(Color::White)),
             Span::styled("Insert newline (multi-line)", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+J       ", Style::default().fg(Color::White)),
+            Span::styled("Insert newline (alternative)", Style::default().fg(Color::Gray)),
         ]),
         Line::from(""),
         Line::from(vec![
