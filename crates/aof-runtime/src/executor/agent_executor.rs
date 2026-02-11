@@ -9,7 +9,9 @@
 use aof_core::{
     AgentConfig, AgentContext, AofError, AofResult, Memory, MessageRole, Model, ModelRequest,
     ModelToolDefinition, RequestMessage, StopReason, StreamChunk, ToolCall, ToolExecutor, ToolInput, ToolResult,
+    ActivityEvent, CoordinationEvent,
 };
+use aof_coordination::EventBroadcaster;
 use aof_memory::SimpleMemory;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -98,6 +100,12 @@ pub struct AgentExecutor {
 
     /// Memory backend (optional)
     memory: Option<Arc<SimpleMemory>>,
+
+    /// Optional event bus for coordination events
+    event_bus: Option<Arc<EventBroadcaster>>,
+
+    /// Session ID for grouping events
+    session_id: Option<String>,
 }
 
 impl AgentExecutor {
@@ -113,6 +121,27 @@ impl AgentExecutor {
             model,
             tool_executor,
             memory,
+            event_bus: None,
+            session_id: None,
+        }
+    }
+
+    /// Set the event bus for coordination event emission
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBroadcaster>, session_id: String) -> Self {
+        self.event_bus = Some(event_bus);
+        self.session_id = Some(session_id);
+        self
+    }
+
+    /// Emit a coordination event if event bus is configured
+    fn emit_event(&self, activity: ActivityEvent) {
+        if let (Some(ref bus), Some(ref session_id)) = (&self.event_bus, &self.session_id) {
+            let coord_event = CoordinationEvent::from_activity(
+                activity,
+                self.config.name.clone(),
+                session_id.clone(),
+            );
+            bus.emit(coord_event);
         }
     }
 
@@ -159,6 +188,9 @@ impl AgentExecutor {
         info!("Starting streaming agent execution: {}", self.config.name);
         let execution_start = Instant::now();
 
+        // Emit agent start event
+        self.emit_event(ActivityEvent::started(&self.config.name));
+
         // Add user message if not already in history
         if ctx.messages.is_empty() {
             ctx.add_message(MessageRole::User, ctx.input.clone());
@@ -173,6 +205,10 @@ impl AgentExecutor {
 
             if iteration > max_iterations {
                 let error_msg = format!("Exceeded max iterations ({})", max_iterations);
+
+                // Emit error event
+                self.emit_event(ActivityEvent::error(&error_msg));
+
                 let _ = stream_tx.send(StreamEvent::Error {
                     message: error_msg.clone(),
                 }).await;
@@ -182,6 +218,8 @@ impl AgentExecutor {
             }
 
             // Emit iteration start event
+            self.emit_event(ActivityEvent::info(format!("Iteration {}/{}", iteration, max_iterations)));
+
             let _ = stream_tx.send(StreamEvent::IterationStart {
                 iteration,
                 max_iterations,
@@ -193,6 +231,9 @@ impl AgentExecutor {
             let mut request = self.build_model_request(ctx)?;
             request.stream = true;
 
+            // Emit LLM call event
+            self.emit_event(ActivityEvent::info(format!("Calling model for iteration {}", iteration)));
+
             // Call model streaming API
             let stream_result = self.model.generate_stream(&request).await;
 
@@ -200,6 +241,10 @@ impl AgentExecutor {
                 Ok(s) => s,
                 Err(e) => {
                     let error_msg = format!("Model streaming failed: {}", e);
+
+                    // Emit error event
+                    self.emit_event(ActivityEvent::error(&error_msg));
+
                     let _ = stream_tx.send(StreamEvent::Error {
                         message: error_msg.clone(),
                     }).await;
@@ -250,6 +295,10 @@ impl AgentExecutor {
                     }
                     Err(e) => {
                         let error_msg = format!("Stream chunk error: {}", e);
+
+                        // Emit error event
+                        self.emit_event(ActivityEvent::error(&error_msg));
+
                         let _ = stream_tx.send(StreamEvent::Error {
                             message: error_msg.clone(),
                         }).await;
@@ -298,6 +347,9 @@ impl AgentExecutor {
                     info!("Agent execution completed in {} iterations", iteration);
                     ctx.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
 
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(ctx.metadata.execution_time_ms));
+
                     // Emit done event
                     let _ = stream_tx.send(StreamEvent::Done {
                         content: accumulated_content.clone(),
@@ -321,6 +373,9 @@ impl AgentExecutor {
                         let args_str = serde_json::to_string(&tool_call.arguments)
                             .unwrap_or_else(|_| "{}".to_string());
                         info!("  • {} {}", tool_call.name, args_str);
+
+                        // Emit tool executing event
+                        self.emit_event(ActivityEvent::tool_executing(&tool_call.name, Some(args_str.clone())));
                     }
 
                     // Execute tools and emit events
@@ -331,6 +386,14 @@ impl AgentExecutor {
 
                     // Add tool results to context and log them
                     for (tool_call, result) in tool_calls_buffer.iter().zip(tool_results.iter()) {
+                        // Emit tool complete or failed event
+                        if result.success {
+                            self.emit_event(ActivityEvent::tool_complete(&tool_call.name, result.execution_time_ms));
+                        } else {
+                            let error_msg = result.error.as_deref().unwrap_or("Unknown error");
+                            self.emit_event(ActivityEvent::tool_failed(&tool_call.name, error_msg));
+                        }
+
                         // Log tool result
                         if result.success {
                             let result_summary = match &result.data {
@@ -381,6 +444,9 @@ impl AgentExecutor {
                     warn!("Model reached max tokens");
                     ctx.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
 
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(ctx.metadata.execution_time_ms));
+
                     let _ = stream_tx.send(StreamEvent::Done {
                         content: accumulated_content.clone(),
                         total_iterations: iteration,
@@ -396,6 +462,9 @@ impl AgentExecutor {
                     info!("Model hit stop sequence");
                     ctx.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
 
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(ctx.metadata.execution_time_ms));
+
                     let _ = stream_tx.send(StreamEvent::Done {
                         content: accumulated_content.clone(),
                         total_iterations: iteration,
@@ -409,6 +478,10 @@ impl AgentExecutor {
 
                 StopReason::ContentFilter => {
                     let error_msg = "Content filter triggered by model".to_string();
+
+                    // Emit error event
+                    self.emit_event(ActivityEvent::error(&error_msg));
+
                     let _ = stream_tx.send(StreamEvent::Error {
                         message: error_msg.clone(),
                     }).await;
@@ -432,6 +505,9 @@ impl AgentExecutor {
         warn!("=== AGENT EXECUTOR START === name={}", self.config.name);
         let execution_start = Instant::now();
 
+        // Emit agent start event
+        self.emit_event(ActivityEvent::started(&self.config.name));
+
         // Restore conversation history from memory if available
         if let Some(memory) = &self.memory {
             warn!("[EXECUTOR] Restoring conversation history from memory...");
@@ -453,15 +529,20 @@ impl AgentExecutor {
             iteration += 1;
 
             if iteration > max_iterations {
+                let error_msg = format!("Exceeded max iterations ({})", max_iterations);
+
+                // Emit error event
+                self.emit_event(ActivityEvent::error(&error_msg));
+
                 error!(
                     "[EXECUTOR] Reached max iterations ({}) for agent: {}",
                     max_iterations, self.config.name
                 );
-                return Err(AofError::agent(format!(
-                    "Exceeded max iterations ({})",
-                    max_iterations
-                )));
+                return Err(AofError::agent(error_msg));
             }
+
+            // Emit iteration start event
+            self.emit_event(ActivityEvent::info(format!("Iteration {}/{}", iteration, max_iterations)));
 
             warn!(
                 "[EXECUTOR] Iteration {}/{} for agent: {}",
@@ -485,6 +566,9 @@ impl AgentExecutor {
                 }
             };
 
+            // Emit LLM call event
+            self.emit_event(ActivityEvent::info(format!("Calling model for iteration {}", iteration)));
+
             // Call model
             warn!("[EXECUTOR] Calling model.generate()...");
             let generate_start = Instant::now();
@@ -499,10 +583,15 @@ impl AgentExecutor {
                     resp
                 }
                 Err(e) => {
+                    let error_msg = format!("Model generation failed: {}", e);
+
+                    // Emit error event
+                    self.emit_event(ActivityEvent::error(&error_msg));
+
                     error!("[EXECUTOR] model.generate() FAILED in {}ms: {:?}",
                         generate_start.elapsed().as_millis(), e
                     );
-                    return Err(AofError::agent(format!("Model generation failed: {}", e)));
+                    return Err(AofError::agent(error_msg));
                 }
             };
 
@@ -545,6 +634,10 @@ impl AgentExecutor {
                         iteration
                     );
                     context.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
+
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(context.metadata.execution_time_ms));
+
                     return Ok(response.content);
                 }
 
@@ -559,6 +652,9 @@ impl AgentExecutor {
                         let args_str = serde_json::to_string(&tool_call.arguments)
                             .unwrap_or_else(|_| "{}".to_string());
                         info!("  • {} {}", tool_call.name, args_str);
+
+                        // Emit tool executing event
+                        self.emit_event(ActivityEvent::tool_executing(&tool_call.name, Some(args_str.clone())));
                     }
 
                     // Execute tools
@@ -569,6 +665,14 @@ impl AgentExecutor {
 
                     // Add tool results to context and log them
                     for (tool_call, result) in response.tool_calls.iter().zip(tool_results.iter()) {
+                        // Emit tool complete or failed event
+                        if result.success {
+                            self.emit_event(ActivityEvent::tool_complete(&tool_call.name, result.execution_time_ms));
+                        } else {
+                            let error_msg = result.error.as_deref().unwrap_or("Unknown error");
+                            self.emit_event(ActivityEvent::tool_failed(&tool_call.name, error_msg));
+                        }
+
                         // Log tool result
                         if result.success {
                             let result_summary = match &result.data {
@@ -620,20 +724,31 @@ impl AgentExecutor {
                 StopReason::MaxTokens => {
                     warn!("Model reached max tokens");
                     context.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
+
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(context.metadata.execution_time_ms));
+
                     return Ok(response.content);
                 }
 
                 StopReason::StopSequence => {
                     info!("Model hit stop sequence");
                     context.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
+
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(context.metadata.execution_time_ms));
+
                     return Ok(response.content);
                 }
 
                 StopReason::ContentFilter => {
+                    let error_msg = "Content filter triggered by model".to_string();
+
+                    // Emit error event
+                    self.emit_event(ActivityEvent::error(&error_msg));
+
                     error!("Content filter triggered");
-                    return Err(AofError::agent(
-                        "Content filter triggered by model".to_string(),
-                    ));
+                    return Err(AofError::agent(error_msg));
                 }
             }
         }
