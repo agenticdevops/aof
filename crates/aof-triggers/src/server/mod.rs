@@ -4,17 +4,20 @@
 //! from various messaging platforms.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, State, WebSocketUpgrade},
+    extract::ws::{Message, WebSocket},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
+use aof_coordination::EventBroadcaster;
+use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::handler::TriggerHandler;
 
@@ -32,6 +35,9 @@ pub struct TriggerServerConfig {
 
     /// Maximum request body size
     pub max_body_size: usize,
+
+    /// Optional event bus for WebSocket event streaming
+    pub event_bus: Option<Arc<EventBroadcaster>>,
 }
 
 impl Default for TriggerServerConfig {
@@ -41,6 +47,7 @@ impl Default for TriggerServerConfig {
             enable_cors: true,
             timeout_secs: 30,
             max_body_size: 10 * 1024 * 1024, // 10MB
+            event_bus: None,
         }
     }
 }
@@ -49,6 +56,7 @@ impl Default for TriggerServerConfig {
 #[derive(Clone)]
 struct AppState {
     handler: Arc<TriggerHandler>,
+    event_bus: Option<Arc<EventBroadcaster>>,
 }
 
 /// Webhook server
@@ -80,13 +88,21 @@ impl TriggerServer {
     pub async fn serve(self) -> Result<(), ServerError> {
         let state = AppState {
             handler: self.handler,
+            event_bus: self.config.event_bus.clone(),
         };
 
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/", get(root_handler))
             .route("/health", get(health_handler))
             .route("/webhook/:platform", post(webhook_handler))
-            .route("/platforms", get(platforms_handler))
+            .route("/platforms", get(platforms_handler));
+
+        // Add WebSocket route if event bus is configured
+        if state.event_bus.is_some() {
+            app = app.route("/ws", get(handle_websocket_upgrade));
+        }
+
+        let app = app
             .layer(TraceLayer::new_for_http())
             .with_state(state);
 
@@ -335,6 +351,70 @@ impl IntoResponse for WebhookError {
         )
             .into_response()
     }
+}
+
+// ============================================================================
+// WebSocket Handlers
+// ============================================================================
+
+/// WebSocket upgrade handler
+async fn handle_websocket_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let event_bus = state.event_bus.clone();
+    ws.on_upgrade(move |socket| websocket_handler(socket, event_bus))
+}
+
+/// WebSocket connection handler
+async fn websocket_handler(socket: WebSocket, event_bus: Option<Arc<EventBroadcaster>>) {
+    let Some(bus) = event_bus else {
+        return;
+    };
+
+    let (mut sender, mut receiver) = socket.split();
+    let mut event_rx = bus.subscribe();
+
+    // Spawn task to forward coordination events to WebSocket client
+    let send_task = tokio::spawn(async move {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) => {
+                    match serde_json::to_string(&event) {
+                        Ok(json) => {
+                            if sender.send(Message::Text(json)).await.is_err() {
+                                info!("WebSocket client disconnected");
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to serialize event: {}", e);
+                        }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    warn!("WebSocket client lagged, dropped {} events", n);
+                    // Continue — client will catch up
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break; // Channel closed, daemon shutting down
+                }
+            }
+        }
+    });
+
+    // Listen for client messages (close frames, pings)
+    while let Some(Ok(msg)) = receiver.next().await {
+        match msg {
+            Message::Close(_) => break,
+            Message::Ping(_) => {
+                // Pong is handled automatically by axum
+            }
+            _ => {} // Ignore other messages for now
+        }
+    }
+
+    send_task.abort(); // Clean up sender task on disconnect
 }
 
 #[cfg(test)]

@@ -17,6 +17,14 @@ pub struct EventBroadcaster {
     sender: broadcast::Sender<CoordinationEvent>,
 }
 
+impl std::fmt::Debug for EventBroadcaster {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventBroadcaster")
+            .field("receivers", &self.sender.receiver_count())
+            .finish()
+    }
+}
+
 impl EventBroadcaster {
     /// Create a new event broadcaster with the given channel capacity
     ///

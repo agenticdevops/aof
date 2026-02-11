@@ -9,6 +9,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use aof_coordination::{EventBroadcaster, SessionPersistence, SessionState, AgentState};
 use aof_core::{TriggerRegistry, Registry, StandaloneTriggerType};
 use aof_runtime::{Runtime, RuntimeOrchestrator};
 use aof_triggers::{
@@ -423,6 +424,30 @@ pub async fn execute(
 
     println!("Starting AOF Trigger Server");
     println!("  Bind address: {}", bind_addr);
+
+    // Create event broadcaster for real-time event streaming
+    let event_bus = Arc::new(EventBroadcaster::new(1000)); // 1000 event buffer
+    println!("  Event bus: initialized (buffer: 1000)");
+
+    // Create session persistence
+    let persist_dir = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("aof")
+        .join("sessions");
+    tokio::fs::create_dir_all(&persist_dir).await?;
+    let session_persistence = SessionPersistence::new(persist_dir.clone()).await?;
+
+    // Generate session ID (UUID v4, unique per daemon lifetime)
+    let session_id = uuid::Uuid::new_v4().to_string();
+    println!("  Session ID: {}", session_id);
+
+    // Restore previous session if exists (for debugging/continuity)
+    // In Phase 1, just log if previous session exists
+    if let Ok(sessions) = session_persistence.list_sessions().await {
+        if !sessions.is_empty() {
+            println!("  Found {} previous session(s)", sessions.len());
+        }
+    }
 
     // Create runtime orchestrator
     let orchestrator = Arc::new(
@@ -876,6 +901,7 @@ pub async fn execute(
         enable_cors: config.spec.server.cors,
         timeout_secs: config.spec.server.timeout_secs,
         max_body_size: 10 * 1024 * 1024, // 10MB
+        event_bus: Some(event_bus.clone()),
     };
 
     // Create and start server
@@ -883,6 +909,7 @@ pub async fn execute(
 
     println!("Server starting...");
     println!("  Health check: http://{}/health", bind_addr);
+    println!("  WebSocket: ws://{}/ws", bind_addr);
     println!("  Webhook endpoint: http://{}/webhook/{{platform}}", bind_addr);
     println!("Press Ctrl+C to stop");
 
@@ -902,6 +929,19 @@ pub async fn execute(
             }
         }
         _ = shutdown_signal => {
+            // Save session state on shutdown
+            let final_state = SessionState {
+                session_id: session_id.clone(),
+                agent_states: std::collections::HashMap::new(), // TODO: Collect from runtime in Phase 2+
+                task_queue: Vec::new(),
+                created_at: chrono::Utc::now(),
+                last_updated: chrono::Utc::now(),
+            };
+            if let Err(e) = session_persistence.save_session(&final_state).await {
+                eprintln!("Warning: Failed to save session state: {}", e);
+            } else {
+                println!("  Session state saved");
+            }
             println!("Server stopped gracefully");
         }
     }
