@@ -46,6 +46,61 @@ impl CoordinationEvent {
             timestamp: Utc::now(),
         }
     }
+
+    /// Create event for agent started
+    pub fn agent_started(
+        agent_id: impl Into<String>,
+        session_id: impl Into<String>,
+    ) -> Self {
+        let agent_id_str = agent_id.into();
+        let activity = ActivityEvent::started(&agent_id_str);
+        Self::from_activity(activity, agent_id_str, session_id)
+    }
+
+    /// Create event for agent completed
+    pub fn agent_completed(
+        agent_id: impl Into<String>,
+        session_id: impl Into<String>,
+        duration_ms: u64,
+    ) -> Self {
+        let agent_id_str = agent_id.into();
+        let activity = ActivityEvent::completed(duration_ms);
+        Self::from_activity(activity, agent_id_str, session_id)
+    }
+
+    /// Create event for tool executing
+    pub fn tool_executing(
+        agent_id: impl Into<String>,
+        session_id: impl Into<String>,
+        tool_name: impl Into<String>,
+        args: Option<String>,
+    ) -> Self {
+        let agent_id_str = agent_id.into();
+        let activity = ActivityEvent::tool_executing(tool_name, args);
+        Self::from_activity(activity, agent_id_str, session_id)
+    }
+
+    /// Create event for agent thinking
+    pub fn thinking(
+        agent_id: impl Into<String>,
+        session_id: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        let agent_id_str = agent_id.into();
+        let activity = ActivityEvent::thinking(message);
+        Self::from_activity(activity, agent_id_str, session_id)
+    }
+
+    /// Create event for error
+    pub fn error(
+        agent_id: impl Into<String>,
+        session_id: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        let agent_id_str = agent_id.into();
+        let activity = ActivityEvent::error(message);
+        Self::from_activity(activity, agent_id_str, session_id)
+    }
 }
 
 /// Serializable session snapshot for persistence
@@ -334,5 +389,54 @@ mod tests {
 
         let not_found = state.remove_task("task-999");
         assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_convenience_constructor_agent_started() {
+        let event = CoordinationEvent::agent_started("agent-1", "session-123");
+        assert_eq!(event.agent_id, "agent-1");
+        assert_eq!(event.session_id, "session-123");
+        assert_eq!(event.activity.activity_type, ActivityType::Started);
+    }
+
+    #[test]
+    fn test_convenience_constructor_agent_completed() {
+        let event = CoordinationEvent::agent_completed("agent-1", "session-123", 5000);
+        assert_eq!(event.agent_id, "agent-1");
+        assert_eq!(event.activity.activity_type, ActivityType::Completed);
+        assert_eq!(
+            event.activity.details.as_ref().unwrap().duration_ms,
+            Some(5000)
+        );
+    }
+
+    #[test]
+    fn test_convenience_constructor_tool_executing() {
+        let event = CoordinationEvent::tool_executing(
+            "agent-1",
+            "session-123",
+            "kubectl",
+            Some("get pods".to_string()),
+        );
+        assert_eq!(event.agent_id, "agent-1");
+        assert_eq!(event.activity.activity_type, ActivityType::ToolExecuting);
+        let details = event.activity.details.as_ref().unwrap();
+        assert_eq!(details.tool_name, Some("kubectl".to_string()));
+    }
+
+    #[test]
+    fn test_convenience_constructor_thinking() {
+        let event = CoordinationEvent::thinking("agent-1", "session-123", "Analyzing data");
+        assert_eq!(event.agent_id, "agent-1");
+        assert_eq!(event.activity.activity_type, ActivityType::Thinking);
+        assert_eq!(event.activity.message, "Analyzing data");
+    }
+
+    #[test]
+    fn test_convenience_constructor_error() {
+        let event = CoordinationEvent::error("agent-1", "session-123", "Connection failed");
+        assert_eq!(event.agent_id, "agent-1");
+        assert_eq!(event.activity.activity_type, ActivityType::Error);
+        assert_eq!(event.activity.message, "Connection failed");
     }
 }

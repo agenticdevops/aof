@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/aof-core",
+    "crates/aof-coordination",
     "crates/aof-mcp",
     "crates/aof-llm",
     "crates/aof-runtime",
@@ -79,6 +80,7 @@ regex = "1.10"
 
 # Internal workspace dependencies (path for local dev, version for crates.io)
 aof-core = { path = "crates/aof-core", version = "0.4.0-beta" }
+aof-coordination = { path = "crates/aof-coordination", version = "0.4.0-beta" }
 aof-mcp = { path = "crates/aof-mcp", version = "0.4.0-beta" }
 aof-llm = { path = "crates/aof-llm", version = "0.4.0-beta" }
 aof-runtime = { path = "crates/aof-runtime", version = "0.4.0-beta" }
