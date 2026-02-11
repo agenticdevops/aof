@@ -21,21 +21,21 @@ Roadmap created. Ready to begin Phase 1: Event Infrastructure Foundation.
 ### Active Phase
 **Phase 1: Event Infrastructure Foundation**
 - **Goal:** Agent activities are observable in real-time through an event streaming architecture
-- **Status:** In Progress (1/3 plans complete)
+- **Status:** In Progress (2/3 plans complete)
 - **Requirements:** INFR-01, INFR-02, INFR-03, INFR-04 (4 total)
 
 ### Active Plan
-**01-02-PLAN.md** (Next)
+**01-03-PLAN.md** (Next)
 
 ### Status
-Plan 01-01 complete. Foundation types and aof-coordination crate established.
+Plans 01-01 and 01-02 complete. Event infrastructure wired into AgentExecutor and WebSocket streaming enabled in serve command.
 
 ### Progress
 
 ```
-Milestone Progress: [█░░░░░░░░░] 4% (1 of 24 plans complete)
+Milestone Progress: [██░░░░░░░░] 8% (2 of 24 plans complete)
 
-Phase 1: Event Infrastructure    [███░░░░░░░] 33% (1/3 plans)
+Phase 1: Event Infrastructure    [██████░░░░] 67% (2/3 plans)
 Phase 2: Real Ops Capabilities   [░░░░░░░░░░] 0%
 Phase 3: Messaging Gateway       [░░░░░░░░░░] 0%
 Phase 4: Mission Control UI      [░░░░░░░░░░] 0%
@@ -51,24 +51,25 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 
 ### Velocity
 - **Phases completed:** 0
-- **Plans completed:** 1
+- **Plans completed:** 2
 - **Requirements delivered:** 0/48 (0%) - infrastructure foundational work
-- **Avg. plan duration:** 485 seconds (8.1 minutes)
+- **Avg. plan duration:** 704.5 seconds (11.7 minutes)
 
 ### Quality
-- **Tests passing:** 25 (14 aof-core coordination + 11 aof-coordination)
-- **Coverage:** Unit tests for all public APIs
+- **Tests passing:** 26 (aof-runtime tests with event emission)
+- **Coverage:** Unit tests for runtime executor, event emission optional
 - **Blockers encountered:** 0
 - **Blockers resolved:** 0
 
 ### Efficiency
-- **Plan success rate:** 100% (1/1 executed without deviation)
+- **Plan success rate:** 100% (2/2 executed with minor adaptations only)
 - **Rework rate:** 0%
 - **Research queries:** 1 (architecture research completed)
 
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 01 | 02 | 924s | 2 | 7 | 2 | 2026-02-11 |
 | 01 | 01 | 485s | 2 | 9 | 2 | 2026-02-11 |
 
 ---
@@ -87,7 +88,10 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Convenience constructors in aof-core** | Cannot implement methods on types outside defining crate. Added agent_started, agent_completed, tool_executing, thinking, error to CoordinationEvent in aof-core instead of aof-coordination. | 2026-02-11 | 01 | Implemented |
 | **Use AofError::memory for SessionPersistence** | SessionPersistence errors are memory/storage related. AofError doesn't have ::internal, so used ::memory constructor for consistency. | 2026-02-11 | 01 | Implemented |
 | **EventBroadcaster ignores send errors** | No active subscribers is valid state. Events are best-effort, not guaranteed delivery. Logs debug messages for monitoring. | 2026-02-11 | 01 | Implemented |
-| Phase 01 P01 | 485 | 2 tasks | 9 files |
+| **Event emission at 8 lifecycle points** | AgentExecutor emits events at agent start, iteration, LLM call, tool execution (3 events: executing/complete/failed), agent complete, and errors. Covers all observable state transitions. | 2026-02-11 | 01 | Implemented |
+| **Both StreamEvent and CoordinationEvent coexist** | StreamEvent (mpsc) for direct callers (TUI). CoordinationEvent (broadcast) for WebSocket subscribers. Different purposes, no interference. Additive change. | 2026-02-11 | 01 | Implemented |
+| **Optional event_bus via builder pattern** | event_bus=None by default. Only enabled via with_event_bus(). Zero breaking changes, gradual adoption. | 2026-02-11 | 01 | Implemented |
+| **Lagged WebSocket clients warned not disconnected** | RecvError::Lagged logs warning with dropped count, continues sending. Clients eventually catch up. Harsh disconnection avoided. | 2026-02-11 | 01 | Implemented |
 
 ### Todos
 
@@ -127,12 +131,9 @@ No blockers.
 
 ### What to Do Next
 
-**Immediate next action:** `/gsd:plan-phase 1`
+**Immediate next action:** Execute plan 01-03 or continue with next phase planning
 
-This will:
-- Decompose Phase 1 (Event Infrastructure Foundation) into 3-5 executable plans
-- Create PLANS-PHASE-1.md with must_haves, validation, and subtasks
-- Update this file (STATE.md) with active plan details
+Phase 1 is 67% complete (2/3 plans done). One more plan to complete event infrastructure foundation.
 
 ### Context for Next Agent
 
@@ -144,7 +145,7 @@ This will:
 
 **Roadmap:** 8 phases, standard depth (3-5 plans each), parallelization enabled.
 
-**Current status:** Roadmap created, Phase 1 ready for planning.
+**Current status:** Phase 1 in progress (2/3 plans complete). Event infrastructure foundation nearly complete.
 
 **Key files:**
 - `.planning/PROJECT.md` — Core value, constraints, key decisions
@@ -163,13 +164,18 @@ This will:
 
 ---
 
-## Files Created This Session
+## Files Created/Modified This Session
 
-- `.planning/ROADMAP.md` — 8 phases, success criteria, dependencies, timeline
-- `.planning/STATE.md` — This file (project memory)
-- `.planning/phases/01-event-infrastructure/01-01-SUMMARY.md` — Plan 01 completion summary
+**Plan 01-01:**
 - `crates/aof-core/src/coordination.rs` — Foundation coordination types
 - `crates/aof-coordination/*` — New coordination crate with EventBroadcaster and SessionPersistence
+- `.planning/phases/01-event-infrastructure/01-01-SUMMARY.md` — Plan 01 completion summary
+
+**Plan 01-02:**
+- Modified `crates/aof-runtime/src/executor/agent_executor.rs` — Event emission at 8 lifecycle points
+- Modified `crates/aof-triggers/src/server/mod.rs` — WebSocket /ws endpoint
+- Modified `crates/aofctl/src/commands/serve.rs` — Event bus and session persistence setup
+- `.planning/phases/01-event-infrastructure/01-02-SUMMARY.md` — Plan 02 completion summary
 
 ---
 
