@@ -25,17 +25,17 @@ Roadmap created. Ready to begin Phase 1: Event Infrastructure Foundation.
 - **Requirements:** INFR-01, INFR-02, INFR-03, INFR-04 (4 total)
 
 ### Active Plan
-**01-03-PLAN.md** (Next)
+**Phase 1 Complete** - Ready for Phase 2 planning
 
 ### Status
-Plans 01-01 and 01-02 complete. Event infrastructure wired into AgentExecutor and WebSocket streaming enabled in serve command.
+Phase 1 (Event Infrastructure Foundation) complete. All 3 plans executed: foundation types, runtime integration, comprehensive documentation.
 
 ### Progress
 
 ```
-Milestone Progress: [██░░░░░░░░] 8% (2 of 24 plans complete)
+Milestone Progress: [███░░░░░░░] 13% (3 of 24 plans complete)
 
-Phase 1: Event Infrastructure    [██████░░░░] 67% (2/3 plans)
+Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [░░░░░░░░░░] 0%
 Phase 3: Messaging Gateway       [░░░░░░░░░░] 0%
 Phase 4: Mission Control UI      [░░░░░░░░░░] 0%
@@ -50,29 +50,31 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 ### Velocity
-- **Phases completed:** 0
-- **Plans completed:** 2
-- **Requirements delivered:** 0/48 (0%) - infrastructure foundational work
-- **Avg. plan duration:** 704.5 seconds (11.7 minutes)
+- **Phases completed:** 1 (Phase 1: Event Infrastructure Foundation)
+- **Plans completed:** 3
+- **Requirements delivered:** 4/48 (8%) - INFR-01, INFR-02, INFR-03, INFR-04
+- **Avg. plan duration:** 591.7 seconds (9.9 minutes)
 
 ### Quality
-- **Tests passing:** 26 (aof-runtime tests with event emission)
-- **Coverage:** Unit tests for runtime executor, event emission optional
+- **Tests passing:** 45 (26 aof-runtime + 14 aof-core coordination + 11 aof-coordination - 6 broadcaster)
+- **Coverage:** Unit tests for coordination types, broadcaster, persistence, runtime executor
 - **Blockers encountered:** 0
 - **Blockers resolved:** 0
 
 ### Efficiency
-- **Plan success rate:** 100% (2/2 executed with minor adaptations only)
+- **Plan success rate:** 100% (3/3 executed, no deviations)
 - **Rework rate:** 0%
 - **Research queries:** 1 (architecture research completed)
 
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 01 | 03 | 366s | 2 | 3 | 2 | 2026-02-11 |
 | 01 | 02 | 924s | 2 | 7 | 2 | 2026-02-11 |
 | 01 | 01 | 485s | 2 | 9 | 2 | 2026-02-11 |
 
 ---
+| Phase 01 P03 | 366 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -92,10 +94,12 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Both StreamEvent and CoordinationEvent coexist** | StreamEvent (mpsc) for direct callers (TUI). CoordinationEvent (broadcast) for WebSocket subscribers. Different purposes, no interference. Additive change. | 2026-02-11 | 01 | Implemented |
 | **Optional event_bus via builder pattern** | event_bus=None by default. Only enabled via with_event_bus(). Zero breaking changes, gradual adoption. | 2026-02-11 | 01 | Implemented |
 | **Lagged WebSocket clients warned not disconnected** | RecvError::Lagged logs warning with dropped count, continues sending. Clients eventually catch up. Harsh disconnection avoided. | 2026-02-11 | 01 | Implemented |
+| **Documentation matches actual implementation** | Read actual source files (coordination.rs, broadcaster.rs, persistence.rs, agent_executor.rs, server/mod.rs, serve.rs) during doc writing to ensure all technical details, type names, field names match reality. Prevents stale documentation. | 2026-02-11 | 01 | Implemented |
 
 ### Todos
 
-No active todos (awaiting phase planning).
+- [ ] **Onboarding experience**: Create an awesome onboarding flow where users should be ready to use the system in a few steps. Dead simple first experience — if you need docs to start, you've lost. (User request, cross-cutting concern for Phase 6/8)
+- [ ] **Token efficiency as differentiator**: Design coordination protocols to minimize token waste. Lean event payloads, structured prompts, measure tokens-per-useful-action. Target <20% coordination overhead. (User request, applies to Phase 2/7)
 
 ### Blockers
 
@@ -131,9 +135,9 @@ No blockers.
 
 ### What to Do Next
 
-**Immediate next action:** Execute plan 01-03 or continue with next phase planning
+**Immediate next action:** Plan Phase 2 (Real Ops Capabilities)
 
-Phase 1 is 67% complete (2/3 plans done). One more plan to complete event infrastructure foundation.
+Phase 1 (Event Infrastructure Foundation) is 100% complete (3/3 plans done). Ready to plan Phase 2.
 
 ### Context for Next Agent
 
@@ -145,7 +149,7 @@ Phase 1 is 67% complete (2/3 plans done). One more plan to complete event infras
 
 **Roadmap:** 8 phases, standard depth (3-5 plans each), parallelization enabled.
 
-**Current status:** Phase 1 in progress (2/3 plans complete). Event infrastructure foundation nearly complete.
+**Current status:** Phase 1 complete (3/3 plans). Event infrastructure foundation delivered with comprehensive documentation. Ready for Phase 2.
 
 **Key files:**
 - `.planning/PROJECT.md` — Core value, constraints, key decisions
@@ -176,6 +180,12 @@ Phase 1 is 67% complete (2/3 plans done). One more plan to complete event infras
 - Modified `crates/aof-triggers/src/server/mod.rs` — WebSocket /ws endpoint
 - Modified `crates/aofctl/src/commands/serve.rs` — Event bus and session persistence setup
 - `.planning/phases/01-event-infrastructure/01-02-SUMMARY.md` — Plan 02 completion summary
+
+**Plan 01-03:**
+- Created `docs/dev/event-infrastructure.md` — Internal developer documentation (514 lines)
+- Created `docs/concepts/event-streaming.md` — User-facing event streaming concepts (557 lines)
+- Created `docs/architecture/control-plane.md` — Control plane architecture documentation (706 lines)
+- `.planning/phases/01-event-infrastructure/01-03-SUMMARY.md` — Plan 03 completion summary
 
 ---
 
