@@ -8,6 +8,7 @@ pub mod agent;
 pub mod agentflow;
 pub mod binding;
 pub mod context;
+pub mod coordination;
 pub mod error;
 pub mod error_tracker;
 pub mod fleet;
@@ -76,6 +77,9 @@ pub use trigger::{
 };
 pub use activity::{
     ActivityDetails, ActivityEvent, ActivityLogger, ActivityType, NoopActivityLogger, TokenCount,
+};
+pub use coordination::{
+    CoordinationEvent, SessionState, AgentState, AgentStatus, TaskInfo, TaskStatus,
 };
 
 /// Version information
