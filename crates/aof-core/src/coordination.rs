@@ -29,6 +29,52 @@ pub struct CoordinationEvent {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Incident response event variants for CoordinationEvent
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum IncidentEvent {
+    /// Incident has started after alert
+    IncidentStarted {
+        incident_id: String,
+        alert_summary: String,
+        timestamp: DateTime<Utc>,
+    },
+    /// Triage classification completed
+    TriageClassification {
+        incident_id: String,
+        severity: String,  // "SEV1", "SEV2", "SEV3", "SEV4"
+        confidence: f64,
+        category: String,  // "api-degradation", "database-error", "pod-crash", etc.
+        specialists_needed: Vec<String>,  // agent types to spawn
+        reasoning: String,
+    },
+    /// Specialist agent spawned for investigation
+    SpecialistSpawned {
+        incident_id: String,
+        agent_id: String,
+        agent_type: String,  // "log-analyzer", "metric-checker", etc.
+    },
+    /// Specialist agent found something
+    SpecialistFinding {
+        incident_id: String,
+        agent_id: String,
+        finding: String,
+        confidence: f64,
+        impact: String,  // "high", "medium", "low"
+    },
+    /// Escalation triggered
+    EscalationTriggered {
+        incident_id: String,
+        reason: String,  // "low_confidence", "time_threshold_30m", "impact_high", etc.
+        escalation_target: String,  // "human_team", "team_lead", "manager"
+    },
+    /// Incident resolved
+    IncidentResolved {
+        incident_id: String,
+        resolution_summary: String,
+        duration_seconds: u64,
+    },
+}
+
 impl CoordinationEvent {
     /// Create a coordination event from an activity event
     ///
