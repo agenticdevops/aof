@@ -42,6 +42,10 @@ pub struct GatewaySpec {
 
     /// Adapter configurations
     pub adapters: Vec<AdapterConfig>,
+
+    /// Squad configurations
+    #[serde(default)]
+    pub squads: Vec<SquadConfig>,
 }
 
 /// Runtime configuration
@@ -69,6 +73,59 @@ pub struct AdapterConfig {
 
     /// Rate limit configuration
     pub rate_limit: RateLimitConfig,
+}
+
+/// Squad configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SquadConfig {
+    /// Squad name (unique identifier)
+    pub name: String,
+
+    /// Human-readable description
+    pub description: String,
+
+    /// Agent IDs in this squad
+    pub agents: Vec<String>,
+
+    /// Platform channel mappings
+    pub channels: SquadChannels,
+}
+
+/// Squad channel mappings for each platform
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SquadChannels {
+    /// Slack channel ID (C...)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slack: Option<String>,
+
+    /// Discord channel ID (numeric)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discord: Option<String>,
+
+    /// Telegram chat ID (numeric or -...)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub telegram: Option<String>,
+
+    /// WhatsApp phone number (future)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub whatsapp: Option<String>,
+}
+
+impl GatewayConfig {
+    /// Get squad by name
+    pub fn get_squad(&self, name: &str) -> Option<&SquadConfig> {
+        self.spec.squads.iter().find(|s| s.name == name)
+    }
+
+    /// Get all agents in squad
+    pub fn get_squad_agents(&self, squad_name: &str) -> Option<Vec<String>> {
+        self.get_squad(squad_name).map(|s| s.agents.clone())
+    }
+
+    /// Get channels for squad
+    pub fn get_squad_channels(&self, squad_name: &str) -> Option<&SquadChannels> {
+        self.get_squad(squad_name).map(|s| &s.channels)
+    }
 }
 
 /// Load gateway configuration from YAML file
@@ -115,6 +172,75 @@ fn validate_config(config: &GatewayConfig) -> Result<(), AofError> {
         )));
     }
 
+    // Validate squads
+    validate_squads(config)?;
+
+    Ok(())
+}
+
+/// Validate squad configurations
+fn validate_squads(config: &GatewayConfig) -> Result<(), AofError> {
+    let mut squad_names = std::collections::HashSet::new();
+
+    for squad in &config.spec.squads {
+        // Check for duplicate squad names
+        if !squad_names.insert(&squad.name) {
+            return Err(AofError::config(format!(
+                "Duplicate squad name: '{}'",
+                squad.name
+            )));
+        }
+
+        // Check at least one channel configured
+        let has_channel = squad.channels.slack.is_some()
+            || squad.channels.discord.is_some()
+            || squad.channels.telegram.is_some()
+            || squad.channels.whatsapp.is_some();
+
+        if !has_channel {
+            return Err(AofError::config(format!(
+                "Squad '{}' must have at least one channel configured",
+                squad.name
+            )));
+        }
+
+        // Validate channel IDs are non-empty
+        if let Some(ref slack_id) = squad.channels.slack {
+            if slack_id.trim().is_empty() {
+                return Err(AofError::config(format!(
+                    "Squad '{}': Slack channel ID cannot be empty",
+                    squad.name
+                )));
+            }
+        }
+
+        if let Some(ref discord_id) = squad.channels.discord {
+            if discord_id.trim().is_empty() {
+                return Err(AofError::config(format!(
+                    "Squad '{}': Discord channel ID cannot be empty",
+                    squad.name
+                )));
+            }
+        }
+
+        if let Some(ref telegram_id) = squad.channels.telegram {
+            if telegram_id.trim().is_empty() {
+                return Err(AofError::config(format!(
+                    "Squad '{}': Telegram chat ID cannot be empty",
+                    squad.name
+                )));
+            }
+        }
+
+        // Warn about agents (don't fail - agents might not exist yet)
+        if squad.agents.is_empty() {
+            tracing::warn!(
+                squad = %squad.name,
+                "Squad has no agents configured"
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -150,6 +276,7 @@ other: ${NONEXISTENT}
                     session_id: None,
                 },
                 adapters: vec![],
+                squads: vec![],
             },
         };
 
@@ -161,5 +288,129 @@ other: ${NONEXISTENT}
         };
 
         assert!(validate_config(&invalid_version).is_err());
+    }
+
+    #[test]
+    fn test_squad_config_valid() {
+        let config = GatewayConfig {
+            api_version: "aof.dev/v1".to_string(),
+            kind: "Gateway".to_string(),
+            metadata: ConfigMetadata {
+                name: "test".to_string(),
+            },
+            spec: GatewaySpec {
+                runtime: RuntimeConfig {
+                    websocket_url: "ws://localhost:8080".to_string(),
+                    session_id: None,
+                },
+                adapters: vec![],
+                squads: vec![
+                    SquadConfig {
+                        name: "ops-team".to_string(),
+                        description: "Operations team".to_string(),
+                        agents: vec!["agent1".to_string(), "agent2".to_string()],
+                        channels: SquadChannels {
+                            slack: Some("C01234567".to_string()),
+                            discord: Some("987654321098765432".to_string()),
+                            telegram: None,
+                            whatsapp: None,
+                        },
+                    }
+                ],
+            },
+        };
+
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_squad_duplicate_names() {
+        let config = GatewayConfig {
+            api_version: "aof.dev/v1".to_string(),
+            kind: "Gateway".to_string(),
+            metadata: ConfigMetadata {
+                name: "test".to_string(),
+            },
+            spec: GatewaySpec {
+                runtime: RuntimeConfig {
+                    websocket_url: "ws://localhost:8080".to_string(),
+                    session_id: None,
+                },
+                adapters: vec![],
+                squads: vec![
+                    SquadConfig {
+                        name: "ops-team".to_string(),
+                        description: "First".to_string(),
+                        agents: vec!["agent1".to_string()],
+                        channels: SquadChannels {
+                            slack: Some("C01234567".to_string()),
+                            discord: None,
+                            telegram: None,
+                            whatsapp: None,
+                        },
+                    },
+                    SquadConfig {
+                        name: "ops-team".to_string(),
+                        description: "Duplicate".to_string(),
+                        agents: vec!["agent2".to_string()],
+                        channels: SquadChannels {
+                            slack: Some("C98765432".to_string()),
+                            discord: None,
+                            telegram: None,
+                            whatsapp: None,
+                        },
+                    },
+                ],
+            },
+        };
+
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Duplicate squad name"));
+    }
+
+    #[test]
+    fn test_squad_helper_methods() {
+        let config = GatewayConfig {
+            api_version: "aof.dev/v1".to_string(),
+            kind: "Gateway".to_string(),
+            metadata: ConfigMetadata {
+                name: "test".to_string(),
+            },
+            spec: GatewaySpec {
+                runtime: RuntimeConfig {
+                    websocket_url: "ws://localhost:8080".to_string(),
+                    session_id: None,
+                },
+                adapters: vec![],
+                squads: vec![
+                    SquadConfig {
+                        name: "ops-team".to_string(),
+                        description: "Operations team".to_string(),
+                        agents: vec!["agent1".to_string(), "agent2".to_string()],
+                        channels: SquadChannels {
+                            slack: Some("C01234567".to_string()),
+                            discord: None,
+                            telegram: None,
+                            whatsapp: None,
+                        },
+                    }
+                ],
+            },
+        };
+
+        // Test get_squad
+        assert!(config.get_squad("ops-team").is_some());
+        assert!(config.get_squad("nonexistent").is_none());
+
+        // Test get_squad_agents
+        let agents = config.get_squad_agents("ops-team");
+        assert!(agents.is_some());
+        assert_eq!(agents.unwrap(), vec!["agent1", "agent2"]);
+
+        // Test get_squad_channels
+        let channels = config.get_squad_channels("ops-team");
+        assert!(channels.is_some());
+        assert_eq!(channels.unwrap().slack, Some("C01234567".to_string()));
     }
 }
