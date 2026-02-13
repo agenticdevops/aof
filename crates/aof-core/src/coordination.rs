@@ -279,6 +279,72 @@ pub enum TaskStatus {
     Cancelled,
 }
 
+/// Decision log entry for agent decision tracking
+///
+/// Records a decision made by an agent with reasoning, confidence, and contextual metadata.
+/// Used for audit trails, team communication, and learning from agent behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionLogEntry {
+    /// Unique identifier for this decision
+    pub event_id: String,
+    /// Agent that made this decision
+    pub agent_id: String,
+    /// When the decision was made
+    pub timestamp: DateTime<Utc>,
+    /// Action taken (e.g., "classify_alert", "search_logs", "restart_pod")
+    pub action: String,
+    /// Reasoning behind the decision
+    pub reasoning: String,
+    /// Confidence level (0.0-1.0)
+    pub confidence: f64,
+    /// Tags for searchability (agent, action type, resource, severity)
+    pub tags: Vec<String>,
+    /// IDs of related decisions (for threading)
+    pub related: Vec<String>,
+    /// Action-specific context (alert_id, severity, matches, etc.)
+    pub metadata: serde_json::Value,
+}
+
+impl DecisionLogEntry {
+    /// Create a new decision log entry
+    pub fn new(
+        agent_id: impl Into<String>,
+        action: impl Into<String>,
+        reasoning: impl Into<String>,
+        confidence: f64,
+    ) -> Self {
+        Self {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            agent_id: agent_id.into(),
+            timestamp: Utc::now(),
+            action: action.into(),
+            reasoning: reasoning.into(),
+            confidence: confidence.clamp(0.0, 1.0),
+            tags: Vec::new(),
+            related: Vec::new(),
+            metadata: serde_json::json!({}),
+        }
+    }
+
+    /// Add tags to the decision
+    pub fn with_tags(mut self, tags: Vec<String>) -> Self {
+        self.tags = tags;
+        self
+    }
+
+    /// Add related decision IDs
+    pub fn with_related(mut self, related: Vec<String>) -> Self {
+        self.related = related;
+        self
+    }
+
+    /// Set metadata
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = metadata;
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,5 +504,63 @@ mod tests {
         assert_eq!(event.agent_id, "agent-1");
         assert_eq!(event.activity.activity_type, ActivityType::Error);
         assert_eq!(event.activity.message, "Connection failed");
+    }
+
+    #[test]
+    fn test_decision_log_entry_creation() {
+        let entry = DecisionLogEntry::new("agent-1", "restart_pod", "Pod was unhealthy", 0.95);
+
+        assert_eq!(entry.agent_id, "agent-1");
+        assert_eq!(entry.action, "restart_pod");
+        assert_eq!(entry.reasoning, "Pod was unhealthy");
+        assert_eq!(entry.confidence, 0.95);
+        assert!(!entry.event_id.is_empty());
+        assert!(entry.tags.is_empty());
+        assert!(entry.related.is_empty());
+    }
+
+    #[test]
+    fn test_decision_log_entry_with_tags() {
+        let entry = DecisionLogEntry::new("agent-1", "search_logs", "Searching for errors", 0.85)
+            .with_tags(vec!["incident".to_string(), "logs".to_string()]);
+
+        assert_eq!(entry.tags.len(), 2);
+        assert!(entry.tags.contains(&"incident".to_string()));
+        assert!(entry.tags.contains(&"logs".to_string()));
+    }
+
+    #[test]
+    fn test_decision_log_entry_with_related() {
+        let entry = DecisionLogEntry::new("agent-1", "escalate", "Escalating to human", 0.6)
+            .with_related(vec!["decision-001".to_string(), "decision-002".to_string()]);
+
+        assert_eq!(entry.related.len(), 2);
+    }
+
+    #[test]
+    fn test_decision_log_entry_confidence_clamping() {
+        let entry_high = DecisionLogEntry::new("agent-1", "action", "test", 1.5);
+        assert_eq!(entry_high.confidence, 1.0);
+
+        let entry_low = DecisionLogEntry::new("agent-1", "action", "test", -0.5);
+        assert_eq!(entry_low.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_decision_log_entry_serialization() {
+        let entry = DecisionLogEntry::new("agent-1", "classify", "Alert is SEV2", 0.88)
+            .with_tags(vec!["incident".to_string()])
+            .with_metadata(serde_json::json!({
+                "alert_id": "ALT-001",
+                "severity": "SEV2"
+            }));
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let deserialized: DecisionLogEntry = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.agent_id, "agent-1");
+        assert_eq!(deserialized.action, "classify");
+        assert_eq!(deserialized.confidence, 0.88);
+        assert_eq!(deserialized.tags.len(), 1);
     }
 }

@@ -72,6 +72,14 @@ Agents that feel human — with personas, visible communication, and a Mission C
 - [ ] Agents respond in character with their persona
 - [ ] Squad announcements — broadcast to all agents or specific teams
 
+**Conversational Configuration (The Interface IS Conversation)**
+- [ ] Talk to the system to create agents — "I need a K8s monitoring agent" → agent with persona created
+- [ ] Talk to build agent teams/fleets — "Build me an incident response squad" → team created with roles
+- [ ] Talk to configure schedules — "Check my cluster every 30 minutes" → heartbeat configured
+- [ ] Talk to add skills — "Learn how to debug our Postgres" → skill created from conversation
+- [ ] YAML/CLI as power-user layer underneath — conversation generates config, not the other way around
+- [ ] The main agent (orchestrator/router) understands intent and delegates to the right agents
+
 **Real Ops Capabilities**
 - [ ] K8s diagnostics — pod debugging, log analysis, event inspection, resource usage
 - [ ] Incident response flow — triage agent coordinates specialist agents
@@ -116,7 +124,7 @@ Agents that feel human — with personas, visible communication, and a Mission C
 - **License**: Apache 2.0 — everything open source, enterprise features come later in separate products
 - **Architecture**: Local-first — must work on a single machine, server deployment optional
 - **Performance**: Rust performance is a selling point — agent communication and task coordination must be snappy
-- **No JS frameworks**: Mission Control is WASM from Rust (Leptos, Dioxus, or Yew) — not React/Vue
+- **Frontend**: Mission Control built with builder.io (user's existing tool). Backend/daemon is Rust. Beautiful UX wins over language purity.
 - **Backward compatibility**: Existing AOF YAML configs should still work (migration path, not hard break)
 - **Cross-platform**: macOS, Linux, Windows (same as current AOF)
 
@@ -124,13 +132,15 @@ Agents that feel human — with personas, visible communication, and a Mission C
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| WASM for Mission Control | Pure Rust story, no JS dependency, compiles from same codebase | — Pending |
+| builder.io for Mission Control | User's existing tool. Beautiful, polished UX. Rust backend + builder.io frontend. | — Pending |
 | Local-first architecture | DevOps engineers want control, not another SaaS. Server mode is opt-in. | — Pending |
 | Everything open source (v1) | Virality requires zero friction. Enterprise features are a separate product. | — Pending |
 | Keep AOF as engine name | Established brand, crates already published. Product name TBD. | — Pending |
 | Agents as "team members" not "tools" | This is THE differentiator. Every design decision serves the human feel. | — Pending |
 | Slack/Discord dual mode | Single bot for quick access + dedicated agent channels for squad work | — Pending |
 | Reinvention over evolution | Willing to restructure core if needed — the vision is more important than preserving current CLI patterns | — Pending |
+| Conversation as primary interface | Users talk to the system, not write YAML. Config is generated from conversation. YAML is the power-user escape hatch. | — Pending |
+| Simplicity over power | Dead simple first experience beats feature richness. If you need docs to start, you've lost. | — Pending |
 
 ---
 *Last updated: 2026-02-11 after initialization*
