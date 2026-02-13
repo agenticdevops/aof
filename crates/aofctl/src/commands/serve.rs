@@ -76,6 +76,29 @@ pub struct ServeSpec {
     /// Runtime settings
     #[serde(default)]
     pub runtime: RuntimeConfig,
+
+    /// Decision logging settings
+    #[serde(default)]
+    pub decision_log: DecisionLogConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionLogConfig {
+    /// Enable decision logging
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Path to decision log file (default: ~/.aof/decisions.jsonl)
+    pub path: Option<PathBuf>,
+}
+
+impl Default for DecisionLogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -410,6 +433,7 @@ pub async fn execute(
                     watch: false,
                 },
                 runtime: RuntimeConfig::default(),
+                decision_log: DecisionLogConfig::default(),
             },
         }
     };
@@ -436,6 +460,31 @@ pub async fn execute(
         .join("sessions");
     tokio::fs::create_dir_all(&persist_dir).await?;
     let session_persistence = SessionPersistence::new(persist_dir.clone()).await?;
+
+    // Create decision logger for agent decision tracking
+    let decision_logger = if config.spec.decision_log.enabled {
+        let decision_log_path = config.spec.decision_log.path.clone().unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("aof")
+                .join("decisions.jsonl")
+        });
+
+        // Ensure parent directory exists
+        if let Some(parent) = decision_log_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        let logger = Arc::new(aof_coordination::DecisionLogger::new(
+            decision_log_path.clone(),
+            event_bus.clone(),
+        ));
+        println!("  Decision logger: enabled at {}", decision_log_path.display());
+        Some(logger)
+    } else {
+        println!("  Decision logger: disabled");
+        None
+    };
 
     // Generate session ID (UUID v4, unique per daemon lifetime)
     let session_id = uuid::Uuid::new_v4().to_string();
