@@ -1,8 +1,8 @@
 # Project State: AOF - Humanized Agentic Ops Platform
 
-**Last Updated:** 2026-02-12
+**Last Updated:** 2026-02-13
 **Milestone:** Reinvention (Humanized Agent Platform)
-**Status:** In Progress (Phase 1 Verified ✓)
+**Status:** In Progress (Phase 2 Verified ✓)
 
 ---
 
@@ -12,36 +12,37 @@
 Agents that feel human — with personas, visible communication, and a Mission Control where you see your team of AI minions coordinating, reporting, and getting real work done.
 
 ### Current Focus
-Phase 1 (Event Infrastructure Foundation) verified and complete. Ready to plan Phase 2: Real Ops Capabilities.
+Phase 2 (Real Ops Capabilities) executed and verified. Ready to plan Phase 3: Messaging Gateway.
 
 ---
 
 ## Current Position
 
 ### Active Phase
-**Phase 2: Real Ops Capabilities** (next)
-- **Goal:** Core operations capabilities (K8s diagnostics, skills framework, decision logging)
-- **Status:** Pending planning
-- **Requirements:** ROPS-01 through ROPS-06 (6 total)
+**Phase 3: Messaging Gateway** (in progress)
+- **Goal:** Hub-and-spoke gateway routes humans to agents via Slack, Discord, Telegram, WhatsApp
+- **Status:** Plan 01 complete (1/3 plans done)
+- **Requirements:** MSGG-01 (partial coverage - core gateway hub delivered)
 
 ### Last Completed Phase
-**Phase 1: Event Infrastructure Foundation** ✓
-- **Goal:** Agent activities are observable in real-time through an event streaming architecture
-- **Status:** COMPLETE (3/3 plans executed + UAT verified)
-- **Verification:** 5 of 8 tests passed, 3 deferred to integration testing, 0 issues
-- **Requirements:** INFR-01, INFR-02, INFR-03, INFR-04 (4 total) ✓
+**Phase 2: Real Ops Capabilities** ✓
+- **Goal:** Agents can perform real DevOps work with full decision transparency and safe coordination
+- **Status:** COMPLETE (3/3 plans executed + verification passed)
+- **Execution:** Wave 1 (02-01, 02-02), Wave 2 (02-03) — 156 minutes total
+- **Verification:** 9/9 must-haves verified, goal achieved
+- **Requirements:** ROPS-01 through ROPS-05, ENGN-01, ENGN-04, SREW-02, SREW-03 (9/10) ✓
 
 ### Status
-Phase 1 (Event Infrastructure Foundation) complete and verified. All 3 plans executed, all documentation created, UAT passed with no breaking changes.
+Phase 3 (Messaging Gateway) in progress. Plan 01 complete: aof-gateway crate with hub-and-spoke architecture, ChannelAdapter trait, event translation, GCRA rate limiting, and YAML configuration. 28 tests passing (26 unit + 2 integration).
 
 ### Progress
 
 ```
-Milestone Progress: [███░░░░░░░] 13% (3 of 24 plans complete)
+Milestone Progress: [███░░░░░░░] 29% (7 of 24 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
-Phase 2: Real Ops Capabilities   [░░░░░░░░░░] 0%
-Phase 3: Messaging Gateway       [░░░░░░░░░░] 0%
+Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
+Phase 3: Messaging Gateway       [███░░░░░░░] 33% (1/3 plans)
 Phase 4: Mission Control UI      [░░░░░░░░░░] 0%
 Phase 5: Agent Personas          [░░░░░░░░░░] 0%
 Phase 6: Conversational Config   [░░░░░░░░░░] 0%
@@ -54,31 +55,34 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 ### Velocity
-- **Phases completed:** 1 (Phase 1: Event Infrastructure Foundation)
-- **Plans completed:** 3
-- **Requirements delivered:** 4/48 (8%) - INFR-01, INFR-02, INFR-03, INFR-04
-- **Avg. plan duration:** 591.7 seconds (9.9 minutes)
+- **Phases completed:** 2 (Phase 1, Phase 2)
+- **Plans completed:** 7
+- **Requirements delivered:** 14/48 (29%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01 (partial)
+- **Avg. plan duration:** 531 seconds (8.9 minutes)
 
 ### Quality
-- **Tests passing:** 45 (26 aof-runtime + 14 aof-core coordination + 11 aof-coordination - 6 broadcaster)
-- **Coverage:** Unit tests for coordination types, broadcaster, persistence, runtime executor
-- **Blockers encountered:** 0
-- **Blockers resolved:** 0
+- **Tests passing:** 184+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 28)
+- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway event translation, rate limiting
+- **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
+- **Blockers resolved:** 1 (100% resolution rate)
 
 ### Efficiency
-- **Plan success rate:** 100% (3/3 executed, no deviations)
-- **Rework rate:** 0%
-- **Research queries:** 1 (architecture research completed)
+- **Plan success rate:** 100% (7/7 executed, 1 blocker found and fixed immediately)
+- **Rework rate:** 0% (post-fix verification passed)
+- **Research queries:** 2 (architecture research + phase research)
 
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 03 | 01 | 565s | 10 | 15 | 5 | 2026-02-13 |
+| 02 | 03 | 3348s | 10 | 8 | 5 | 2026-02-13 |
+| 02 | 02 | 1380s | 10 | 6 | 9 | 2026-02-13 |
+| 02 | 01 | 3936s | 10 | 5 | 8 | 2026-02-13 |
 | 01 | 03 | 366s | 2 | 3 | 2 | 2026-02-11 |
 | 01 | 02 | 924s | 2 | 7 | 2 | 2026-02-11 |
-| 01 | 01 | 485s | 2 | 9 | 2 | 2026-02-11 |
 
 ---
-| Phase 01 P03 | 366 | 2 tasks | 3 files |
+| Phase 03 P01 | 565 | 10 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -99,6 +103,9 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Optional event_bus via builder pattern** | event_bus=None by default. Only enabled via with_event_bus(). Zero breaking changes, gradual adoption. | 2026-02-11 | 01 | Implemented |
 | **Lagged WebSocket clients warned not disconnected** | RecvError::Lagged logs warning with dropped count, continues sending. Clients eventually catch up. Harsh disconnection avoided. | 2026-02-11 | 01 | Implemented |
 | **Documentation matches actual implementation** | Read actual source files (coordination.rs, broadcaster.rs, persistence.rs, agent_executor.rs, server/mod.rs, serve.rs) during doc writing to ensure all technical details, type names, field names match reality. Prevents stale documentation. | 2026-02-11 | 01 | Implemented |
+| **Hub-and-spoke pattern for messaging gateway** | Reduces N×M complexity (N platforms × M agents) to N+M. Hub acts as translation layer and control plane, not just message router. | 2026-02-13 | 03 | Implemented |
+| **GCRA token bucket for rate limiting** | Governor crate provides smooth rate limiting without thundering herd. Burst allowance built-in. Async-ready with until_ready().await. Lock-free for high concurrency. | 2026-02-13 | 03 | Implemented |
+| **ActivityEvent::Info with metadata for gateway** | ActivityEvent is a struct (not enum). Use ActivityType::Info with metadata HashMap for message details instead of Custom variant. | 2026-02-13 | 03 | Implemented |
 
 ### Todos
 
