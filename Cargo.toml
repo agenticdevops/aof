@@ -93,6 +93,10 @@ aof-skills = { path = "crates/aof-skills", version = "0.4.0-beta" }
 glob = "0.3"
 which = "6.0"
 
+# Distributed locking and sandboxing
+redis = { version = "0.25", features = ["aio", "tokio-comp"] }
+bollard = "0.16"
+
 [profile.release]
 opt-level = 3
 lto = "thin"
