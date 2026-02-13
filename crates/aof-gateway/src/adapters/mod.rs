@@ -5,8 +5,10 @@
 
 pub mod channel_adapter;
 pub mod slack;
+pub mod discord;
 
 pub use channel_adapter::{
     ChannelAdapter, Platform, InboundMessage, AgentResponse, MessageUser, Attachment,
 };
 pub use slack::{SlackAdapter, SlackConfig};
+pub use discord::{DiscordAdapter, DiscordConfig};
