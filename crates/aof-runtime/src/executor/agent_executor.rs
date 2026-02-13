@@ -106,6 +106,9 @@ pub struct AgentExecutor {
 
     /// Session ID for grouping events
     session_id: Option<String>,
+
+    /// Optional decision logger for agent decisions
+    decision_logger: Option<Arc<aof_coordination::DecisionLogger>>,
 }
 
 impl AgentExecutor {
@@ -123,6 +126,7 @@ impl AgentExecutor {
             memory,
             event_bus: None,
             session_id: None,
+            decision_logger: None,
         }
     }
 
@@ -130,6 +134,12 @@ impl AgentExecutor {
     pub fn with_event_bus(mut self, event_bus: Arc<EventBroadcaster>, session_id: String) -> Self {
         self.event_bus = Some(event_bus);
         self.session_id = Some(session_id);
+        self
+    }
+
+    /// Set the decision logger for decision tracking
+    pub fn with_decision_logger(mut self, logger: Arc<aof_coordination::DecisionLogger>) -> Self {
+        self.decision_logger = Some(logger);
         self
     }
 
@@ -142,6 +152,24 @@ impl AgentExecutor {
                 session_id.clone(),
             );
             bus.emit(coord_event);
+        }
+    }
+
+    /// Log a decision if decision logger is configured
+    async fn log_decision(&self, action: &str, reasoning: &str, confidence: f64, tags: Vec<String>, metadata: serde_json::Value) {
+        if let Some(ref logger) = self.decision_logger {
+            let entry = aof_core::DecisionLogEntry::new(
+                self.config.name.clone(),
+                action,
+                reasoning,
+                confidence,
+            )
+            .with_tags(tags)
+            .with_metadata(metadata);
+
+            if let Err(e) = logger.log(entry).await {
+                warn!("Failed to log decision: {}", e);
+            }
         }
     }
 
@@ -191,6 +219,18 @@ impl AgentExecutor {
         // Emit agent start event
         self.emit_event(ActivityEvent::started(&self.config.name));
 
+        // Log decision: agent started
+        self.log_decision(
+            "agent_started",
+            &format!("Processing request: {}", ctx.input),
+            0.95,
+            vec!["agent".to_string(), "lifecycle".to_string()],
+            serde_json::json!({
+                "input": ctx.input,
+                "max_iterations": self.config.max_iterations
+            })
+        ).await;
+
         // Add user message if not already in history
         if ctx.messages.is_empty() {
             ctx.add_message(MessageRole::User, ctx.input.clone());
@@ -208,6 +248,18 @@ impl AgentExecutor {
 
                 // Emit error event
                 self.emit_event(ActivityEvent::error(&error_msg));
+
+                // Log decision: error occurred
+                self.log_decision(
+                    "error_occurred",
+                    &error_msg,
+                    0.0,
+                    vec!["error".to_string(), "max_iterations".to_string()],
+                    serde_json::json!({
+                        "error": error_msg,
+                        "max_iterations": max_iterations
+                    })
+                ).await;
 
                 let _ = stream_tx.send(StreamEvent::Error {
                     message: error_msg.clone(),
@@ -350,6 +402,20 @@ impl AgentExecutor {
                     // Emit agent completed event
                     self.emit_event(ActivityEvent::completed(ctx.metadata.execution_time_ms));
 
+                    // Log decision: agent completed
+                    self.log_decision(
+                        "agent_completed",
+                        &format!("Task completed with result: {}", accumulated_content.chars().take(100).collect::<String>()),
+                        0.95,
+                        vec!["agent".to_string(), "lifecycle".to_string(), "completed".to_string()],
+                        serde_json::json!({
+                            "iterations": iteration,
+                            "execution_time_ms": ctx.metadata.execution_time_ms,
+                            "tool_calls": ctx.metadata.tool_calls,
+                            "output_length": accumulated_content.len()
+                        })
+                    ).await;
+
                     // Emit done event
                     let _ = stream_tx.send(StreamEvent::Done {
                         content: accumulated_content.clone(),
@@ -389,9 +455,35 @@ impl AgentExecutor {
                         // Emit tool complete or failed event
                         if result.success {
                             self.emit_event(ActivityEvent::tool_complete(&tool_call.name, result.execution_time_ms));
+
+                            // Log decision: tool executed successfully
+                            self.log_decision(
+                                "tool_executed",
+                                &format!("Executed {} successfully", tool_call.name),
+                                0.9,
+                                vec!["tool".to_string(), tool_call.name.clone()],
+                                serde_json::json!({
+                                    "tool": tool_call.name,
+                                    "execution_time_ms": result.execution_time_ms,
+                                    "success": true
+                                })
+                            ).await;
                         } else {
                             let error_msg = result.error.as_deref().unwrap_or("Unknown error");
                             self.emit_event(ActivityEvent::tool_failed(&tool_call.name, error_msg));
+
+                            // Log decision: tool execution failed
+                            self.log_decision(
+                                "tool_failed",
+                                &format!("Tool {} failed: {}", tool_call.name, error_msg),
+                                0.5,
+                                vec!["tool".to_string(), "error".to_string(), tool_call.name.clone()],
+                                serde_json::json!({
+                                    "tool": tool_call.name,
+                                    "error": error_msg,
+                                    "success": false
+                                })
+                            ).await;
                         }
 
                         // Log tool result
