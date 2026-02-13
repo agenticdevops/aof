@@ -96,7 +96,7 @@ impl RiskPolicy {
     }
 
     /// Check if operation is destructive
-    fn is_destructive(&self, tool: &str, args: &[String]) -> bool {
+    pub fn is_destructive(&self, tool: &str, args: &[String]) -> bool {
         let destructive_cmds = vec![
             "delete", "remove", "rm", "rmi", "kill", "stop", "restart", "scale",
             "terminate", "destroy", "drop", "truncate",
@@ -115,7 +115,7 @@ impl RiskPolicy {
     }
 
     /// Check if operation is a write (non-destructive modification)
-    fn is_write(&self, tool: &str, args: &[String]) -> bool {
+    pub fn is_write(&self, tool: &str, args: &[String]) -> bool {
         let write_cmds = vec!["apply", "patch", "create", "set", "update", "edit"];
 
         let tool_lower = tool.to_lowercase();

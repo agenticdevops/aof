@@ -262,6 +262,11 @@ impl FileLock {
     pub async fn acquire(&self) -> Result<bool, AofError> {
         let lock_path = self.lock_file_path();
 
+        // Ensure directory exists
+        fs::create_dir_all(lock_path.parent().unwrap_or(&self.lock_dir))
+            .await
+            .map_err(|e| AofError::lock_failed(format!("Failed to ensure lock dir exists: {}", e)))?;
+
         // Try to read existing lock
         if let Ok(content) = fs::read_to_string(&lock_path).await {
             if let Some((_, timestamp, ttl)) = Self::parse_lock_content(&content) {
@@ -272,15 +277,10 @@ impl FileLock {
             }
         }
 
-        // Create temp file and atomically rename (for atomic write)
-        let temp_path = self.lock_dir.join(format!("{}.tmp", uuid::Uuid::new_v4()));
-        fs::write(&temp_path, self.lock_content())
+        // Write lock file directly
+        fs::write(&lock_path, self.lock_content())
             .await
-            .map_err(|e| AofError::lock_failed(format!("Failed to write temp lock: {}", e)))?;
-
-        fs::rename(&temp_path, &lock_path)
-            .await
-            .map_err(|e| AofError::lock_failed(format!("Failed to rename lock: {}", e)))?;
+            .map_err(|e| AofError::lock_failed(format!("Failed to write lock: {}", e)))?;
 
         Ok(true)
     }
@@ -312,14 +312,9 @@ impl FileLock {
         if let Ok(content) = fs::read_to_string(&lock_path).await {
             if let Some((agent_id, _, _)) = Self::parse_lock_content(&content) {
                 if agent_id == self.agent_id {
-                    let temp_path = self.lock_dir.join(format!("{}.tmp", uuid::Uuid::new_v4()));
-                    fs::write(&temp_path, self.lock_content())
+                    fs::write(&lock_path, self.lock_content())
                         .await
-                        .map_err(|e| AofError::lock_failed(format!("Failed to write temp lock: {}", e)))?;
-
-                    fs::rename(&temp_path, &lock_path)
-                        .await
-                        .map_err(|e| AofError::lock_failed(format!("Failed to rename lock: {}", e)))?;
+                        .map_err(|e| AofError::lock_failed(format!("Failed to write lock: {}", e)))?;
                     return Ok(true);
                 }
             }
