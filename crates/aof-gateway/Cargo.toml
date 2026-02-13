@@ -25,6 +25,7 @@ async-trait = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 regex = { workspace = true }
+reqwest = { workspace = true }
 
 # Rate limiting
 governor = "0.6"
