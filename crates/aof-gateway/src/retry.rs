@@ -128,11 +128,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_with_backoff_success() {
-        let mut call_count = 0;
-        let operation = || {
-            call_count += 1;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+
+        let operation = move || {
+            let count = call_count_clone.clone();
             async move {
-                if call_count == 1 {
+                let current = count.fetch_add(1, Ordering::SeqCst);
+                if current == 0 {
                     Err(AofError::runtime("429 rate limit"))
                 } else {
                     Ok(("success".to_string(), None))
@@ -148,15 +154,21 @@ mod tests {
 
         let result = retry_with_backoff(operation, config, "test-adapter").await;
         assert!(result.is_ok());
-        assert_eq!(call_count, 2);
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
     async fn test_retry_with_backoff_exhausted() {
-        let mut call_count = 0;
-        let operation = || {
-            call_count += 1;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let call_count_clone = call_count.clone();
+
+        let operation = move || {
+            let count = call_count_clone.clone();
             async move {
+                count.fetch_add(1, Ordering::SeqCst);
                 Err::<(String, Option<u64>), _>(AofError::runtime("429 rate limit"))
             }
         };
@@ -169,6 +181,6 @@ mod tests {
 
         let result = retry_with_backoff(operation, config, "test-adapter").await;
         assert!(result.is_err());
-        assert!(call_count >= 2);
+        assert!(call_count.load(Ordering::SeqCst) >= 2);
     }
 }
