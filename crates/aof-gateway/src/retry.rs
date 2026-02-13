@@ -97,7 +97,7 @@ where
 fn extract_retry_after(error_msg: &str) -> Option<u64> {
     // Try to parse "Retry-After: <seconds>" from error message
     if let Some(start) = error_msg.find("Retry-After:") {
-        let rest = &error_msg[start + 12..];
+        let rest = &error_msg[start + 12..].trim_start();
         if let Some(end) = rest.find(|c: char| !c.is_numeric()) {
             rest[..end].parse::<u64>().ok()
         } else {
