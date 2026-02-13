@@ -63,7 +63,7 @@ mod watcher;
 pub use error::SkillError;
 pub use frontmatter::{has_frontmatter, parse_frontmatter, ParsedSkill, SkillFrontmatter};
 pub use loader::{build_skills_prompt, SkillLoader};
-pub use registry::SkillRegistry;
+pub use registry::{AgentSkillsValidator, SkillRegistry, ValidationReport};
 pub use requirements::{EligibilityContext, RequirementCheck, RequirementChecker};
 pub use types::*;
 pub use watcher::{SkillWatcher, SkillWatcherBuilder};
