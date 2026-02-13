@@ -1,0 +1,205 @@
+//! Gateway hub control plane
+//!
+//! This module implements the central control plane that manages channel adapters,
+//! routes messages, and coordinates with the agent runtime.
+
+use std::collections::HashMap;
+
+use tokio::sync::{broadcast, watch};
+use uuid::Uuid;
+
+use aof_core::{AofError, CoordinationEvent};
+use crate::adapters::{ChannelAdapter, Platform};
+use crate::rate_limiter::RateLimiter;
+
+/// Gateway hub control plane
+pub struct GatewayHub {
+    /// Session ID for this gateway instance (UUID, generated once)
+    session_id: String,
+
+    /// Registered channel adapters (keyed by adapter_id)
+    adapters: HashMap<String, Box<dyn ChannelAdapter>>,
+
+    /// Rate limiters per platform
+    rate_limiters: HashMap<Platform, RateLimiter>,
+
+    /// Event sender to agent runtime (Phase 1 broadcast channel)
+    event_tx: broadcast::Sender<CoordinationEvent>,
+
+    /// Shutdown signal
+    shutdown_rx: watch::Receiver<bool>,
+}
+
+impl GatewayHub {
+    /// Create new gateway hub
+    pub fn new(
+        event_tx: broadcast::Sender<CoordinationEvent>,
+        shutdown_rx: watch::Receiver<bool>,
+    ) -> Self {
+        let session_id = Uuid::new_v4().to_string();
+
+        Self {
+            session_id,
+            adapters: HashMap::new(),
+            rate_limiters: HashMap::new(),
+            event_tx,
+            shutdown_rx,
+        }
+    }
+
+    /// Register a channel adapter
+    pub fn register_adapter(&mut self, adapter: Box<dyn ChannelAdapter>) {
+        let adapter_id = adapter.adapter_id().to_string();
+        let platform = adapter.platform();
+
+        // Create rate limiter for platform if not exists
+        if !self.rate_limiters.contains_key(&platform) {
+            let config = RateLimiter::default_config_for_platform(platform);
+            self.rate_limiters.insert(platform, RateLimiter::new(platform, config));
+        }
+
+        self.adapters.insert(adapter_id, adapter);
+    }
+
+    /// Start all registered adapters
+    pub async fn start(&mut self) -> Result<(), AofError> {
+        tracing::info!(
+            session_id = %self.session_id,
+            adapter_count = self.adapters.len(),
+            "Starting gateway hub"
+        );
+
+        for (adapter_id, adapter) in self.adapters.iter_mut() {
+            tracing::info!(adapter_id = %adapter_id, "Starting adapter");
+            adapter.start().await?;
+        }
+
+        Ok(())
+    }
+
+    /// Run gateway event loop (receive messages, translate, route to runtime)
+    pub async fn run(&mut self) -> Result<(), AofError> {
+        tracing::info!("Gateway hub event loop started");
+
+        // For now, just a placeholder event loop
+        // In task 03-01-09 (integration test), we'll implement the full select! loop
+        loop {
+            tokio::select! {
+                _ = self.shutdown_rx.changed() => {
+                    if *self.shutdown_rx.borrow() {
+                        tracing::info!("Shutdown signal received");
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Stop all adapters gracefully
+    pub async fn stop(&mut self) -> Result<(), AofError> {
+        tracing::info!("Stopping all adapters");
+
+        for (adapter_id, adapter) in self.adapters.iter_mut() {
+            let adapter_id = adapter_id.clone();
+            tracing::info!(adapter_id = %adapter_id, "Stopping adapter");
+
+            // Stop adapter (can't use tokio::join! with mutable borrows)
+            if let Err(e) = adapter.stop().await {
+                tracing::error!(adapter_id = %adapter_id, error = ?e, "Failed to stop adapter");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get session ID
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crate::adapters::{InboundMessage, AgentResponse, MessageUser};
+    use chrono::Utc;
+    use serde_json::json;
+
+    struct MockAdapter {
+        id: String,
+        platform: Platform,
+        started: bool,
+        stopped: bool,
+    }
+
+    #[async_trait]
+    impl ChannelAdapter for MockAdapter {
+        fn adapter_id(&self) -> &str {
+            &self.id
+        }
+
+        fn platform(&self) -> Platform {
+            self.platform
+        }
+
+        async fn start(&mut self) -> Result<(), AofError> {
+            self.started = true;
+            Ok(())
+        }
+
+        async fn stop(&mut self) -> Result<(), AofError> {
+            self.stopped = true;
+            Ok(())
+        }
+
+        async fn health_check(&self) -> Result<bool, AofError> {
+            Ok(true)
+        }
+
+        async fn receive_message(&mut self) -> Result<InboundMessage, AofError> {
+            Err(AofError::runtime("No messages"))
+        }
+
+        async fn send_message(&self, _response: &AgentResponse) -> Result<(), AofError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_hub_start_stop() {
+        let (event_tx, _event_rx) = broadcast::channel(10);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let mut hub = GatewayHub::new(event_tx, shutdown_rx);
+
+        // Register mock adapter
+        let adapter = Box::new(MockAdapter {
+            id: "test-slack".to_string(),
+            platform: Platform::Slack,
+            started: false,
+            stopped: false,
+        });
+        hub.register_adapter(adapter);
+
+        // Start hub
+        assert!(hub.start().await.is_ok());
+
+        // Stop hub
+        assert!(hub.stop().await.is_ok());
+    }
+
+    #[test]
+    fn test_hub_session_id() {
+        let (event_tx, _event_rx) = broadcast::channel(10);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let hub = GatewayHub::new(event_tx, shutdown_rx);
+
+        // Session ID should be UUID format
+        assert!(!hub.session_id().is_empty());
+        assert_eq!(hub.session_id().len(), 36); // UUID format
+    }
+}
