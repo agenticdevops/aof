@@ -61,10 +61,11 @@ where
                 // Calculate backoff delay
                 let retry_after = if is_rate_limit {
                     // Try to extract Retry-After from error message
-                    extract_retry_after(&e.to_string()).unwrap_or(60)
+                    extract_retry_after(&e.to_string()).unwrap_or(1) // Default to 1 sec if not found
                 } else {
-                    // Exponential backoff for transient errors
-                    config.base_delay_ms * 2_u64.pow(attempt as u32) / 1000
+                    // Exponential backoff for transient errors (in milliseconds)
+                    let delay_ms = config.base_delay_ms * 2_u64.pow(attempt as u32);
+                    std::cmp::max(delay_ms / 1000, 1) // At least 1 second
                 };
 
                 // Add jitter if enabled
@@ -148,7 +149,7 @@ mod tests {
 
         let config = RetryConfig {
             max_retries: 3,
-            base_delay_ms: 10, // Short delay for test
+            base_delay_ms: 1, // 1ms base delay for fast tests
             jitter: false,
         };
 
@@ -175,7 +176,7 @@ mod tests {
 
         let config = RetryConfig {
             max_retries: 2,
-            base_delay_ms: 10,
+            base_delay_ms: 1, // 1ms base delay for fast tests
             jitter: false,
         };
 
