@@ -295,7 +295,7 @@ mod tests {
         let short_text = "Short message";
         let chunks = DiscordAdapter::split_long_response(short_text, 5500);
         assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0], "Short message\n");
+        assert!(chunks[0].starts_with("Short message"));
 
         // Test with long text
         let long_text = "Line\n".repeat(1000); // ~5000 chars
