@@ -81,6 +81,7 @@
 //! ```
 
 pub mod adapters;
+pub mod broadcast;
 pub mod config;
 pub mod hub;
 pub mod rate_limiter;
@@ -92,3 +93,4 @@ pub use adapters::channel_adapter::{ChannelAdapter, Platform, InboundMessage, Ag
 pub use rate_limiter::{RateLimiter, RateLimitConfig};
 pub use retry::{retry_with_backoff, RetryConfig};
 pub use config::GatewayConfig;
+pub use broadcast::{BroadcastMessage, BroadcastTarget, Priority, BroadcastResult};
