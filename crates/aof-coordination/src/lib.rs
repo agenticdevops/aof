@@ -64,12 +64,14 @@
 //! ```
 
 pub mod broadcaster;
+pub mod decision_log;
 pub mod events;
 pub mod persistence;
 
 // Re-export core types
 pub use aof_core::coordination::{
-    AgentState, AgentStatus, CoordinationEvent, SessionState, TaskInfo, TaskStatus,
+    AgentState, AgentStatus, CoordinationEvent, DecisionLogEntry, SessionState, TaskInfo, TaskStatus,
 };
 pub use broadcaster::EventBroadcaster;
+pub use decision_log::{DecisionLogger, DecisionSearch};
 pub use persistence::SessionPersistence;
