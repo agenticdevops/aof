@@ -84,9 +84,11 @@ pub mod adapters;
 pub mod config;
 pub mod hub;
 pub mod rate_limiter;
+pub mod retry;
 pub mod translation;
 
 pub use hub::GatewayHub;
 pub use adapters::channel_adapter::{ChannelAdapter, Platform, InboundMessage, AgentResponse, MessageUser, Attachment};
 pub use rate_limiter::{RateLimiter, RateLimitConfig};
+pub use retry::{retry_with_backoff, RetryConfig};
 pub use config::GatewayConfig;
