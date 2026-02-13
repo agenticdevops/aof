@@ -1,0 +1,82 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "defaultErrnoRet": 1,
+  "architectures": ["SCMP_ARCH_X86_64"],
+  "syscalls": [
+    {
+      "comment": "Basic I/O operations",
+      "names": [
+        "read", "write", "open", "close", "stat", "fstat", "lstat",
+        "poll", "lseek", "mmap", "mprotect", "munmap", "brk", "pread64",
+        "pwrite64", "readv", "writev", "access", "pipe", "select"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Memory and scheduling operations",
+      "names": [
+        "sched_yield", "mremap", "msync", "mincore", "madvise",
+        "shmget", "shmat", "shmctl", "dup", "dup2", "pause",
+        "nanosleep", "getitimer", "alarm", "setitimer", "getpid"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Networking and process management",
+      "names": [
+        "sendto", "socket", "connect", "listen", "accept", "getsockname",
+        "getpeername", "socketpair", "setsockopt", "getsockopt", "clone",
+        "fork", "vfork", "execve", "exit", "wait4", "kill"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "File system operations",
+      "names": [
+        "fcntl", "flock", "fsync", "fdatasync", "truncate", "ftruncate",
+        "getdents", "getcwd", "chdir", "fchdir", "rename", "mkdir",
+        "rmdir", "creat", "link", "unlink", "symlink", "readlink"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "File permissions and metadata",
+      "names": [
+        "chmod", "fchmod", "chown", "fchown", "lchown", "umask",
+        "gettimeofday", "getrlimit", "getrusage", "gettid", "readahead",
+        "setxattr", "lsetxattr", "fsetxattr", "getxattr", "lgetxattr"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Extended attributes and advanced I/O",
+      "names": [
+        "fgetxattr", "listxattr", "llistxattr", "flistxattr", "removexattr",
+        "lremovexattr", "fremovexattr", "mmap2", "fadvise64", "ioctl",
+        "pread", "pwrite", "prctl", "dup3", "epoll_create1", "epoll_ctl",
+        "epoll_wait", "faccessat", "fchmodat", "fchownat", "linkat"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Restrict privilege escalation and kernel access",
+      "names": ["ptrace", "capset", "setuid", "setgid", "setresgid", "setresuid"],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "Restrict file system access (mount/unmount)",
+      "names": ["mount", "umount", "umount2", "pivot_root"],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "Restrict process spawning (already restricted in sandbox, extra safety)",
+      "names": ["execveat"],
+      "action": "SCMP_ACT_ERRNO"
+    },
+    {
+      "comment": "Restrict kernel module loading",
+      "names": ["init_module", "delete_module", "finit_module"],
+      "action": "SCMP_ACT_ERRNO"
+    }
+  ]
+}
