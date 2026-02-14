@@ -63,9 +63,9 @@ Phase 7 (Coordination)
 
 ### Plans: 3 plans
 
-- [ ] 01-01-PLAN.md — Core event types + aof-coordination crate (EventBroadcaster, SessionPersistence)
-- [ ] 01-02-PLAN.md — Runtime event emission + WebSocket daemon (AgentExecutor event bus, serve.rs /ws route)
-- [ ] 01-03-PLAN.md — Documentation (internal dev docs, user concepts, architecture)
+- [x] 01-01-PLAN.md — Core event types + aof-coordination crate (EventBroadcaster, SessionPersistence)
+- [x] 01-02-PLAN.md — Runtime event emission + WebSocket daemon (AgentExecutor event bus, serve.rs /ws route)
+- [x] 01-03-PLAN.md — Documentation (internal dev docs, user concepts, architecture)
 
 ---
 
@@ -235,6 +235,15 @@ Phase 7 (Coordination)
 - Create persona introduction event (reads SOUL.md, displays introduction in squad chat)
 - Add reliability indicators (uptime, success rate) alongside persona to build trust
 
+### Plans: 6 plans
+
+- [ ] 05-01-PLAN.md — Workspace file format & loaders (AGENTS.md, SOUL.md parsing, validation)
+- [ ] 05-02-PLAN.md — System prompt composition engine (instruction layering, token limits, caching)
+- [ ] 05-03-PLAN.md — Introduction events & daemon emission (CoordinationActivity::AgentIntroduction, broadcast)
+- [ ] 05-04-PLAN.md — AgentCard persona display (UI components, traits, capabilities, introduction toast)
+- [ ] 05-05-PLAN.md — Reliability metrics computation (uptime %, success rate, API endpoint)
+- [ ] 05-06-PLAN.md — Integration testing & documentation (end-to-end tests, developer/user guides)
+
 ---
 
 ## Phase 6: Conversational Configuration
@@ -364,10 +373,10 @@ Phase 7 (Coordination)
 | **Phase 2: Real Ops Capabilities** | ✓ Complete (2026-02-13) | ROPS-01–05, ENGN-01, ENGN-04, SREW-02–03 | 100% |
 | **Phase 3: Messaging Gateway** | ✓ Complete (2026-02-13) | MSGG-01, MSGG-02, MSGG-03, MSGG-05 | 100% |
 | **Phase 4: Mission Control UI** | Pending | MCUI-01 to MCUI-07, COMM-05 | 0% |
-| **Phase 5: Agent Personas** | Pending | PERS-01 to PERS-05, MSGG-04 | 0% |
-| **Phase 6: Conversational Config** | Pending | CONV-01 to CONV-06 | 0% |
-| **Phase 7: Coordination Protocols** | Pending | CORD-01 to CORD-05, COMM-01 to COMM-04 | 0% |
-| **Phase 8: Production Readiness** | Pending | INFR-05 | 0% |
+| **Phase 5: Agent Personas** | Planned | PERS-01 to PERS-05, MSGG-04 | 0% |
+| **Phase 6: Conversational Config** | Planned | CONV-01 to CONV-06 | 0% |
+| **Phase 7: Coordination Protocols** | Planned | CORD-01 to CORD-05, COMM-01 to COMM-04 | 0% |
+| **Phase 8: Production Readiness** | Planned | INFR-05 | 0% |
 
 **Overall Progress:** 37.5% (3/8 phases complete)
 
@@ -472,10 +481,10 @@ Phase 2 (Real Ops) can run in parallel with Phase 3-4
 
 ---
 
-**Roadmap Status:** Phase 1 complete, ready for Phase 2 planning
+**Roadmap Status:** Phase 1 complete, Phase 4-01 planning underway
 
-**Next Step:** `/gsd:plan-phase 2` to decompose Phase 2 into executable plans.
+**Next Step:** `/gsd:plan-phase 5` to decompose Phase 5 into executable plans.
 
 ---
 
-*Last updated: 2026-02-11*
+*Last updated: 2026-02-14*
