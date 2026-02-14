@@ -29,7 +29,7 @@ Phase 5 (Agent Personas) complete. All 6 plans delivered: workspace file loaders
 - **Status:** Complete. All 5 plans delivered.
 
 ### Status
-Phase 7 Plan 04 COMPLETE. Token measurement and auto-degradation delivered: TokenMetrics with atomic counters tracking coordination vs production tokens, DegradationManager state machine (Full → Standard → Reduced → HeartbeatOnly → Disabled), 30% overhead threshold with 20% hysteresis recovery, REST endpoints GET /api/coordination/metrics and POST /api/coordination/mode, TokenLimitsServeConfig in serve-config.yaml. 56 tests passing (17 new + 39 from Plans 01-02). Documentation: comprehensive developer guide + user token budget management guide. Token efficiency: <30% enforced automatically. Ready for standup protocol (Plan 03) and integration testing (Plan 06).
+Phase 7 Plan 03 CORE COMPLETE. Daily standup protocol delivered: StandupScheduler with cron-based daily 9am scheduling (timezone-aware), structured DID/DOING/BLOCKERS template (~200 tokens Haiku per agent), 5-minute response collection window, optional Sonnet summarization (feature-flagged), graceful response parsing (case-insensitive, handles malformed), CoordinationManager integration (Full/Standard modes only). 27 tests passing (21 standup + 6 manager). Core functionality complete. Integration tasks deferred: serve.rs config parsing, REST endpoints (POST /trigger, GET /latest), documentation (internal dev docs + user daily-standups.md). Ready for integration testing (Plan 06) or follow-up integration work.
 
 **Documentation Summary:**
 - ✅ PHASE-6-IMPLEMENTATION-SUMMARY.md (phase overview)
