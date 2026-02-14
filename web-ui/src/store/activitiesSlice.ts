@@ -3,7 +3,7 @@
  * Manages event stream converted to human-readable activity items.
  */
 
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createSelector, type PayloadAction } from '@reduxjs/toolkit';
 import type { ActivityItem } from '../types/activities';
 import { getActivityMeta, generateActivityDescription } from '../types/activities';
 import type { CoordinationEvent } from '../types/events';
@@ -137,10 +137,18 @@ export const {
  */
 
 /**
- * Select all activities (newest first for display).
+ * Base selector for activities array.
  */
-export const selectAllActivities = (state: RootState): ActivityItem[] =>
-  [...state.activities.activities].reverse();
+const selectActivities = (state: RootState): ActivityItem[] => state.activities.activities;
+
+/**
+ * Select all activities (newest first for display).
+ * Memoized to prevent unnecessary re-renders.
+ */
+export const selectAllActivities = createSelector(
+  [selectActivities],
+  (activities) => [...activities].reverse()
+);
 
 /**
  * Select activities since timestamp.
