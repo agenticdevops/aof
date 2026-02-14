@@ -16,6 +16,7 @@ struct SessionEntry {
 }
 
 /// Conversation session store with LRU cache and TTL expiry
+#[derive(Clone)]
 pub struct ConversationSessionStore {
     sessions: Arc<RwLock<LruCache<String, SessionEntry>>>,
     ttl: Duration,
