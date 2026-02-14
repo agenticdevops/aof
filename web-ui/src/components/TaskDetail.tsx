@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Modal } from './Modal';
+import { TaskTimeline } from './TaskTimeline';
 import type { Task } from '../types/tasks';
 import type { RootState } from '../store';
 
@@ -205,9 +206,7 @@ export function TaskDetail({ taskId, onClose }: TaskDetailProps): React.ReactEle
         )}
 
         {activeTab === 'history' && (
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            History timeline coming in Task 04-03-06
-          </div>
+          <TaskTimeline taskId={task.id} />
         )}
       </div>
     </Modal>
