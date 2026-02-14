@@ -13,7 +13,7 @@ use axum::{
     Router,
     routing::{get, post},
 };
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::cors::{CorsLayer, Any};
 use aof_coordination::{EventBroadcaster, SessionPersistence, SessionState, AgentState};
 use aof_core::{TriggerRegistry, Registry, StandaloneTriggerType};
@@ -31,6 +31,13 @@ use aof_triggers::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+
+// Config API
+use crate::api::config::{ConfigState, get_agents_config, get_tools_config, get_config_version};
+
+// Additional imports for inline handlers
+use bytes::Bytes;
+use futures_util::{SinkExt, StreamExt};
 
 /// Server configuration loaded from YAML
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1057,23 +1064,246 @@ pub async fn execute(
         }
     }
 
-    // Create server config
-    let server_config = TriggerServerConfig {
-        bind_addr,
-        enable_cors: config.spec.server.cors,
-        timeout_secs: config.spec.server.timeout_secs,
-        max_body_size: 10 * 1024 * 1024, // 10MB
+    // ============================================================================
+    // Custom Axum App Integration
+    // ============================================================================
+    // Build custom Axum router that combines:
+    // 1. Trigger webhook routes (from TriggerHandler)
+    // 2. Config API routes (/api/config/*)
+    // 3. WebSocket route (/ws)
+    // 4. Static file serving (React build)
+
+    // Create config state for API endpoints
+    let workspace_path = workspace_root
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let config_state = ConfigState::new(workspace_path.clone());
+    println!("  Workspace root: {}", workspace_path.display());
+
+    // Create shared state for handlers
+    #[derive(Clone)]
+    struct AppState {
+        handler: Arc<TriggerHandler>,
+        event_bus: Option<Arc<EventBroadcaster>>,
+    }
+
+    let app_state = AppState {
+        handler: Arc::new(handler),
         event_bus: Some(event_bus.clone()),
     };
 
-    // Create and start server
-    let server = TriggerServer::with_config(Arc::new(handler), server_config);
+    // Build API router
+    let api_router = Router::new()
+        .route("/config/agents", get(get_agents_config))
+        .route("/config/tools", get(get_tools_config))
+        .route("/config/version", get(get_config_version))
+        .with_state(config_state.clone());
+
+    // Import handlers from aof-triggers server (inline to avoid duplicating logic)
+    use axum::extract::State;
+    use axum::extract::Path as AxumPath;
+    use axum::http::HeaderMap as AxumHeaderMap;
+    use axum::response::IntoResponse;
+    use axum::Json as AxumJson;
+
+    // Root handler
+    async fn root_handler() -> impl IntoResponse {
+        AxumJson(serde_json::json!({
+            "service": "aof-daemon",
+            "version": env!("CARGO_PKG_VERSION"),
+            "status": "running"
+        }))
+    }
+
+    // Health check handler
+    async fn health_handler() -> impl IntoResponse {
+        AxumJson(serde_json::json!({
+            "status": "healthy",
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        }))
+    }
+
+    // Webhook handler (reused from TriggerServer)
+    async fn webhook_handler(
+        State(state): State<AppState>,
+        AxumPath(platform): AxumPath<String>,
+        headers: AxumHeaderMap,
+        body: Bytes,
+    ) -> impl IntoResponse {
+        use axum::http::StatusCode;
+
+        // Extract headers (lowercase for consistent access)
+        let mut header_map = std::collections::HashMap::new();
+        for (key, value) in headers.iter() {
+            if let Ok(value_str) = value.to_str() {
+                header_map.insert(key.as_str().to_lowercase(), value_str.to_string());
+            }
+        }
+
+        // Handle Slack URL verification challenge specially
+        if platform == "slack" {
+            if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body) {
+                if payload.get("type").and_then(|t| t.as_str()) == Some("url_verification") {
+                    if let Some(challenge) = payload.get("challenge").and_then(|c| c.as_str()) {
+                        return (
+                            StatusCode::OK,
+                            [("content-type", "text/plain")],
+                            challenge.to_string(),
+                        ).into_response();
+                    }
+                }
+            }
+        }
+
+        // Get platform implementation
+        let platform_impl = match state.handler.get_platform(&platform) {
+            Some(p) => p,
+            None => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    AxumJson(serde_json::json!({"error": format!("Unknown platform: {}", platform)}))
+                ).into_response();
+            }
+        };
+
+        // Parse message
+        let message = match platform_impl.parse_message(&body, &header_map).await {
+            Ok(m) => m,
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    AxumJson(serde_json::json!({"error": format!("Parse error: {}", e)}))
+                ).into_response();
+            }
+        };
+
+        // Handle message asynchronously
+        let handler = Arc::clone(&state.handler);
+        let platform_name = platform.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handler.handle_message(&platform_name, message).await {
+                tracing::error!("Failed to handle message: {}", e);
+            }
+        });
+
+        // Return immediate acknowledgment
+        (StatusCode::OK, AxumJson(serde_json::json!({"status": "accepted"}))).into_response()
+    }
+
+    // WebSocket handler (reused from TriggerServer)
+    use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
+
+    async fn handle_websocket_upgrade(
+        ws: WebSocketUpgrade,
+        State(state): State<AppState>,
+    ) -> impl IntoResponse {
+        let event_bus = state.event_bus.clone();
+        ws.on_upgrade(move |socket| websocket_handler(socket, event_bus))
+    }
+
+    async fn websocket_handler(socket: WebSocket, event_bus: Option<Arc<EventBroadcaster>>) {
+        let Some(bus) = event_bus else {
+            return;
+        };
+
+        let (mut sender, mut receiver) = socket.split();
+        let mut event_rx = bus.subscribe();
+
+        // Spawn task to forward coordination events to WebSocket client
+        let send_task = tokio::spawn(async move {
+            loop {
+                match event_rx.recv().await {
+                    Ok(event) => {
+                        match serde_json::to_string(&event) {
+                            Ok(json) => {
+                                if sender.send(WsMessage::Text(json)).await.is_err() {
+                                    tracing::info!("WebSocket client disconnected");
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to serialize event: {}", e);
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("WebSocket client lagged, dropped {} events", n);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Listen for client messages (close frames, pings)
+        while let Some(Ok(msg)) = receiver.next().await {
+            match msg {
+                WsMessage::Close(_) => break,
+                WsMessage::Ping(_) => {},
+                _ => {}
+            }
+        }
+
+        send_task.abort();
+    }
+
+    // Build main router with all routes
+    let mut app = Router::new()
+        .route("/", get(root_handler))
+        .route("/health", get(health_handler))
+        .route("/webhook/:platform", post(webhook_handler))
+        .route("/ws", get(handle_websocket_upgrade))
+        .nest("/api", api_router)
+        .with_state(app_state.clone());
+
+    // Add static file serving if static_dir provided
+    if let Some(static_path) = static_dir {
+        let static_dir_path = PathBuf::from(static_path);
+        if static_dir_path.exists() {
+            println!("  Static files: {}", static_dir_path.display());
+
+            // Serve static files with SPA fallback
+            // For any route not matching /api or /ws, serve from static dir
+            // If file not found, serve index.html (React Router handles client-side routing)
+            let serve_dir = ServeDir::new(&static_dir_path)
+                .fallback(ServeFile::new(static_dir_path.join("index.html")));
+
+            // Nest static serving at root, but it won't override /api or /ws routes
+            app = app.fallback_service(serve_dir);
+        } else {
+            eprintln!("Warning: Static directory not found: {}", static_dir_path.display());
+        }
+    }
+
+    // Add CORS if enabled
+    if config.spec.server.cors {
+        app = app.layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any)
+        );
+    }
 
     println!("Server starting...");
     println!("  Health check: http://{}/health", bind_addr);
     println!("  WebSocket: ws://{}/ws", bind_addr);
     println!("  Webhook endpoint: http://{}/webhook/{{platform}}", bind_addr);
+    println!("  Config API: http://{}/api/config/agents", bind_addr);
+    println!("  Config API: http://{}/api/config/tools", bind_addr);
+    println!("  Config API: http://{}/api/config/version", bind_addr);
+    if static_dir.is_some() {
+        println!("  Web UI: http://{}/", bind_addr);
+    }
     println!("Press Ctrl+C to stop");
+
+    // Start custom Axum server
+    let listener = tokio::net::TcpListener::bind(&bind_addr)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", bind_addr, e))?;
+
+    tracing::info!("Listening on {}", bind_addr);
 
     // Handle graceful shutdown
     let shutdown_signal = async {
@@ -1084,7 +1314,7 @@ pub async fn execute(
     };
 
     tokio::select! {
-        result = server.serve() => {
+        result = axum::serve(listener, app) => {
             if let Err(e) = result {
                 eprintln!("Server error: {}", e);
                 return Err(anyhow::anyhow!("Server error: {}", e));
