@@ -19,17 +19,17 @@ Phase 5 (Agent Personas) complete. All 6 plans delivered: workspace file loaders
 ## Current Position
 
 ### Active Phase
-**Phase 6: Conversational Config** (5/5 plans) ✓
-- **Goal:** Conversational interface for creating agents via natural language
-- **Status:** Complete - All 5 plans delivered
+**Phase 7: Coordination Protocols** (1/4 plans)
+- **Goal:** Agents proactively monitor, report status, and coordinate via session tools
+- **Status:** In Progress - Plan 01 (Session Tools Foundation) complete
 
 ### Last Completed Phase
-**Phase 5: Agent Personas** (6/6 plans)
-- **Goal:** Agent persona system with AGENTS.md/SOUL.md workspace files, system prompt composition, introduction events
-- **Status:** Complete. All 6 plans delivered, 142 tests passing.
+**Phase 6: Conversational Config** (5/5 plans)
+- **Goal:** Conversational interface for creating agents via natural language
+- **Status:** Complete. All 5 plans delivered.
 
 ### Status
-Phase 6 COMPLETE (all 5 plans + documentation). Full conversational configuration delivered: intent classification → orchestrator → 4 specialists (AgentCreator, SquadBuilder, SkillTeacher, Scheduler) → REST API → React chat UI → file persistence. Natural language agent creation end-to-end functional. Documentation: 5+ Phase 6 docs, updated ARCHITECTURE.md, INDEX.md, sidebar.js, and DOCUMENTATION_GUIDE.md for docusaurus integration.
+Phase 7 Plan 01 COMPLETE. Session tools infrastructure delivered: new aof-coordination-protocols crate with SessionTools (tokio mpsc message queues), SessionMessage types, MessageType enum (9 variants), CoordinationMode (5 levels), bounded queues (100 messages), TTL filtering (30 min default). Extended aof-core with CoordinationActivity enum. 25 tests passing in new crate, 30 passing in aof-core. Documentation: internal dev + user concept docs. Ready for heartbeat protocol (Plan 02).
 
 **Documentation Summary:**
 - ✅ PHASE-6-IMPLEMENTATION-SUMMARY.md (phase overview)
@@ -46,7 +46,7 @@ Phase 6 COMPLETE (all 5 plans + documentation). Full conversational configuratio
 ### Progress
 
 ```
-Milestone Progress: [████████░░] 96% (24 of 25 plans complete)
+Milestone Progress: [████████░░] 96% (25 of 26 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
@@ -54,7 +54,7 @@ Phase 3: Messaging Gateway       [██████████] 100% (3/3 plan
 Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
 Phase 5: Agent Personas          [██████████] 100% (6/6 plans) ✓
 Phase 6: Conversational Config   [██████████] 100% (5/5 plans) ✓
-Phase 7: Coordination Protocols  [░░░░░░░░░░] 0%
+Phase 7: Coordination Protocols  [██░░░░░░░░] 25% (1/4 plans)
 Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ```
 
@@ -64,13 +64,13 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 
 ### Velocity
 - **Phases completed:** 6 (Phase 1, Phase 2, Phase 3, Phase 5, Phase 6)
-- **Plans completed:** 24
-- **Requirements delivered:** 36/48 (75%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01-04, PERS-01-05, CONV-01-06
-- **Avg. plan duration:** 736 seconds (12.3 minutes)
+- **Plans completed:** 25
+- **Requirements delivered:** 38/48 (79%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01-04, PERS-01-05, CONV-01-06, COMM-02, COMM-04
+- **Avg. plan duration:** 750 seconds (12.5 minutes)
 
 ### Quality
-- **Tests passing:** 393+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 142)
-- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration, persona loaders, prompt composition, introduction events, reliability metrics, E2E pipeline
+- **Tests passing:** 448+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 142 + Phase 7: 55)
+- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration, persona loaders, prompt composition, introduction events, reliability metrics, E2E pipeline, session tools messaging, TTL filtering, bounded queues
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
 
@@ -82,6 +82,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 07 | 01 | 842s | 10 | 10 | 6 | 2026-02-14 |
 | 06 | 05 | 472s | 10 | 13 | 7 | 2026-02-14 |
 | 06 | 02 | 1229s | 8 | 7 | 6 | 2026-02-14 |
 | 06 | 04 | 1240s | 7 | 9 | 6 | 2026-02-14 |
@@ -91,16 +92,15 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | 05 | 02 | 813s | 9 | 7 | 9 | 2026-02-14 |
 | 05 | 03 | 824s | 7 | 16 | 7 | 2026-02-14 |
 | 05 | 04 | 546s | 8 | 11 | 7 | 2026-02-14 |
-| 05 | 01 | 619s | 8 | 12 | 5 | 2026-02-14 |
 | 04 | 04 | 744s | 10 | 10 | 4 | 2026-02-14 |
 | 04 | 03 | 757s | 11 | 23 | 11 | 2026-02-14 |
 | 04 | 02 | 891s | 12 | 27 | 12 | 2026-02-14 |
 | 04 | 01 | 753s | 10 | 14 | 10 | 2026-02-14 |
 | 03 | 03 | 5400s | 8 | 13 | 7 | 2026-02-13 |
-| 03 | 02 | 993s | 10 | 4 | 9 | 2026-02-13 |
 | Phase 06 P01 | 1010 | 8 tasks | 11 files |
 | Phase 06 P02 | 1229 | 8 tasks | 7 files |
 | Phase 06 P05 | 472 | 10 tasks | 13 files |
+| Phase 07 P01 | 842 | 10 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -163,6 +163,11 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Hash-based routing instead of react-router** | Simple hash routing (#/create-agent) avoids adding react-router dependency (30KB). Sufficient for 2-page MVP. URLs work, browser back/forward work, no additional bundle size. | 2026-02-14 | 06 | Implemented |
 | **Textarea editor instead of Monaco** | Styled textarea with line numbers is 0KB (built-in). Monaco is 500KB gzipped. YAML/Markdown editing needs are simple. Upgrade path clear if rich editing needed later. | 2026-02-14 | 06 | Implemented |
 | **Atomic file writes via temp+rename** | Write to {file}.tmp, then fs::rename() for atomic operation. Prevents partial writes on crash. Standard pattern for critical config files. Never overwrite existing agents. | 2026-02-14 | 06 | Implemented |
+| **tokio mpsc over broadcast for session tools** | Point-to-point messaging (agent A → agent B) needs targeted delivery. mpsc provides bounded queues with backpressure. More efficient than broadcast for 1:1 communication. broadcast already used by EventBroadcaster for 1:N. | 2026-02-14 | 07 | Implemented |
+| **Fire-and-forget try_send for session messages** | Non-blocking try_send prevents deadlocks. Bounded capacity enforced at send time (QueueFull error). Sender doesn't wait for receiver. Matches async messaging design goal. No .send().await blocking. | 2026-02-14 | 07 | Implemented |
+| **TTL filtering on drain (not send)** | Simpler send logic (just queue it). Receiver decides what to process. Allows for clock skew between agents. Expired messages don't block queue capacity. Filter happens at drain_messages() call. | 2026-02-14 | 07 | Implemented |
+| **Bounded queues (100 messages default)** | Prevents memory bloat from spam or stuck receivers. Forces backpressure at send (QueueFull error). 100 messages is reasonable buffer for async coordination. Configurable per deployment. | 2026-02-14 | 07 | Implemented |
+| **Separate CoordinationActivity enum** | ActivityType is for execution lifecycle (started, thinking, tool_executing). CoordinationActivity is for protocol-specific events (heartbeat, standup). Clean separation of concerns. Optional field maintains backward compatibility. | 2026-02-14 | 07 | Implemented |
 
 ### Todos
 
