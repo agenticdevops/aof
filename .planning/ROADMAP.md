@@ -237,12 +237,12 @@ Phase 7 (Coordination)
 
 ### Plans: 6 plans
 
-- [ ] 05-01-PLAN.md — Workspace file format & loaders (AGENTS.md, SOUL.md parsing, validation)
-- [ ] 05-02-PLAN.md — System prompt composition engine (instruction layering, token limits, caching)
-- [ ] 05-03-PLAN.md — Introduction events & daemon emission (CoordinationActivity::AgentIntroduction, broadcast)
-- [ ] 05-04-PLAN.md — AgentCard persona display (UI components, traits, capabilities, introduction toast)
-- [ ] 05-05-PLAN.md — Reliability metrics computation (uptime %, success rate, API endpoint)
-- [ ] 05-06-PLAN.md — Integration testing & documentation (end-to-end tests, developer/user guides)
+- [x] 05-01-PLAN.md — Workspace file format & loaders (AGENTS.md, SOUL.md parsing, validation)
+- [x] 05-02-PLAN.md — System prompt composition engine (instruction layering, token limits, caching)
+- [x] 05-03-PLAN.md — Introduction events & daemon emission (CoordinationActivity::AgentIntroduction, broadcast)
+- [x] 05-04-PLAN.md — AgentCard persona display (UI components, traits, capabilities, introduction toast)
+- [x] 05-05-PLAN.md — Reliability metrics computation (uptime %, success rate, API endpoint)
+- [x] 05-06-PLAN.md — Integration testing & documentation (end-to-end tests, developer/user guides)
 
 ---
 
@@ -279,6 +279,14 @@ Phase 7 (Coordination)
 - Create conversational skill builder (user describes task → generates SKILL.md with validation)
 - Add YAML preview/edit layer (power users can review generated config before activation)
 - Implement intent routing (orchestrator delegates to appropriate specialist agents)
+
+### Plans: 5 plans
+
+- [ ] 06-01-PLAN.md — Intent classification engine + orchestrator agent (crate creation, routing, sessions)
+- [ ] 06-02-PLAN.md — Agent generation specialist (AGENTS.md + SOUL.md generation, validation)
+- [ ] 06-03-PLAN.md — Squad templates & skill teaching (4 templates, domain customization, SKILL.md generation)
+- [ ] 06-04-PLAN.md — Schedule configuration specialist (NL to cron, timezone support, trigger config)
+- [ ] 06-05-PLAN.md — API integration, UI & end-to-end (REST API, React chat UI, file persistence)
 
 ---
 
@@ -369,16 +377,16 @@ Phase 7 (Coordination)
 
 | Phase | Status | Requirements | Completion |
 |-------|--------|--------------|------------|
-| **Phase 1: Event Infrastructure** | ✓ Complete (2026-02-11) | INFR-01, INFR-02, INFR-03, INFR-04 | 100% |
-| **Phase 2: Real Ops Capabilities** | ✓ Complete (2026-02-13) | ROPS-01–05, ENGN-01, ENGN-04, SREW-02–03 | 100% |
-| **Phase 3: Messaging Gateway** | ✓ Complete (2026-02-13) | MSGG-01, MSGG-02, MSGG-03, MSGG-05 | 100% |
-| **Phase 4: Mission Control UI** | Pending | MCUI-01 to MCUI-07, COMM-05 | 0% |
-| **Phase 5: Agent Personas** | Planned | PERS-01 to PERS-05, MSGG-04 | 0% |
-| **Phase 6: Conversational Config** | Planned | CONV-01 to CONV-06 | 0% |
+| **Phase 1: Event Infrastructure** | Complete (2026-02-11) | INFR-01, INFR-02, INFR-03, INFR-04 | 100% |
+| **Phase 2: Real Ops Capabilities** | Complete (2026-02-13) | ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03 | 100% |
+| **Phase 3: Messaging Gateway** | Complete (2026-02-13) | MSGG-01, MSGG-02, MSGG-03, MSGG-05 | 100% |
+| **Phase 4: Mission Control UI** | Complete (2026-02-14) | MCUI-01 to MCUI-07, COMM-05 | 100% |
+| **Phase 5: Agent Personas** | Complete (2026-02-14) | PERS-01 to PERS-05, MSGG-04 | 100% |
+| **Phase 6: Conversational Config** | Planned (5 plans) | CONV-01 to CONV-06 | 0% |
 | **Phase 7: Coordination Protocols** | Planned | CORD-01 to CORD-05, COMM-01 to COMM-04 | 0% |
 | **Phase 8: Production Readiness** | Planned | INFR-05 | 0% |
 
-**Overall Progress:** 37.5% (3/8 phases complete)
+**Overall Progress:** 62.5% (5/8 phases complete)
 
 ---
 
@@ -441,9 +449,9 @@ Phase 2 (Real Ops) can run in parallel with Phase 3-4
 - Manual test: Create agent with persona, verify introduction message, check tone
 
 ### Phase 6: Conversational Config
-- Unit tests: Intent classification, YAML generation
-- Integration test: "Create monitoring agent" → generates valid agent YAML
-- Manual test: Conversational agent creation, squad assembly, skill teaching
+- Unit tests: Intent classification, YAML generation, schedule parsing
+- Integration test: "Create monitoring agent" → generates valid agent YAML → persisted to workspace
+- Manual test: Conversational agent creation, squad assembly, skill teaching via Mission Control UI
 
 ### Phase 7: Coordination Protocols
 - Unit tests: Heartbeat scheduler, standup protocol, roundtable logic
@@ -481,9 +489,9 @@ Phase 2 (Real Ops) can run in parallel with Phase 3-4
 
 ---
 
-**Roadmap Status:** Phase 1 complete, Phase 4-01 planning underway
+**Roadmap Status:** Phase 5 complete, Phase 6 planned (5 plans in 3 waves)
 
-**Next Step:** `/gsd:plan-phase 5` to decompose Phase 5 into executable plans.
+**Next Step:** `/gsd:execute-phase 06-conversational-configuration` to begin execution.
 
 ---
 
