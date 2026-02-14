@@ -274,6 +274,76 @@ When no SOUL.md entry exists for an agent, the introduction uses a fallback:
 
 For example: "I'm Log Analyzer, your Debugging Expert."
 
+## Reliability Metrics
+
+The persona system includes computed reliability metrics for each agent, derived from the Phase 1 event stream. These metrics help users calibrate trust in agent recommendations.
+
+### Metrics Computed
+
+| Metric | Formula | Description |
+|--------|---------|-------------|
+| **Uptime %** | (total - errors) / total * 100 | Percentage of events that were not errors |
+| **Success Rate %** | completed / total * 100 | Percentage of events that completed successfully |
+
+### Minimum Data Threshold
+
+Metrics require at least **10 events** before displaying percentages. Below this threshold, the UI shows "--" instead of potentially misleading numbers.
+
+### Color Coding
+
+Metrics are color-coded in the Mission Control UI:
+
+| Range | Color | Meaning |
+|-------|-------|---------|
+| >= 95% | Green | Excellent reliability |
+| 80-94% | Yellow | Good, but watch for degradation |
+| 60-79% | Orange | Degraded, investigate |
+| < 60% | Red | Poor reliability, action needed |
+
+### API Endpoint
+
+```bash
+# Get metrics for a specific agent
+curl http://localhost:8080/api/agents/k8s-monitor/metrics
+```
+
+Response:
+
+```json
+{
+  "agent_id": "k8s-monitor",
+  "uptime_percent": 95.5,
+  "success_rate": 92.0,
+  "event_count": 50,
+  "last_update": "2026-02-14T10:30:00Z",
+  "last_error": null
+}
+```
+
+### Real-Time Updates
+
+Metrics update automatically as new events arrive:
+
+1. Events broadcast through the Phase 1 broadcast channel
+2. A background subscriber updates the `ReliabilityCache`
+3. The Mission Control UI polls `/api/agents/:id/metrics` every 5 seconds
+4. AgentCard badges update with new values and color coding
+
+### Rust API
+
+```rust
+use aof_personas::{ReliabilityCache, ReliabilityMetrics, compute_agent_metrics};
+
+// Create a cache (auto-subscribed to event bus in serve.rs)
+let cache = ReliabilityCache::default_capacity();
+
+// Manual computation from a list of events
+let metrics = compute_agent_metrics("k8s-monitor", &events);
+
+// Cache-based access
+let metrics = cache.get_metrics("k8s-monitor").await;
+```
+
 ## API Reference
 
 ```rust
