@@ -62,6 +62,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use aof_core::coordination::CoordinationEvent;
+use aof_core::model::{MessageRole, Model, ModelRequest, RequestMessage};
 
 use crate::error::CoordinationProtocolError;
 
@@ -384,6 +385,105 @@ Be brief and specific. Focus on results, not process."#
         // This will be enhanced in integration testing.
         vec![]
     }
+
+    /// Generate a summary of standup responses using LLM
+    ///
+    /// Takes all collected responses for a standup and generates a human-readable
+    /// prose summary using Sonnet (or provided model).
+    ///
+    /// This is feature-flagged via `config.summarize`. When disabled, responses
+    /// are posted individually without aggregation.
+    ///
+    /// # Arguments
+    ///
+    /// * `responses` - All standup responses to summarize
+    /// * `model` - Optional LLM model for summarization (Sonnet recommended)
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(summary))` if summarization succeeds
+    /// - `Ok(None)` if model is None or summarization disabled
+    /// - `Err(...)` if LLM call fails
+    pub async fn generate_summary(
+        &self,
+        responses: &[StandupResponseRecord],
+        model: Option<&dyn Model>,
+    ) -> Result<Option<String>, CoordinationProtocolError> {
+        if !self.config.summarize {
+            debug!("Summarization disabled in config");
+            return Ok(None);
+        }
+
+        let Some(llm) = model else {
+            warn!("Summarization enabled but no model provided");
+            return Ok(None);
+        };
+
+        if responses.is_empty() {
+            return Ok(Some("No standup responses received.".to_string()));
+        }
+
+        // Format responses into prompt
+        let mut response_text = String::new();
+        for record in responses {
+            response_text.push_str(&format!(
+                "{}: DID: {} | DOING: {} | BLOCKERS: {}\n",
+                record.agent_id,
+                record.what_i_did,
+                record.what_im_doing,
+                if record.blockers.is_empty() {
+                    "none".to_string()
+                } else {
+                    record.blockers.join(", ")
+                }
+            ));
+        }
+
+        let prompt = format!(
+            r#"Summarize this team standup in 2-3 paragraphs. Highlight key progress, active work, and any blockers that need attention.
+
+Agent responses:
+---
+{}
+---
+
+Provide a concise, actionable summary focusing on:
+1. What was accomplished (key wins)
+2. What's in progress (current focus)
+3. Blockers that need resolution"#,
+            response_text
+        );
+
+        // Call LLM
+        let request = ModelRequest {
+            messages: vec![RequestMessage {
+                role: MessageRole::User,
+                content: prompt,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            system: None,
+            tools: Vec::new(),
+            temperature: Some(0.7),
+            max_tokens: Some(500),
+            stream: false,
+            extra: HashMap::new(),
+        };
+
+        let response = llm
+            .generate(&request)
+            .await
+            .map_err(|e| CoordinationProtocolError::LlmError(e.to_string()))?;
+
+        info!(
+            "Generated standup summary ({} tokens: {} input + {} output)",
+            response.usage.input_tokens + response.usage.output_tokens,
+            response.usage.input_tokens,
+            response.usage.output_tokens
+        );
+
+        Ok(Some(response.content))
+    }
 }
 
 /// Parse a standup response from structured text
@@ -687,5 +787,152 @@ Blockers: none
         // Verify nothing stored
         let responses = scheduler.collected_responses.read().await;
         assert!(!responses.contains_key("unknown-request"));
+    }
+
+    // Mock model for testing summarization
+    use aof_core::{AofResult, ModelProvider, ModelResponse, StopReason, Usage, StreamChunk};
+    use async_trait::async_trait;
+    use futures::Stream;
+    use std::pin::Pin;
+
+    struct MockModel {
+        response: String,
+    }
+
+    #[async_trait]
+    impl Model for MockModel {
+        async fn generate(&self, _request: &ModelRequest) -> AofResult<ModelResponse> {
+            Ok(ModelResponse {
+                content: self.response.clone(),
+                stop_reason: StopReason::EndTurn,
+                usage: Usage {
+                    input_tokens: 200,
+                    output_tokens: 100,
+                },
+                tool_calls: Vec::new(),
+                metadata: HashMap::new(),
+            })
+        }
+
+        async fn generate_stream(
+            &self,
+            _request: &ModelRequest,
+        ) -> AofResult<Pin<Box<dyn Stream<Item = AofResult<StreamChunk>> + Send>>> {
+            unimplemented!()
+        }
+
+        fn config(&self) -> &aof_core::ModelConfig {
+            unimplemented!()
+        }
+
+        fn provider(&self) -> ModelProvider {
+            ModelProvider::Anthropic
+        }
+    }
+
+    #[tokio::test]
+    async fn test_generate_summary_disabled() {
+        let config = StandupConfig {
+            summarize: false,
+            ..Default::default()
+        };
+        let (tx, _rx) = broadcast::channel(100);
+        let scheduler = StandupScheduler::new(config, tx, "test-session");
+
+        let responses = vec![
+            StandupResponseRecord {
+                agent_id: "agent-1".to_string(),
+                what_i_did: "Task A".to_string(),
+                what_im_doing: "Task B".to_string(),
+                blockers: vec![],
+                token_count: 100,
+                timestamp: Utc::now(),
+            },
+        ];
+
+        let model = MockModel {
+            response: "Summary text".to_string(),
+        };
+
+        let result = scheduler.generate_summary(&responses, Some(&model)).await.unwrap();
+        assert!(result.is_none()); // Summarization disabled
+    }
+
+    #[tokio::test]
+    async fn test_generate_summary_no_model() {
+        let mut config = StandupConfig::default();
+        config.summarize = true;
+
+        let (tx, _rx) = broadcast::channel(100);
+        let scheduler = StandupScheduler::new(config, tx, "test-session");
+
+        let responses = vec![
+            StandupResponseRecord {
+                agent_id: "agent-1".to_string(),
+                what_i_did: "Task A".to_string(),
+                what_im_doing: "Task B".to_string(),
+                blockers: vec![],
+                token_count: 100,
+                timestamp: Utc::now(),
+            },
+        ];
+
+        let result = scheduler.generate_summary(&responses, None).await.unwrap();
+        assert!(result.is_none()); // No model provided
+    }
+
+    #[tokio::test]
+    async fn test_generate_summary_empty_responses() {
+        let mut config = StandupConfig::default();
+        config.summarize = true;
+
+        let (tx, _rx) = broadcast::channel(100);
+        let scheduler = StandupScheduler::new(config, tx, "test-session");
+
+        let model = MockModel {
+            response: "Summary text".to_string(),
+        };
+
+        let result = scheduler.generate_summary(&[], Some(&model)).await.unwrap();
+        assert_eq!(result, Some("No standup responses received.".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_generate_summary_success() {
+        let mut config = StandupConfig::default();
+        config.summarize = true;
+
+        let (tx, _rx) = broadcast::channel(100);
+        let scheduler = StandupScheduler::new(config, tx, "test-session");
+
+        let responses = vec![
+            StandupResponseRecord {
+                agent_id: "agent-1".to_string(),
+                what_i_did: "Fixed auth bug".to_string(),
+                what_im_doing: "Working on API".to_string(),
+                blockers: vec![],
+                token_count: 150,
+                timestamp: Utc::now(),
+            },
+            StandupResponseRecord {
+                agent_id: "agent-2".to_string(),
+                what_i_did: "Deployed to staging".to_string(),
+                what_im_doing: "Code review".to_string(),
+                blockers: vec!["Need DB access".to_string()],
+                token_count: 180,
+                timestamp: Utc::now(),
+            },
+        ];
+
+        let model = MockModel {
+            response: "Team made good progress. Agent-1 fixed auth bug and is working on API. Agent-2 deployed to staging but needs DB access.".to_string(),
+        };
+
+        let result = scheduler.generate_summary(&responses, Some(&model)).await.unwrap();
+        assert!(result.is_some());
+        let summary = result.unwrap();
+        assert!(summary.contains("progress"));
+        assert!(summary.contains("Agent-1"));
+        assert!(summary.contains("Agent-2"));
     }
 }
