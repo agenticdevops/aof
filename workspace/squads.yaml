@@ -1,0 +1,29 @@
+# squads.yaml - Squad-specific introduction customization (optional)
+#
+# When present, agents can have per-squad introduction overrides.
+# If an agent has an intro_override in this file, it will be used
+# instead of the default_intro from SOUL.md when that agent introduces
+# itself at daemon startup.
+#
+# This file is OPTIONAL. If missing, all agents use their SOUL.md
+# default_intro (or the fallback "I'm [name], your [role].").
+#
+# To customize introductions per squad, edit the intro_override field
+# for each agent within the squad definition.
+
+squads:
+  - name: incident-response
+    agents:
+      - id: incident-responder
+        intro_override: "Incident Response mode activated. I'm coordinating the team and tracking the timeline."
+      - id: log-analyzer
+        intro_override: "Standing by to dig into the logs for this incident."
+      - id: k8s-monitor
+        # No override - uses SOUL.md default_intro
+
+  - name: observability
+    agents:
+      - id: k8s-monitor
+        intro_override: "Observability mode: I'm focused on metrics, dashboards, and cluster health trends."
+      - id: log-analyzer
+        # No override - uses SOUL.md default_intro
