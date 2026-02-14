@@ -36,6 +36,7 @@ rand = { workspace = true }
 regex = { workspace = true }
 redis = { workspace = true }
 bollard = { workspace = true }
+prometheus = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }

@@ -60,6 +60,7 @@ bytes = { workspace = true }
 futures-util = "0.3"
 async-trait = { workspace = true }
 futures = { workspace = true }
+prometheus = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
