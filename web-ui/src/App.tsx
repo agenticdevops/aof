@@ -1,13 +1,22 @@
 /**
  * Main App component with WebSocket subscription and Redux integration.
- * Displays connection status, activity log, and Redux store statistics.
+ * Displays connection status, activity log, agent grid, and Kanban board.
  */
 
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { useSelector } from 'react-redux';
 import { useWebSocket } from './hooks/useWebSocket';
 import { StatusIndicator } from './components/StatusIndicator';
+import { Skeleton } from './components/Skeleton';
 import type { RootState } from './store';
+
+// Lazy load heavy components
+const AgentGrid = lazy(() =>
+  import('./components/AgentGrid').then((m) => ({ default: m.AgentGrid }))
+);
+const KanbanBoard = lazy(() =>
+  import('./components/KanbanBoard').then((m) => ({ default: m.KanbanBoard }))
+);
 
 /**
  * Get WebSocket URL from environment or default to localhost.
@@ -68,6 +77,42 @@ export function App(): React.ReactElement {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        {/* Agent Grid */}
+        <section className="mb-8">
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
+            Agents
+          </h2>
+          <Suspense
+            fallback={
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} width="100%" height="200px" variant="rectangular" />
+                ))}
+              </div>
+            }
+          >
+            <AgentGrid />
+          </Suspense>
+        </section>
+
+        {/* Kanban Board */}
+        <section className="mb-8">
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
+            Tasks
+          </h2>
+          <Suspense
+            fallback={
+              <div className="flex gap-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} width="280px" height="500px" variant="rectangular" />
+                ))}
+              </div>
+            }
+          >
+            <KanbanBoard />
+          </Suspense>
+        </section>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Statistics Panel */}
           <div className="lg:col-span-1">
