@@ -109,6 +109,14 @@ pub struct AgentExecutor {
 
     /// Optional decision logger for agent decisions
     decision_logger: Option<Arc<aof_coordination::DecisionLogger>>,
+
+    /// Optional composed persona prompt (overrides config.system_prompt when set)
+    ///
+    /// Set via `with_persona_prompt()`. When present, this prompt is used
+    /// as the system message instead of the static config.system_prompt.
+    /// This enables dynamic prompt composition from AGENTS.md + SOUL.md
+    /// workspace files via the PromptComposer (aof-personas crate).
+    persona_prompt: Option<String>,
 }
 
 impl AgentExecutor {
@@ -127,6 +135,7 @@ impl AgentExecutor {
             event_bus: None,
             session_id: None,
             decision_logger: None,
+            persona_prompt: None,
         }
     }
 
@@ -140,6 +149,22 @@ impl AgentExecutor {
     /// Set the decision logger for decision tracking
     pub fn with_decision_logger(mut self, logger: Arc<aof_coordination::DecisionLogger>) -> Self {
         self.decision_logger = Some(logger);
+        self
+    }
+
+    /// Set a composed persona prompt (overrides config.system_prompt)
+    ///
+    /// When set, this prompt is used as the system message for all LLM calls
+    /// instead of the static config.system_prompt. The prompt is composed once
+    /// at agent initialization from AGENTS.md + SOUL.md workspace files by the
+    /// PromptComposer (aof-personas crate).
+    ///
+    /// If the agent config also has a system_prompt set (manual override / expert mode),
+    /// the config system_prompt takes precedence. This method only applies when
+    /// config.system_prompt is None.
+    pub fn with_persona_prompt(mut self, prompt: String) -> Self {
+        debug!("Setting persona prompt ({} chars) for agent: {}", prompt.len(), self.config.name);
+        self.persona_prompt = Some(prompt);
         self
     }
 
@@ -890,16 +915,23 @@ impl AgentExecutor {
             Vec::new()
         };
 
+        // Determine base system prompt:
+        // 1. config.system_prompt (manual override / expert mode) takes precedence
+        // 2. persona_prompt (composed from AGENTS.md + SOUL.md) used as fallback
+        // 3. None if neither is set
+        let base_system_prompt = self.config.system_prompt.clone()
+            .or_else(|| self.persona_prompt.clone());
+
         // Enhance system prompt with output schema instructions if schema is present
         let system_prompt = if let Some(schema) = &context.output_schema {
             warn!("[BUILD_REQUEST] Output schema present, adding structured output instructions");
 
-            let base_prompt = self.config.system_prompt.as_deref().unwrap_or("");
+            let base_prompt = base_system_prompt.as_deref().unwrap_or("");
             let schema_instructions = schema.to_system_instructions();
 
             Some(format!("{}\n\n{}", base_prompt, schema_instructions))
         } else {
-            self.config.system_prompt.clone()
+            base_system_prompt
         };
 
         warn!("[BUILD_REQUEST] Final: messages={}, tools={}, system_prompt={:?}, has_schema={}",
