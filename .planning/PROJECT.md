@@ -118,6 +118,51 @@ Agents that feel human — with personas, visible communication, and a Mission C
 
 **Brand:** AOF (Agentic Ops Framework) remains the engine name. Product brand TBD — xops.bot is available as an option. Name decision deferred to post-prototype.
 
+### Security: AOF's Enterprise Differentiation (vs OpenClaw)
+
+**Phase 8 Delivery — Production Security Hardening:**
+
+AOF is NOT just a humaner OpenClaw clone. It's **enterprise-grade agentic infrastructure** with security designed from the ground up:
+
+**Defense-in-Depth Security Model (6 layers):**
+1. **Sandbox Isolation:** Per-tool seccomp profiles blocking 23+ dangerous syscalls (ptrace, mount, bpf, etc.) — prevents kernel exploits
+2. **Capability Dropping:** `--cap-drop=ALL` by default with per-tool allowlists — strips unnecessary permissions
+3. **Credential Auditing:** CredentialAccessInterceptor logs every credential read with tamper-proof sequence numbers — track who accessed what
+4. **Behavioral Anomaly Detection:** 4-component scoring system detects suspicious credential access patterns — catch insider threats
+5. **Device Pairing & mTLS:** Private CA + device registry with approval workflow — only trusted devices can pair
+6. **Production Observability:** SRE-grade metrics, health checks, graceful shutdown, incident runbooks — production-hardened
+
+**Why this matters for enterprises:**
+- **OpenClaw** executes user code with minimal isolation — fine for trusted OpenAI API calls, dangerous for production infrastructure access
+- **AOF** runs untrusted agent code in hardened containers with comprehensive audit trails — enterprise can prove compliance
+- **Selling point:** "Agents that feel human, but production-hardened for infrastructure access"
+
+**Blog Series Planned (Q1 2026):**
+1. "AOF vs OpenClaw: Why Human-Feeling Agents Need Enterprise Security"
+2. "Seccomp Deep Dive: How AOF Prevents Sandbox Escape Attacks"
+3. "Credential Auditing in Agentic Systems: The Missing Security Layer"
+4. "From OpenClaw to OpenAgentiX: Generalizing AOF for Enterprise"
+
+### Future Vision: OpenAgentiX Platform
+
+**Phase 9-10 Generalization Path:**
+
+AOF currently targets **DevOps/SRE** as initial market. Future vision is **OpenAgentiX** — a generalized agentic platform for any enterprise use case:
+
+**Generalization Roadmap:**
+- **v0.5 (AOF):** DevOps/SRE agents with K8s tools, incident response, monitoring
+- **v1.0 (AOF + DevOps Enterprise):** Persona system, Mission Control, Slack/Discord, production hardening
+- **v2.0 (OpenAgentiX):** Multi-domain agent framework — swap K8s tools for database, network, security, finance, HR tools
+- **v2.5 (OpenAgentiX Enterprise):** Multi-tenancy, RBAC, SSO, audit trails, billing (separate commercial product)
+
+**Key Insight:**
+The security model (seccomp + credential auditing + behavioral anomaly detection) **is domain-agnostic**. It works for K8s agents, database agents, finance agents, any untrusted code executing against production systems.
+
+**Market Positioning:**
+- **OpenClaw** = Make agents feel human (great UX, no security)
+- **AOF** = Make agents feel human + production-hardened (DevOps focused)
+- **OpenAgentiX** = Make agents feel human + enterprise-secure (any domain, multi-tenancy, compliance)
+
 ## Constraints
 
 - **Language**: Rust for core engine and WASM Mission Control (pure Rust story is a differentiator)
