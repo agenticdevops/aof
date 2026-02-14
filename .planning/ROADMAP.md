@@ -361,15 +361,15 @@ Phase 7 (Coordination)
 | Phase | Status | Requirements | Completion |
 |-------|--------|--------------|------------|
 | **Phase 1: Event Infrastructure** | ✓ Complete (2026-02-11) | INFR-01, INFR-02, INFR-03, INFR-04 | 100% |
-| **Phase 2: Real Ops Capabilities** | Pending | ROPS-01–05, ENGN-01–04, SREW-01–04 | 0% |
-| **Phase 3: Messaging Gateway** | Pending | MSGG-01, MSGG-02, MSGG-03, MSGG-05 | 0% |
+| **Phase 2: Real Ops Capabilities** | ✓ Complete (2026-02-13) | ROPS-01–05, ENGN-01, ENGN-04, SREW-02–03 | 100% |
+| **Phase 3: Messaging Gateway** | ✓ Complete (2026-02-13) | MSGG-01, MSGG-02, MSGG-03, MSGG-05 | 100% |
 | **Phase 4: Mission Control UI** | Pending | MCUI-01 to MCUI-07, COMM-05 | 0% |
 | **Phase 5: Agent Personas** | Pending | PERS-01 to PERS-05, MSGG-04 | 0% |
 | **Phase 6: Conversational Config** | Pending | CONV-01 to CONV-06 | 0% |
 | **Phase 7: Coordination Protocols** | Pending | CORD-01 to CORD-05, COMM-01 to COMM-04 | 0% |
 | **Phase 8: Production Readiness** | Pending | INFR-05 | 0% |
 
-**Overall Progress:** 12.5% (1/8 phases complete)
+**Overall Progress:** 37.5% (3/8 phases complete)
 
 ---
 

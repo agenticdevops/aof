@@ -1,8 +1,8 @@
 # Project State: AOF - Humanized Agentic Ops Platform
 
-**Last Updated:** 2026-02-13
+**Last Updated:** 2026-02-14
 **Milestone:** Reinvention (Humanized Agent Platform)
-**Status:** In Progress (Phase 3 Complete ✓)
+**Status:** In Progress (Phase 4-01 Complete ✓)
 
 ---
 
@@ -19,10 +19,10 @@ Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YA
 ## Current Position
 
 ### Active Phase
-**Phase 4: Mission Control UI** (not started)
-- **Goal:** Real-time WASM UI with Leptos showing agent coordination, personas, and event streams
-- **Status:** Ready to plan
-- **Requirements:** MSCT-01 through MSCT-06
+**Phase 4: Mission Control UI** (in progress)
+- **Goal:** Real-time React UI showing agent coordination, personas, and event streams
+- **Status:** 04-01 complete (Frontend Setup & WebSocket Integration)
+- **Requirements:** MSCT-01 (WebSocket integration) ✓
 
 ### Last Completed Phase
 **Phase 3: Messaging Gateway** ✓
@@ -33,17 +33,17 @@ Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YA
 - **Requirements:** MSGG-01, MSGG-02, MSGG-03, MSGG-05 ✓
 
 ### Status
-Phase 3 (Messaging Gateway) complete. All 3 plans delivered: Core gateway hub (03-01), platform adapters for Slack/Discord/Telegram (03-02), squad broadcast + YAML config + aofctl integration (03-03). 50 tests passing. Gateway starts with `aofctl serve --gateway-config gateway.yaml`.
+Phase 4-01 (Frontend Setup) complete. React + Vite app with WebSocket integration, Redux store, Tailwind CSS. Connected to Phase 1 event stream. Ready for Phase 4-02 (Kanban board).
 
 ### Progress
 
 ```
-Milestone Progress: [████░░░░░░] 38% (9 of 24 plans complete)
+Milestone Progress: [████░░░░░░] 42% (10 of 24 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
 Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
-Phase 4: Mission Control UI      [░░░░░░░░░░] 0%
+Phase 4: Mission Control UI      [██░░░░░░░░] 20% (1/5 plans) ← Current
 Phase 5: Agent Personas          [░░░░░░░░░░] 0%
 Phase 6: Conversational Config   [░░░░░░░░░░] 0%
 Phase 7: Coordination Protocols  [░░░░░░░░░░] 0%
@@ -56,9 +56,9 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 
 ### Velocity
 - **Phases completed:** 3 (Phase 1, Phase 2, Phase 3)
-- **Plans completed:** 9
-- **Requirements delivered:** 21/48 (44%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05
-- **Avg. plan duration:** 619 seconds (10.3 minutes)
+- **Plans completed:** 10
+- **Requirements delivered:** 22/48 (46%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01
+- **Avg. plan duration:** 641 seconds (10.7 minutes)
 
 ### Quality
 - **Tests passing:** 254+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50)
@@ -74,12 +74,12 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 04 | 01 | 753s | 10 | 14 | 10 | 2026-02-14 |
 | 03 | 03 | 5400s | 8 | 13 | 7 | 2026-02-13 |
 | 03 | 02 | 993s | 10 | 4 | 9 | 2026-02-13 |
 | 03 | 01 | 565s | 10 | 15 | 5 | 2026-02-13 |
 | 02 | 03 | 3348s | 10 | 8 | 5 | 2026-02-13 |
 | 02 | 02 | 1380s | 10 | 6 | 9 | 2026-02-13 |
-| 02 | 01 | 3936s | 10 | 5 | 8 | 2026-02-13 |
 
 ## Accumulated Context
 
@@ -107,6 +107,10 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Squad broadcast with best-effort delivery** | Failed channels don't block successful broadcasts. One broken adapter shouldn't prevent all communication. Returns sent_count + failed_channels for monitoring. | 2026-02-13 | 03 | Implemented |
 | **Environment variable validation with error aggregation** | Returns all missing variables at once (not just first). Faster debugging - users see complete list of what's missing in one error. | 2026-02-13 | 03 | Implemented |
 | **Gateway integration as optional aofctl serve feature** | Backward compatible - server works without gateway. Gateway starts only if --gateway-config provided. Clean separation of concerns. | 2026-02-13 | 03 | Implemented |
+| **React instead of Leptos for Mission Control UI** | React chosen over Leptos/WASM for faster development velocity, larger ecosystem, easier debugging. TypeScript strict mode for type safety. | 2026-02-14 | 04 | Implemented |
+| **Redux Toolkit for state management** | Familiar patterns, Redux DevTools support, clear separation of concerns. Event limit (500) prevents memory bloat. | 2026-02-14 | 04 | Implemented |
+| **String literal types instead of enums** | Vite's erasableSyntaxOnly doesn't allow enum syntax. String literals + const objects provide same DX without build errors. | 2026-02-14 | 04 | Implemented |
+| **Exponential backoff cap at 30s for WebSocket reconnection** | Prevents infinite growth. Fast reconnection for transient issues, reasonable delay for persistent outages. | 2026-02-14 | 04 | Implemented |
 
 ### Todos
 
