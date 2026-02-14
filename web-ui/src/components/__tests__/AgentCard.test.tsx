@@ -71,7 +71,7 @@ function renderWithStore(
   };
 }
 
-// Mock fetch for useAgentsConfig
+// Mock fetch for useAgentsConfig and useAgentMetrics
 beforeEach(() => {
   vi.restoreAllMocks();
   global.fetch = vi.fn().mockImplementation((url: string) => {
@@ -86,6 +86,21 @@ beforeEach(() => {
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ version: 'abc123' }),
+      });
+    }
+    // Match /api/agents/:id/metrics pattern
+    if (url.match(/\/api\/agents\/[^/]+\/metrics/)) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          agent_id: 'k8s-monitor',
+          uptime_percent: 98,
+          success_rate: 96,
+          event_count: 50,
+          last_update: new Date().toISOString(),
+          last_error: null,
+        }),
+        headers: new Headers({ 'X-Metrics-Version': '1' }),
       });
     }
     return Promise.resolve({ ok: false, status: 404 });
@@ -169,17 +184,25 @@ describe('AgentCard', () => {
     expect(cannotHeader).toHaveClass('text-red-700');
   });
 
-  // Test 6: Reliability metrics display
-  it('displays uptime and success rate metrics', () => {
+  // Test 6: Reliability metrics display (live from API)
+  it('displays uptime and success rate metrics from API', async () => {
     renderWithStore(<AgentCard agent={mockAgent} />);
 
-    // Check for metric text
-    expect(screen.getByText('Uptime 98%')).toBeInTheDocument();
-    expect(screen.getByText('Success 96%')).toBeInTheDocument();
+    // Metrics load asynchronously from useAgentMetrics hook
+    expect(await screen.findByText('Uptime 98%')).toBeInTheDocument();
+    expect(await screen.findByText('Success 96%')).toBeInTheDocument();
   });
 
-  // Test 6b: Missing metrics show placeholder
-  it('shows placeholder when metrics are unavailable', () => {
+  // Test 6b: Missing metrics show placeholder (404 from API)
+  it('shows placeholder when metrics API returns 404', async () => {
+    // Override fetch to return 404 for metrics
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.match(/\/api\/agents\/[^/]+\/metrics/)) {
+        return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found' });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    }) as ReturnType<typeof vi.fn>;
+
     const agentNoMetrics: Agent = {
       ...mockAgent,
       uptime_percent: undefined,
@@ -188,8 +211,21 @@ describe('AgentCard', () => {
 
     renderWithStore(<AgentCard agent={agentNoMetrics} />);
 
-    expect(screen.getByText('Uptime --')).toBeInTheDocument();
-    expect(screen.getByText('Success --')).toBeInTheDocument();
+    // Wait for loading to settle, then check for placeholder
+    expect(await screen.findByText('Uptime --')).toBeInTheDocument();
+    expect(await screen.findByText('Success --')).toBeInTheDocument();
+  });
+
+  // Test 6c: Loading state shows animation
+  it('shows loading animation while metrics are fetching', () => {
+    // Use a fetch that never resolves to keep loading state
+    global.fetch = vi.fn().mockImplementation(() => new Promise(() => {})) as ReturnType<typeof vi.fn>;
+
+    renderWithStore(<AgentCard agent={mockAgent} />);
+
+    // Should show loading indicators
+    expect(screen.getByText('Uptime ...')).toBeInTheDocument();
+    expect(screen.getByText('Success ...')).toBeInTheDocument();
   });
 
   // Test 8: Skill tags display with truncation
