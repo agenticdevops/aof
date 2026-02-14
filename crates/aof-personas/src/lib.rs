@@ -37,6 +37,7 @@
 pub mod composer;
 pub mod events;
 pub mod loader;
+pub mod metrics;
 pub mod types;
 pub mod validation;
 pub mod watcher;
@@ -47,4 +48,5 @@ pub use events::{build_introduction_event, build_introduction_event_batch};
 pub use loader::{AgentCache, AgentLoader, SoulLoader};
 pub use types::{Agent, AgentsFile, Soul, SoulFrontmatter};
 pub use validation::{validate_agents, validate_personas, validate_souls};
+pub use metrics::{compute_agent_metrics, compute_metrics_with_window, ReliabilityCache, ReliabilityMetrics};
 pub use watcher::{PersonaUpdate, PersonaWatcher};
