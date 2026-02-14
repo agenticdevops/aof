@@ -54,6 +54,7 @@ use crate::events::{CoordinationMode, SessionMessage};
 use crate::heartbeat::{AgentHealthRecord, HeartbeatConfig, HeartbeatScheduler};
 use crate::metrics::{DegradationConfig, DegradationManager, MetricsSnapshot, TokenMetrics};
 use crate::session_tools::SessionTools;
+use crate::standup::{StandupConfig, StandupResponseRecord, StandupScheduler};
 
 /// Coordination configuration
 #[derive(Debug, Clone)]
@@ -66,7 +67,8 @@ pub struct CoordinationConfig {
     pub heartbeat: HeartbeatConfig,
     /// Token limits and auto-degradation configuration
     pub token_limits: DegradationConfig,
-    // TODO: Add standup config in Plan 03
+    /// Standup protocol configuration
+    pub standup: StandupConfig,
 }
 
 impl Default for CoordinationConfig {
@@ -76,6 +78,7 @@ impl Default for CoordinationConfig {
             mode: CoordinationMode::Full,
             heartbeat: HeartbeatConfig::default(),
             token_limits: DegradationConfig::default(),
+            standup: StandupConfig::default(),
         }
     }
 }
@@ -96,6 +99,7 @@ pub struct CoordinationManager {
     config: CoordinationConfig,
     session_tools: Arc<SessionTools>,
     heartbeat: Option<Arc<HeartbeatScheduler>>,
+    standup: Option<Arc<StandupScheduler>>,
     metrics: Arc<TokenMetrics>,
     degradation: Option<Arc<DegradationManager>>,
     event_tx: broadcast::Sender<CoordinationEvent>,
@@ -147,10 +151,23 @@ impl CoordinationManager {
             None
         };
 
+        // Create standup scheduler if enabled
+        let standup = if config.enabled && config.standup.enabled {
+            let scheduler = Arc::new(StandupScheduler::new(
+                config.standup.clone(),
+                event_tx.clone(),
+                session_id_str.clone(),
+            ));
+            Some(scheduler)
+        } else {
+            None
+        };
+
         Self {
             config,
             session_tools,
             heartbeat,
+            standup,
             metrics,
             degradation,
             event_tx,
@@ -201,6 +218,14 @@ impl CoordinationManager {
             }
         }
 
+        // Register in standup scheduler if mode includes standup
+        // Full and Standard modes participate in standups
+        if matches!(mode, CoordinationMode::Full | CoordinationMode::Standard) {
+            if let Some(standup) = &self.standup {
+                standup.register_agent(&agent_id_str).await;
+            }
+        }
+
         Ok(())
     }
 
@@ -243,7 +268,17 @@ impl CoordinationManager {
             info!("Degradation manager started");
         }
 
-        // TODO: Start standup scheduler in Plan 03
+        // Start standup scheduler
+        if let Some(standup) = &self.standup {
+            let standup_clone = Arc::clone(standup);
+            let handle = tokio::spawn(async move {
+                if let Err(e) = standup_clone.run().await {
+                    tracing::error!("Standup scheduler error: {}", e);
+                }
+            });
+            handles.push(handle);
+            info!("Standup scheduler started");
+        }
 
         Ok(handles)
     }
@@ -270,8 +305,29 @@ impl CoordinationManager {
                         heartbeat.handle_response(request_id, agent_id, 1000).await;
                     }
                 }
-                CoordinationActivity::StandupResponse { .. } => {
-                    // TODO: Route to StandupScheduler in Plan 03
+                CoordinationActivity::StandupResponse {
+                    request_id,
+                    agent_id,
+                    what_i_did,
+                    what_im_doing,
+                    blockers,
+                } => {
+                    if let Some(standup) = &self.standup {
+                        // Format response content back to structured text for parsing
+                        let content = format!(
+                            "DID: {}\nDOING: {}\nBLOCKERS: {}",
+                            what_i_did,
+                            what_im_doing,
+                            if blockers.is_empty() {
+                                "none".to_string()
+                            } else {
+                                blockers.join(", ")
+                            }
+                        );
+                        // Estimate token count (rough: content.len() / 4)
+                        let token_count = (content.len() / 4) as u64;
+                        standup.handle_response(request_id, agent_id, &content, token_count).await;
+                    }
                 }
                 CoordinationActivity::SessionMessage { .. } => {
                     // Session messages are handled directly via SessionTools.send_message()
@@ -315,6 +371,30 @@ impl CoordinationManager {
     /// Get the coordination mode for a specific agent
     pub async fn get_agent_mode(&self, agent_id: &str) -> Option<CoordinationMode> {
         self.agent_modes.read().await.get(agent_id).copied()
+    }
+
+    /// Trigger an immediate standup (for manual REST API calls)
+    ///
+    /// Returns the request_id of the triggered standup.
+    pub async fn trigger_standup_now(&self) -> Result<String, CoordinationProtocolError> {
+        if let Some(standup) = &self.standup {
+            standup.trigger_now().await
+        } else {
+            Err(CoordinationProtocolError::CoordinationDisabled(
+                "Standup scheduler not enabled".to_string(),
+            ))
+        }
+    }
+
+    /// Get latest standup results
+    ///
+    /// Returns the most recent standup responses (if any).
+    pub async fn latest_standup(&self) -> Vec<StandupResponseRecord> {
+        if let Some(standup) = &self.standup {
+            standup.latest_standup().await
+        } else {
+            vec![]
+        }
     }
 
     /// Record coordination protocol tokens
