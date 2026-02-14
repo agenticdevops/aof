@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/aof-core",
     "crates/aof-coordination",
+    "crates/aof-coordination-protocols",
     "crates/aof-conversational",
     "crates/aof-gateway",
     "crates/aof-mcp",
@@ -88,6 +89,7 @@ sha2 = "0.10"
 # Internal workspace dependencies (path for local dev, version for crates.io)
 aof-core = { path = "crates/aof-core", version = "0.4.0-beta" }
 aof-coordination = { path = "crates/aof-coordination", version = "0.4.0-beta" }
+aof-coordination-protocols = { path = "crates/aof-coordination-protocols", version = "0.4.0-beta" }
 aof-conversational = { path = "crates/aof-conversational", version = "0.4.0-beta" }
 aof-gateway = { path = "crates/aof-gateway", version = "0.4.0-beta" }
 aof-mcp = { path = "crates/aof-mcp", version = "0.4.0-beta" }

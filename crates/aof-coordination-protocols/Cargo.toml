@@ -1,0 +1,32 @@
+[package]
+name = "aof-coordination-protocols"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[dependencies]
+# Workspace dependencies
+aof-core = { workspace = true }
+aof-coordination = { workspace = true }
+aof-llm = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Additional dependencies
+chrono-tz = "0.10"
+cron = "0.13"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
