@@ -34,12 +34,14 @@
 //! }
 //! ```
 
+pub mod composer;
 pub mod loader;
 pub mod types;
 pub mod validation;
 pub mod watcher;
 
 // Re-export primary types
+pub use composer::{CacheStats, PromptComposer, Tool};
 pub use loader::{AgentCache, AgentLoader, SoulLoader};
 pub use types::{Agent, AgentsFile, Soul, SoulFrontmatter};
 pub use validation::{validate_agents, validate_personas, validate_souls};
