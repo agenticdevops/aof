@@ -181,6 +181,43 @@ pub struct CoordinationServeConfig {
     /// Heartbeat protocol settings
     #[serde(default)]
     pub heartbeat: Option<HeartbeatServeConfig>,
+
+    /// Token limits and auto-degradation settings
+    #[serde(default)]
+    pub token_limits: Option<TokenLimitsServeConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenLimitsServeConfig {
+    /// Maximum coordination overhead before degradation (default: 30%)
+    #[serde(default = "default_30_percent")]
+    pub max_overhead_percent: f64,
+
+    /// Enable automatic degradation (default: true)
+    #[serde(default = "default_true")]
+    pub auto_degrade: bool,
+
+    /// Recovery threshold for hysteresis (default: 20%)
+    #[serde(default = "default_20_percent")]
+    pub recovery_threshold: f64,
+}
+
+impl Default for TokenLimitsServeConfig {
+    fn default() -> Self {
+        Self {
+            max_overhead_percent: default_30_percent(),
+            auto_degrade: true,
+            recovery_threshold: default_20_percent(),
+        }
+    }
+}
+
+fn default_30_percent() -> f64 {
+    30.0
+}
+
+fn default_20_percent() -> f64 {
+    20.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -667,11 +704,24 @@ pub async fn execute(
                 aof_coordination_protocols::HeartbeatConfig::default()
             };
 
+            // Parse token limits configuration
+            let token_limits = if let Some(token_config) = &coord_config.token_limits {
+                aof_coordination_protocols::DegradationConfig {
+                    max_overhead_percent: token_config.max_overhead_percent,
+                    auto_degrade: token_config.auto_degrade,
+                    check_interval: std::time::Duration::from_secs(60),
+                    recovery_threshold: token_config.recovery_threshold,
+                }
+            } else {
+                aof_coordination_protocols::DegradationConfig::default()
+            };
+
             // Create coordination config
             let coordination_config = CoordinationConfig {
                 enabled: true,
                 mode,
                 heartbeat: heartbeat_config,
+                token_limits,
             };
 
             // Generate session ID
@@ -1519,12 +1569,61 @@ pub async fn execute(
             }).into()
         }
 
+        async fn get_coordination_metrics(
+            axum::extract::State(state): axum::extract::State<CoordinationState>,
+        ) -> axum::response::Json<serde_json::Value> {
+            use serde_json::json;
+
+            let snapshot = state.manager.metrics_snapshot().await;
+
+            json!({
+                "coordination_tokens": snapshot.coordination_tokens,
+                "production_tokens": snapshot.production_tokens,
+                "overhead_percent": snapshot.overhead_percent,
+                "heartbeat_tokens": snapshot.heartbeat_tokens,
+                "standup_tokens": snapshot.standup_tokens,
+                "current_mode": snapshot.current_mode,
+                "window_start": snapshot.window_start.to_rfc3339(),
+                "auto_degrade_enabled": true, // TODO: Get from config
+                "max_overhead_percent": 30.0, // TODO: Get from config
+            }).into()
+        }
+
+        async fn post_coordination_mode(
+            axum::extract::State(state): axum::extract::State<CoordinationState>,
+            axum::extract::Json(payload): axum::extract::Json<serde_json::Value>,
+        ) -> axum::response::Json<serde_json::Value> {
+            use serde_json::json;
+
+            // Extract mode from payload
+            let mode_str = payload.get("mode").and_then(|m| m.as_str()).unwrap_or("full");
+            let mode = match mode_str {
+                "full" => CoordinationMode::Full,
+                "standard" => CoordinationMode::Standard,
+                "reduced" => CoordinationMode::Reduced,
+                "heartbeat_only" => CoordinationMode::HeartbeatOnly,
+                "disabled" => CoordinationMode::Disabled,
+                _ => CoordinationMode::Full,
+            };
+
+            // Apply mode change via manager
+            state.manager.apply_mode_change(mode).await;
+
+            json!({
+                "success": true,
+                "mode": format!("{:?}", mode),
+                "message": "Coordination mode updated (note: full implementation requires scheduler control)"
+            }).into()
+        }
+
         let coord_state = CoordinationState {
             manager: Arc::clone(manager),
         };
 
         Router::new()
             .route("/coordination/health", get(get_coordination_health))
+            .route("/coordination/metrics", get(get_coordination_metrics))
+            .route("/coordination/mode", post(post_coordination_mode))
             .with_state(coord_state)
     } else {
         // Coordination disabled - return empty response
@@ -1538,6 +1637,8 @@ pub async fn execute(
 
         Router::new()
             .route("/coordination/health", get(get_coordination_disabled))
+            .route("/coordination/metrics", get(get_coordination_disabled))
+            .route("/coordination/mode", post(get_coordination_disabled))
     };
 
     // Merge all API sub-routers
