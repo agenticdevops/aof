@@ -1,0 +1,32 @@
+[package]
+name = "aof-personas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Agent persona system: workspace file loaders, validators, and caching for AGENTS.md and SOUL.md"
+keywords.workspace = true
+categories.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+serde_path_to_error = { workspace = true }
+anyhow = { workspace = true }
+regex = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+sha2 = { workspace = true }
+notify = { version = "6.1", features = ["macos_fsevent"] }
+unicode-segmentation = "1.11"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "full", "macros"] }
+tempfile = "3.8"
