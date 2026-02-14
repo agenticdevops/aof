@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-13
 **Milestone:** Reinvention (Humanized Agent Platform)
-**Status:** In Progress (Phase 2 Verified ✓)
+**Status:** In Progress (Phase 3 Complete ✓)
 
 ---
 
@@ -12,37 +12,37 @@
 Agents that feel human — with personas, visible communication, and a Mission Control where you see your team of AI minions coordinating, reporting, and getting real work done.
 
 ### Current Focus
-Phase 2 (Real Ops Capabilities) executed and verified. Ready to plan Phase 3: Messaging Gateway.
+Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YAML configuration, and aofctl integration delivered. Ready for Phase 4: Mission Control UI.
 
 ---
 
 ## Current Position
 
 ### Active Phase
-**Phase 3: Messaging Gateway** (in progress)
-- **Goal:** Hub-and-spoke gateway routes humans to agents via Slack, Discord, Telegram, WhatsApp
-- **Status:** Plan 02 complete (2/3 plans done)
-- **Requirements:** MSGG-01, MSGG-02, MSGG-03, MSGG-05 (partial coverage - platform adapters delivered)
+**Phase 4: Mission Control UI** (not started)
+- **Goal:** Real-time WASM UI with Leptos showing agent coordination, personas, and event streams
+- **Status:** Ready to plan
+- **Requirements:** MSCT-01 through MSCT-06
 
 ### Last Completed Phase
-**Phase 2: Real Ops Capabilities** ✓
-- **Goal:** Agents can perform real DevOps work with full decision transparency and safe coordination
-- **Status:** COMPLETE (3/3 plans executed + verification passed)
-- **Execution:** Wave 1 (02-01, 02-02), Wave 2 (02-03) — 156 minutes total
-- **Verification:** 9/9 must-haves verified, goal achieved
-- **Requirements:** ROPS-01 through ROPS-05, ENGN-01, ENGN-04, SREW-02, SREW-03 (9/10) ✓
+**Phase 3: Messaging Gateway** ✓
+- **Goal:** Hub-and-spoke gateway routes humans to agents via Slack, Discord, Telegram, WhatsApp
+- **Status:** COMPLETE (3/3 plans executed)
+- **Execution:** Wave 1 (03-01, 03-02), Wave 2 (03-03) — 90 minutes total
+- **Deliverables:** Gateway hub, 3 platform adapters, squad broadcast, YAML config, aofctl integration
+- **Requirements:** MSGG-01, MSGG-02, MSGG-03, MSGG-05 ✓
 
 ### Status
-Phase 3 (Messaging Gateway) in progress. Plan 02 complete: Platform adapters for Slack, Discord, Telegram with NAT-transparent infrastructure, per-platform rate limiting (1/10/30 req/sec), retry logic with exponential backoff. HTTP-based message sending implemented, WebSocket listeners infrastructure ready. 48 tests passing (46 unit + 2 integration).
+Phase 3 (Messaging Gateway) complete. All 3 plans delivered: Core gateway hub (03-01), platform adapters for Slack/Discord/Telegram (03-02), squad broadcast + YAML config + aofctl integration (03-03). 50 tests passing. Gateway starts with `aofctl serve --gateway-config gateway.yaml`.
 
 ### Progress
 
 ```
-Milestone Progress: [███░░░░░░░] 33% (8 of 24 plans complete)
+Milestone Progress: [████░░░░░░] 38% (9 of 24 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
-Phase 3: Messaging Gateway       [██████░░░░] 67% (2/3 plans)
+Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
 Phase 4: Mission Control UI      [░░░░░░░░░░] 0%
 Phase 5: Agent Personas          [░░░░░░░░░░] 0%
 Phase 6: Conversational Config   [░░░░░░░░░░] 0%
@@ -55,14 +55,14 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 ### Velocity
-- **Phases completed:** 2 (Phase 1, Phase 2)
-- **Plans completed:** 8
-- **Requirements delivered:** 17/48 (35%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-03, MSGG-05 (partial)
+- **Phases completed:** 3 (Phase 1, Phase 2, Phase 3)
+- **Plans completed:** 9
+- **Requirements delivered:** 21/48 (44%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05
 - **Avg. plan duration:** 619 seconds (10.3 minutes)
 
 ### Quality
-- **Tests passing:** 204+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 48)
-- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway event translation, rate limiting
+- **Tests passing:** 254+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50)
+- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
 
@@ -74,13 +74,12 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 03 | 03 | 5400s | 8 | 13 | 7 | 2026-02-13 |
 | 03 | 02 | 993s | 10 | 4 | 9 | 2026-02-13 |
 | 03 | 01 | 565s | 10 | 15 | 5 | 2026-02-13 |
 | 02 | 03 | 3348s | 10 | 8 | 5 | 2026-02-13 |
 | 02 | 02 | 1380s | 10 | 6 | 9 | 2026-02-13 |
 | 02 | 01 | 3936s | 10 | 5 | 8 | 2026-02-13 |
-| 01 | 03 | 366s | 2 | 3 | 2 | 2026-02-11 |
-| Phase 03 P02 | 993 | 10 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -105,6 +104,9 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **GCRA token bucket for rate limiting** | Governor crate provides smooth rate limiting without thundering herd. Burst allowance built-in. Async-ready with until_ready().await. Lock-free for high concurrency. | 2026-02-13 | 03 | Implemented |
 | **ActivityEvent::Info with metadata for gateway** | ActivityEvent is a struct (not enum). Use ActivityType::Info with metadata HashMap for message details instead of Custom variant. | 2026-02-13 | 03 | Implemented |
 | **Simplified adapter implementations (HTTP API instead of full WebSocket client libraries)** | Complex protocol implementations (slack-morphism, serenity, teloxide) deferred. HTTP API sufficient for message sending. WebSocket listener infrastructure in place for future enhancement. | 2026-02-13 | 03 | Implemented |
+| **Squad broadcast with best-effort delivery** | Failed channels don't block successful broadcasts. One broken adapter shouldn't prevent all communication. Returns sent_count + failed_channels for monitoring. | 2026-02-13 | 03 | Implemented |
+| **Environment variable validation with error aggregation** | Returns all missing variables at once (not just first). Faster debugging - users see complete list of what's missing in one error. | 2026-02-13 | 03 | Implemented |
+| **Gateway integration as optional aofctl serve feature** | Backward compatible - server works without gateway. Gateway starts only if --gateway-config provided. Clean separation of concerns. | 2026-02-13 | 03 | Implemented |
 
 ### Todos
 
