@@ -1,6 +1,7 @@
 use crate::intent::IntentClassifier;
 use crate::sanitize::sanitize_user_input;
 use crate::session::ConversationSessionStore;
+use crate::specialists::{Specialist, SquadBuilder, SkillTeacher};
 use crate::types::{
     ConversationMessage, IntentType, MessageRole, OrchestratorResponse,
 };
@@ -8,6 +9,8 @@ use aof_core::Model;
 use anyhow::Result;
 use chrono::Utc;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::debug;
 
 /// Confidence threshold for direct routing to specialist
@@ -19,6 +22,7 @@ const MEDIUM_CONFIDENCE: f32 = 0.5;
 pub struct Orchestrator {
     classifier: IntentClassifier,
     session_store: ConversationSessionStore,
+    specialists: HashMap<IntentType, Box<dyn Specialist>>,
 }
 
 impl Orchestrator {
@@ -32,7 +36,25 @@ impl Orchestrator {
         Self {
             classifier: IntentClassifier::new(model),
             session_store,
+            specialists: HashMap::new(),
         }
+    }
+
+    /// Register a specialist for an intent type
+    pub fn register_specialist(&mut self, intent: IntentType, specialist: Box<dyn Specialist>) {
+        self.specialists.insert(intent, specialist);
+    }
+
+    /// Builder: Add SquadBuilder specialist
+    pub fn with_squad_builder(mut self, model: Arc<dyn aof_llm::Model>, workspace: PathBuf) -> Self {
+        self.register_specialist(IntentType::BuildSquad, Box::new(SquadBuilder::new(model, workspace)));
+        self
+    }
+
+    /// Builder: Add SkillTeacher specialist
+    pub fn with_skill_teacher(mut self, skills_path: PathBuf) -> Self {
+        self.register_specialist(IntentType::TeachSkill, Box::new(SkillTeacher::new(skills_path)));
+        self
     }
 
     /// Handle a user message in a conversation
@@ -95,7 +117,7 @@ impl Orchestrator {
         // 5. Route based on confidence
         let response = if classification.confidence >= HIGH_CONFIDENCE {
             // High confidence - route to specialist
-            self.route_to_specialist(&classification.intent).await
+            self.route_to_specialist(&classification, &session).await
         } else if classification.confidence >= MEDIUM_CONFIDENCE {
             // Medium confidence - ask for clarification
             OrchestratorResponse::ClarifyingQuestions {
@@ -139,38 +161,66 @@ impl Orchestrator {
         Ok(response)
     }
 
-    /// Route to specialist handler (stub for now)
+    /// Route to specialist handler
     ///
-    /// Plans 06-02 through 06-04 will implement actual specialists.
-    /// For now, return placeholder responses.
-    async fn route_to_specialist(&self, intent: &IntentType) -> OrchestratorResponse {
-        let (message, files) = match intent {
-            IntentType::CreateAgent => (
-                "I understood you want to create an agent. [Specialist not yet connected]".to_string(),
-                HashMap::new(),
-            ),
-            IntentType::BuildSquad => (
-                "I understood you want to build a squad. [Specialist not yet connected]".to_string(),
-                HashMap::new(),
-            ),
-            IntentType::ConfigureSchedule => (
-                "I understood you want to configure a schedule. [Specialist not yet connected]".to_string(),
-                HashMap::new(),
-            ),
-            IntentType::TeachSkill => (
-                "I understood you want to teach a skill. [Specialist not yet connected]".to_string(),
-                HashMap::new(),
-            ),
-            IntentType::Unknown => (
-                "Intent is unknown.".to_string(),
-                HashMap::new(),
-            ),
-        };
+    /// Calls registered specialist if available, otherwise returns "coming soon" message
+    async fn route_to_specialist(
+        &self,
+        classification: &crate::types::IntentClassification,
+        session: &crate::types::ConversationSession,
+    ) -> OrchestratorResponse {
+        let intent = &classification.intent;
 
-        OrchestratorResponse::SpecialistResult {
-            intent: intent.clone(),
-            files,
-            message,
+        // Check if specialist is registered
+        if let Some(specialist) = self.specialists.get(intent) {
+            debug!("Routing to specialist: {}", specialist.name());
+            match specialist.handle(classification, session).await {
+                Ok(output) => {
+                    if output.requires_confirmation {
+                        OrchestratorResponse::Confirmation {
+                            session_id: session.session_id.clone(),
+                            files: output.files,
+                            summary: output.message,
+                        }
+                    } else {
+                        OrchestratorResponse::SpecialistResult {
+                            intent: intent.clone(),
+                            files: output.files,
+                            message: output.message,
+                        }
+                    }
+                }
+                Err(e) => OrchestratorResponse::Error {
+                    message: format!("Specialist error: {}", e),
+                },
+            }
+        } else {
+            // No specialist registered - coming soon message
+            let message = match intent {
+                IntentType::CreateAgent => {
+                    "I understood you want to create an agent. This capability is coming soon."
+                        .to_string()
+                }
+                IntentType::BuildSquad => {
+                    "I understood you want to build a squad. This capability is coming soon."
+                        .to_string()
+                }
+                IntentType::ConfigureSchedule => {
+                    "I understood you want to configure a schedule. This capability is coming soon."
+                        .to_string()
+                }
+                IntentType::TeachSkill => {
+                    "I understood you want to teach a skill. This capability is coming soon."
+                        .to_string()
+                }
+                IntentType::Unknown => "Intent is unknown.".to_string(),
+            };
+
+            OrchestratorResponse::SpecialistResult {
+                intent: intent.clone(),
+                files: HashMap::new(),
+                message,
+            }
         }
     }
 

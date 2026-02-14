@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 /// Intent types recognized by the classification engine
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IntentType {
     /// Create a new agent with specific capabilities
