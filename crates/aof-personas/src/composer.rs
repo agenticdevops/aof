@@ -627,5 +627,82 @@ mod tests {
         assert_eq!(PromptComposer::estimate_token_count("hello"), 1);
         assert_eq!(PromptComposer::estimate_token_count("hello world!"), 3);
         assert_eq!(PromptComposer::estimate_token_count(""), 0);
+        // 8000 chars -> 2000 tokens
+        let long_text = "a".repeat(8000);
+        assert_eq!(PromptComposer::estimate_token_count(&long_text), 2000);
+    }
+
+    #[test]
+    fn test_token_limit_enforcement() {
+        let agents = vec![make_test_agent("test-agent")];
+        let mut souls = HashMap::new();
+        souls.insert("test-agent".to_string(), make_test_soul("test-agent"));
+        let tools = vec![make_test_tool("testing")];
+
+        let composer = PromptComposer::new(agents, souls, tools);
+
+        // With generous limit, should return full prompt
+        let full = composer.compose_system_prompt_with_limit("test-agent", 8000).unwrap();
+        assert!(full.contains("[BEHAVIORAL RULES]"));
+        let full_tokens = PromptComposer::estimate_token_count(&full);
+        assert!(full_tokens <= 8000);
+
+        // With very tight limit, should truncate behavioral rules
+        let tight = composer.compose_system_prompt_with_limit("test-agent", 100).unwrap();
+        let tight_tokens = PromptComposer::estimate_token_count(&tight);
+        assert!(tight_tokens <= 200, "Tight limit should produce short prompt: {} tokens", tight_tokens);
+        // Personality should still be preserved
+        assert!(tight.contains("[PERSONALITY & VALUES]"));
+    }
+
+    #[test]
+    fn test_truncation_keeps_personality() {
+        let mut agent = make_test_agent("truncate-agent");
+        // Add lots of skills to make prompt large
+        agent.skills = (0..50).map(|i| format!("skill-{}", i)).collect();
+        let agents = vec![agent];
+
+        let mut souls = HashMap::new();
+        let mut soul = make_test_soul("truncate-agent");
+        soul.personality_summary = "I am a highly specialized agent with deep expertise.".to_string();
+        souls.insert("truncate-agent".to_string(), soul);
+
+        let tools: Vec<Tool> = (0..50)
+            .map(|i| Tool {
+                name: format!("skill-{}", i),
+                description: format!("Tool {} does many wonderful things in the system", i),
+                category: "testing".to_string(),
+            })
+            .collect();
+
+        let composer = PromptComposer::new(agents, souls, tools);
+
+        // Aggressive truncation
+        let prompt = composer.compose_system_prompt_with_limit("truncate-agent", 200).unwrap();
+        // Personality must survive
+        assert!(prompt.contains("[PERSONALITY & VALUES]"), "Personality must survive truncation");
+        assert!(prompt.contains("highly specialized"), "Personality summary must survive");
+        // Behavioral rules should be gone
+        assert!(!prompt.contains("[BEHAVIORAL RULES]"), "Behavioral rules should be truncated");
+    }
+
+    #[test]
+    fn test_large_skill_list_under_default_limit() {
+        let mut agent = make_test_agent("big-agent");
+        agent.skills = (0..50).map(|i| format!("tool-{}", i)).collect();
+        let agents = vec![agent];
+        let souls = HashMap::new();
+        let tools: Vec<Tool> = (0..50)
+            .map(|i| Tool {
+                name: format!("tool-{}", i),
+                description: format!("Description for tool {}", i),
+                category: "general".to_string(),
+            })
+            .collect();
+
+        let composer = PromptComposer::new(agents, souls, tools);
+        let prompt = composer.compose_system_prompt_with_limit("big-agent", 8000).unwrap();
+        let tokens = PromptComposer::estimate_token_count(&prompt);
+        assert!(tokens <= 8000, "50-tool agent should fit in 8000 tokens, got {}", tokens);
     }
 }
