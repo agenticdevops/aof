@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-14
 **Milestone:** Reinvention (Humanized Agent Platform)
-**Status:** In Progress (Phase 5-04 Complete)
+**Status:** In Progress (Phase 5 Complete)
 
 ---
 
@@ -12,36 +12,36 @@
 Agents that feel human — with personas, visible communication, and a Mission Control where you see your team of AI minions coordinating, reporting, and getting real work done.
 
 ### Current Focus
-Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YAML configuration, and aofctl integration delivered. Ready for Phase 4: Mission Control UI.
+Phase 5 (Agent Personas) complete. All 6 plans delivered: workspace file loaders, prompt composition, introduction events, AgentCard display, reliability metrics, integration testing & documentation. 142 tests passing. Ready for Phase 6: Conversational Config.
 
 ---
 
 ## Current Position
 
 ### Active Phase
-**Phase 5: Agent Personas** (in progress)
-- **Goal:** Agent persona system with AGENTS.md/SOUL.md workspace files, system prompt composition, introduction events
-- **Status:** 05-05 complete (Reliability Metrics), ready for 05-06
+**Phase 6: Conversational Config** (not started)
+- **Goal:** Conversational interface for creating agents via natural language
+- **Status:** Not started, ready for planning
 
 ### Last Completed Phase
-**Phase 4: Mission Control UI** (4/5 plans)
-- **Goal:** Real-time React UI showing agent coordination, personas, and event streams
-- **Status:** 04-04 complete (Configuration APIs & Production Integration)
+**Phase 5: Agent Personas** (6/6 plans)
+- **Goal:** Agent persona system with AGENTS.md/SOUL.md workspace files, system prompt composition, introduction events
+- **Status:** Complete. All 6 plans delivered, 142 tests passing.
 
 ### Status
-Phase 5-05 (Reliability Metrics) complete. Agent uptime and success rate computed from event history via ReliabilityCache, exposed via /api/agents/:id/metrics, displayed live in AgentCard with color-coded badges. 29 metrics tests passing. Ready for 05-06 (Integration Testing).
+Phase 5 complete (all 6 plans). Full persona pipeline delivered: workspace files (AGENTS.md/SOUL.md) -> loaders -> prompt composition (7-layer) -> introduction events -> AgentCard UI -> reliability metrics -> 14-test E2E suite + comprehensive documentation. 142 tests passing. Ready for Phase 6 planning.
 
 ### Progress
 
 ```
-Milestone Progress: [███████░░░] 72% (18 of 25 plans complete)
+Milestone Progress: [████████░░] 76% (19 of 25 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
 Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
 Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
-Phase 5: Agent Personas          [████████░░] 83% (5/6 plans) ← Current
-Phase 6: Conversational Config   [░░░░░░░░░░] 0%
+Phase 5: Agent Personas          [██████████] 100% (6/6 plans) ✓
+Phase 6: Conversational Config   [░░░░░░░░░░] 0% ← Next
 Phase 7: Coordination Protocols  [░░░░░░░░░░] 0%
 Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ```
@@ -51,14 +51,14 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 ### Velocity
-- **Phases completed:** 3 (Phase 1, Phase 2, Phase 3)
-- **Plans completed:** 18
-- **Requirements delivered:** 24/48 (50%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01-04
-- **Avg. plan duration:** 721 seconds (12.0 minutes)
+- **Phases completed:** 5 (Phase 1, Phase 2, Phase 3, Phase 4, Phase 5)
+- **Plans completed:** 19
+- **Requirements delivered:** 30/48 (63%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01-04, PERS-01-05, MSGG-04
+- **Avg. plan duration:** 743 seconds (12.4 minutes)
 
 ### Quality
-- **Tests passing:** 349+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 33+22+3+11+29=98)
-- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration
+- **Tests passing:** 393+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 142)
+- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration, persona loaders, prompt composition, introduction events, reliability metrics, E2E pipeline
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
 
@@ -70,6 +70,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 05 | 06 | 1131s | 10 | 12 | 10 | 2026-02-14 |
 | 05 | 05 | 636s | 7 | 12 | 6 | 2026-02-14 |
 | 05 | 02 | 813s | 9 | 7 | 9 | 2026-02-14 |
 | 05 | 03 | 824s | 7 | 16 | 7 | 2026-02-14 |
@@ -135,6 +136,9 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Token estimation at len/4 with 8000 default limit** | Claude standard approximation, conservative. Truncation by priority: behavioral rules first, personality never dropped. | 2026-02-14 | 05 | Implemented |
 | **SHA256 for prompt cache invalidation** | Deterministic hash of agent+soul+tool data. Same pattern as version_hash in config.rs. Arc<RwLock> cache with AtomicU32 hit/miss counters. | 2026-02-14 | 05 | Implemented |
 | **Persona prompt as optional AgentExecutor override** | config.system_prompt takes precedence (expert mode). with_persona_prompt() builder is purely additive, no breaking changes. | 2026-02-14 | 05 | Implemented |
+| **E2E test uses embedded fixture data (not file I/O)** | Deterministic, fast execution. No filesystem dependencies in tests. Embedded AGENTS.md YAML and SOUL.md content as const strings. | 2026-02-14 | 05 | Implemented |
+| **Documentation as 5-layer pyramid** | concepts -> tutorial -> API reference -> examples -> troubleshooting. Each layer serves different audience needs (newcomer, user, integrator, reference, debugging). | 2026-02-14 | 05 | Implemented |
+| **Design rationale in .planning/docs/** | Architectural decision records stored in planning directory (not user-facing docs/). Long-term knowledge preservation for contributors. | 2026-02-14 | 05 | Implemented |
 
 ### Todos
 
@@ -175,9 +179,9 @@ No blockers.
 
 ### What to Do Next
 
-**Immediate next action:** Execute Phase 5 Plan 06 (Integration Testing & Documentation)
+**Immediate next action:** Plan Phase 6 (Conversational Configuration)
 
-Phase 5-05 complete (Reliability Metrics). Uptime and success rate computed from event history, exposed via REST API, displayed in AgentCard. Next: 05-06 integration testing.
+Phase 5 fully complete (6/6 plans, 142 tests). The persona system delivers workspace file loaders, 7-layer prompt composition, introduction events, AgentCard display, reliability metrics, and comprehensive documentation. Phase 6 will wrap persona creation in a conversational interface.
 
 ### Context for Next Agent
 
@@ -189,7 +193,7 @@ Phase 5-05 complete (Reliability Metrics). Uptime and success rate computed from
 
 **Roadmap:** 8 phases, standard depth (3-6 plans each), parallelization enabled.
 
-**Current status:** Phase 5-05 complete (5/6 plans). Reliability metrics pipeline delivered: event history -> ReliabilityCache -> REST API -> React hook -> AgentCard badges. 29 metrics tests. Ready for 05-06.
+**Current status:** Phase 5 complete (6/6 plans). Full persona pipeline: workspace files -> loaders -> 7-layer prompt composition -> introduction events -> AgentCard UI -> reliability metrics. 142 tests. Ready for Phase 6.
 
 **Key files:**
 - `.planning/PROJECT.md` — Core value, constraints, key decisions
@@ -231,26 +235,21 @@ Phase 5-05 complete (Reliability Metrics). Uptime and success rate computed from
 
 ## Next Session Prep
 
-Before running `/gsd:plan-phase 1`, ensure:
+Before running `/gsd:plan-phase 6`, ensure:
 
-1. **Context loaded:** Read PROJECT.md, REQUIREMENTS.md, ROADMAP.md (Phase 1 section), research/ARCHITECTURE.md (Phase 1 build order)
-2. **Understanding verified:** Phase 1 goal is event streaming architecture (WebSocket daemon, broadcast channel, agent lifecycle events)
-3. **Dependencies clear:** Phase 1 has no dependencies (builds on existing aof-core, aof-runtime)
-4. **Success criteria understood:** 5 observable behaviors that validate Phase 1 completion
+1. **Context loaded:** Read PROJECT.md, REQUIREMENTS.md (CONV-01 to CONV-06), ROADMAP.md (Phase 6 section)
+2. **Understanding verified:** Phase 6 goal is conversational interface for creating agents via natural language
+3. **Dependencies clear:** Phase 6 depends on Phase 5 (persona system complete) and Phase 4 (Mission Control UI)
+4. **Success criteria understood:** Users describe agents in natural language, system generates AGENTS.md + SOUL.md entries
 
-**Phase 1 plan should decompose into approximately:**
-- Plan 1: Extend aof-core with event types (CoordinationEvent, PersonaSpec)
-- Plan 2: Create aof-coordination crate with protocol handlers
-- Plan 3: Modify aofctl to add `serve` command with WebSocket server
-- Plan 4: Inject broadcast channel into aof-runtime for event emission
-- Plan 5: Implement session persistence (agent state survives restarts)
-
-Each plan should have:
-- 2-5 must_haves (goal-backward derived from success criteria)
-- Validation steps (how to verify completion)
-- 5-15 subtasks (executable work items)
+**Phase 6 capabilities to plan:**
+- Intent classification for agent creation requests
+- Natural language to AGENTS.md/SOUL.md generation
+- Conversational refinement loop
+- Preview and confirmation before writing files
+- Integration with existing persona loaders for validation
 
 ---
 
 *State tracking initialized: 2026-02-11*
-*Last updated: 2026-02-14T04:46:14Z*
+*Last updated: 2026-02-14T05:12:00Z*
