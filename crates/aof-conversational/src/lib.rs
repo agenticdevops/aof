@@ -15,7 +15,7 @@ pub use types::{
     ConversationSession, OrchestratorResponse,
 };
 pub use sanitize::{sanitize_user_input, SanitizeError};
+pub use intent::IntentClassifier;
 // TODO: Uncomment as implementations are completed in subsequent tasks
-// pub use intent::IntentClassifier;
 // pub use session::ConversationSessionStore;
 // pub use orchestrator::Orchestrator;
