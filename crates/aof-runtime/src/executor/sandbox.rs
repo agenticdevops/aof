@@ -4,6 +4,7 @@
 //! with defense-in-depth security restrictions.
 
 use aof_core::error::AofError;
+use crate::sandbox::{CapabilityConfig, SeccompProfileManager};
 use std::path::PathBuf;
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
@@ -61,6 +62,7 @@ pub struct ContainerOptions {
 pub struct Sandbox {
     docker: Docker,
     config: SandboxConfig,
+    seccomp_manager: Option<SeccompProfileManager>,
 }
 
 impl Sandbox {
@@ -75,7 +77,54 @@ impl Sandbox {
             .await
             .map_err(|e| AofError::docker_error(format!("Docker daemon not accessible: {}", e)))?;
 
-        Ok(Self { docker, config })
+        // Load seccomp profiles if available
+        let seccomp_manager = if let Ok(manager) = SeccompProfileManager::new("config/seccomp") {
+            tracing::info!("Loaded seccomp profiles from config/seccomp");
+            Some(manager)
+        } else {
+            tracing::warn!("Seccomp profiles not found, sandbox will use Docker default");
+            None
+        };
+
+        Ok(Self {
+            docker,
+            config,
+            seccomp_manager,
+        })
+    }
+
+    /// Get Docker security arguments for a tool
+    ///
+    /// Returns both seccomp profile and capability arguments
+    fn security_args(&self, tool: &str) -> Vec<String> {
+        let mut args = Vec::new();
+
+        // Add seccomp profile if available
+        if let Some(manager) = &self.seccomp_manager {
+            let profile = manager.profile_for_tool(tool);
+            args.push(format!("--security-opt"));
+            args.push(format!("seccomp={}", profile.path.display()));
+
+            tracing::info!(
+                "Applying seccomp profile '{}' for tool '{}'",
+                profile.name,
+                tool
+            );
+        }
+
+        // Add capability restrictions
+        let cap_config = CapabilityConfig::for_tool(tool);
+        let cap_args = cap_config.docker_cap_args();
+        args.extend(cap_args);
+
+        tracing::info!(
+            "Capability config for '{}': drop_all={}, allowlist_count={}",
+            tool,
+            cap_config.drop_all,
+            cap_config.allowlist_count()
+        );
+
+        args
     }
 
     /// Execute a tool in the sandbox
@@ -93,6 +142,10 @@ impl Sandbox {
         // - Tool execution in isolated environment
         // - Log capture and cleanup
         // - Timeout handling
+
+        // Log security configuration for this tool
+        let security_args = self.security_args(tool);
+        tracing::debug!("Security args for {}: {:?}", tool, security_args);
 
         // For now, provide a safe fallback
         tracing::warn!("Sandbox execution for {} not yet fully implemented, using host execution", tool);

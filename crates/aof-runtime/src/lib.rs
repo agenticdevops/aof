@@ -10,6 +10,7 @@
 pub mod executor;
 pub mod fleet;
 pub mod orchestrator;
+pub mod sandbox;
 pub mod task;
 
 pub use executor::{
@@ -18,6 +19,7 @@ pub use executor::{
 };
 pub use fleet::{FleetCoordinator, FleetEvent};
 pub use orchestrator::RuntimeOrchestrator;
+pub use sandbox::{CapabilityConfig, SeccompProfile, SeccompProfileManager};
 pub use task::{Task, TaskHandle, TaskStatus};
 
 // Re-export core types
