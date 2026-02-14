@@ -21,7 +21,7 @@ Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YA
 ### Active Phase
 **Phase 5: Agent Personas** (in progress)
 - **Goal:** Agent persona system with AGENTS.md/SOUL.md workspace files, system prompt composition, introduction events
-- **Status:** 05-04 complete (AgentCard Persona Display), ready for 05-05
+- **Status:** 05-05 complete (Reliability Metrics), ready for 05-06
 
 ### Last Completed Phase
 **Phase 4: Mission Control UI** (4/5 plans)
@@ -29,18 +29,18 @@ Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YA
 - **Status:** 04-04 complete (Configuration APIs & Production Integration)
 
 ### Status
-Phase 5-04 (AgentCard Persona Display) complete. Mission Control UI updated with persona-first AgentCard layout showing avatar, personality traits, CAN/CANNOT boundaries, reliability metrics, and introduction toasts. 22 component tests passing. Ready for 05-05 (Persona Metrics).
+Phase 5-05 (Reliability Metrics) complete. Agent uptime and success rate computed from event history via ReliabilityCache, exposed via /api/agents/:id/metrics, displayed live in AgentCard with color-coded badges. 29 metrics tests passing. Ready for 05-06 (Integration Testing).
 
 ### Progress
 
 ```
-Milestone Progress: [███████░░░] 68% (17 of 25 plans complete)
+Milestone Progress: [███████░░░] 72% (18 of 25 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
 Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
 Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
-Phase 5: Agent Personas          [███████░░░] 67% (4/6 plans) ← Current
+Phase 5: Agent Personas          [████████░░] 83% (5/6 plans) ← Current
 Phase 6: Conversational Config   [░░░░░░░░░░] 0%
 Phase 7: Coordination Protocols  [░░░░░░░░░░] 0%
 Phase 8: Production Readiness    [░░░░░░░░░░] 0%
@@ -52,12 +52,12 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 
 ### Velocity
 - **Phases completed:** 3 (Phase 1, Phase 2, Phase 3)
-- **Plans completed:** 17
+- **Plans completed:** 18
 - **Requirements delivered:** 24/48 (50%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01-04
 - **Avg. plan duration:** 721 seconds (12.0 minutes)
 
 ### Quality
-- **Tests passing:** 320+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 33+22+3+11=69)
+- **Tests passing:** 349+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 33+22+3+11+29=98)
 - **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
@@ -70,6 +70,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 05 | 05 | 636s | 7 | 12 | 6 | 2026-02-14 |
 | 05 | 02 | 813s | 9 | 7 | 9 | 2026-02-14 |
 | 05 | 03 | 824s | 7 | 16 | 7 | 2026-02-14 |
 | 05 | 04 | 546s | 8 | 11 | 7 | 2026-02-14 |
@@ -126,6 +127,9 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Optional introduction field on CoordinationEvent** | Using `Option<AgentIntroduction>` with `skip_serializing_if` keeps backward compatibility. Existing events omit introduction from JSON. No breaking changes. | 2026-02-14 | 05 | Implemented |
 | **Builder functions in aof-personas for events** | Separating event composition from daemon code enables unit testing without starting the server. Pure functions, no I/O. | 2026-02-14 | 05 | Implemented |
 | **Squad overrides via squads.yaml (not SOUL.md)** | Keeps SOUL.md format unchanged. Squad-specific customization is conceptually separate from personality. Optional file for backward compatibility. | 2026-02-14 | 05 | Implemented |
+| **MIN_EVENTS_FOR_METRICS = 10** | Below 10 events, percentages are statistically meaningless. UI shows "--" instead of misleading values. Prevents false trust signals. | 2026-02-14 | 05 | Implemented |
+| **FIFO eviction at 10,000 events for ReliabilityCache** | Bounds memory usage. Oldest events dropped first. Cache recomputes only affected agent on new event. Sufficient history for accurate metrics. | 2026-02-14 | 05 | Implemented |
+| **Live metrics override static agent props with fallback** | useAgentMetrics hook values take precedence over agent.uptime_percent/success_rate. Graceful degradation when API unavailable. | 2026-02-14 | 05 | Implemented |
 | **Graceful degradation for missing persona files** | Missing AGENTS.md skips intros. Missing SOUL.md uses fallback. Invalid squads.yaml ignored. Daemon never crashes from missing persona files. | 2026-02-14 | 05 | Implemented |
 | **7-layer instruction composition** | Clear separation of concerns: base -> role -> personality -> communication -> capabilities -> tools -> behavioral rules. Section headers aid debugging. | 2026-02-14 | 05 | Implemented |
 | **Token estimation at len/4 with 8000 default limit** | Claude standard approximation, conservative. Truncation by priority: behavioral rules first, personality never dropped. | 2026-02-14 | 05 | Implemented |
@@ -171,9 +175,9 @@ No blockers.
 
 ### What to Do Next
 
-**Immediate next action:** Execute Phase 5 Plan 05 (Persona Metrics / Reliability Computation)
+**Immediate next action:** Execute Phase 5 Plan 06 (Integration Testing & Documentation)
 
-Phase 5-04 complete (AgentCard Persona Display). Mission Control UI updated with persona-first layout. Next: compute reliability metrics from event history for agent cards.
+Phase 5-05 complete (Reliability Metrics). Uptime and success rate computed from event history, exposed via REST API, displayed in AgentCard. Next: 05-06 integration testing.
 
 ### Context for Next Agent
 
@@ -185,7 +189,7 @@ Phase 5-04 complete (AgentCard Persona Display). Mission Control UI updated with
 
 **Roadmap:** 8 phases, standard depth (3-6 plans each), parallelization enabled.
 
-**Current status:** Phase 5-04 complete (4/6 plans). Persona UI display delivered with trait badges, CAN/CANNOT boundaries, metrics, introduction toasts, and 22 component tests. Ready for 05-05.
+**Current status:** Phase 5-05 complete (5/6 plans). Reliability metrics pipeline delivered: event history -> ReliabilityCache -> REST API -> React hook -> AgentCard badges. 29 metrics tests. Ready for 05-06.
 
 **Key files:**
 - `.planning/PROJECT.md` — Core value, constraints, key decisions
@@ -249,4 +253,4 @@ Each plan should have:
 ---
 
 *State tracking initialized: 2026-02-11*
-*Last updated: 2026-02-14T04:35:00Z*
+*Last updated: 2026-02-14T04:46:14Z*
