@@ -214,6 +214,84 @@ if let Some(specialist) = self.specialists.get(intent) {
 }
 ```
 
+## 6.5. Schedule Parsing Engine
+
+The Schedule Configuration Specialist (implemented in plan 06-04) uses a two-tier parsing strategy:
+
+### Regex Patterns (Fast Path)
+
+Natural language patterns are matched using regex-based rules in `schedule.rs`:
+
+| Pattern | Regex | Cron Output |
+|---------|-------|-------------|
+| `every N minutes` | `every\s+(\d+)\s+minutes?` | `0 */N * * * *` |
+| `every N hours` | `every\s+(\d+)\s+hours?` | `0 0 */N * * *` |
+| `daily at HH:MM` | `daily\s+at\s+(\d{1,2})(?::(\d{2}))?` | `0 M H * * *` |
+| `business hours` | `business\s+hours` | `0 0 9-17 * * 1-5` |
+| `N times per day` | `(\d+)x?\s+per\s+day` | `0 0 H1,H2,H3 * * *` |
+
+The regex parser runs first (no LLM call, <1ms latency). If no pattern matches, falls back to LLM parsing.
+
+### LLM Fallback (Complex Patterns)
+
+For patterns regex can't handle (e.g., "every third Tuesday", "first Monday of each month"), the system sends the input to Claude with a structured prompt requesting JSON output:
+
+```rust
+{
+  "cron": "0 0 14 * * 2#3",
+  "timezone": "America/Los_Angeles",
+  "description": "Every third Tuesday at 2pm PST"
+}
+```
+
+The LLM response is validated with the `cron` crate before accepting.
+
+### Timezone Extraction
+
+Common abbreviations are mapped to IANA names:
+- EST/EDT → America/New_York
+- CST/CDT → America/Chicago
+- MST/MDT → America/Denver
+- PST/PDT → America/Los_Angeles
+- UTC → UTC
+
+Full IANA names (e.g., "Europe/London") are also supported. Default is UTC if not specified.
+
+### Cron Validation
+
+Generated cron expressions are validated using the `cron` crate:
+1. Parse the expression into a `Schedule` object
+2. Compute next 3 runs using `schedule.upcoming(tz).take(3)`
+3. Verify runs are in the future
+4. Return runs to user for confirmation
+
+This ensures all generated schedules are valid before user sees them.
+
+### Adding New Schedule Patterns
+
+To add a new natural language pattern:
+
+1. **Add regex pattern** in `schedule.rs`:
+   ```rust
+   let my_pattern_re = Regex::new(r"my\s+pattern\s+(\d+)").unwrap();
+   if let Some(caps) = my_pattern_re.captures(input) {
+       return Ok(format!("cron expression"));
+   }
+   ```
+
+2. **Add test case** in `schedule.rs` tests:
+   ```rust
+   #[test]
+   fn test_my_pattern() {
+       let result = parse_natural_schedule("my pattern 5").unwrap();
+       assert_eq!(result.cron_expression, "expected cron");
+   }
+   ```
+
+3. **Update documentation** in `docs/features/conversational-scheduling.md` table
+
+Complex patterns that can't be regex-matched will automatically fall back to LLM parsing.
+
 ## 7. Security
 
 ### Input Sanitization
