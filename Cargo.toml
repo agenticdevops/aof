@@ -79,6 +79,9 @@ rand = "0.8"
 # Regex
 regex = "1.10"
 
+# Cryptography
+sha2 = "0.10"
+
 # Internal workspace dependencies (path for local dev, version for crates.io)
 aof-core = { path = "crates/aof-core", version = "0.4.0-beta" }
 aof-coordination = { path = "crates/aof-coordination", version = "0.4.0-beta" }

@@ -7,6 +7,7 @@ pub mod activity;
 pub mod agent;
 pub mod agentflow;
 pub mod binding;
+pub mod config;
 pub mod context;
 pub mod coordination;
 pub mod error;
