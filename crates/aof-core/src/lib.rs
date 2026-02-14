@@ -11,6 +11,7 @@ pub mod config;
 pub mod context;
 pub mod coordination;
 pub mod credential;
+pub mod device;
 pub mod error;
 pub mod error_tracker;
 pub mod fleet;
@@ -87,6 +88,9 @@ pub use coordination::{
 pub use credential::{
     AccessMode, AnomalyAction, CredentialAccessAnomaly, CredentialAccessEvent, CredentialType,
     RiskLevel, ToolContext,
+};
+pub use device::{
+    DeviceCertificate, DeviceInfo, DeviceStatus, DeviceType,
 };
 
 /// Version information
