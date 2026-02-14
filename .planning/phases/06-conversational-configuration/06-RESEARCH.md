@@ -11,7 +11,7 @@ Phase 6 wraps the agent creation and management system in a conversational inter
 This phase sits on top of Phase 5 (agent personas), Phase 4 (Mission Control UI for the interface), Phase 3 (messaging gateway for squad announcements), and Phase 2 (skills platform for skill assignment and discovery). Phase 6 adds the conversational layer that makes agent creation feel natural instead of requiring YAML expertise.
 
 **Primary recommendation:** Implement a three-tier architecture:
-1. **Intent Classification** — Use Claude 3.5 Sonnet with few-shot examples to classify user requests into 7 core intents
+1. **Intent Classification** — Use aof-llm (with Anthropic Claude Sonnet as default provider) with few-shot examples to classify user requests into 7 core intents. Support other providers (OpenAI, Ollama, etc.) via aof-llm abstraction.
 2. **Specialist Agent Delegation** — Orchestrator routes to agent_creator, squad_builder, scheduler, skill_teacher, agent_modifier
 3. **YAML Generation & Review** — Each specialist generates candidate files, system shows preview, user confirms before writing workspace files
 
@@ -24,8 +24,7 @@ This phase sits on top of Phase 5 (agent personas), Phase 4 (Mission Control UI 
 ### Core
 | Library/Tool | Version | Purpose | Why Standard |
 |--------------|---------|---------|--------------|
-| Claude 3.5 Sonnet | Latest | Intent classification, YAML generation, skill teaching | Best-in-class for instruction-following, structured output (JSON mode). Proven in aof-llm already. |
-| aof-llm (Anthropic provider) | v0.4.0 | LLM abstraction layer for Claude calls | Already in AOF stack, multi-provider support, consistent interface |
+| aof-llm | v0.4.0+ | LLM abstraction layer (providers: Anthropic, OpenAI, Ollama, etc.) | AOF stack standard, provider agnostic, consistent interface. Default provider: Anthropic (Claude Sonnet) for best instruction-following and structured output (JSON mode). |
 | serde_json | 1.0 | Intent classification responses (JSON mode) | AOF already uses, structured intent + confidence scores |
 | serde_yaml | 0.9+ | YAML file parsing and generation | AOF stack, seamless Rust serialization |
 | tokio | 1.35+ | Async orchestrator agent runtime | AOF foundation, event-driven execution model |
@@ -44,7 +43,7 @@ This phase sits on top of Phase 5 (agent personas), Phase 4 (Mission Control UI 
 ### Alternatives Considered
 | Instead of | Could Use | Tradeoff |
 |------------|-----------|----------|
-| Claude 3.5 Sonnet for intent classification | Open-source models (Llama 2) | Open-source cheaper, but lower accuracy on edge cases (intent ambiguity). AOF's hosted operation justifies API cost for reliability. |
+| Anthropic Claude (default) for intent classification | OpenAI GPT, Ollama Llama 2, other aof-llm providers | AOF is provider-agnostic via aof-llm abstraction. Claude Sonnet is recommended default for instruction-following and JSON mode reliability. Users can configure alternative providers in agent config. |
 | JSON mode for intent responses | String parsing | JSON mode is strict (no hallucination risk), 100% reliable. String parsing error-prone. |
 | Specialist agent delegation | Single monolithic agent | Monolithic easier to implement, but specialist agents enable parallel execution (future) and clearer separation of concerns. |
 | Preview before writing | Direct write to workspace | Preview prevents accidents (user deletes agent by mistake), builds trust in system. |
@@ -104,7 +103,7 @@ aof-core = { path = "../aof-core" }
 ```
 User Message
     ↓
-Intent Classifier (Claude 3.5 Sonnet, JSON mode)
+Intent Classifier (aof-llm with structured JSON output, default: Anthropic Claude)
     ├─ Extract intent type
     ├─ Extract confidence (0-1)
     ├─ Extract parameters (e.g., agent_type, skills, schedule)
@@ -364,7 +363,7 @@ Store conversation history for:
              ↓
 ┌────────────────────────────────────────────┐
 │ 3. Route to Specialist Agent               │
-│ Agent Creator Specialist (Claude 3.5)      │
+│ Agent Creator Specialist (aof-llm)         │
 │ Input: {agent_type, skills, description}   │
 │ Task: Generate AGENTS.md entry + SOUL.md   │
 └────────────┬───────────────────────────────┘
@@ -856,7 +855,7 @@ crates/aof-personas/
 ```
 User: "Learn how to debug Postgres connections"
     ↓
-Skill Teacher Specialist (Claude 3.5)
+Skill Teacher Specialist (aof-llm)
     Input prompt:
     """
     The user wants to teach the system this skill:
@@ -1314,9 +1313,9 @@ When creating agent, system should:
 
 | Component | Tech | Rationale |
 |-----------|------|-----------|
-| Intent classification | Claude 3.5 Sonnet (JSON mode) | Proven in production, structured output, handles ambiguity well |
+| Intent classification | aof-llm (default: Anthropic Claude) | Provider-agnostic via aof-llm abstraction. Structured JSON output. Recommended default: Claude Sonnet for instruction-following and reliability. |
 | Orchestrator agent runtime | Rust + tokio | AOF native, async-first, integrates with aof-llm |
-| Specialist agents | Claude 3.5 Sonnet | Same provider as orchestrator for consistency |
+| Specialist agents | aof-llm (configurable provider) | Provider-agnostic via aof-llm. Default: Anthropic Claude. Users can configure alternative providers. |
 | YAML generation | serde_yaml + askama templates | Type-safe templates, avoid string concat errors |
 | Conversation UI | React + Redux Toolkit | Already in Phase 4, familiar patterns |
 | WebSocket communication | Existing Phase 1 infrastructure | Reuse event broadcaster |
@@ -1661,7 +1660,7 @@ Respond in JSON:
 
     let response = llm.complete(
         &ModelRequest {
-            model: "claude-3-5-sonnet-20241022".to_string(),
+            model: llm.default_model().to_string(),  // Provider-agnostic: uses configured provider's default model
             system_prompt: Some("You are a helpful intent classifier.".to_string()),
             messages: vec![Message {
                 role: MessageRole::User,
@@ -1711,7 +1710,7 @@ Output ONLY the YAML entry, no explanation.
 
     let response = llm.complete(
         &ModelRequest {
-            model: "claude-3-5-sonnet-20241022".to_string(),
+            model: llm.default_model().to_string(),  // Provider-agnostic: uses configured provider's default model
             messages: vec![Message {
                 role: MessageRole::User,
                 content: prompt,
@@ -1873,15 +1872,16 @@ pub fn validate_cron(cron: &str, tz: &str) -> Result<(), CronError> {
 ## Sources
 
 ### Primary (HIGH confidence)
-- **aof-llm crate**: Multi-provider LLM abstraction, Claude 3.5 Sonnet support (verified in source)
+- **aof-llm crate**: Multi-provider LLM abstraction with Anthropic, OpenAI, Ollama support (verified in source). Default provider: Anthropic (Claude) for production reliability.
 - **aof-personas crate**: AGENTS.md/SOUL.md loaders, PromptComposer, validation (verified Phase 5 implementation)
 - **aof-skills crate**: SKILL.md format, skill discovery API (verified Phase 2 implementation)
 - **Phase 5 RESEARCH.md**: Agent personas, system prompt composition (existing research)
 - **Phase 2 RESEARCH.md**: Skills platform, decision logging patterns (existing research)
 
 ### Secondary (MEDIUM confidence)
-- Claude API documentation (2026): JSON mode, instruction-following capabilities
+- Anthropic Claude API documentation (2026): JSON mode, instruction-following capabilities (recommended default provider)
 - Anthropic best practices for agent orchestration (verified in aof-llm provider implementation)
+- OpenAI GPT documentation: Alternative provider for intent classification via aof-llm abstraction
 - OpenClaw research on squad composition and routing (referenced in Phase 3 RESEARCH)
 
 ### Tertiary (LOW confidence - needs validation)
@@ -1893,18 +1893,19 @@ pub fn validate_cron(cron: &str, tz: &str) -> Result<(), CronError> {
 ## Metadata
 
 **Confidence breakdown:**
-- Intent classification strategy: **HIGH** (Claude 3.5 Sonnet proven for instruction-following, JSON mode tested in production)
+- Intent classification strategy: **HIGH** (aof-llm with Anthropic Claude proven for instruction-following and JSON mode. Other providers via abstraction layer.)
 - Specialist agent architecture: **MEDIUM-HIGH** (pattern proven in aof-llm, but orchestrator design is new)
 - Squad templates: **MEDIUM** (template composition proven, but customization strategy needs testing)
 - Skill teaching: **MEDIUM** (SKILL.md format exists Phase 2, but conversational generation is new)
 - UI/UX integration: **MEDIUM** (React infrastructure in Phase 4 exists, but conversational panel is new component)
 - Schedule parsing: **MEDIUM-HIGH** (cron standard is proven, but natural language parsing needs validation)
+- Provider agnosticism: **HIGH** (aof-llm abstraction proven multi-provider support via Anthropic/OpenAI/Ollama)
 
 **Research date:** 2026-02-14
-**Valid until:** 2026-03-14 (30 days for stable domain, conversational AI changes rapidly but AOF's use of Claude is stable)
+**Valid until:** 2026-03-14 (30 days for stable domain. AOF uses aof-llm for provider flexibility.)
 
 **Assumptions validated:**
-- ✅ aof-llm supports Claude 3.5 Sonnet with JSON mode
+- ✅ aof-llm supports multiple providers (Anthropic, OpenAI, Ollama) with consistent interface
 - ✅ aof-personas provides loader/validation infrastructure
 - ✅ Phase 1 WebSocket + EventBroadcaster can handle session communication
 - ✅ Mission Control UI (Phase 4) has WebSocket integration
