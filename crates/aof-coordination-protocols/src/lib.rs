@@ -72,6 +72,7 @@ pub mod error;
 pub mod heartbeat;
 pub mod manager;
 pub mod metrics;
+pub mod standup;
 
 // Re-exports
 pub use session_tools::SessionTools;
@@ -86,3 +87,4 @@ pub use metrics::{
     TokenMetrics, MetricsSnapshot,
     DegradationManager, DegradationConfig,
 };
+pub use standup::{StandupScheduler, StandupConfig, StandupResponseRecord};
