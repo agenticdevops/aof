@@ -26,7 +26,7 @@ echo "Running agent: quick-test"
 echo "Prompt: Tell me a short joke about programming"
 echo ""
 
-cargo run -p aofctl -- run agent gojo/agents/quick-test.yaml \
+cargo run -p aofctl -- run agent quickstart/agents/quick-test.yaml \
     --prompt "Tell me a short joke about programming"
 
 echo ""

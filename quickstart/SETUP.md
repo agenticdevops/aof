@@ -1,16 +1,16 @@
 # AOF Test Setup Complete ✅
 
-All working test configurations have been created in `gojo/` directory.
+All working test configurations have been created in `quickstart/` directory.
 
 ## What Was Created
 
 ### Configuration Files
 - ✅ **serve-config.yaml** - Main server config with agent discovery
   - Uses Google Gemini 2.5 Flash
-  - Auto-discovers agents from `gojo/agents/` directory
+  - Auto-discovers agents from `quickstart/agents/` directory
   - Valid YAML syntax (tested and working)
 
-### Agent Files (gojo/agents/)
+### Agent Files (quickstart/agents/)
 - ✅ **11 Agent Minions** - All tested and validated
   - kubo, doku, rafo, ergo, wos, zure, nux, zibl
   - quick-test, k8s-checker, system-monitor
@@ -38,7 +38,7 @@ export GOOGLE_API_KEY="your-key-from-aistudio.google.com"
 
 ```bash
 cd /Users/gshah/work/opsflow-sh/aof
-aofctl run agent gojo/agents/quick-test.yaml --prompt "Tell me a short joke"
+aofctl run agent quickstart/agents/quick-test.yaml --prompt "Your question" --prompt "Tell me a short joke"
 ```
 
 ### 3. Start Full Stack (3 terminals)
@@ -46,7 +46,7 @@ aofctl run agent gojo/agents/quick-test.yaml --prompt "Tell me a short joke"
 **Terminal 1 - Backend Daemon:**
 ```bash
 export GOOGLE_API_KEY="your-key-here"
-cargo run -p aofctl -- serve --config gojo/serve-config.yaml
+cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 ```
 
 **Terminal 2 - Web UI:**
@@ -66,18 +66,18 @@ npm run dev
 export GOOGLE_API_KEY="your-key-here"
 
 # Try any minion:
-aofctl run agent gojo/agents/kubo.yaml --prompt "Check cluster health"
-aofctl run agent gojo/agents/doku.yaml --prompt "Help with Docker"
-aofctl run agent gojo/agents/rafo.yaml --prompt "Design Terraform setup"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Your question" --prompt "Check cluster health"
+aofctl run agent quickstart/agents/doku.yaml --prompt "Your question" --prompt "Help with Docker"
+aofctl run agent quickstart/agents/rafo.yaml --prompt "Your question" --prompt "Design Terraform setup"
 
 # Or interactive conversation:
-aofctl run agent gojo/agents/kubo.yaml --interactive
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Your question"
 ```
 
 ## File Structure
 
 ```
-gojo/
+quickstart/
 ├── SETUP.md                  # This file - quick reference
 ├── MINIONS.md                # Quick card for all 11 agents
 ├── AGENTS.md                 # Detailed agent specs
@@ -113,14 +113,14 @@ gojo/
 ### Phase 1: Single Agent Test ✅
 ```bash
 export GOOGLE_API_KEY="your-key-here"
-aofctl run agent gojo/agents/quick-test.yaml --prompt "Hello!"
+aofctl run agent quickstart/agents/quick-test.yaml --prompt "Your question" --prompt "Hello!"
 # Expected: Agent responds with helpful greeting
 ```
 
 ### Phase 2: Server + Web UI ✅
 ```bash
 # Terminal 1:
-cargo run -p aofctl -- serve --config gojo/serve-config.yaml
+cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 # Terminal 2:
 cd web-ui && npm run dev
@@ -131,7 +131,7 @@ cd web-ui && npm run dev
 ### Phase 3: Full Stack Testing
 ```bash
 # All three terminals running, then:
-aofctl run agent gojo/agents/kubo.yaml --prompt "Check K8s"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Your question" --prompt "Check K8s"
 # Should appear in: daemon logs + web UI + agent response
 ```
 
@@ -158,17 +158,17 @@ lsof -i :7777
 - Ensure no firewall blocking localhost:7777
 
 ### Web UI shows "Disconnected"
-- Verify daemon is running: `cargo run -p aofctl -- serve --config gojo/serve-config.yaml`
+- Verify daemon is running: `cargo run -p aofctl -- serve --config quickstart/serve-config.yaml`
 - Check browser console for errors
 - Verify WebSocket is at ws://localhost:7777/ws
 
 ## Next: Try It Out!
 
 1. Set your GOOGLE_API_KEY
-2. Run agent: `aofctl run agent gojo/agents/kubo.yaml --prompt "Hello!"`
+2. Run agent: `aofctl run agent quickstart/agents/kubo.yaml --prompt "Your question" --prompt "Hello!"`
 3. If successful, start full stack (see Quick Start above)
 4. Open web UI at http://localhost:5173
-5. Choose your favorite minion from `gojo/agents/` and start working
+5. Choose your favorite minion from `quickstart/agents/` and start working
 
 ---
 

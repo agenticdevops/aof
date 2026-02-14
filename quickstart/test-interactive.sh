@@ -19,4 +19,4 @@ echo "Starting interactive agent: general-assistant"
 echo "Type your questions below. Press Ctrl+C to exit."
 echo ""
 
-cargo run -p aofctl -- run agent gojo/agents/quick-test.yaml --interactive
+cargo run -p aofctl -- run agent quickstart/agents/quick-test.yaml --interactive

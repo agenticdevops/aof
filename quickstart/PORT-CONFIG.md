@@ -13,7 +13,7 @@
 ## How It Works
 
 ### 1. Server Configuration
-**File:** `gojo/serve-config.yaml`
+**File:** `quickstart/serve-config.yaml`
 ```yaml
 spec:
   server:
@@ -42,7 +42,7 @@ To use a different port (e.g., 9000):
 
 ### Step 1: Update Server Config
 ```bash
-# Edit gojo/serve-config.yaml
+# Edit quickstart/serve-config.yaml
 # Change: port: 7777
 # To: port: 9000
 ```
@@ -60,7 +60,7 @@ To use a different port (e.g., 9000):
 ### Step 3: Restart Services
 ```bash
 # Terminal 1: Stop old server (Ctrl+C), start new:
-cargo run -p aofctl -- serve --config gojo/serve-config.yaml
+cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 # Terminal 2: Stop old web-ui (Ctrl+C), start new:
 cd web-ui
@@ -88,7 +88,7 @@ The architecture is **port-agnostic**:
 
 ## Files Changed
 
-- ✅ `gojo/serve-config.yaml` - Port set to 7777
+- ✅ `quickstart/serve-config.yaml` - Port set to 7777
 - ✅ `web-ui/.env.local` - URLs point to 7777
 - ✅ Documentation (SETUP.md, README.md, AGENTS.md, MINIONS.md) - Updated to 7777
 

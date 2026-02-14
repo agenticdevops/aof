@@ -9,23 +9,23 @@ export GOOGLE_API_KEY="your-key-from-aistudio.google.com"
 cd /Users/gshah/work/opsflow-sh/aof
 
 # Try any minion:
-aofctl run agent gojo/agents/kubo.yaml --prompt "Check K8s cluster health"
-aofctl run agent gojo/agents/doku.yaml --prompt "Optimize my Dockerfile"
-aofctl run agent gojo/agents/rafo.yaml --prompt "Design Terraform modules"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Check K8s cluster health"
+aofctl run agent quickstart/agents/doku.yaml --prompt "Optimize my Dockerfile"
+aofctl run agent quickstart/agents/rafo.yaml --prompt "Design Terraform modules"
 ```
 
 ## Meet Your Minions
 
 | Bot | Name | Specialty | Try It |
 |-----|------|-----------|--------|
-| 🐴 | **kubo** | Kubernetes (K8s expert) | `aofctl run agent gojo/agents/kubo.yaml --prompt "Check cluster health"` |
-| 🐳 | **doku** | Docker (Containerization) | `aofctl run agent gojo/agents/doku.yaml --prompt "Optimize Dockerfile"` |
-| 🏗️ | **rafo** | Terraform (IaC wizard) | `aofctl run agent gojo/agents/rafo.yaml --prompt "Design modules"` |
-| ⚙️ | **ergo** | Argo (GitOps master) | `aofctl run agent gojo/agents/ergo.yaml --prompt "Argo Workflow DAG"` |
-| ☁️ | **wos** | AWS (Cloud champion) | `aofctl run agent gojo/agents/wos.yaml --prompt "Design serverless"` |
-| 🔵 | **zure** | Azure (Cloud specialist) | `aofctl run agent gojo/agents/zure.yaml --prompt "Azure architecture"` |
-| 🐧 | **nux** | Linux (Sysadmin) | `aofctl run agent gojo/agents/nux.yaml --prompt "Why is it slow?"` |
-| 📋 | **zibl** | Ansible (Orchestrator) | `aofctl run agent gojo/agents/zibl.yaml --prompt "Create playbook"` |
+| 🐴 | **kubo** | Kubernetes (K8s expert) | `aofctl run agent quickstart/agents/kubo.yaml --prompt "Check cluster health"` |
+| 🐳 | **doku** | Docker (Containerization) | `aofctl run agent quickstart/agents/doku.yaml --prompt "Optimize Dockerfile"` |
+| 🏗️ | **rafo** | Terraform (IaC wizard) | `aofctl run agent quickstart/agents/rafo.yaml --prompt "Design modules"` |
+| ⚙️ | **ergo** | Argo (GitOps master) | `aofctl run agent quickstart/agents/ergo.yaml --prompt "Argo Workflow DAG"` |
+| ☁️ | **wos** | AWS (Cloud champion) | `aofctl run agent quickstart/agents/wos.yaml --prompt "Design serverless"` |
+| 🔵 | **zure** | Azure (Cloud specialist) | `aofctl run agent quickstart/agents/zure.yaml --prompt "Azure architecture"` |
+| 🐧 | **nux** | Linux (Sysadmin) | `aofctl run agent quickstart/agents/nux.yaml --prompt "Why is it slow?"` |
+| 📋 | **zibl** | Ansible (Orchestrator) | `aofctl run agent quickstart/agents/zibl.yaml --prompt "Create playbook"` |
 
 **Plus 3 utilities:**
 - **quick-test** - General-purpose test agent
@@ -40,7 +40,7 @@ Have a multi-turn chat with any minion:
 export GOOGLE_API_KEY="your-key-here"
 
 # Example: Interactive Kubernetes troubleshooting
-aofctl run agent gojo/agents/kubo.yaml --interactive
+aofctl run agent quickstart/agents/kubo.yaml
 
 # Type questions, get responses, ask follow-ups
 # Press Ctrl+C to exit
@@ -63,7 +63,7 @@ aofctl run agent gojo/agents/kubo.yaml --interactive
 ## Architecture
 
 ```
-gojo/
+quickstart/
 ├── MINIONS.md              # ← You are here
 ├── SETUP.md                # Quick start guide
 ├── README.md               # Full documentation
@@ -90,23 +90,23 @@ gojo/
 1. **Test Your First Minion:**
    ```bash
    export GOOGLE_API_KEY="your-key-here"
-   aofctl run agent gojo/agents/kubo.yaml --prompt "Hello! What can you do?"
+   aofctl run agent quickstart/agents/kubo.yaml --prompt "Hello! What can you do?"
    ```
 
 2. **Run the Quick Test:**
    ```bash
-   ./gojo/test-quick.sh
+   ./quickstart/test-quick.sh
    ```
 
 3. **Start the Full Stack:**
-   - Terminal 1: `cargo run -p aofctl -- serve --config gojo/serve-config.yaml`
+   - Terminal 1: `cargo run -p aofctl -- serve --config quickstart/serve-config.yaml`
    - Terminal 2: `cd web-ui && npm run dev` (visit http://localhost:5173)
-   - Terminal 3: `aofctl run agent gojo/agents/kubo.yaml --prompt "Hello!"`
+   - Terminal 3: `aofctl run agent quickstart/agents/kubo.yaml --prompt "Hello!"`
 
 4. **Use Different Models:**
    ```bash
    # Switch to Claude Sonnet
-   aofctl run agent gojo/agents/kubo.yaml \
+   aofctl run agent quickstart/agents/kubo.yaml \
      --model "anthropic:claude-3-5-sonnet" \
      --prompt "Advanced Kubernetes question"
    ```

@@ -1,4 +1,4 @@
-# AOF Local Testing Setup (gojo/)
+# AOF Local Testing Setup (quickstart/)
 
 This directory contains working test configurations for AOF using **Google Gemini 2.5 Flash** with **11 specialized agent minions**.
 
@@ -23,7 +23,7 @@ export GOOGLE_API_KEY="your-key-from-aistudio.google.com"
 
 # 2. Run your first minion
 cd /Users/gshah/work/opsflow-sh/aof
-aofctl run agent gojo/agents/kubo.yaml --prompt "Tell me about yourself"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Tell me about yourself"
 ```
 
 ## Available Minions
@@ -51,9 +51,9 @@ export GOOGLE_API_KEY="your-api-key-here"
 cd /Users/gshah/work/opsflow-sh/aof
 
 # Try any minion
-aofctl run agent gojo/agents/kubo.yaml --prompt "What can you help me with?"
-aofctl run agent gojo/agents/doku.yaml --prompt "How do I optimize Docker images?"
-aofctl run agent gojo/agents/rafo.yaml --prompt "Design a Terraform setup"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "What can you help me with?"
+aofctl run agent quickstart/agents/doku.yaml --prompt "How do I optimize Docker images?"
+aofctl run agent quickstart/agents/rafo.yaml --prompt "Design a Terraform setup"
 ```
 
 ### Scenario 2: Full Stack Integration (15 minutes)
@@ -61,7 +61,7 @@ aofctl run agent gojo/agents/rafo.yaml --prompt "Design a Terraform setup"
 ```bash
 # Terminal 1: Start server daemon
 export GOOGLE_API_KEY="your-api-key-here"
-cargo run -p aofctl -- serve --config gojo/serve-config.yaml
+cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 # Terminal 2: Start web UI
 cd web-ui
@@ -70,7 +70,7 @@ npm run dev
 
 # Terminal 3: Run agents
 export GOOGLE_API_KEY="your-api-key-here"
-aofctl run agent gojo/agents/kubo.yaml --prompt "Check cluster health"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Check cluster health"
 
 # You'll see:
 # - Agent execution in Terminal 1 logs
@@ -86,7 +86,7 @@ Have a multi-turn chat with any minion:
 export GOOGLE_API_KEY="your-api-key-here"
 
 # Interactive mode with any agent
-aofctl run agent gojo/agents/kubo.yaml --interactive
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Your question"
 # Now ask follow-up questions, have real conversation
 # Press Ctrl+C to exit
 ```
@@ -111,7 +111,7 @@ curl http://localhost:7777/metrics
 ### serve-config.yaml
 
 Main server configuration. Key features:
-- Auto-discovers agents from `gojo/agents/` directory
+- Auto-discovers agents from `quickstart/agents/` directory
 - Uses Google Gemini 2.5 Flash as default LLM
 - Exposes WebSocket at `ws://localhost:7777/ws`
 - Health checks every 30 seconds
@@ -119,14 +119,14 @@ Main server configuration. Key features:
 
 ### Agent Files
 
-Each agent YAML in `gojo/agents/` is fully independent and can be run directly:
+Each agent YAML in `quickstart/agents/` is fully independent and can be run directly:
 
 ```bash
 # Run any agent directly
-aofctl run agent gojo/agents/kubo.yaml --prompt "Your question"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Your question"
 
 # Or use with custom model
-aofctl run agent gojo/agents/kubo.yaml \
+aofctl run agent quickstart/agents/kubo.yaml \
   --model "anthropic:claude-3-5-sonnet" \
   --prompt "Your question"
 ```
@@ -139,7 +139,7 @@ If you have an Anthropic API key, you can use Claude instead:
 export ANTHROPIC_API_KEY="sk-..."
 
 # Use with specific agent
-aofctl run agent gojo/agents/kubo.yaml \
+aofctl run agent quickstart/agents/kubo.yaml \
   --model "anthropic:claude-3-5-sonnet" \
   --prompt "Your question"
 
@@ -151,7 +151,7 @@ aofctl run agent gojo/agents/kubo.yaml \
 ## File Structure
 
 ```
-gojo/
+quickstart/
 ├── SETUP.md                  # Quick start guide
 ├── MINIONS.md                # Quick reference card
 ├── AGENTS.md                 # Detailed specifications
@@ -195,7 +195,7 @@ lsof -i :7777
 ### "YAML parsing error"
 - All provided configs are pre-validated
 - Don't edit YAML files manually (2-space indentation required)
-- Use provided files in `gojo/` directory
+- Use provided files in `quickstart/` directory
 
 ## Documentation Guide
 
@@ -207,9 +207,9 @@ lsof -i :7777
 ## Next Steps
 
 1. **Set API key:** `export GOOGLE_API_KEY="your-key"`
-2. **Try first agent:** `aofctl run agent gojo/agents/kubo.yaml --prompt "Hello!"`
+2. **Try first agent:** `aofctl run agent quickstart/agents/kubo.yaml --prompt "Hello!"`
 3. **Run full stack:** Follow Scenario 2 above
-4. **Pick your minion:** Choose your favorite from `gojo/agents/` and start working
+4. **Pick your minion:** Choose your favorite from `quickstart/agents/` and start working
 5. **Create workflows:** Combine multiple minions for complex tasks
 
 ---

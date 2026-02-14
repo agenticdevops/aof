@@ -2,6 +2,17 @@
 
 Your first-bot testing infrastructure with 11 pre-configured agent minions.
 
+## 📋 Quick Syntax
+
+```bash
+# Single response mode (exits after response)
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Your question"
+
+# Interactive mode (wait for input, multi-turn conversation)
+aofctl run agent quickstart/agents/kubo.yaml
+# Then type your questions at the prompt
+```
+
 ## 📋 Table of Contents
 
 1. [Setup](#setup)
@@ -65,13 +76,13 @@ aofctl run agent quickstart/agents/nux.yaml --prompt "How to check system load?"
 ```bash
 export GOOGLE_API_KEY="your-key"
 
-# Start interactive session
-aofctl run agent quickstart/agents/kubo.yaml --interactive
+# Start interactive session (run agent WITHOUT --prompt)
+aofctl run agent quickstart/agents/kubo.yaml
 
-# Then ask questions:
-# Q: What are pod replicas?
-# Q: How do I increase them?
-# Q: What about resource limits?
+# Agent will wait for input. Type your questions:
+# > What are pod replicas?
+# > How do I increase them?
+# > What about resource limits?
 # Press Ctrl+C to exit
 ```
 
@@ -151,41 +162,41 @@ aofctl run agent quickstart/agents/kubo.yaml --prompt "Check cluster"
 #### Infrastructure & Cloud
 ```bash
 # Kubernetes testing
-aofctl run agent quickstart/agents/kubo.yaml --interactive
+aofctl run agent quickstart/agents/kubo.yaml
 # Test: "How do I create a deployment?"
 
 # Docker testing
-aofctl run agent quickstart/agents/doku.yaml --interactive
+aofctl run agent quickstart/agents/doku.yaml
 # Test: "Best practices for Dockerfile"
 
 # AWS testing
-aofctl run agent quickstart/agents/wos.yaml --interactive
+aofctl run agent quickstart/agents/wos.yaml
 # Test: "Design a Lambda-based microservice"
 
 # Azure testing
-aofctl run agent quickstart/agents/zure.yaml --interactive
+aofctl run agent quickstart/agents/zure.yaml
 # Test: "Azure DevOps pipeline setup"
 ```
 
 #### Infrastructure-as-Code & Automation
 ```bash
 # Terraform testing
-aofctl run agent quickstart/agents/rafo.yaml --interactive
+aofctl run agent quickstart/agents/rafo.yaml
 # Test: "Create a multi-environment setup"
 
 # Ansible testing
-aofctl run agent quickstart/agents/zibl.yaml --interactive
+aofctl run agent quickstart/agents/zibl.yaml
 # Test: "Write a deployment playbook"
 
 # GitOps testing
-aofctl run agent quickstart/agents/ergo.yaml --interactive
+aofctl run agent quickstart/agents/ergo.yaml
 # Test: "Design an Argo CD workflow"
 ```
 
 #### System Operations
 ```bash
 # Linux system admin
-aofctl run agent quickstart/agents/nux.yaml --interactive
+aofctl run agent quickstart/agents/nux.yaml
 # Test: "System is running slow, diagnose it"
 
 # System monitoring
@@ -239,7 +250,7 @@ aofctl run agent quickstart/agents/kubo.yaml \
   --prompt "My pods are crashing, help debug"
 
 # Step 3: Get suggestions
-aofctl run agent quickstart/agents/kubo.yaml --interactive
+aofctl run agent quickstart/agents/kubo.yaml
 # Ask: "What monitoring should I set up?"
 # Ask: "How to prevent this in future?"
 ```
@@ -251,7 +262,7 @@ aofctl run agent quickstart/agents/kubo.yaml --interactive
 export GOOGLE_API_KEY="your-key"
 
 # Deep dive into topic
-aofctl run agent quickstart/agents/kubo.yaml --interactive
+aofctl run agent quickstart/agents/kubo.yaml
 
 # Questions to ask:
 # - "Explain Kubernetes architecture"
@@ -316,7 +327,7 @@ aofctl run agent quickstart/agents/ergo.yaml \
 # Terminal 3: Interactive debugging
 export GOOGLE_API_KEY="your-key"
 
-aofctl run agent quickstart/agents/nux.yaml --interactive
+aofctl run agent quickstart/agents/nux.yaml
 
 # Type:
 # Q: My app crashed, logs show "out of memory"

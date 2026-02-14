@@ -38,9 +38,9 @@ Personality: Helpful, precise, enthusiastic
 
 **Use cases:**
 ```bash
-aofctl run agent gojo/agents/kubo.yaml --prompt "Check my cluster health"
-aofctl run agent gojo/agents/kubo.yaml --prompt "Why are my pods failing?"
-aofctl run agent gojo/agents/kubo.yaml --prompt "Design a K8s deployment strategy"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Check my cluster health"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Why are my pods failing?"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Design a K8s deployment strategy"
 ```
 
 ---
@@ -57,9 +57,9 @@ Personality: Practical, detailed, passionate
 
 **Use cases:**
 ```bash
-aofctl run agent gojo/agents/doku.yaml --prompt "Optimize my Dockerfile"
-aofctl run agent gojo/agents/doku.yaml --prompt "Create a Docker Compose setup"
-aofctl run agent gojo/agents/doku.yaml --prompt "Best practices for multi-stage builds"
+aofctl run agent quickstart/agents/doku.yaml --prompt "Optimize my Dockerfile"
+aofctl run agent quickstart/agents/doku.yaml --prompt "Create a Docker Compose setup"
+aofctl run agent quickstart/agents/doku.yaml --prompt "Best practices for multi-stage builds"
 ```
 
 ---
@@ -76,9 +76,9 @@ Personality: Methodical, detail-oriented, focused
 
 **Use cases:**
 ```bash
-aofctl run agent gojo/agents/rafo.yaml --prompt "Design a multi-environment Terraform setup"
-aofctl run agent gojo/agents/rafo.yaml --prompt "Review my HCL for best practices"
-aofctl run agent gojo/agents/rafo.yaml --prompt "How should I structure modules?"
+aofctl run agent quickstart/agents/rafo.yaml --prompt "Design a multi-environment Terraform setup"
+aofctl run agent quickstart/agents/rafo.yaml --prompt "Review my HCL for best practices"
+aofctl run agent quickstart/agents/rafo.yaml --prompt "How should I structure modules?"
 ```
 
 ---
@@ -95,9 +95,9 @@ Personality: Enthusiastic, process-focused, automation-dedicated
 
 **Use cases:**
 ```bash
-aofctl run agent gojo/agents/ergo.yaml --prompt "Design a Argo Workflow DAG"
-aofctl run agent gojo/agents/ergo.yaml --prompt "Set up Argo CD for my cluster"
-aofctl run agent gojo/agents/ergo.yaml --prompt "How do I handle multi-cluster GitOps?"
+aofctl run agent quickstart/agents/ergo.yaml --prompt "Design a Argo Workflow DAG"
+aofctl run agent quickstart/agents/ergo.yaml --prompt "Set up Argo CD for my cluster"
+aofctl run agent quickstart/agents/ergo.yaml --prompt "How do I handle multi-cluster GitOps?"
 ```
 
 ---
@@ -114,9 +114,9 @@ Personality: Knowledgeable, solution-oriented, optimization-focused
 
 **Use cases:**
 ```bash
-aofctl run agent gojo/agents/wos.yaml --prompt "Design a serverless architecture on AWS"
-aofctl run agent gojo/agents/wos.yaml --prompt "How can I reduce my AWS costs?"
-aofctl run agent gojo/agents/wos.yaml --prompt "What IAM policies do I need?"
+aofctl run agent quickstart/agents/wos.yaml --prompt "Design a serverless architecture on AWS"
+aofctl run agent quickstart/agents/wos.yaml --prompt "How can I reduce my AWS costs?"
+aofctl run agent quickstart/agents/wos.yaml --prompt "What IAM policies do I need?"
 ```
 
 ---
@@ -133,9 +133,9 @@ Personality: Professional, enterprise-focused, integration-oriented
 
 **Use cases:**
 ```bash
-aofctl run agent gojo/agents/zure.yaml --prompt "Design an enterprise Azure solution"
-aofctl run agent gojo/agents/zure.yaml --prompt "Set up Azure DevOps CI/CD"
-aofctl run agent gojo/agents/zure.yaml --prompt "Hybrid cloud with on-premises integration"
+aofctl run agent quickstart/agents/zure.yaml --prompt "Design an enterprise Azure solution"
+aofctl run agent quickstart/agents/zure.yaml --prompt "Set up Azure DevOps CI/CD"
+aofctl run agent quickstart/agents/zure.yaml --prompt "Hybrid cloud with on-premises integration"
 ```
 
 ---
@@ -152,9 +152,9 @@ Personality: Technical, thorough, Unix-principles focused
 
 **Use cases:**
 ```bash
-aofctl run agent gojo/agents/nux.yaml --prompt "Why is my system slow?"
-aofctl run agent gojo/agents/nux.yaml --prompt "Write me an automation script"
-aofctl run agent gojo/agents/nux.yaml --prompt "How should I harden this server?"
+aofctl run agent quickstart/agents/nux.yaml --prompt "Why is my system slow?"
+aofctl run agent quickstart/agents/nux.yaml --prompt "Write me an automation script"
+aofctl run agent quickstart/agents/nux.yaml --prompt "How should I harden this server?"
 ```
 
 ---
@@ -171,9 +171,9 @@ Personality: Organized, efficient, automation-obsessed
 
 **Use cases:**
 ```bash
-aofctl run agent gojo/agents/zibl.yaml --prompt "Create an Ansible playbook for deployment"
-aofctl run agent gojo/agents/zibl.yaml --prompt "How do I structure complex playbooks?"
-aofctl run agent gojo/agents/zibl.yaml --prompt "Set up dynamic inventory management"
+aofctl run agent quickstart/agents/zibl.yaml --prompt "Create an Ansible playbook for deployment"
+aofctl run agent quickstart/agents/zibl.yaml --prompt "How do I structure complex playbooks?"
+aofctl run agent quickstart/agents/zibl.yaml --prompt "Set up dynamic inventory management"
 ```
 
 ---
@@ -183,20 +183,20 @@ aofctl run agent gojo/agents/zibl.yaml --prompt "Set up dynamic inventory manage
 ### Single Prompt (Quick Task)
 ```bash
 export GOOGLE_API_KEY="your-key-here"
-aofctl run agent gojo/agents/kubo.yaml --prompt "Check cluster health"
+aofctl run agent quickstart/agents/kubo.yaml --prompt "Check cluster health"
 ```
 
 ### Interactive Mode (Extended Conversation)
 ```bash
 export GOOGLE_API_KEY="your-key-here"
-aofctl run agent gojo/agents/kubo.yaml --interactive
+aofctl run agent quickstart/agents/kubo.yaml
 # Now have a multi-turn conversation with your minion
 ```
 
 ### Using Different Models
 ```bash
 # Use your Anthropic subscription instead
-aofctl run agent gojo/agents/kubo.yaml \
+aofctl run agent quickstart/agents/kubo.yaml \
   --model "anthropic:claude-3-5-sonnet" \
   --prompt "Advanced K8s architecture question"
 ```
@@ -221,16 +221,16 @@ aofctl run agent gojo/agents/kubo.yaml \
 1. **Be Specific** - More detail = better recommendations
    ```bash
    # Good
-   aofctl run agent gojo/agents/kubo.yaml \
+   aofctl run agent quickstart/agents/kubo.yaml \
      --prompt "We have 3 nodes, running microservices, seeing 80% CPU usage. What's wrong?"
    
    # Less helpful
-   aofctl run agent gojo/agents/kubo.yaml --prompt "Help"
+   aofctl run agent quickstart/agents/kubo.yaml --prompt "Help"
    ```
 
 2. **Use Interactive Mode for Collaboration**
    ```bash
-   aofctl run agent gojo/agents/rafo.yaml --interactive
+   aofctl run agent quickstart/agents/rafo.yaml
    # Follow-up questions, clarifications, iterative design
    ```
 
@@ -243,7 +243,7 @@ aofctl run agent gojo/agents/kubo.yaml \
 4. **Explore Before Committing**
    ```bash
    # Test locally first
-   aofctl run agent gojo/agents/kubo.yaml \
+   aofctl run agent quickstart/agents/kubo.yaml \
      --prompt "Dry run: what would this change do?"
    ```
 

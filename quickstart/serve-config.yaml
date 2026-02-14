@@ -16,7 +16,7 @@ spec:
   
   agent_discovery:
     paths:
-      - "./gojo/agents"
+      - "./quickstart/agents"
   
   triggers:
     slack:
