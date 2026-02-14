@@ -1496,8 +1496,52 @@ pub async fn execute(
         .route("/conversation/cancel", post(conversation_cancel))
         .with_state(conversation_state);
 
+    // Build coordination router (heartbeat health status)
+    let coordination_router = if let Some(manager) = &coordination_manager {
+        #[derive(Clone)]
+        struct CoordinationState {
+            manager: Arc<CoordinationManager>,
+        }
+
+        async fn get_coordination_health(
+            axum::extract::State(state): axum::extract::State<CoordinationState>,
+        ) -> axum::response::Json<serde_json::Value> {
+            use serde_json::json;
+
+            let health_records = state.manager.health_snapshot().await;
+
+            json!({
+                "agents": health_records,
+                "heartbeat_config": {
+                    "frequency_secs": 60,  // TODO: Get from actual config
+                    "timeout_secs": 120,
+                }
+            }).into()
+        }
+
+        let coord_state = CoordinationState {
+            manager: Arc::clone(manager),
+        };
+
+        Router::new()
+            .route("/coordination/health", get(get_coordination_health))
+            .with_state(coord_state)
+    } else {
+        // Coordination disabled - return empty response
+        async fn get_coordination_disabled() -> axum::response::Json<serde_json::Value> {
+            use serde_json::json;
+            json!({
+                "agents": [],
+                "coordination_enabled": false
+            }).into()
+        }
+
+        Router::new()
+            .route("/coordination/health", get(get_coordination_disabled))
+    };
+
     // Merge all API sub-routers
-    let api_router = config_router.merge(metrics_router).merge(conversation_router);
+    let api_router = config_router.merge(metrics_router).merge(conversation_router).merge(coordination_router);
 
     // Import handlers from aof-triggers server (inline to avoid duplicating logic)
     use axum::extract::State;
@@ -1685,6 +1729,7 @@ pub async fn execute(
     println!("  Config API: http://{}/api/config/tools", bind_addr);
     println!("  Config API: http://{}/api/config/version", bind_addr);
     println!("  Metrics API: http://{}/api/agents/{{id}}/metrics", bind_addr);
+    println!("  Coordination API: http://{}/api/coordination/health", bind_addr);
     if static_dir.is_some() {
         println!("  Web UI: http://{}/", bind_addr);
     }
