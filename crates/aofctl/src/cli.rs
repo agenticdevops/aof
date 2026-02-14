@@ -258,6 +258,68 @@ pub enum Commands {
         #[command(subcommand)]
         command: commands::skills::SkillsCommands,
     },
+
+    /// Initialize private Certificate Authority for device pairing
+    ///
+    /// Creates a self-signed CA certificate for issuing client certificates.
+    /// The CA is stored at ~/.local/share/aof/ca/
+    InitCa,
+
+    /// Manage device pairing and mTLS authentication
+    ///
+    /// Commands for registering, approving, and managing devices that connect
+    /// to the AOF daemon using mutual TLS (mTLS) authentication.
+    Device {
+        #[command(subcommand)]
+        command: DeviceCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DeviceCommands {
+    /// Register a new device and generate client certificate
+    Register {
+        /// Device name (human-readable, e.g., "mission-control-laptop")
+        #[arg(short, long)]
+        name: String,
+
+        /// Device type (cli, web_ui, slack_bot, discord_bot, api_client, or custom)
+        #[arg(short = 't', long, default_value = "cli")]
+        device_type: String,
+
+        /// Certificate validity in days (default: 365)
+        #[arg(long)]
+        validity_days: Option<u32>,
+    },
+
+    /// List all registered devices
+    List {
+        /// Filter by status (pending, approved, revoked, expired)
+        #[arg(short, long)]
+        status: Option<String>,
+    },
+
+    /// Approve a pending device
+    Approve {
+        /// Device ID to approve
+        device_id: String,
+
+        /// Approver identity (default: "admin")
+        #[arg(long)]
+        approved_by: Option<String>,
+    },
+
+    /// Revoke an approved device
+    Revoke {
+        /// Device ID to revoke
+        device_id: String,
+    },
+
+    /// Inspect device details
+    Inspect {
+        /// Device ID to inspect
+        device_id: String,
+    },
 }
 
 impl Cli {
@@ -366,6 +428,24 @@ impl Cli {
             Commands::Flow { command } => commands::flow::execute(command).await,
             Commands::Completion { shell } => commands::completion::execute(shell),
             Commands::Skills { command } => commands::skills::execute(command).await,
+            Commands::InitCa => commands::device::init_ca().await,
+            Commands::Device { command } => match command {
+                DeviceCommands::Register { name, device_type, validity_days } => {
+                    commands::device::device_register(&name, &device_type, validity_days).await
+                }
+                DeviceCommands::List { status } => {
+                    commands::device::device_list(status.as_deref()).await
+                }
+                DeviceCommands::Approve { device_id, approved_by } => {
+                    commands::device::device_approve(&device_id, approved_by.as_deref()).await
+                }
+                DeviceCommands::Revoke { device_id } => {
+                    commands::device::device_revoke(&device_id).await
+                }
+                DeviceCommands::Inspect { device_id } => {
+                    commands::device::device_inspect(&device_id).await
+                }
+            },
         }
     }
 }

@@ -14,3 +14,4 @@ pub mod fleet;
 pub mod flow;
 pub mod completion;
 pub mod skills;
+pub mod device;
