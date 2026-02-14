@@ -392,9 +392,160 @@ sandbox:
   image: mycompany/aof-sandbox:v2.0
 ```
 
+## Phase 8: Enhanced Security (v0.4.0+)
+
+### Per-Tool Seccomp Profiles
+
+AOF now includes **4 specialized seccomp profiles** instead of a single default:
+
+| Profile | Tools | Syscalls Allowed | Key Restrictions |
+|---------|-------|------------------|------------------|
+| **default** | All unknown tools | ~85 syscalls | Blocks 23 escape vectors |
+| **kubectl** | kubectl, k9s | Same as default | No special allowances (uses kubeconfig) |
+| **docker** | docker | Same as default | No network syscalls (Unix socket only) |
+| **readonly** | cat, grep, ls | Only ~15 syscalls | Only read, stat, open(O_RDONLY) |
+
+**Critical syscalls blocked in all profiles:**
+- `ptrace` (container escape via debugging)
+- `mount`/`umount2` (filesystem escape)
+- `init_module`/`finit_module` (kernel module loading)
+- `setns`/`unshare` (namespace manipulation)
+- `bpf` (eBPF-based attacks)
+- `io_uring_*` (recent kernel exploit vector)
+
+**Profile selection is automatic** based on tool name.
+
+### Capability Dropping
+
+All containers now run with `--cap-drop=ALL` by default:
+
+```bash
+# Old (Docker default)
+docker run kubectl ...  # Has CAP_CHOWN, CAP_DAC_OVERRIDE, etc.
+
+# New (AOF v0.4.0+)
+docker run --cap-drop=ALL kubectl ...  # No capabilities
+```
+
+**Exceptions** (minimal allowlist):
+
+- `nc`, `socat`, `ncat`: Get `CAP_NET_BIND_SERVICE` for port binding below 1024
+
+All other tools run with zero capabilities.
+
+### Credential Access Auditing
+
+Every credential access is logged with tamper-proof sequencing:
+
+```json
+{
+  "event_id": "evt-1234-56",
+  "timestamp": "2026-02-14T12:30:00Z",
+  "agent_id": "agent-1",
+  "credential_type": "Kubernetes",
+  "file_path": "/home/.kube/config",
+  "access_mode": "Read",
+  "tool_context": {
+    "tool_name": "kubectl",
+    "operation": "get pods",
+    "risk_level": "Low"
+  },
+  "anomaly_score": 0.15,
+  "sequence_number": 42,
+  "session_id": "session-1"
+}
+```
+
+**Tamper detection**: Sequence numbers are monotonically increasing. Gaps indicate deleted events.
+
+**Audit log location**: `$DAEMON_DIR/credential-audit.log`
+
+### Behavioral Anomaly Detection
+
+AOF establishes **behavioral baselines** per agent and credential type after observing >= 10 accesses:
+
+**Anomaly score components:**
+
+- **Frequency** (0.0-0.4): Access interval < 10% of baseline
+- **Volume** (0.0-0.3): Daily accesses > 3x baseline
+- **Time-of-day** (0.0-0.2): Access outside active hours
+- **Burst** (0.0-0.3): >5 accesses within 60 seconds
+
+**Actions by score:**
+
+| Score Range | Action | Example |
+|-------------|--------|---------|
+| 0.0-0.5 | Allow | Normal access pattern |
+| 0.5-0.7 | Log | Slightly elevated frequency |
+| 0.7-0.8 | Alert | Off-hours access |
+| 0.8-0.95 | RequireApproval | 10x frequency spike |
+| >0.95 | Block | Burst of 20 accesses in 10 seconds |
+
+**Learning period**: First 7 days (or until >= 10 samples), all accesses score 0.0 to avoid false positives.
+
+### Updated Defense-in-Depth Diagram
+
+```
+┌─────────────────────────────────────────────────┐
+│         Tool Execution Request                   │
+└────────────┬────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────┐
+│ Layer 1: Risk Assessment                        │ ← Decide if sandboxing needed
+│  • Destructive operations? → always sandbox      │
+│  • Dev environment? → always sandbox             │
+│  • Prod read-only? → host (fast)                 │
+└────────────┬────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────┐
+│ Layer 2: Docker Container                       │ ← Prevent host escape
+│  • User namespace (unprivileged user)            │
+│  • Read-only root filesystem                     │
+│  • Resource limits (memory, CPU, PIDs)           │
+│  • Network isolated (no default access)          │
+└────────────┬────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────┐
+│ Layer 3: Per-Tool Seccomp Profile (NEW)        │ ← Prevent kernel escape
+│  • kubectl: default profile (85 syscalls)       │
+│  • docker: default profile (Unix socket only)   │
+│  • cat/grep/ls: readonly profile (15 syscalls)  │
+│  • All: block ptrace, mount, bpf, io_uring      │
+└────────────┬────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────┐
+│ Layer 4: Capability Dropping (NEW)             │ ← Prevent privilege escalation
+│  • --cap-drop=ALL (all containers)              │
+│  • Allowlist: nc gets CAP_NET_BIND_SERVICE     │
+│  • kubectl/docker: zero capabilities            │
+└────────────┬────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────┐
+│ Layer 5: Credential Access Auditing (NEW)      │ ← Prevent credential theft
+│  • File permissions: 0400 (read-only)           │
+│  • Mounted read-only: cannot write               │
+│  • Audit log: every access logged                │
+│  • Tamper detection: sequence numbers            │
+└────────────┬────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────┐
+│ Layer 6: Behavioral Anomaly Detection (NEW)    │ ← Detect exfiltration
+│  • Baseline: frequency, volume, time-of-day     │
+│  • Score: 0.0-1.0 anomaly score                  │
+│  • Actions: Log, Alert, RequireApproval, Block  │
+│  • Learning period: 7 days (no false positives) │
+└────────────┬────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────┐
+│  Tool Execution Output                          │
+│  (Captured, sanitized, returned to agent)       │
+└─────────────────────────────────────────────────┘
+```
+
 ## See Also
 
-- [Seccomp Profile](/configs/seccomp-profile.json) — Allowed/blocked syscalls
+- [Seccomp Profiles](/config/seccomp/) — Per-tool syscall allowlists
+- [Credential Auditing Guide](/docs/guides/credential-auditing.md) — Monitoring and tuning
+- [Security Hardening (Technical)](/docs/dev/security-hardening.md) — Implementation details
 - [Resource Collision Prevention](/docs/concepts/resource-collision.md) — Serializing operations
 - [Decision Logging](/docs/concepts/decision-logging.md) — Audit trail
-- [Sandbox Implementation (Technical)](/docs/dev/sandbox-isolation.md) — How it works
