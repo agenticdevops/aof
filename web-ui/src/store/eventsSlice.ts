@@ -68,4 +68,22 @@ const eventsSlice = createSlice({
 });
 
 export const { addEvent, clearEvents, setConnected } = eventsSlice.actions;
+
+/**
+ * Select all introduction events.
+ */
+export const selectIntroductionEvents = (state: { events: EventsState }) =>
+  state.events.events.filter((e) => e.introduction !== undefined);
+
+/**
+ * Select introduction events for a specific agent.
+ */
+export const selectAgentIntroductionEvents = (
+  state: { events: EventsState },
+  agentId: string,
+) =>
+  state.events.events.filter(
+    (e) => e.introduction !== undefined && e.introduction.agent_id === agentId,
+  );
+
 export default eventsSlice.reducer;

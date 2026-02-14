@@ -18,6 +18,36 @@ export interface CoordinationEvent {
 
   /** ISO 8601 timestamp when event occurred */
   timestamp: string;
+
+  /** Optional agent introduction data (present for introduction events) */
+  introduction?: AgentIntroductionData;
+}
+
+/**
+ * Agent introduction event data.
+ * Present when the event is an agent introduction (daemon startup, squad join).
+ */
+export interface AgentIntroductionData {
+  /** Agent unique identifier */
+  agent_id: string;
+
+  /** Display name */
+  agent_name: string;
+
+  /** Role description */
+  role: string;
+
+  /** Emoji avatar */
+  avatar: string;
+
+  /** Introduction message from SOUL.md */
+  intro_message: string;
+
+  /** One-line personality summary */
+  personality_summary: string;
+
+  /** Agent skills/capabilities */
+  skills: string[];
 }
 
 /**
