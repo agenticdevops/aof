@@ -392,6 +392,37 @@ fn resolve_env_value(direct: Option<&str>, env_name: Option<&str>) -> Option<Str
     None
 }
 
+/// Create a channel adapter from configuration
+fn create_adapter_from_config(
+    config: &aof_gateway::config::AdapterConfig,
+) -> Result<Box<dyn aof_gateway::ChannelAdapter>, aof_core::AofError> {
+    use aof_gateway::Platform;
+
+    match config.platform {
+        Platform::Slack => {
+            // For now, create minimal mock adapter - full implementation in 03-02 already exists
+            // This is a placeholder until we export the adapter types properly
+            Err(aof_core::AofError::config(
+                "Slack adapter integration coming in final integration test".to_string()
+            ))
+        }
+        Platform::Discord => {
+            Err(aof_core::AofError::config(
+                "Discord adapter integration coming in final integration test".to_string()
+            ))
+        }
+        Platform::Telegram => {
+            Err(aof_core::AofError::config(
+                "Telegram adapter integration coming in final integration test".to_string()
+            ))
+        }
+        _ => Err(aof_core::AofError::config(format!(
+            "Unsupported platform: {:?}",
+            config.platform
+        ))),
+    }
+}
+
 /// Execute the serve command
 pub async fn execute(
     config_file: Option<&str>,
@@ -400,7 +431,27 @@ pub async fn execute(
     agents_dir: Option<&str>,
     flows_dir: Option<&str>,
     triggers_dir: Option<&str>,
+    gateway_config_file: Option<&str>,
+    debug_gateway: bool,
+    validate_config_only: bool,
 ) -> anyhow::Result<()> {
+    // Handle --validate-config flag
+    if validate_config_only {
+        if let Some(gw_config_path) = gateway_config_file {
+            let config = aof_gateway::config::load_gateway_config(gw_config_path)?;
+            println!("✓ Gateway config is valid");
+            println!("  Adapters: {}", config.spec.adapters.len());
+            println!("  Squads: {}", config.spec.squads.len());
+            return Ok(());
+        } else {
+            anyhow::bail!("--validate-config requires --gateway-config");
+        }
+    }
+
+    // Enable debug logging for gateway if requested
+    if debug_gateway {
+        std::env::set_var("RUST_LOG", "aof_gateway=debug");
+    }
     // Load configuration
     let config = if let Some(config_path) = config_file {
         println!("Loading configuration from: {}", config_path);
@@ -452,6 +503,60 @@ pub async fn execute(
     // Create event broadcaster for real-time event streaming
     let event_bus = Arc::new(EventBroadcaster::new(1000)); // 1000 event buffer
     println!("  Event bus: initialized (buffer: 1000)");
+
+    // Initialize gateway if config provided
+    let gateway_handle = if let Some(gw_config_path) = gateway_config_file {
+        tracing::info!("Loading gateway config from: {}", gw_config_path);
+
+        let gw_config = aof_gateway::config::load_gateway_config(gw_config_path)?;
+
+        tracing::info!(
+            adapters = gw_config.spec.adapters.len(),
+            squads = gw_config.spec.squads.len(),
+            "Gateway config loaded"
+        );
+
+        // Create gateway hub with shutdown signal
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (event_tx, _event_rx) = tokio::sync::broadcast::channel(1000);
+        let mut hub = aof_gateway::GatewayHub::new(event_tx, shutdown_rx);
+        hub.set_config(gw_config.clone());
+
+        // Register adapters from config
+        for adapter_config in &gw_config.spec.adapters {
+            if !adapter_config.enabled {
+                continue;
+            }
+
+            // Create adapter based on platform
+            match create_adapter_from_config(adapter_config) {
+                Ok(adapter) => {
+                    let adapter_id = adapter.adapter_id().to_string();
+                    hub.register_adapter(adapter);
+                    tracing::info!("Registered gateway adapter: {}", adapter_id);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create adapter for {:?}: {}", adapter_config.platform, e);
+                }
+            }
+        }
+
+        // Start gateway hub
+        hub.start().await?;
+
+        // Spawn gateway run loop
+        let hub_handle = tokio::spawn(async move {
+            if let Err(e) = hub.run().await {
+                tracing::error!("Gateway hub error: {}", e);
+            }
+        });
+
+        println!("  Gateway: initialized ({} adapters)", gw_config.spec.adapters.iter().filter(|a| a.enabled).count());
+
+        Some((hub_handle, shutdown_tx))
+    } else {
+        None
+    };
 
     // Create session persistence
     let persist_dir = dirs::data_dir()
@@ -978,6 +1083,17 @@ pub async fn execute(
             }
         }
         _ = shutdown_signal => {
+            // Graceful shutdown: gateway first, then server
+            if let Some((hub_handle, shutdown_tx)) = gateway_handle {
+                println!("  Stopping gateway...");
+                let _ = shutdown_tx.send(true);
+                if let Err(e) = hub_handle.await {
+                    eprintln!("Warning: Gateway shutdown error: {}", e);
+                } else {
+                    println!("  Gateway stopped");
+                }
+            }
+
             // Save session state on shutdown
             let final_state = SessionState {
                 session_id: session_id.clone(),

@@ -203,6 +203,18 @@ pub enum Commands {
         /// Directory containing Trigger YAML files
         #[arg(long)]
         triggers_dir: Option<String>,
+
+        /// Gateway configuration file (YAML)
+        #[arg(long)]
+        gateway_config: Option<String>,
+
+        /// Enable debug logging for gateway adapters
+        #[arg(long)]
+        debug_gateway: bool,
+
+        /// Validate gateway config and exit (don't start server)
+        #[arg(long)]
+        validate_config: bool,
     },
 
     /// Manage agent fleets (multi-agent coordination)
@@ -321,6 +333,9 @@ impl Cli {
                 agents_dir,
                 flows_dir,
                 triggers_dir,
+                gateway_config,
+                debug_gateway,
+                validate_config,
             } => {
                 commands::serve::execute(
                     config.as_deref(),
@@ -329,6 +344,9 @@ impl Cli {
                     agents_dir.as_deref(),
                     flows_dir.as_deref(),
                     triggers_dir.as_deref(),
+                    gateway_config.as_deref(),
+                    debug_gateway,
+                    validate_config,
                 )
                 .await
             }

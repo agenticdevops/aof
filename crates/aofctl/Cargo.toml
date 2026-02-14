@@ -26,6 +26,7 @@ aof-runtime = { workspace = true }
 aof-memory = { workspace = true, features = ["all-backends"] }
 aof-triggers = { workspace = true }
 aof-skills = { workspace = true }
+aof-gateway = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
