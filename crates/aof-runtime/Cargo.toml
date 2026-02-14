@@ -40,3 +40,4 @@ bollard = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }
 futures = { workspace = true }
+tempfile = { workspace = true }
