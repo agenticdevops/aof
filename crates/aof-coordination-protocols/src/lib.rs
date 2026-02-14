@@ -5,7 +5,7 @@
 //! - Session tools: Async message queues between agent pairs
 //! - Heartbeat protocol: Proactive health monitoring (Plan 02)
 //! - Standup protocol: Daily status reports (Plan 03)
-//! - Token metrics: Coordination overhead tracking (Plan 04)
+//! - Token metrics: Coordination overhead tracking and auto-degradation (Plan 04)
 //!
 //! All coordination is opt-in per agent via CoordinationMode.
 //!
@@ -71,6 +71,7 @@ pub mod events;
 pub mod error;
 pub mod heartbeat;
 pub mod manager;
+pub mod metrics;
 
 // Re-exports
 pub use session_tools::SessionTools;
@@ -81,3 +82,7 @@ pub use events::{
 pub use error::CoordinationProtocolError;
 pub use heartbeat::{HeartbeatScheduler, HeartbeatConfig, AgentHealthRecord};
 pub use manager::{CoordinationManager, CoordinationConfig};
+pub use metrics::{
+    TokenMetrics, MetricsSnapshot,
+    DegradationManager, DegradationConfig,
+};

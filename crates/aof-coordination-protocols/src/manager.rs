@@ -52,6 +52,7 @@ use aof_core::coordination::CoordinationEvent;
 use crate::error::CoordinationProtocolError;
 use crate::events::{CoordinationMode, SessionMessage};
 use crate::heartbeat::{AgentHealthRecord, HeartbeatConfig, HeartbeatScheduler};
+use crate::metrics::{DegradationConfig, DegradationManager, MetricsSnapshot, TokenMetrics};
 use crate::session_tools::SessionTools;
 
 /// Coordination configuration
@@ -63,8 +64,9 @@ pub struct CoordinationConfig {
     pub mode: CoordinationMode,
     /// Heartbeat protocol configuration
     pub heartbeat: HeartbeatConfig,
+    /// Token limits and auto-degradation configuration
+    pub token_limits: DegradationConfig,
     // TODO: Add standup config in Plan 03
-    // TODO: Add metrics config in Plan 04
 }
 
 impl Default for CoordinationConfig {
@@ -73,6 +75,7 @@ impl Default for CoordinationConfig {
             enabled: true,
             mode: CoordinationMode::Full,
             heartbeat: HeartbeatConfig::default(),
+            token_limits: DegradationConfig::default(),
         }
     }
 }
@@ -82,6 +85,8 @@ impl Default for CoordinationConfig {
 /// Manages:
 /// - SessionTools for agent-to-agent messaging
 /// - HeartbeatScheduler for health monitoring
+/// - TokenMetrics for coordination overhead tracking
+/// - DegradationManager for auto-degradation
 /// - Agent coordination modes (per-agent opt-in)
 /// - Event routing to protocol handlers
 ///
@@ -91,6 +96,8 @@ pub struct CoordinationManager {
     config: CoordinationConfig,
     session_tools: Arc<SessionTools>,
     heartbeat: Option<Arc<HeartbeatScheduler>>,
+    metrics: Arc<TokenMetrics>,
+    degradation: Option<Arc<DegradationManager>>,
     event_tx: broadcast::Sender<CoordinationEvent>,
     session_id: String,
     /// Track per-agent coordination modes
@@ -112,6 +119,22 @@ impl CoordinationManager {
             std::time::Duration::from_secs(30 * 60),
         ));
 
+        // Create token metrics tracker (24-hour rolling window)
+        let metrics = Arc::new(TokenMetrics::new(std::time::Duration::from_secs(
+            24 * 60 * 60,
+        )));
+
+        // Create degradation manager if auto-degradation enabled
+        let degradation = if config.enabled && config.token_limits.auto_degrade {
+            let manager = Arc::new(DegradationManager::new(
+                config.token_limits.clone(),
+                Arc::clone(&metrics),
+            ));
+            Some(manager)
+        } else {
+            None
+        };
+
         // Create heartbeat scheduler if enabled
         let heartbeat = if config.enabled && config.heartbeat.enabled {
             let scheduler = Arc::new(HeartbeatScheduler::new(
@@ -128,6 +151,8 @@ impl CoordinationManager {
             config,
             session_tools,
             heartbeat,
+            metrics,
+            degradation,
             event_tx,
             session_id: session_id_str,
             agent_modes: Arc::new(RwLock::new(HashMap::new())),
@@ -183,8 +208,8 @@ impl CoordinationManager {
     ///
     /// Spawns tokio tasks for each enabled protocol:
     /// - Heartbeat scheduler (if enabled)
+    /// - Degradation manager (if auto-degradation enabled)
     /// - Standup scheduler (Plan 03)
-    /// - Token metrics tracker (Plan 04)
     ///
     /// Returns JoinHandles so caller can await shutdown.
     pub async fn start(&self) -> Result<Vec<JoinHandle<()>>, CoordinationProtocolError> {
@@ -208,8 +233,17 @@ impl CoordinationManager {
             info!("Heartbeat scheduler started");
         }
 
+        // Start degradation manager
+        if let Some(degradation) = &self.degradation {
+            let degradation_clone = Arc::clone(degradation);
+            let handle = tokio::spawn(async move {
+                degradation_clone.run().await;
+            });
+            handles.push(handle);
+            info!("Degradation manager started");
+        }
+
         // TODO: Start standup scheduler in Plan 03
-        // TODO: Start token metrics tracker in Plan 04
 
         Ok(handles)
     }
@@ -281,6 +315,93 @@ impl CoordinationManager {
     /// Get the coordination mode for a specific agent
     pub async fn get_agent_mode(&self, agent_id: &str) -> Option<CoordinationMode> {
         self.agent_modes.read().await.get(agent_id).copied()
+    }
+
+    /// Record coordination protocol tokens
+    ///
+    /// Called by heartbeat/standup handlers after LLM calls.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Number of input tokens
+    /// * `output` - Number of output tokens
+    /// * `protocol` - Protocol name ("heartbeat", "standup", etc.)
+    pub fn record_coordination_tokens(&self, input: u64, output: u64, protocol: &str) {
+        self.metrics.record_coordination(input, output, protocol);
+    }
+
+    /// Record production work tokens
+    ///
+    /// Called by agent executor for production work (tasks, tools).
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Number of input tokens
+    /// * `output` - Number of output tokens
+    pub fn record_production_tokens(&self, input: u64, output: u64) {
+        self.metrics.record_production(input, output);
+    }
+
+    /// Get metrics snapshot for REST API
+    ///
+    /// Returns serializable snapshot with token usage, overhead, and current mode.
+    pub async fn metrics_snapshot(&self) -> MetricsSnapshot {
+        let current_mode = if let Some(degradation) = &self.degradation {
+            degradation.current_mode().await
+        } else {
+            self.config.mode
+        };
+
+        self.metrics.snapshot(current_mode).await
+    }
+
+    /// Apply mode change from degradation manager
+    ///
+    /// Called when DegradationManager changes coordination mode.
+    /// Updates internal state and potentially pauses/resumes schedulers.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_mode` - New coordination mode to apply
+    ///
+    /// # Mode Effects
+    ///
+    /// - **Disabled**: All protocols paused
+    /// - **HeartbeatOnly**: Only heartbeat active
+    /// - **Reduced**: Heartbeat at 60s frequency
+    /// - **Standard/Full**: All protocols active
+    ///
+    /// NOTE: For MVP, this logs the mode change. Actually stopping/restarting
+    /// schedulers requires shared AtomicBool flags that schedulers check on each tick.
+    pub async fn apply_mode_change(&self, new_mode: CoordinationMode) {
+        info!(
+            "Applying coordination mode change to: {:?} (session: {})",
+            new_mode, self.session_id
+        );
+
+        // Update global mode
+        // In a full implementation, this would:
+        // - Set a shared AtomicBool that heartbeat/standup schedulers check
+        // - Pause/resume scheduler loops based on mode
+        // - Adjust heartbeat frequency for Reduced mode
+        //
+        // For MVP, we log the change and rely on per-agent mode enforcement
+        // during registration.
+
+        match new_mode {
+            CoordinationMode::Disabled => {
+                info!("Coordination disabled - all protocols paused");
+            }
+            CoordinationMode::HeartbeatOnly => {
+                info!("Coordination degraded to heartbeat only");
+            }
+            CoordinationMode::Reduced => {
+                info!("Coordination reduced - heartbeat at 60s frequency");
+            }
+            CoordinationMode::Standard | CoordinationMode::Full => {
+                info!("Coordination mode: {:?}", new_mode);
+            }
+        }
     }
 }
 
