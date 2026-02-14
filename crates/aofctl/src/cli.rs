@@ -215,6 +215,14 @@ pub enum Commands {
         /// Validate gateway config and exit (don't start server)
         #[arg(long)]
         validate_config: bool,
+
+        /// Directory containing static files (React build)
+        #[arg(long)]
+        static_dir: Option<String>,
+
+        /// Workspace root directory (for AGENTS.md, TOOLS.md)
+        #[arg(long, default_value = ".")]
+        workspace_root: Option<String>,
     },
 
     /// Manage agent fleets (multi-agent coordination)
@@ -336,6 +344,8 @@ impl Cli {
                 gateway_config,
                 debug_gateway,
                 validate_config,
+                static_dir,
+                workspace_root,
             } => {
                 commands::serve::execute(
                     config.as_deref(),
@@ -347,6 +357,8 @@ impl Cli {
                     gateway_config.as_deref(),
                     debug_gateway,
                     validate_config,
+                    static_dir.as_deref(),
+                    workspace_root.as_deref(),
                 )
                 .await
             }

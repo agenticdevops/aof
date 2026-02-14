@@ -9,6 +9,12 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::{
+    Router,
+    routing::{get, post},
+};
+use tower_http::services::ServeDir;
+use tower_http::cors::{CorsLayer, Any};
 use aof_coordination::{EventBroadcaster, SessionPersistence, SessionState, AgentState};
 use aof_core::{TriggerRegistry, Registry, StandaloneTriggerType};
 use aof_runtime::{Runtime, RuntimeOrchestrator};
@@ -434,6 +440,8 @@ pub async fn execute(
     gateway_config_file: Option<&str>,
     debug_gateway: bool,
     validate_config_only: bool,
+    static_dir: Option<&str>,
+    workspace_root: Option<&str>,
 ) -> anyhow::Result<()> {
     // Handle --validate-config flag
     if validate_config_only {

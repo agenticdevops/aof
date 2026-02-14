@@ -47,6 +47,8 @@ colored = "2.1"
 uuid = { version = "1.6", features = ["v4"] }
 dirs = "5.0"
 tokio-util = { version = "0.7", features = ["rt"] }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
