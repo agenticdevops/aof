@@ -33,31 +33,25 @@ export interface AgentActivity {
 }
 
 /**
- * Activity type enum matching Phase 1 ActivityType.
+ * Activity type matching Phase 1 ActivityType.
  */
-export enum ActivityType {
-  AgentStarted = "agent_started",
-  AgentCompleted = "agent_completed",
-  ToolCalled = "tool_called",
-  ToolExecuting = "tool_executing",
-  ToolCompleted = "tool_completed",
-  ToolFailed = "tool_failed",
-  Thinking = "thinking",
-  Error = "error",
-  Info = "info",
-  Warning = "warning",
-  Debug = "debug",
-}
+export type ActivityType =
+  | "agent_started"
+  | "agent_completed"
+  | "tool_called"
+  | "tool_executing"
+  | "tool_completed"
+  | "tool_failed"
+  | "thinking"
+  | "error"
+  | "info"
+  | "warning"
+  | "debug";
 
 /**
  * Agent status for UI display.
  */
-export enum AgentStatus {
-  Idle = "idle",
-  Working = "working",
-  Blocked = "blocked",
-  Error = "error",
-}
+export type AgentStatus = "idle" | "working" | "blocked" | "error";
 
 /**
  * Agent configuration interface.

@@ -3,7 +3,8 @@
  * Manages data from Phase 1 configuration API endpoints.
  */
 
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice } from '@reduxjs/toolkit';
+import type { PayloadAction } from '@reduxjs/toolkit';
 import type { Agent, Tool } from '../types/events';
 
 /**

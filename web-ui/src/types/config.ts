@@ -3,4 +3,4 @@
  * Re-exported from events.ts for backward compatibility.
  */
 
-export { Agent, Tool, AgentStatus } from './events';
+export type { Agent, Tool, AgentStatus } from './events';

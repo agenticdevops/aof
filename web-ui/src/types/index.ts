@@ -7,8 +7,8 @@ export type {
   AgentActivity,
   Agent,
   Tool,
+  ActivityType,
+  AgentStatus,
 } from './events';
-
-export { ActivityType, AgentStatus } from './events';
 
 export type { Task } from './tasks';
