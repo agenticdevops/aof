@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-14
 **Milestone:** Reinvention (Humanized Agent Platform)
-**Status:** In Progress (Phase 4-01 Complete ✓)
+**Status:** In Progress (Phase 5-01 Complete)
 
 ---
 
@@ -19,32 +19,28 @@ Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YA
 ## Current Position
 
 ### Active Phase
-**Phase 4: Mission Control UI** (in progress)
-- **Goal:** Real-time React UI showing agent coordination, personas, and event streams
-- **Status:** 04-01 complete (Frontend Setup & WebSocket Integration)
-- **Requirements:** MSCT-01 (WebSocket integration) ✓
+**Phase 5: Agent Personas** (in progress)
+- **Goal:** Agent persona system with AGENTS.md/SOUL.md workspace files, system prompt composition, introduction events
+- **Status:** 05-01 complete (Workspace File Format & Loaders), ready for Wave 2
 
 ### Last Completed Phase
-**Phase 3: Messaging Gateway** ✓
-- **Goal:** Hub-and-spoke gateway routes humans to agents via Slack, Discord, Telegram, WhatsApp
-- **Status:** COMPLETE (3/3 plans executed)
-- **Execution:** Wave 1 (03-01, 03-02), Wave 2 (03-03) — 90 minutes total
-- **Deliverables:** Gateway hub, 3 platform adapters, squad broadcast, YAML config, aofctl integration
-- **Requirements:** MSGG-01, MSGG-02, MSGG-03, MSGG-05 ✓
+**Phase 4: Mission Control UI** (4/5 plans)
+- **Goal:** Real-time React UI showing agent coordination, personas, and event streams
+- **Status:** 04-04 complete (Configuration APIs & Production Integration)
 
 ### Status
-Phase 4-04 (Configuration APIs & Production Integration) complete. Config API endpoints serve AGENTS.md/TOOLS.md as JSON, static file serving with SPA routing, single daemon deployment ready. Custom Axum router serves HTTP + WebSocket + static files on port 8080. Ready for Phase 4-05.
+Phase 5-01 (Workspace File Format & Loaders) complete. aof-personas crate created with AgentLoader, SoulLoader, validation, caching, and file watcher. 3 reference agents in workspace fixtures. 33 tests passing. Ready for 05-02 (System Prompt Composer).
 
 ### Progress
 
 ```
-Milestone Progress: [█████░░░░░] 54% (13 of 24 plans complete)
+Milestone Progress: [██████░░░░] 56% (14 of 25 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
 Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
-Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans) ← Current
-Phase 5: Agent Personas          [░░░░░░░░░░] 0%
+Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
+Phase 5: Agent Personas          [██░░░░░░░░] 17% (1/6 plans) ← Current
 Phase 6: Conversational Config   [░░░░░░░░░░] 0%
 Phase 7: Coordination Protocols  [░░░░░░░░░░] 0%
 Phase 8: Production Readiness    [░░░░░░░░░░] 0%
@@ -56,12 +52,12 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 
 ### Velocity
 - **Phases completed:** 3 (Phase 1, Phase 2, Phase 3)
-- **Plans completed:** 13
+- **Plans completed:** 14
 - **Requirements delivered:** 24/48 (50%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01-04
 - **Avg. plan duration:** 721 seconds (12.0 minutes)
 
 ### Quality
-- **Tests passing:** 254+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50)
+- **Tests passing:** 287+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 33)
 - **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
@@ -74,6 +70,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 05 | 01 | 619s | 8 | 12 | 5 | 2026-02-14 |
 | 04 | 04 | 744s | 10 | 10 | 4 | 2026-02-14 |
 | 04 | 03 | 757s | 11 | 23 | 11 | 2026-02-14 |
 | 04 | 02 | 891s | 12 | 27 | 12 | 2026-02-14 |
@@ -114,6 +111,11 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Custom Axum router in serve.rs for unified daemon** | Build custom router combining TriggerHandler, config API, WebSocket, and static serving instead of modifying aof-triggers. Reuses handler logic while enabling single-daemon deployment. | 2026-02-14 | 04 | Implemented |
 | **SPA fallback routing with ServeDir** | Use tower-http ServeDir with index.html fallback for React Router client-side navigation. All non-API routes serve index.html, browser handles routing. | 2026-02-14 | 04 | Implemented |
 | **SHA256 version hashing for config cache invalidation** | Hash concatenated AGENTS.md + TOOLS.md content for X-Config-Version header. Browser detects changes without polling. Deterministic, efficient. | 2026-02-14 | 04 | Implemented |
+| **aof-personas as separate crate** | Persona system has distinct concerns (file parsing, validation, caching, watching) from core agent types. Separate crate keeps aof-core lean and allows independent testing. | 2026-02-14 | 05 | Implemented |
+| **Separate validation module (not inline in loader)** | Callers may want to load without validation (testing) or validate separately. Clean separation of concerns. | 2026-02-14 | 05 | Implemented |
+| **SoulLoader returns empty map on missing file** | Graceful degradation: souls are optional per agent. Missing SOUL.md logs warning but doesn't error, allowing agents to operate without personality guidance. | 2026-02-14 | 05 | Implemented |
+| **6 prompt injection regex patterns** | Extended from 4 in plan to cover "you are now a different" and "ignore the above" variants for better security coverage. | 2026-02-14 | 05 | Implemented |
+| **Unicode grapheme + codepoint validation for emoji** | Using unicode-segmentation for grapheme counting plus codepoint range checks for known emoji Unicode blocks. More reliable than regex-based emoji detection. | 2026-02-14 | 05 | Implemented |
 
 ### Todos
 
@@ -154,9 +156,9 @@ No blockers.
 
 ### What to Do Next
 
-**Immediate next action:** Plan Phase 2 (Real Ops Capabilities)
+**Immediate next action:** Execute Phase 5 Plan 02 (System Prompt Composer)
 
-Phase 1 (Event Infrastructure Foundation) is 100% complete (3/3 plans done). Ready to plan Phase 2.
+Phase 5-01 complete (Workspace File Format & Loaders). aof-personas crate ready for downstream consumers. Next: compose system prompts from loaded Agent + Soul data.
 
 ### Context for Next Agent
 
@@ -164,11 +166,11 @@ Phase 1 (Event Infrastructure Foundation) is 100% complete (3/3 plans done). Rea
 
 **Mission:** Transform Rust CLI framework into humanized agentic ops platform with real-time Mission Control UI, agent personas, and visible squad communication.
 
-**Architecture:** Brownfield approach — extend existing 13-crate Rust foundation, add control plane layer (WebSocket event streaming, messaging gateway, WASM UI, coordination protocols).
+**Architecture:** Brownfield approach — extend existing 14-crate Rust foundation (including new aof-personas), add control plane layer.
 
-**Roadmap:** 8 phases, standard depth (3-5 plans each), parallelization enabled.
+**Roadmap:** 8 phases, standard depth (3-6 plans each), parallelization enabled.
 
-**Current status:** Phase 1 complete (3/3 plans). Event infrastructure foundation delivered with comprehensive documentation. Ready for Phase 2.
+**Current status:** Phase 5-01 complete (1/6 plans). Persona system foundation delivered with loaders, validators, caching, file watcher, and 33 tests. Ready for 05-02.
 
 **Key files:**
 - `.planning/PROJECT.md` — Core value, constraints, key decisions
@@ -232,4 +234,4 @@ Each plan should have:
 ---
 
 *State tracking initialized: 2026-02-11*
-*Last updated: 2026-02-11*
+*Last updated: 2026-02-14*
