@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Modal } from './Modal';
 import { TaskTimeline } from './TaskTimeline';
+import { TaskComments } from './TaskComments';
 import type { Task } from '../types/tasks';
 import type { RootState } from '../store';
 
@@ -200,9 +201,7 @@ export function TaskDetail({ taskId, onClose }: TaskDetailProps): React.ReactEle
         )}
 
         {activeTab === 'comments' && (
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Comments feature coming in Task 04-03-07
-          </div>
+          <TaskComments taskId={task.id} />
         )}
 
         {activeTab === 'history' && (
