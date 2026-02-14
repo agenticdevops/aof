@@ -330,6 +330,119 @@ Be brief and specific. Focus on results, not process."#
     pub async fn trigger_now(&self) -> Result<String, CoordinationProtocolError> {
         self.trigger_standup().await
     }
+
+    /// Handle a standup response from an agent
+    ///
+    /// Parses the structured response (DID/DOING/BLOCKERS format) and stores it
+    /// in the collected_responses map for the given request_id.
+    ///
+    /// # Arguments
+    ///
+    /// * `request_id` - UUID of the standup request this is responding to
+    /// * `agent_id` - ID of the agent submitting the response
+    /// * `content` - Structured text response (DID/DOING/BLOCKERS format)
+    /// * `token_count` - Number of tokens used by this response
+    pub async fn handle_response(
+        &self,
+        request_id: &str,
+        agent_id: &str,
+        content: &str,
+        token_count: u64,
+    ) {
+        debug!(
+            "Received standup response from {} (request_id: {}, tokens: {})",
+            agent_id, request_id, token_count
+        );
+
+        // Parse the structured response
+        let record = parse_standup_response(agent_id, content, token_count);
+
+        // Store in collected responses
+        let mut responses = self.collected_responses.write().await;
+        if let Some(response_list) = responses.get_mut(request_id) {
+            response_list.push(record);
+            debug!(
+                "Stored response from {} ({} total responses for {})",
+                agent_id,
+                response_list.len(),
+                request_id
+            );
+        } else {
+            warn!(
+                "Received response for unknown request_id: {} (from {})",
+                request_id, agent_id
+            );
+        }
+    }
+
+    /// Get latest standup results
+    ///
+    /// Returns the most recent standup responses (if any).
+    /// Used by REST API GET /api/coordination/standup/latest
+    pub async fn latest_standup(&self) -> Vec<StandupResponseRecord> {
+        // For now, return empty. In full implementation, we'd cache the last standup.
+        // This will be enhanced in integration testing.
+        vec![]
+    }
+}
+
+/// Parse a standup response from structured text
+///
+/// Extracts DID, DOING, and BLOCKERS fields from the response content.
+/// Handles various formatting variations and missing fields gracefully.
+fn parse_standup_response(
+    agent_id: &str,
+    content: &str,
+    token_count: u64,
+) -> StandupResponseRecord {
+    let did = extract_field(content, "DID:");
+    let doing = extract_field(content, "DOING:");
+    let blockers_str = extract_field(content, "BLOCKERS:");
+
+    // Parse blockers list
+    let blockers = if blockers_str.to_lowercase().trim() == "none"
+        || blockers_str.to_lowercase().trim() == "no response"
+    {
+        vec![]
+    } else {
+        blockers_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
+
+    StandupResponseRecord {
+        agent_id: agent_id.to_string(),
+        what_i_did: did,
+        what_im_doing: doing,
+        blockers,
+        token_count,
+        timestamp: Utc::now(),
+    }
+}
+
+/// Extract a field value from structured text
+///
+/// Searches for lines starting with the given prefix (case-insensitive)
+/// and returns the content after the prefix.
+///
+/// # Arguments
+///
+/// * `content` - The full response text
+/// * `prefix` - The field prefix to search for (e.g., "DID:", "DOING:")
+///
+/// # Returns
+///
+/// The field value, or "No response" if not found
+fn extract_field(content: &str, prefix: &str) -> String {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.to_uppercase().starts_with(&prefix.to_uppercase()) {
+            return trimmed[prefix.len()..].trim().to_string();
+        }
+    }
+    "No response".to_string()
 }
 
 #[cfg(test)]
@@ -455,5 +568,124 @@ mod tests {
     fn test_invalid_timezone_rejected() {
         let invalid_tz: Result<chrono_tz::Tz, _> = "Invalid/Timezone".parse();
         assert!(invalid_tz.is_err());
+    }
+
+    #[test]
+    fn test_parse_standup_response_clean() {
+        let content = r#"
+DID: Fixed authentication bug
+DOING: Working on API endpoint
+BLOCKERS: none
+"#;
+        let record = parse_standup_response("agent-1", content, 150);
+
+        assert_eq!(record.agent_id, "agent-1");
+        assert_eq!(record.what_i_did, "Fixed authentication bug");
+        assert_eq!(record.what_im_doing, "Working on API endpoint");
+        assert_eq!(record.blockers.len(), 0);
+        assert_eq!(record.token_count, 150);
+    }
+
+    #[test]
+    fn test_parse_standup_response_with_blockers() {
+        let content = r#"
+DID: Deployed to staging
+DOING: Code review
+BLOCKERS: Need database access, Waiting for PR approval
+"#;
+        let record = parse_standup_response("agent-2", content, 180);
+
+        assert_eq!(record.agent_id, "agent-2");
+        assert_eq!(record.what_i_did, "Deployed to staging");
+        assert_eq!(record.what_im_doing, "Code review");
+        assert_eq!(record.blockers.len(), 2);
+        assert_eq!(record.blockers[0], "Need database access");
+        assert_eq!(record.blockers[1], "Waiting for PR approval");
+    }
+
+    #[test]
+    fn test_parse_standup_response_no_blockers() {
+        let content = r#"
+DID: Completed test suite
+DOING: Documentation updates
+BLOCKERS: No response
+"#;
+        let record = parse_standup_response("agent-3", content, 120);
+
+        assert_eq!(record.blockers.len(), 0); // "No response" treated as empty
+    }
+
+    #[test]
+    fn test_parse_standup_response_malformed() {
+        let content = "Some random text without proper format";
+        let record = parse_standup_response("agent-4", content, 50);
+
+        assert_eq!(record.agent_id, "agent-4");
+        assert_eq!(record.what_i_did, "No response");
+        assert_eq!(record.what_im_doing, "No response");
+        assert_eq!(record.blockers.len(), 0);
+    }
+
+    #[test]
+    fn test_extract_field_case_insensitive() {
+        let content = r#"
+did: Task A
+DOING: Task B
+Blockers: none
+"#;
+        assert_eq!(extract_field(content, "DID:"), "Task A");
+        assert_eq!(extract_field(content, "DOING:"), "Task B");
+        assert_eq!(extract_field(content, "BLOCKERS:"), "none");
+    }
+
+    #[test]
+    fn test_extract_field_missing() {
+        let content = "DID: Something\nDOING: Something else";
+        assert_eq!(extract_field(content, "BLOCKERS:"), "No response");
+    }
+
+    #[tokio::test]
+    async fn test_handle_response_stores_record() {
+        let config = StandupConfig::default();
+        let (tx, _rx) = broadcast::channel(100);
+        let scheduler = StandupScheduler::new(config, tx, "test-session");
+
+        // Initialize a standup request
+        let request_id = "test-request-123";
+        scheduler
+            .collected_responses
+            .write()
+            .await
+            .insert(request_id.to_string(), Vec::new());
+
+        // Handle a response
+        let content = "DID: Task 1\nDOING: Task 2\nBLOCKERS: none";
+        scheduler
+            .handle_response(request_id, "agent-1", content, 150)
+            .await;
+
+        // Verify stored
+        let responses = scheduler.collected_responses.read().await;
+        let response_list = responses.get(request_id).unwrap();
+        assert_eq!(response_list.len(), 1);
+        assert_eq!(response_list[0].agent_id, "agent-1");
+        assert_eq!(response_list[0].what_i_did, "Task 1");
+    }
+
+    #[tokio::test]
+    async fn test_handle_response_unknown_request() {
+        let config = StandupConfig::default();
+        let (tx, _rx) = broadcast::channel(100);
+        let scheduler = StandupScheduler::new(config, tx, "test-session");
+
+        // Handle response for non-existent request (should log warning, not panic)
+        let content = "DID: Task 1\nDOING: Task 2\nBLOCKERS: none";
+        scheduler
+            .handle_response("unknown-request", "agent-1", content, 150)
+            .await;
+
+        // Verify nothing stored
+        let responses = scheduler.collected_responses.read().await;
+        assert!(!responses.contains_key("unknown-request"));
     }
 }
