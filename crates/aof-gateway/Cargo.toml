@@ -58,6 +58,9 @@ futures = "0.3"
 # Random number generation (for retry jitter)
 rand = "0.8"
 
+# Environment variable loading (for development)
+dotenv = "0.15"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.8"

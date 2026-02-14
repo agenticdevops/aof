@@ -133,7 +133,7 @@ pub fn load_gateway_config(path: &str) -> Result<GatewayConfig, AofError> {
     let content = fs::read_to_string(path)
         .map_err(|e| AofError::config(format!("Failed to read config file: {}", e)))?;
 
-    let resolved = resolve_env_vars(&content);
+    let resolved = resolve_env_vars(&content)?;
 
     let deserializer = serde_yaml::Deserializer::from_str(&resolved);
     let config: GatewayConfig = serde_path_to_error::deserialize(deserializer)
@@ -144,16 +144,69 @@ pub fn load_gateway_config(path: &str) -> Result<GatewayConfig, AofError> {
     Ok(config)
 }
 
+/// Load gateway configuration with .env file support (development)
+pub fn load_config_with_dotenv(path: &str) -> Result<GatewayConfig, AofError> {
+    // Load .env file if present
+    dotenv::dotenv().ok();
+
+    load_gateway_config(path)
+}
+
 /// Resolve environment variables in YAML content
-fn resolve_env_vars(yaml: &str) -> String {
+fn resolve_env_vars(yaml: &str) -> Result<String, AofError> {
     let re = regex::Regex::new(r"\$\{([A-Z_][A-Z0-9_]*)\}").unwrap();
-    re.replace_all(yaml, |caps: &regex::Captures| {
+    let mut missing_vars = Vec::new();
+
+    let result = re.replace_all(yaml, |caps: &regex::Captures| {
         let var_name = &caps[1];
-        std::env::var(var_name).unwrap_or_else(|_| {
-            tracing::warn!("Environment variable {} not set, using empty string", var_name);
-            String::new()
-        })
-    }).to_string()
+        match std::env::var(var_name) {
+            Ok(value) => value,
+            Err(_) => {
+                missing_vars.push(var_name.to_string());
+                String::new()
+            }
+        }
+    }).to_string();
+
+    if !missing_vars.is_empty() {
+        return Err(AofError::config(format!(
+            "Missing required environment variables: {}",
+            missing_vars.join(", ")
+        )));
+    }
+
+    Ok(result)
+}
+
+/// Sanitize configuration for logging (mask sensitive tokens)
+pub fn sanitize_config_for_logging(config: &GatewayConfig) -> GatewayConfig {
+    let mut sanitized = config.clone();
+    for adapter in &mut sanitized.spec.adapters {
+        // Sanitize bot_token field
+        if let Some(bot_token) = adapter.config.get("bot_token") {
+            if let Some(token_str) = bot_token.as_str() {
+                let masked = if token_str.len() >= 8 {
+                    format!("{}...", &token_str[..8])
+                } else {
+                    "***".to_string()
+                };
+                adapter.config["bot_token"] = serde_json::json!(masked);
+            }
+        }
+
+        // Sanitize app_token field
+        if let Some(app_token) = adapter.config.get("app_token") {
+            if let Some(token_str) = app_token.as_str() {
+                let masked = if token_str.len() >= 8 {
+                    format!("{}...", &token_str[..8])
+                } else {
+                    "***".to_string()
+                };
+                adapter.config["app_token"] = serde_json::json!(masked);
+            }
+        }
+    }
+    sanitized
 }
 
 /// Validate configuration
@@ -254,12 +307,108 @@ mod tests {
 
         let yaml = r#"
 token: ${TEST_TOKEN}
-other: ${NONEXISTENT}
 "#;
 
-        let resolved = resolve_env_vars(yaml);
+        let resolved = resolve_env_vars(yaml).unwrap();
         assert!(resolved.contains("secret123"));
-        assert!(resolved.contains("other: "));
+    }
+
+    #[test]
+    fn test_missing_env_var_returns_error() {
+        std::env::remove_var("NONEXISTENT_VAR");
+
+        let yaml = r#"
+token: ${NONEXISTENT_VAR}
+"#;
+
+        let result = resolve_env_vars(yaml);
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("Missing required environment variables"));
+        assert!(error_message.contains("NONEXISTENT_VAR"));
+    }
+
+    #[test]
+    fn test_sanitize_config() {
+        let config = GatewayConfig {
+            api_version: "aof.dev/v1".to_string(),
+            kind: "Gateway".to_string(),
+            metadata: ConfigMetadata {
+                name: "test".to_string(),
+            },
+            spec: GatewaySpec {
+                runtime: RuntimeConfig {
+                    websocket_url: "ws://localhost:8080".to_string(),
+                    session_id: None,
+                },
+                adapters: vec![
+                    AdapterConfig {
+                        platform: Platform::Slack,
+                        enabled: true,
+                        config: serde_json::json!({
+                            "bot_token": "xoxb-1234567890-abcdefghijklmnop",
+                            "app_token": "test-app-token-placeholder"
+                        }),
+                        rate_limit: RateLimitConfig {
+                            requests_per_second: 1,
+                            burst_size: 5,
+                        },
+                    }
+                ],
+                squads: vec![],
+            },
+        };
+
+        let sanitized = sanitize_config_for_logging(&config);
+
+        // Check bot_token is masked
+        let bot_token = sanitized.spec.adapters[0].config.get("bot_token").unwrap().as_str().unwrap();
+        assert!(bot_token.starts_with("xoxb-123"));
+        assert!(bot_token.ends_with("..."));
+        assert!(!bot_token.contains("abcdefghijklmnop"));
+
+        // Check app_token is masked
+        let app_token = sanitized.spec.adapters[0].config.get("app_token").unwrap().as_str().unwrap();
+        assert!(app_token.starts_with("xapp-1-A"));
+        assert!(app_token.ends_with("..."));
+    }
+
+    #[test]
+    fn test_load_config_with_dotenv() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        // Create temporary config file
+        let mut config_file = NamedTempFile::new().unwrap();
+        std::env::set_var("TEST_BOT_TOKEN", "xoxb-test-token");
+
+        let yaml_content = r#"
+apiVersion: aof.dev/v1
+kind: Gateway
+metadata:
+  name: test
+spec:
+  runtime:
+    websocket_url: "ws://localhost:8080"
+  adapters:
+    - platform: slack
+      enabled: true
+      config:
+        bot_token: "${TEST_BOT_TOKEN}"
+      rate_limit:
+        requests_per_second: 1
+        burst_size: 5
+  squads: []
+"#;
+        config_file.write_all(yaml_content.as_bytes()).unwrap();
+        config_file.flush().unwrap();
+
+        // Load config
+        let config = load_config_with_dotenv(config_file.path().to_str().unwrap()).unwrap();
+
+        // Verify token was resolved
+        let bot_token = config.spec.adapters[0].config.get("bot_token").unwrap().as_str().unwrap();
+        assert_eq!(bot_token, "xoxb-test-token");
     }
 
     #[test]
