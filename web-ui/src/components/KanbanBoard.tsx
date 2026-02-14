@@ -8,6 +8,7 @@ import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { useTaskManagement } from '../hooks/useTaskManagement';
 import { useDndSensors, hasValidDestination, getTaskIdFromEvent, getDestinationLaneFromEvent } from '../utils/dndConfig';
 import { Lane } from './Lane';
+import { KeyboardShortcuts } from './KeyboardShortcuts';
 import type { TaskLane } from '../types/tasks';
 
 /**
@@ -115,6 +116,7 @@ export function KanbanBoard({ className = '' }: KanbanBoardProps): React.ReactEl
   const { tasks, loading, error, moveTask, refetchTasks } = useTaskManagement();
   const sensors = useDndSensors();
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'error' } | null>(null);
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
 
   /**
    * Fetch tasks on mount.
@@ -122,6 +124,21 @@ export function KanbanBoard({ className = '' }: KanbanBoardProps): React.ReactEl
   useEffect(() => {
     refetchTasks();
   }, [refetchTasks]);
+
+  /**
+   * Keyboard shortcut to show help (? key).
+   */
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        setShowKeyboardShortcuts(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   /**
    * Handle drag end event.
@@ -185,6 +202,18 @@ export function KanbanBoard({ className = '' }: KanbanBoardProps): React.ReactEl
 
   return (
     <div className={className}>
+      {/* Help button */}
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={() => setShowKeyboardShortcuts(true)}
+          className="px-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg transition-colors flex items-center gap-2"
+          aria-label="Show keyboard shortcuts"
+        >
+          <span>⌨️</span>
+          <span>Keyboard Shortcuts</span>
+        </button>
+      </div>
+
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
         <div className="flex gap-4 overflow-x-auto pb-4">
           {LANES.map((lane) => (
@@ -206,6 +235,17 @@ export function KanbanBoard({ className = '' }: KanbanBoardProps): React.ReactEl
           onClose={() => setToast(null)}
         />
       )}
+
+      {/* Screen reader announcements */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {toast && toast.message}
+      </div>
+
+      {/* Keyboard shortcuts modal */}
+      <KeyboardShortcuts
+        isOpen={showKeyboardShortcuts}
+        onClose={() => setShowKeyboardShortcuts(false)}
+      />
     </div>
   );
 }

@@ -124,6 +124,9 @@ export function TaskCard({ task, className = '' }: TaskCardProps): React.ReactEl
   const statusBadgeColor = getStatusBadgeColor(task.status);
   const priorityBadgeColor = task.priority ? getPriorityBadgeColor(task.priority) : null;
 
+  const descriptionId = `task-${task.id}-description`;
+  const statusId = `task-${task.id}-status`;
+
   return (
     <div
       ref={setNodeRef}
@@ -131,7 +134,8 @@ export function TaskCard({ task, className = '' }: TaskCardProps): React.ReactEl
       className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 ${borderColor} border border-gray-200 dark:border-gray-700 p-3 mb-2 cursor-grab active:cursor-grabbing ${isDragging ? 'shadow-2xl' : ''} ${className}`}
       role="button"
       tabIndex={0}
-      aria-label={`Task: ${task.title}, in ${task.lane} lane, version ${task.version}`}
+      aria-label={`Task: ${task.title}, in ${task.lane} lane`}
+      aria-describedby={`${descriptionId} ${statusId}`}
       {...attributes}
       {...listeners}
     >
@@ -168,7 +172,7 @@ export function TaskCard({ task, className = '' }: TaskCardProps): React.ReactEl
       </div>
 
       {/* Description */}
-      <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
+      <p id={descriptionId} className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
         {task.description}
       </p>
 
@@ -206,7 +210,11 @@ export function TaskCard({ task, className = '' }: TaskCardProps): React.ReactEl
         </div>
 
         {/* Status badge */}
-        <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusBadgeColor}`}>
+        <span
+          id={statusId}
+          className={`px-2 py-0.5 text-xs font-medium rounded ${statusBadgeColor}`}
+          aria-label={`Status: ${task.status}`}
+        >
           {task.status}
         </span>
 
