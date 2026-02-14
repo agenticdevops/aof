@@ -17,7 +17,11 @@ readme = "../../README.md"
 name = "aofctl"
 path = "src/main.rs"
 
+[features]
+tokio-console = ["dep:console-subscriber"]
+
 [dependencies]
+console-subscriber = { version = "0.4", optional = true }
 aof-core = { workspace = true }
 aof-coordination = { workspace = true }
 aof-coordination-protocols = { workspace = true }

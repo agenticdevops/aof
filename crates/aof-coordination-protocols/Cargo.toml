@@ -32,3 +32,8 @@ cron = "0.13"
 tokio = { workspace = true, features = ["test-util", "macros"] }
 async-trait = { workspace = true }
 futures = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "coordination_overhead"
+harness = false

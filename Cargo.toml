@@ -86,6 +86,9 @@ regex = "1.10"
 # Cryptography
 sha2 = "0.10"
 
+# Performance testing
+criterion = { version = "0.5", features = ["html_reports"] }
+
 # Internal workspace dependencies (path for local dev, version for crates.io)
 aof-core = { path = "crates/aof-core", version = "0.4.0-beta" }
 aof-coordination = { path = "crates/aof-coordination", version = "0.4.0-beta" }

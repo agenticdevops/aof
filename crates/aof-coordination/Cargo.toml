@@ -27,3 +27,8 @@ async-trait = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }
 tempfile = "3.8"
+criterion = { workspace = true }
+
+[[bench]]
+name = "broadcaster_throughput"
+harness = false

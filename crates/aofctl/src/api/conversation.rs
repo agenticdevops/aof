@@ -131,7 +131,7 @@ pub async fn get_session(
         .ok_or(ApiError::SessionNotFound)?;
 
     Ok(Json(SessionResponse {
-        session_id: session.id.clone(),
+        session_id: session.session_id.clone(),
         messages: session.messages.clone(),
         created_at: session.created_at.to_rfc3339(),
     }))
@@ -186,8 +186,11 @@ pub async fn conversation_confirm(
     let session = orchestrator.get_session(&req.session_id)
         .ok_or(ApiError::SessionNotFound)?;
 
-    let pending_files = session.pending_files.clone()
-        .ok_or_else(|| ApiError::InvalidInput("No pending files to confirm".to_string()))?;
+    let pending_files = if session.pending_files.is_empty() {
+        return Err(ApiError::InvalidInput("No pending files to confirm".to_string()));
+    } else {
+        session.pending_files.clone()
+    };
 
     // Persist files to workspace
     let result = state.persistence

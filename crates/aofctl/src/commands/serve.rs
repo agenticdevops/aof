@@ -32,14 +32,12 @@ impl NoOpModel {
                 provider: aof_core::ModelProvider::Anthropic,
                 model: "noop".to_string(),
                 api_key: None,
-                base_url: None,
-                max_tokens: 0,
+                endpoint: None,
+                max_tokens: Some(0),
                 temperature: 0.0,
-                top_p: None,
-                stop_sequences: Vec::new(),
-                timeout_seconds: 60,
-                retry_attempts: 0,
-                stream: false,
+                timeout_secs: 60,
+                headers: std::collections::HashMap::new(),
+                extra: std::collections::HashMap::new(),
             }
         }
     }
@@ -722,6 +720,7 @@ pub async fn execute(
                 mode,
                 heartbeat: heartbeat_config,
                 token_limits,
+                standup: aof_coordination_protocols::StandupConfig::default(),
             };
 
             // Generate session ID
@@ -1469,9 +1468,12 @@ pub async fn execute(
                 provider: aof_core::ModelProvider::Anthropic,
                 model: "claude-opus-4-20250514".to_string(),
                 api_key: Some(api_key),
-                max_tokens: 8192,
+                endpoint: None,
+                max_tokens: Some(8192),
                 temperature: 0.7,
-                ..Default::default()
+                timeout_secs: 60,
+                headers: std::collections::HashMap::new(),
+                extra: std::collections::HashMap::new(),
             };
             aof_llm::create_model(model_config).await.unwrap_or_else(|e| {
                 eprintln!("Failed to create conversation model: {}", e);
@@ -1483,7 +1485,7 @@ pub async fn execute(
         }
     };
 
-    let skill_registry = Arc::new(aof_skills::SkillRegistry::new());
+    let skill_registry = Arc::new(aof_skills::SkillRegistry::new(aof_skills::SkillConfig::default()));
     let session_store = ConversationSessionStore::new(100, std::time::Duration::from_secs(1800));
 
     // Create specialist models
@@ -1494,9 +1496,12 @@ pub async fn execute(
                 provider: aof_core::ModelProvider::Anthropic,
                 model: "claude-opus-4-20250514".to_string(),
                 api_key: Some(api_key),
-                max_tokens: 8192,
+                endpoint: None,
+                max_tokens: Some(8192),
                 temperature: 0.7,
-                ..Default::default()
+                timeout_secs: 60,
+                headers: std::collections::HashMap::new(),
+                extra: std::collections::HashMap::new(),
             };
             match aof_llm::create_model(model_config).await {
                 Ok(boxed_model) => Arc::from(boxed_model),

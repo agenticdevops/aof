@@ -33,3 +33,8 @@ version = "3"
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }
 chrono = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "event_serialization"
+harness = false
