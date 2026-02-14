@@ -1,7 +1,7 @@
 use crate::intent::IntentClassifier;
 use crate::sanitize::sanitize_user_input;
 use crate::session::ConversationSessionStore;
-use crate::specialists::{Specialist, SquadBuilder, SkillTeacher, Scheduler};
+use crate::specialists::{Specialist, AgentCreator, SquadBuilder, SkillTeacher, Scheduler};
 use crate::types::{
     ConversationMessage, IntentType, MessageRole, OrchestratorResponse,
 };
@@ -43,6 +43,20 @@ impl Orchestrator {
     /// Register a specialist for an intent type
     pub fn register_specialist(&mut self, intent: IntentType, specialist: Box<dyn Specialist>) {
         self.specialists.insert(intent, specialist);
+    }
+
+    /// Builder: Add AgentCreator specialist
+    pub fn with_agent_creator(
+        mut self,
+        model: Arc<dyn aof_llm::Model>,
+        workspace: PathBuf,
+        skill_registry: Arc<aof_skills::SkillRegistry>,
+    ) -> Self {
+        self.register_specialist(
+            IntentType::CreateAgent,
+            Box::new(AgentCreator::new(model, workspace, skill_registry)),
+        );
+        self
     }
 
     /// Builder: Add SquadBuilder specialist
