@@ -215,6 +215,239 @@ let event = CoordinationEvent::standup_response("session-123", "standup-001", "a
 let event = CoordinationEvent::session_message("session-123", "agent-a", "agent-b", "announcement", "Hello");
 ```
 
+## Heartbeat Protocol
+
+### Architecture
+
+The heartbeat protocol provides **proactive health monitoring** for all registered agents. Unlike traditional polling, agents don't need to be called - the HeartbeatScheduler automatically checks their liveness every 60 seconds.
+
+```
+                      60s interval
+                          │
+                          ▼
+┌───────────────────────────────────────────┐
+│       HeartbeatScheduler (tokio task)     │
+│                                           │
+│  tokio::interval(60s) ───> generate UUID │
+│                                           │
+│  emit HeartbeatRequest ───> broadcast    │
+│                                           │
+│  track PendingHeartbeat ───> timeout     │
+└───────────────────┬───────────────────────┘
+                    │
+                    ▼
+          EventBroadcaster (pub/sub)
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+    Agent A     Agent B     Agent C
+        │           │           │
+        └───────────┴───────────┘
+                    │
+                    ▼ HeartbeatResponse
+        HeartbeatScheduler::handle_response()
+                    │
+                    ▼
+        Update AgentHealthRecord
+        ├─ status: Healthy
+        ├─ last_heartbeat: now()
+        ├─ consecutive_misses: 0
+        └─ last_response_ms: 1200
+
+After 120s timeout:
+    check_timeout() ───> identify unresponsive
+                    │
+                    ▼
+        emit HeartbeatTimeout alert
+                    │
+                    ▼
+        Update AgentHealthRecord
+        ├─ status: Unresponsive
+        └─ consecutive_misses: +1
+```
+
+### Heartbeat Lifecycle
+
+**1. Registration**
+```rust
+// CoordinationManager registers agents based on mode
+manager.register_agent("k8s-monitor", CoordinationMode::Full).await?;
+// Agent added to HeartbeatScheduler's tracked agents
+```
+
+**2. Heartbeat Request (every 60s)**
+```rust
+// HeartbeatScheduler::run() loop
+let request_id = Uuid::new_v4();
+let event = CoordinationEvent::heartbeat_request(&session_id, &request_id);
+event_tx.send(event)?; // Broadcast to all agents
+
+// Track pending request
+pending_requests.insert(request_id, PendingHeartbeat {
+    timestamp: Utc::now(),
+    expected_agents: registered_agents.clone(),
+    responded_agents: HashSet::new(),
+});
+
+// Spawn timeout checker (120s delay)
+tokio::spawn(async move {
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    scheduler.check_timeout(request_id).await;
+});
+```
+
+**3. Heartbeat Response**
+```rust
+// Agent receives HeartbeatRequest, responds with HeartbeatResponse
+// (Agent executor handles this automatically)
+
+// CoordinationManager routes response to HeartbeatScheduler
+scheduler.handle_response(request_id, agent_id, response_time_ms).await;
+
+// Updates agent health:
+agent_health[agent_id] = AgentHealthRecord {
+    status: Healthy,
+    last_heartbeat: Some(now()),
+    consecutive_misses: 0,
+    last_response_ms: Some(1200),
+};
+```
+
+**4. Timeout Detection (120s)**
+```rust
+// check_timeout() runs after 120s
+let pending = pending_requests.remove(&request_id);
+let unresponsive = pending.expected_agents - pending.responded_agents;
+
+for agent_id in unresponsive {
+    agent_health[agent_id].consecutive_misses += 1;
+    agent_health[agent_id].status = Unresponsive;
+}
+
+// Emit alert visible in Mission Control
+let event = CoordinationEvent::heartbeat_timeout(&session_id, &request_id, unresponsive);
+event_tx.send(event)?;
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **60s frequency (not 30s)** | Reduced token cost, still responsive. 60s = $0.01/day for 10 agents. |
+| **120s timeout (2x interval)** | LLM-based agents can be slow. 2x interval allows 1 missed heartbeat before alert. |
+| **Haiku model (~50 tokens)** | Cheapest Claude variant. Static prompt "Are you alive?" - no context loading. |
+| **No context loading** | Heartbeat is super-lightweight. No AGENTS.md, SOUL.md, or memories loaded. |
+| **Long-lived agents** | Agents remain available. Heartbeat is validation, not spawn/respawn. |
+| **Separate token tracking** | Heartbeat tokens tracked separately for visibility in metrics (Plan 04). |
+| **Per-agent opt-in** | Only Full/Standard/Reduced/HeartbeatOnly modes participate. Disabled = no heartbeat. |
+| **Arc<HeartbeatScheduler>** | Shared between manager and timeout tasks. Cloned into tokio::spawn closures. |
+
+### Token Efficiency
+
+Heartbeat is designed to minimize token waste:
+
+```
+Cost Calculation (10 agents, 60s frequency):
+- Requests per day: 10 agents × 1440 minutes ÷ 1 minute = 14,400 heartbeats
+- Tokens per heartbeat: ~50 (static "Are you alive?" prompt)
+- Total tokens/day: 14,400 × 50 = 720,000 tokens
+- Cost (Haiku): ~$0.01/day
+
+Compare to 30s frequency:
+- Tokens/day: 1,440,000 (2x)
+- Cost: ~$0.02/day
+```
+
+**60s frequency reduces cost by 50% while maintaining adequate responsiveness.**
+
+### Health Status Types
+
+```rust
+pub enum AgentHealthStatus {
+    Healthy,                        // Agent responded within timeout
+    Degraded { reason: String },    // Reserved for future use (slow responses, partial failures)
+    Unresponsive,                   // Agent missed heartbeat timeout
+}
+```
+
+### Integration with CoordinationManager
+
+```rust
+// CoordinationManager orchestrates all protocols
+let manager = CoordinationManager::new(config, event_tx, session_id);
+
+// Register agents with coordination modes
+manager.register_agent("k8s-monitor", CoordinationMode::Full).await?;
+manager.register_agent("log-analyzer", CoordinationMode::Disabled).await?;
+// ↑ Disabled agents NOT registered in heartbeat scheduler
+
+// Start background tasks
+let handles = manager.start().await?; // Spawns HeartbeatScheduler::run()
+
+// Query health for REST API
+let health = manager.health_snapshot().await; // Vec<AgentHealthRecord>
+```
+
+### REST API Endpoint
+
+**GET /api/coordination/health**
+
+Response:
+```json
+{
+  "agents": [
+    {
+      "agent_id": "k8s-monitor",
+      "status": "Healthy",
+      "last_heartbeat": "2026-02-14T10:30:00Z",
+      "consecutive_misses": 0,
+      "last_response_ms": 1200
+    },
+    {
+      "agent_id": "log-analyzer",
+      "status": "Unresponsive",
+      "last_heartbeat": "2026-02-14T10:28:30Z",
+      "consecutive_misses": 3,
+      "last_response_ms": null
+    }
+  ],
+  "heartbeat_config": {
+    "frequency_secs": 60,
+    "timeout_secs": 120
+  }
+}
+```
+
+If coordination disabled:
+```json
+{
+  "agents": [],
+  "coordination_enabled": false
+}
+```
+
+### Configuration
+
+**serve-config.yaml:**
+```yaml
+spec:
+  coordination:
+    enabled: true
+    mode: full  # or: standard, reduced, heartbeat_only, disabled
+    heartbeat:
+      frequency_secs: 60   # How often to check (default: 60)
+      timeout_secs: 120    # When to mark unresponsive (default: 120, must be >= frequency)
+```
+
+**Per-agent coordination mode** (future enhancement via AGENTS.md):
+```yaml
+agents:
+  - id: k8s-monitor
+    coordination_mode: full        # Participates in all protocols
+  - id: batch-processor
+    coordination_mode: disabled    # No coordination overhead
+```
+
 ## Implementation Checklist
 
 ### Phase 7 Plan 01: Session Tools Foundation ✓
@@ -233,15 +466,20 @@ let event = CoordinationEvent::session_message("session-123", "agent-a", "agent-
 - [x] Internal developer documentation
 - [x] User-facing concept documentation
 
-### Phase 7 Plan 02: Heartbeat Protocol (Coming Next)
+### Phase 7 Plan 02: Heartbeat Protocol ✓
 
-- [ ] HeartbeatScheduler with tokio::interval
-- [ ] Send HeartbeatRequest every 30 seconds
-- [ ] Collect HeartbeatResponse from agents
-- [ ] Detect unresponsive agents (60-second timeout)
-- [ ] Emit HeartbeatTimeout event to virtual office
-- [ ] Integration with CoordinationMode (disabled for HeartbeatOnly)
-- [ ] Unit tests for scheduler logic
+- [x] HeartbeatScheduler with tokio::interval
+- [x] Send HeartbeatRequest every 60 seconds (configurable)
+- [x] Collect HeartbeatResponse from agents
+- [x] Detect unresponsive agents (120-second timeout, 2x interval)
+- [x] Emit HeartbeatTimeout event to virtual office
+- [x] Integration with CoordinationMode (disabled for Disabled mode)
+- [x] CoordinationManager orchestrates all protocols
+- [x] REST endpoint GET /api/coordination/health
+- [x] 16 unit tests for scheduler logic + manager
+- [x] Integration with aofctl serve daemon
+- [x] Internal developer documentation
+- [x] User-facing heartbeat monitoring docs
 
 ### Phase 7 Plan 03: Standup Protocol
 
