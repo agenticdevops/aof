@@ -20,6 +20,7 @@ path = "src/main.rs"
 [dependencies]
 aof-core = { workspace = true }
 aof-coordination = { workspace = true }
+aof-conversational = { workspace = true }
 aof-mcp = { workspace = true, features = ["all-transports"] }
 aof-llm = { workspace = true, features = ["all-providers"] }
 aof-runtime = { workspace = true }

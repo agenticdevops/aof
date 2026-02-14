@@ -77,6 +77,49 @@ impl Orchestrator {
         self
     }
 
+    /// Create a new conversation session
+    pub fn create_session(&mut self) -> Result<String> {
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let session = crate::types::ConversationSession::new(session_id.clone());
+
+        // Store session synchronously (block on async)
+        let store = self.session_store.clone();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                store.update(session).await;
+            })
+        });
+
+        Ok(session_id)
+    }
+
+    /// Get an existing conversation session
+    pub fn get_session(&self, session_id: &str) -> Option<crate::types::ConversationSession> {
+        let store = self.session_store.clone();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                store.get(session_id).await
+            })
+        })
+    }
+
+    /// Clear pending files from a session
+    pub fn clear_pending_files(&mut self, session_id: &str) -> Result<()> {
+        let store = self.session_store.clone();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let mut session = store.get(session_id).await
+                    .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+
+                session.pending_files.clear();
+                session.updated_at = Utc::now();
+                store.update(session).await;
+
+                Ok(())
+            })
+        })
+    }
+
     /// Handle a user message in a conversation
     ///
     /// # Flow

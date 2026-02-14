@@ -18,6 +18,53 @@ use tower_http::cors::{CorsLayer, Any};
 use aof_coordination::{EventBroadcaster, SessionPersistence, SessionState, AgentState};
 use aof_core::{TriggerRegistry, Registry, StandaloneTriggerType};
 use aof_runtime::{Runtime, RuntimeOrchestrator};
+
+// No-op model for when no API key is configured
+struct NoOpModel {
+    config: aof_core::ModelConfig,
+}
+
+impl NoOpModel {
+    fn new() -> Self {
+        Self {
+            config: aof_core::ModelConfig {
+                provider: aof_core::ModelProvider::Anthropic,
+                model: "noop".to_string(),
+                api_key: None,
+                base_url: None,
+                max_tokens: 0,
+                temperature: 0.0,
+                top_p: None,
+                stop_sequences: Vec::new(),
+                timeout_seconds: 60,
+                retry_attempts: 0,
+                stream: false,
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl aof_core::Model for NoOpModel {
+    async fn generate(&self, _request: &aof_core::ModelRequest) -> aof_core::AofResult<aof_core::ModelResponse> {
+        Err(aof_core::AofError::config("No LLM API key configured. Set ANTHROPIC_API_KEY environment variable."))
+    }
+
+    async fn generate_stream(
+        &self,
+        _request: &aof_core::ModelRequest,
+    ) -> aof_core::AofResult<std::pin::Pin<Box<dyn futures::Stream<Item = aof_core::AofResult<aof_core::StreamChunk>> + Send>>> {
+        Err(aof_core::AofError::config("No LLM API key configured. Set ANTHROPIC_API_KEY environment variable."))
+    }
+
+    fn provider(&self) -> aof_core::ModelProvider {
+        aof_core::ModelProvider::Anthropic
+    }
+
+    fn config(&self) -> &aof_core::ModelConfig {
+        &self.config
+    }
+}
 use aof_triggers::{
     TriggerHandler, TriggerHandlerConfig, TriggerServer, TriggerServerConfig,
     SlackPlatform, SlackConfig,
@@ -1218,8 +1265,107 @@ pub async fn execute(
         .route("/agents/:id/metrics", get(get_agent_metrics))
         .with_state(metrics_state);
 
+    // Build conversation router (conversational agent creation)
+    // Initialize Orchestrator with specialists
+    use aof_conversational::{Orchestrator, ConversationSessionStore, WorkspacePersistence};
+    use crate::api::conversation::{
+        ConversationState, create_session, get_session, conversation_message,
+        conversation_confirm, conversation_cancel,
+    };
+
+    // Create a simple model for conversation (using Claude Opus via environment)
+    // In production, this would use configuration from serve config
+    let conversation_model: Box<dyn aof_core::Model> = {
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .unwrap_or_else(|_| {
+                eprintln!("Warning: ANTHROPIC_API_KEY not set, conversation API will not work");
+                String::new()
+            });
+
+        if !api_key.is_empty() {
+            let model_config = aof_core::ModelConfig {
+                provider: aof_core::ModelProvider::Anthropic,
+                model: "claude-opus-4-20250514".to_string(),
+                api_key: Some(api_key),
+                max_tokens: 8192,
+                temperature: 0.7,
+                ..Default::default()
+            };
+            aof_llm::create_model(model_config).await.unwrap_or_else(|e| {
+                eprintln!("Failed to create conversation model: {}", e);
+                Box::new(NoOpModel::new())
+            })
+        } else {
+            // Create a no-op model if no API key
+            Box::new(NoOpModel::new())
+        }
+    };
+
+    let skill_registry = Arc::new(aof_skills::SkillRegistry::new());
+    let session_store = ConversationSessionStore::new(100, std::time::Duration::from_secs(1800));
+
+    // Create specialist models
+    let specialist_model: Arc<dyn aof_llm::Model> = {
+        let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
+        if !api_key.is_empty() {
+            let model_config = aof_core::ModelConfig {
+                provider: aof_core::ModelProvider::Anthropic,
+                model: "claude-opus-4-20250514".to_string(),
+                api_key: Some(api_key),
+                max_tokens: 8192,
+                temperature: 0.7,
+                ..Default::default()
+            };
+            match aof_llm::create_model(model_config).await {
+                Ok(boxed_model) => Arc::from(boxed_model),
+                Err(e) => {
+                    eprintln!("Failed to create specialist model: {}", e);
+                    Arc::new(NoOpModel::new())
+                }
+            }
+        } else {
+            Arc::new(NoOpModel::new())
+        }
+    };
+
+    let orchestrator = Orchestrator::new(conversation_model, session_store)
+        .with_agent_creator(
+            specialist_model.clone(),
+            workspace_path.clone(),
+            skill_registry.clone(),
+        )
+        .with_squad_builder(
+            specialist_model.clone(),
+            workspace_path.clone(),
+        )
+        .with_skill_teacher(
+            workspace_path.join("skills"),
+        )
+        .with_scheduler(
+            specialist_model.clone(),
+            workspace_path.clone(),
+        );
+
+    let persistence = Arc::new(WorkspacePersistence::new(
+        workspace_path.clone(),
+        workspace_path.join("skills"),
+    ));
+
+    let conversation_state = ConversationState {
+        orchestrator: Arc::new(RwLock::new(orchestrator)),
+        persistence,
+    };
+
+    let conversation_router = Router::new()
+        .route("/conversation/session", post(create_session))
+        .route("/conversation/session/:id", get(get_session))
+        .route("/conversation/message", post(conversation_message))
+        .route("/conversation/confirm", post(conversation_confirm))
+        .route("/conversation/cancel", post(conversation_cancel))
+        .with_state(conversation_state);
+
     // Merge all API sub-routers
-    let api_router = config_router.merge(metrics_router);
+    let api_router = config_router.merge(metrics_router).merge(conversation_router);
 
     // Import handlers from aof-triggers server (inline to avoid duplicating logic)
     use axum::extract::State;
