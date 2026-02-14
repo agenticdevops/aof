@@ -10,11 +10,11 @@ pub mod orchestrator;
 pub mod sanitize;
 
 // Re-export key types for convenience
-// TODO: Uncomment as types are implemented in subsequent tasks
-// pub use types::{
-//     IntentType, IntentClassification, MessageRole, ConversationMessage,
-//     ConversationSession, OrchestratorResponse,
-// };
+pub use types::{
+    IntentType, IntentClassification, MessageRole, ConversationMessage,
+    ConversationSession, OrchestratorResponse,
+};
+// TODO: Uncomment as implementations are completed in subsequent tasks
 // pub use intent::IntentClassifier;
 // pub use session::ConversationSessionStore;
 // pub use orchestrator::Orchestrator;
