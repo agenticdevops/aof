@@ -11,9 +11,11 @@
 
 pub mod consensus;
 pub mod deep;
+pub mod incident_response;
 
 pub use consensus::{AgentResult, ConsensusEngine, ConsensusResult};
 pub use deep::{DeepFleetExecutor, DeepResult, Finding, InvestigationPlan, InvestigationStep};
+pub use incident_response::{IncidentResponseFlow, EscalationTrigger, IncidentResponse};
 
 use aof_core::{
     AgentConfig, AgentFleet, AgentInstanceState, AgentInstanceStatus, AgentRole, AofError,

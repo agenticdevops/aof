@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Enhanced
+- **TUI Professional Layout** - Complete redesign of interactive mode
+  - Header bar with agent status, model, tool count, LLM calls, session timer
+  - Current tool indicator shows which tool is being executed
+  - Activity panel shows detailed tool information (name, arguments, duration)
+  - Token counts displayed in activity log for LLM responses
+  - Timestamped chat messages with role indicators (YOU/AI/SYS/ERR)
+  - Color-coded token gauge (green/yellow/red based on usage)
+  - Professional footer with context-aware keyboard shortcuts
+
+- **Full Input Editing** - Claude Code-like input experience
+  - Cursor movement with ←/→ arrow keys
+  - Word-by-word navigation with Ctrl+←/→
+  - Home/End keys to jump to start/end of input
+  - Ctrl+A/E for bash-style start/end navigation
+  - Backspace/Delete work at cursor position
+  - Ctrl+W to delete word before cursor
+  - Ctrl+U to clear entire input
+  - Multi-line input with Alt+Enter, Ctrl+J (cross-terminal compatible)
+  - Animated cursor shows position in text
+
+- **Double-ESC to Exit** - Vim-style exit
+  - Press ESC twice within 500ms to quit (when not busy)
+  - Single ESC still cancels running agent
+
+- **Header Tool Count Fix**
+  - Now shows "Tools: X (Y used)" where X = available, Y = executed
+
+- **Real-time Tool Activity Events**
+  - Activity panel now shows tool executions in real-time
+  - Tool name, arguments (truncated), and execution duration displayed
+  - Streaming events from runtime for accurate tool tracking
+  - Current tool indicator in header during execution
+
 ## [0.4.0-beta] - 2026-01-23
 
 ### Added

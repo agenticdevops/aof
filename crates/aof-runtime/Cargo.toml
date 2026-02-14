@@ -14,6 +14,7 @@ documentation.workspace = true
 
 [dependencies]
 aof-core = { workspace = true }
+aof-coordination = { workspace = true }
 aof-mcp = { workspace = true }
 aof-llm = { workspace = true }
 aof-memory = { workspace = true }
@@ -33,7 +34,17 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+redis = { workspace = true }
+bollard = { workspace = true }
+prometheus = { workspace = true }
+rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
+sha2 = "0.10"
+time = "0.3"
+rustls = "0.23"
+rustls-pemfile = "2"
+x509-parser = "0.16"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }
 futures = { workspace = true }
+tempfile = { workspace = true }

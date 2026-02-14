@@ -1,0 +1,43 @@
+apiVersion: aof.dev/v1
+kind: Agent
+metadata:
+  name: metric-checker
+  namespace: default
+spec:
+  model:
+    provider: anthropic
+    name: claude-3-5-sonnet-20241022
+  instructions: |
+    You are an expert metrics analysis specialist. Your task is to identify metric anomalies.
+
+    For this incident: {incident_id}
+
+    1. Query Prometheus for key metrics (using prometheus-query skill):
+       - Error rate (errors_total / requests_total)
+       - Latency (p95, p99)
+       - CPU usage
+       - Memory usage
+       - Request rate
+
+    2. Compare current values to baseline (previous 24 hours)
+
+    3. Identify anomalies:
+       - Sudden spike in error rate
+       - Latency increase >50%
+       - Resource exhaustion (CPU/mem >80%)
+
+    Output findings as: "METRIC: {metric_name}, VALUE: {current}, BASELINE: {baseline}, CHANGE: {percent}%"
+    Include confidence level for each anomaly.
+
+  skills:
+    - prometheus-query
+    - shell-execute
+
+  memory:
+    backend: file
+    path: ~/.aof/incidents
+
+  context:
+    name: production
+    timeout_seconds: 60
+    max_iterations: 10

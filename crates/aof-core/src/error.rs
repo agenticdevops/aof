@@ -51,6 +51,30 @@ pub enum AofError {
     #[error("Validation error: {0}")]
     Validation(String),
 
+    #[error("Lock timeout: could not acquire lock for {0} within timeout")]
+    LockTimeout(String),
+
+    #[error("Lock ownership error: agent {agent} does not own lock for {resource}")]
+    LockOwnershipError { agent: String, resource: String },
+
+    #[error("Lock failed: {0}")]
+    LockFailed(String),
+
+    #[error("Sandbox error: {0}")]
+    SandboxError(String),
+
+    #[error("Sandbox execution timeout: {0}")]
+    SandboxTimeout(String),
+
+    #[error("Sandbox credential mount failed: {0}")]
+    CredentialMountError(String),
+
+    #[error("Docker daemon not accessible: {0}")]
+    DockerError(String),
+
+    #[error("Risk policy evaluation failed: {0}")]
+    RiskPolicyError(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
@@ -107,6 +131,49 @@ impl AofError {
     /// Create a validation error
     pub fn validation(msg: impl Into<String>) -> Self {
         Self::Validation(msg.into())
+    }
+
+    /// Create a lock timeout error
+    pub fn lock_timeout(resource: impl Into<String>) -> Self {
+        Self::LockTimeout(resource.into())
+    }
+
+    /// Create a lock ownership mismatch error
+    pub fn lock_owned_mismatch(agent: impl Into<String>, resource: impl Into<String>) -> Self {
+        Self::LockOwnershipError {
+            agent: agent.into(),
+            resource: resource.into(),
+        }
+    }
+
+    /// Create a lock failed error
+    pub fn lock_failed(msg: impl Into<String>) -> Self {
+        Self::LockFailed(msg.into())
+    }
+
+    /// Create a sandbox error
+    pub fn sandbox_error(msg: impl Into<String>) -> Self {
+        Self::SandboxError(msg.into())
+    }
+
+    /// Create a sandbox timeout error
+    pub fn sandbox_timeout(msg: impl Into<String>) -> Self {
+        Self::SandboxTimeout(msg.into())
+    }
+
+    /// Create a credential mount error
+    pub fn credential_mount_error(msg: impl Into<String>) -> Self {
+        Self::CredentialMountError(msg.into())
+    }
+
+    /// Create a Docker daemon error
+    pub fn docker_error(msg: impl Into<String>) -> Self {
+        Self::DockerError(msg.into())
+    }
+
+    /// Create a risk policy error
+    pub fn risk_policy_error(msg: impl Into<String>) -> Self {
+        Self::RiskPolicyError(msg.into())
     }
 }
 

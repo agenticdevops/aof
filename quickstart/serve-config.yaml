@@ -1,0 +1,29 @@
+apiVersion: aof.dev/v1
+kind: ServerConfig
+metadata:
+  name: aof-server
+  namespace: default
+spec:
+  server:
+    host: "127.0.0.1"
+    port: 7777
+    health_check_interval_secs: 30
+    shutdown_timeout_secs: 30
+  
+  llm:
+    provider: "google"
+    model: "gemini-2.5-flash"
+  
+  agent_discovery:
+    paths:
+      - "./quickstart/agents"
+  
+  triggers:
+    slack:
+      enabled: false
+    discord:
+      enabled: false
+  
+  logging:
+    level: "info"
+    format: "json"

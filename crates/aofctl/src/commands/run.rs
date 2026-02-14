@@ -2,6 +2,7 @@ use anyhow::{Context as AnyhowContext, Result, anyhow};
 use aof_core::{AgentConfig, AgentContext, Context as AofContext, OutputSchema};
 use aof_core::{ActivityEvent, ActivityType};
 use aof_runtime::Runtime;
+use aof_runtime::executor::StreamEvent;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::sync::{Arc, Mutex};
@@ -530,7 +531,7 @@ async fn run_agent(
 
 /// Application state for TUI
 struct AppState {
-    chat_history: Vec<(String, String)>, // (role, message)
+    chat_history: Vec<(String, String, chrono::DateTime<chrono::Utc>)>, // (role, message, timestamp)
     current_input: String,
     logs: Vec<String>,
     activities: Vec<ActivityEvent>, // Agent activity events
@@ -553,6 +554,13 @@ struct AppState {
     session: Session, // Current session for persistence
     cancellation_token: CancellationToken, // For stopping execution
     agent_name: String, // Agent name for session
+    session_start: chrono::DateTime<chrono::Utc>, // When session started
+    current_tool: Option<String>, // Currently executing tool
+    tool_count: usize, // Total tools executed this session
+    llm_calls: usize, // Total LLM calls this session
+    activity_scroll: usize, // Scroll offset for activity panel
+    cursor_position: usize, // Cursor position in current_input
+    last_esc_time: Option<std::time::Instant>, // For double-ESC to exit
 }
 
 impl AppState {
@@ -589,8 +597,9 @@ aof.sh
 
 Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
 
+        let now = chrono::Utc::now();
         let mut chat_history = Vec::new();
-        chat_history.push(("system".to_string(), greeting.to_string()));
+        chat_history.push(("system".to_string(), greeting.to_string(), now));
 
         // Create a new session
         let session = Session::new(&agent_name, &model_name);
@@ -619,6 +628,13 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
             session,
             cancellation_token: CancellationToken::new(),
             agent_name,
+            session_start: now,
+            current_tool: None,
+            tool_count: 0,
+            llm_calls: 0,
+            activity_scroll: 0,
+            cursor_position: 0,
+            last_esc_time: None,
         }
     }
 
@@ -641,11 +657,16 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
             _ => 128000,
         };
 
-        // Convert session messages to chat history
-        let mut chat_history: Vec<(String, String)> = session.to_chat_history();
+        // Convert session messages to chat history with timestamps
+        let now = chrono::Utc::now();
+        let mut chat_history: Vec<(String, String, chrono::DateTime<chrono::Utc>)> = session
+            .to_chat_history()
+            .into_iter()
+            .map(|(role, msg)| (role, msg, now))
+            .collect();
 
         // Add resume indicator
-        chat_history.push(("system".to_string(), "── Session Resumed ──".to_string()));
+        chat_history.push(("system".to_string(), "── Session Resumed ──".to_string(), now));
 
         Self {
             chat_history,
@@ -671,6 +692,13 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
             session,
             cancellation_token: CancellationToken::new(),
             agent_name,
+            session_start: now,
+            current_tool: None,
+            tool_count: 0,
+            llm_calls: 0,
+            activity_scroll: 0,
+            cursor_position: 0,
+            last_esc_time: None,
         }
     }
 
@@ -688,6 +716,29 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
     fn consume_activities(&mut self) {
         // Drain all available activities from the receiver (non-blocking)
         while let Ok(activity) = self.activity_receiver.try_recv() {
+            // Track tool and LLM statistics
+            match &activity.activity_type {
+                ActivityType::ToolExecuting => {
+                    // Extract tool name from activity details or message
+                    if let Some(ref details) = activity.details {
+                        self.current_tool = details.tool_name.clone();
+                    } else {
+                        // Try to extract from message "Executing tool: X"
+                        if let Some(name) = activity.message.strip_prefix("Executing tool: ") {
+                            self.current_tool = Some(name.to_string());
+                        }
+                    }
+                }
+                ActivityType::ToolComplete | ActivityType::ToolFailed => {
+                    self.tool_count += 1;
+                    self.current_tool = None;
+                }
+                ActivityType::LlmCall => {
+                    self.llm_calls += 1;
+                }
+                _ => {}
+            }
+
             // Add to session activity log
             self.session.add_activity(
                 activity.activity_type.label(),
@@ -714,6 +765,165 @@ Press ? for help │ ESC to cancel │ Ctrl+C to quit"#;
 
     fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Cursor manipulation methods for input editing
+    // ═══════════════════════════════════════════════════════════════════════
+
+    fn move_cursor_left(&mut self) {
+        if self.cursor_position > 0 {
+            self.cursor_position -= 1;
+        }
+    }
+
+    fn move_cursor_right(&mut self) {
+        if self.cursor_position < self.current_input.len() {
+            self.cursor_position += 1;
+        }
+    }
+
+    fn move_cursor_home(&mut self) {
+        self.cursor_position = 0;
+    }
+
+    fn move_cursor_end(&mut self) {
+        self.cursor_position = self.current_input.len();
+    }
+
+    fn move_cursor_word_left(&mut self) {
+        // Move to start of previous word
+        if self.cursor_position == 0 {
+            return;
+        }
+        let chars: Vec<char> = self.current_input.chars().collect();
+        let mut pos = self.cursor_position - 1;
+
+        // Skip whitespace
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+        // Skip word characters
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+        self.cursor_position = pos;
+    }
+
+    fn move_cursor_word_right(&mut self) {
+        // Move to start of next word
+        let chars: Vec<char> = self.current_input.chars().collect();
+        let len = chars.len();
+        if self.cursor_position >= len {
+            return;
+        }
+        let mut pos = self.cursor_position;
+
+        // Skip current word characters
+        while pos < len && !chars[pos].is_whitespace() {
+            pos += 1;
+        }
+        // Skip whitespace
+        while pos < len && chars[pos].is_whitespace() {
+            pos += 1;
+        }
+        self.cursor_position = pos;
+    }
+
+    fn insert_char(&mut self, c: char) {
+        if self.cursor_position >= self.current_input.len() {
+            self.current_input.push(c);
+        } else {
+            self.current_input.insert(self.cursor_position, c);
+        }
+        self.cursor_position += 1;
+    }
+
+    fn insert_newline(&mut self) {
+        self.insert_char('\n');
+    }
+
+    fn delete_char_before_cursor(&mut self) {
+        // Backspace
+        if self.cursor_position > 0 {
+            self.cursor_position -= 1;
+            self.current_input.remove(self.cursor_position);
+        }
+    }
+
+    fn delete_char_at_cursor(&mut self) {
+        // Delete key
+        if self.cursor_position < self.current_input.len() {
+            self.current_input.remove(self.cursor_position);
+        }
+    }
+
+    fn delete_word_before_cursor(&mut self) {
+        // Ctrl+Backspace / Ctrl+W - delete word before cursor
+        if self.cursor_position == 0 {
+            return;
+        }
+        let chars: Vec<char> = self.current_input.chars().collect();
+        let start_pos = self.cursor_position;
+        let mut pos = self.cursor_position - 1;
+
+        // Skip whitespace
+        while pos > 0 && chars[pos].is_whitespace() {
+            pos -= 1;
+        }
+        // Skip word characters
+        while pos > 0 && !chars[pos - 1].is_whitespace() {
+            pos -= 1;
+        }
+
+        // Remove characters from pos to start_pos
+        for _ in pos..start_pos {
+            self.current_input.remove(pos);
+        }
+        self.cursor_position = pos;
+    }
+
+    fn clear_input(&mut self) {
+        self.current_input.clear();
+        self.cursor_position = 0;
+    }
+
+    /// Handle a StreamEvent from the runtime and convert to ActivityEvent
+    fn handle_stream_event(&mut self, event: StreamEvent) {
+        match event {
+            StreamEvent::ToolCallStart { tool_name, arguments, .. } => {
+                // Truncate arguments for display
+                let args_str = arguments.to_string();
+                let truncated_args = if args_str.len() > 100 {
+                    format!("{}...", &args_str[..100])
+                } else {
+                    args_str
+                };
+                self.current_tool = Some(tool_name.clone());
+                self.add_activity(ActivityEvent::tool_executing(&tool_name, Some(truncated_args)));
+            }
+            StreamEvent::ToolCallComplete { tool_name, success, execution_time_ms, error, .. } => {
+                if success {
+                    self.add_activity(ActivityEvent::tool_complete(&tool_name, execution_time_ms));
+                    self.tool_count += 1;
+                } else {
+                    let err_msg = error.unwrap_or_else(|| "Unknown error".to_string());
+                    self.add_activity(ActivityEvent::tool_failed(&tool_name, err_msg));
+                }
+                self.current_tool = None;
+            }
+            StreamEvent::Thinking { content } => {
+                self.add_activity(ActivityEvent::thinking(content));
+            }
+            StreamEvent::IterationStart { iteration, max_iterations } => {
+                if iteration > 1 {
+                    self.add_activity(ActivityEvent::info(format!("Iteration {}/{}", iteration, max_iterations)));
+                }
+            }
+            StreamEvent::TextDelta { .. } | StreamEvent::IterationComplete { .. } | StreamEvent::Done { .. } | StreamEvent::Error { .. } => {
+                // These are handled separately in the main execution flow
+            }
+        }
     }
 
     fn save_session(&mut self) -> Result<()> {
@@ -877,10 +1087,25 @@ async fn run_agent_interactive_with_resume(
                             if app_state.show_help {
                                 // Close help panel
                                 app_state.show_help = false;
+                                app_state.last_esc_time = None;
                             } else if app_state.agent_busy {
                                 // Cancel running execution
                                 app_state.cancellation_token.cancel();
                                 app_state.add_activity(ActivityEvent::cancelled());
+                                app_state.last_esc_time = None;
+                            } else {
+                                // Double-ESC to exit (like vim)
+                                let now = std::time::Instant::now();
+                                if let Some(last_esc) = app_state.last_esc_time {
+                                    if now.duration_since(last_esc).as_millis() < 500 {
+                                        // Double ESC within 500ms - exit
+                                        if let Err(e) = app_state.save_session() {
+                                            eprintln!("Failed to save session: {}", e);
+                                        }
+                                        break;
+                                    }
+                                }
+                                app_state.last_esc_time = Some(now);
                             }
                         }
                         KeyCode::Char('?') if !app_state.agent_busy => {
@@ -906,7 +1131,7 @@ async fn run_agent_interactive_with_resume(
                                 app_state.activities.clear();
                                 app_state.input_tokens = 0;
                                 app_state.output_tokens = 0;
-                                app_state.chat_history.push(("system".to_string(), "── New Session ──".to_string()));
+                                app_state.chat_history.push(("system".to_string(), "── New Session ──".to_string(), chrono::Utc::now()));
                             }
                         }
                         KeyCode::PageUp => {
@@ -925,6 +1150,18 @@ async fn run_agent_interactive_with_resume(
                             // Close help with Enter
                             app_state.show_help = false;
                         }
+                        KeyCode::Enter if key.modifiers.contains(crossterm::event::KeyModifiers::SHIFT) => {
+                            // Shift+Enter: Insert newline for multi-line input
+                            app_state.insert_newline();
+                        }
+                        KeyCode::Enter if key.modifiers.contains(crossterm::event::KeyModifiers::ALT) => {
+                            // Alt+Enter: Insert newline (alternative for terminals that don't support Shift+Enter)
+                            app_state.insert_newline();
+                        }
+                        KeyCode::Char('j') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                            // Ctrl+J: Insert newline (traditional Unix newline)
+                            app_state.insert_newline();
+                        }
                         KeyCode::Enter => {
                         // Clone input early to avoid borrow issues
                         let input_str = app_state.current_input.trim().to_string();
@@ -935,10 +1172,10 @@ async fn run_agent_interactive_with_resume(
                             break;
                         } else if input_str.to_lowercase() == "help" {
                             app_state.chat_history.push(("system".to_string(),
-                                "Available: help, exit, quit. Type normally to chat with agent.".to_string()));
+                                "Available: help, exit, quit. Type normally to chat with agent.".to_string(), chrono::Utc::now()));
                         } else {
                             // Execute agent with timer updates during execution
-                            app_state.chat_history.push(("user".to_string(), input_str.clone()));
+                            app_state.chat_history.push(("user".to_string(), input_str.clone(), chrono::Utc::now()));
 
                             // Add to session
                             let input_tokens_estimate = (input_str.len() / 4) as u32;
@@ -963,7 +1200,10 @@ async fn run_agent_interactive_with_resume(
 
                             // Draw busy state before execution
                             terminal.draw(|f| ui(f, agent_name, &app_state))?;
-                            let mut exec_future = Box::pin(runtime.execute(agent_name, &input_str));
+
+                            // Create stream channel for real-time tool events
+                            let (stream_tx, mut stream_rx) = tokio_mpsc::channel::<StreamEvent>(100);
+                            let mut exec_future = Box::pin(runtime.execute_streaming(agent_name, &input_str, stream_tx));
                             let mut timer_handle = tokio::time::interval(std::time::Duration::from_millis(100));
                             let cancel_token = app_state.cancellation_token.clone();
 
@@ -978,20 +1218,31 @@ async fn run_agent_interactive_with_resume(
                                     // Check for cancellation
                                     _ = cancel_token.cancelled() => {
                                         cancelled = true;
-                                        app_state.chat_history.push(("system".to_string(), "⏹ Execution cancelled by user".to_string()));
+                                        app_state.chat_history.push(("system".to_string(), "⏹ Execution cancelled by user".to_string(), chrono::Utc::now()));
                                         app_state.session.add_message("system", "Execution cancelled by user", None);
                                         app_state.agent_busy = false;
                                         app_state.update_execution_time();
                                         break;
                                     }
 
+                                    // Handle stream events from runtime (tool calls, etc.)
+                                    Some(stream_event) = stream_rx.recv() => {
+                                        app_state.handle_stream_event(stream_event);
+                                        terminal.draw(|f| ui(f, agent_name, &app_state))?;
+                                    }
+
                                     result = &mut exec_future => {
+                                        // Drain remaining stream events
+                                        while let Ok(stream_event) = stream_rx.try_recv() {
+                                            app_state.handle_stream_event(stream_event);
+                                        }
+
                                         let duration_ms = app_state.execution_time_ms as u64;
                                         match result {
                                             Ok(response) => {
                                                 if response.is_empty() {
                                                     let error_msg = "Error: Empty response from agent".to_string();
-                                                    app_state.chat_history.push(("error".to_string(), error_msg.clone()));
+                                                    app_state.chat_history.push(("error".to_string(), error_msg.clone(), chrono::Utc::now()));
                                                     app_state.session.add_message("error", &error_msg, None);
                                                     app_state.last_error = Some(error_msg);
                                                     app_state.add_activity(ActivityEvent::error("Empty response received"));
@@ -999,7 +1250,7 @@ async fn run_agent_interactive_with_resume(
                                                     // Update output tokens based on response length
                                                     let output_tokens = (response.len() / 4) as u32;
                                                     app_state.update_token_count(&response);
-                                                    app_state.chat_history.push(("assistant".to_string(), response.clone()));
+                                                    app_state.chat_history.push(("assistant".to_string(), response.clone(), chrono::Utc::now()));
 
                                                     // Add to session
                                                     app_state.session.add_message(
@@ -1018,7 +1269,7 @@ async fn run_agent_interactive_with_resume(
                                             }
                                             Err(e) => {
                                                 let error_msg = format!("Error: {}", e);
-                                                app_state.chat_history.push(("error".to_string(), error_msg.clone()));
+                                                app_state.chat_history.push(("error".to_string(), error_msg.clone(), chrono::Utc::now()));
                                                 app_state.session.add_message("error", &error_msg, None);
                                                 app_state.last_error = Some(error_msg.clone());
                                                 app_state.add_activity(ActivityEvent::error(error_msg));
@@ -1053,13 +1304,66 @@ async fn run_agent_interactive_with_resume(
                             }
                         }
 
-                        app_state.current_input.clear();
+                        app_state.clear_input();
+                    }
+                    // ═══════════════════════════════════════════════════════════════════════
+                    // Cursor movement and editing keys
+                    // ═══════════════════════════════════════════════════════════════════════
+                    KeyCode::Left if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+Left: Move cursor word left
+                        app_state.move_cursor_word_left();
+                    }
+                    KeyCode::Right if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+Right: Move cursor word right
+                        app_state.move_cursor_word_right();
+                    }
+                    KeyCode::Left => {
+                        // Move cursor left
+                        app_state.move_cursor_left();
+                    }
+                    KeyCode::Right => {
+                        // Move cursor right
+                        app_state.move_cursor_right();
+                    }
+                    KeyCode::Home => {
+                        // Move cursor to start
+                        app_state.move_cursor_home();
+                    }
+                    KeyCode::End => {
+                        // Move cursor to end
+                        app_state.move_cursor_end();
+                    }
+                    KeyCode::Backspace if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+Backspace: Delete word before cursor
+                        app_state.delete_word_before_cursor();
                     }
                     KeyCode::Backspace => {
-                        app_state.current_input.pop();
+                        // Delete character before cursor
+                        app_state.delete_char_before_cursor();
+                    }
+                    KeyCode::Delete => {
+                        // Delete character at cursor
+                        app_state.delete_char_at_cursor();
+                    }
+                    KeyCode::Char('w') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+W: Delete word before cursor (like bash)
+                        app_state.delete_word_before_cursor();
+                    }
+                    KeyCode::Char('a') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+A: Move to start (like bash)
+                        app_state.move_cursor_home();
+                    }
+                    KeyCode::Char('e') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+E: Move to end (like bash)
+                        app_state.move_cursor_end();
+                    }
+                    KeyCode::Char('u') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                        // Ctrl+U: Clear input (like bash)
+                        app_state.clear_input();
                     }
                     KeyCode::Char(c) => {
-                        app_state.current_input.push(c);
+                        // Insert character at cursor position
+                        app_state.insert_char(c);
                     }
                     _ => {}
                     }
@@ -1121,85 +1425,242 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         app.tools.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
     };
 
-    // Minimalist black and white color scheme
+    // Professional color scheme
     let primary_white = Color::White;
+    let accent_cyan = Color::Cyan;
+    let accent_green = Color::Green;
 
-    // Main layout with footer for metrics
+    // Main layout: Header (3) | Content (flex) | Footer (3)
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([Constraint::Min(10), Constraint::Length(3)])
+        .margin(0)
+        .constraints([
+            Constraint::Length(3),  // Header bar
+            Constraint::Min(10),    // Content area
+            Constraint::Length(3),  // Footer bar
+        ])
         .split(f.size());
 
-    // Content area
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(main_layout[0]);
+    // ═══════════════════════════════════════════════════════════════════════
+    // HEADER BAR - Agent status and session info
+    // ═══════════════════════════════════════════════════════════════════════
+    let status_icon = if app.agent_busy { "●" } else { "○" };
+    let status_color = if app.agent_busy { Color::Yellow } else { accent_green };
 
-    // Left panel - Chat Interface
+    let elapsed = chrono::Utc::now().signed_duration_since(app.session_start);
+    let session_duration = format!("{}:{:02}:{:02}",
+        elapsed.num_hours(),
+        elapsed.num_minutes() % 60,
+        elapsed.num_seconds() % 60
+    );
+
+    let current_tool_str = app.current_tool.as_ref()
+        .map(|t| format!(" │ ⚙ {}", t))
+        .unwrap_or_default();
+
+    // Show available tools and executed count
+    let available_tools = app.tools.len();
+    let tools_display = if available_tools > 0 {
+        format!("{} ({} used)", available_tools, app.tool_count)
+    } else {
+        "none".to_string()
+    };
+
+    let header_left = format!(
+        " {} {} │ {} │ Tools: {} │ LLM: {}{}",
+        status_icon,
+        agent_name.to_uppercase(),
+        app.model_name,
+        tools_display,
+        app.llm_calls,
+        current_tool_str
+    );
+
+    let header_right = format!("Session: {} ", session_duration);
+
+    let header_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Double)
+        .border_style(Style::default().fg(accent_cyan))
+        .style(Style::default().bg(Color::Black));
+
+    let header_inner = header_block.inner(main_layout[0]);
+    f.render_widget(header_block, main_layout[0]);
+
+    // Render header text with left and right sections
+    let header_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(20), Constraint::Length(header_right.len() as u16 + 2)])
+        .split(header_inner);
+
+    let header_left_para = Paragraph::new(header_left)
+        .style(Style::default().fg(status_color).add_modifier(Modifier::BOLD));
+    f.render_widget(header_left_para, header_layout[0]);
+
+    let header_right_para = Paragraph::new(header_right)
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Right);
+    f.render_widget(header_right_para, header_layout[1]);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // CONTENT AREA - Split horizontally
+    // ═══════════════════════════════════════════════════════════════════════
+    let content_with_padding = Layout::default()
+        .direction(Direction::Horizontal)
+        .margin(1)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(main_layout[1]);
+
+    let chunks = content_with_padding;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // LEFT PANEL - Chat Interface
+    // ═══════════════════════════════════════════════════════════════════════
+    let chat_title = format!(" CONVERSATION ({} messages) ", app.message_count / 2);
     let chat_block = Block::default()
         .title(Span::styled(
-            format!(" {} ", agent_name.to_uppercase()),
-            Style::default().fg(primary_white).add_modifier(Modifier::BOLD),
+            chat_title,
+            Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Thick)
-        .border_style(Style::default().fg(primary_white))
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(Color::DarkGray))
         .padding(ratatui::widgets::Padding::symmetric(1, 0));
 
     let mut chat_lines = Vec::new();
 
-    // Add conversation history
-    for (role, msg) in &app.chat_history {
-        let (style, prefix) = match role.as_str() {
+    // Add conversation history with timestamps
+    for (role, msg, timestamp) in &app.chat_history {
+        let time_str = timestamp.format("%H:%M").to_string();
+        let (style, prefix, role_color) = match role.as_str() {
             "user" => (
                 Style::default().fg(Color::White),
-                " ❯ ",
+                "YOU",
+                Color::Cyan,
             ),
             "assistant" => (
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-                " ◈ ",
+                Style::default().fg(Color::White),
+                "AI",
+                Color::Green,
             ),
             "error" => (
-                Style::default().fg(Color::White),
-                " ✗ ",
+                Style::default().fg(Color::Red),
+                "ERR",
+                Color::Red,
             ),
             _ => (
                 Style::default().fg(Color::Gray),
-                " ► ",
+                "SYS",
+                Color::Gray,
             ),
         };
 
+        // Message header with timestamp and role
+        chat_lines.push(Line::from(vec![
+            Span::styled(format!("{} ", time_str), Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("[{}]", prefix), Style::default().fg(role_color).add_modifier(Modifier::BOLD)),
+        ]));
+
+        // Message content (indented)
         for line in msg.lines() {
             chat_lines.push(Line::from(vec![
-                Span::styled(prefix, style),
+                Span::raw("  "),
                 Span::styled(line, style),
             ]));
         }
-        chat_lines.push(Line::from("")); // Spacing
+        chat_lines.push(Line::from("")); // Spacing between messages
     }
 
     // Input line with active indicator
+    chat_lines.push(Line::from(Span::styled(
+        "─".repeat(40),
+        Style::default().fg(Color::DarkGray),
+    )));
+
     if app.agent_busy {
         let time_str = format!("{}ms", app.execution_time_ms);
-        let busy_indicator = format!("{} Processing... {}", app.get_spinner(), time_str);
+        let tool_hint = app.current_tool.as_ref()
+            .map(|t| format!(" [{}]", t))
+            .unwrap_or_default();
+        let busy_indicator = format!(" {} Processing...{} {}", app.get_spinner(), tool_hint, time_str);
         chat_lines.push(Line::from(Span::styled(
             busy_indicator,
-            Style::default().fg(Color::White).add_modifier(Modifier::DIM),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
         )));
     } else {
-        let mut input_spans = vec![Span::raw(" ❯ ")];
-
-        // Show input with cursor
-        if app.current_input.is_empty() {
-            input_spans.push(Span::styled("_", Style::default().fg(Color::Gray).add_modifier(Modifier::DIM)));
+        // Character count indicator
+        let char_count = app.current_input.len();
+        let char_hint = if char_count > 0 {
+            format!(" ({} chars)", char_count)
         } else {
-            input_spans.push(Span::raw(&app.current_input));
-            input_spans.push(Span::styled("_", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)));
+            String::new()
+        };
+
+        // Show input with cursor at correct position
+        // Handle multi-line input by showing each line
+        let input_lines: Vec<&str> = app.current_input.split('\n').collect();
+        let is_multiline = input_lines.len() > 1;
+
+        if app.current_input.is_empty() {
+            // Empty input - show placeholder with cursor
+            let mut input_spans = vec![
+                Span::styled(" ❯ ", Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)),
+                Span::styled(" Type message (Alt+Enter or Ctrl+J for newline)", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+            ];
+            input_spans.push(Span::styled(char_hint, Style::default().fg(Color::DarkGray)));
+            chat_lines.push(Line::from(input_spans));
+        } else if is_multiline {
+            // Multi-line input - show each line with line numbers
+            let mut chars_before = 0;
+            for (i, line) in input_lines.iter().enumerate() {
+                let line_start = chars_before;
+                let line_end = line_start + line.len();
+
+                let prefix = if i == 0 {
+                    " ❯ "
+                } else {
+                    "   "
+                };
+
+                let mut line_spans = vec![
+                    Span::styled(prefix, Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
+                ];
+
+                // Check if cursor is on this line
+                if app.cursor_position >= line_start && app.cursor_position <= line_end {
+                    let cursor_in_line = app.cursor_position - line_start;
+                    let (before, after) = line.split_at(cursor_in_line.min(line.len()));
+                    line_spans.push(Span::raw(before.to_string()));
+                    line_spans.push(Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)));
+                    line_spans.push(Span::raw(after.to_string()));
+                } else {
+                    line_spans.push(Span::raw(line.to_string()));
+                }
+
+                // Add char count on last line
+                if i == input_lines.len() - 1 {
+                    line_spans.push(Span::styled(char_hint.clone(), Style::default().fg(Color::DarkGray)));
+                }
+
+                chat_lines.push(Line::from(line_spans));
+                chars_before = line_end + 1; // +1 for the newline character
+            }
+        } else {
+            // Single line input - show cursor at position
+            let mut input_spans = vec![
+                Span::styled(" ❯ ", Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD)),
+            ];
+
+            let cursor_pos = app.cursor_position.min(app.current_input.len());
+            let (before, after) = app.current_input.split_at(cursor_pos);
+            input_spans.push(Span::raw(before.to_string()));
+            input_spans.push(Span::styled("▌", Style::default().fg(accent_cyan).add_modifier(Modifier::RAPID_BLINK)));
+            input_spans.push(Span::raw(after.to_string()));
+            input_spans.push(Span::styled(char_hint, Style::default().fg(Color::DarkGray)));
+            chat_lines.push(Line::from(input_spans));
         }
-        chat_lines.push(Line::from(input_spans));
     }
 
     // Calculate scroll position with manual scroll offset
@@ -1248,98 +1709,153 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
         .split(chunks[1]);
 
-    // Top row - Agent Activity Log (replaced System Logs)
-    let activity_title = if app.activities.is_empty() {
-        " AGENT ACTIVITY "
-    } else {
-        " AGENT ACTIVITY "
-    };
+    // ═══════════════════════════════════════════════════════════════════════
+    // RIGHT TOP - Agent Activity Log with tool details
+    // ═══════════════════════════════════════════════════════════════════════
+    let activity_count = app.activities.len();
+    let activity_title = format!(" AGENT ACTIVITY ({}) ", activity_count);
 
     let logs_block = Block::default()
         .title(Span::styled(
             activity_title,
-            Style::default().fg(primary_white).add_modifier(Modifier::BOLD),
+            Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Thick)
-        .border_style(Style::default().fg(primary_white))
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(Color::DarkGray))
         .padding(ratatui::widgets::Padding::symmetric(1, 0));
 
-    // Render activities with color coding
+    // Render activities with color coding and detailed tool information
     let activity_lines: Vec<Line> = if app.activities.is_empty() {
-        // Show placeholder when no activities
-        vec![
+        // Show available tools and placeholder when no activities
+        let mut placeholder_lines = vec![
             Line::from(Span::styled(
-                "Waiting for agent activity...",
+                "Available tools:",
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            )),
+        ];
+
+        if app.tools.is_empty() {
+            placeholder_lines.push(Line::from(Span::styled(
+                "  (none configured)",
                 Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Activity types:",
-                Style::default().fg(Color::DarkGray),
-            )),
-            Line::from(vec![
-                Span::styled("  🧠 ", Style::default()),
-                Span::styled("Thinking", Style::default().fg(Color::Cyan)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ⚙️ ", Style::default()),
-                Span::styled("Tool execution", Style::default().fg(Color::Yellow)),
-            ]),
-            Line::from(vec![
-                Span::styled("  📤 ", Style::default()),
-                Span::styled("LLM calls", Style::default().fg(Color::Blue)),
-            ]),
-            Line::from(vec![
-                Span::styled("  ✓ ", Style::default()),
-                Span::styled("Completed", Style::default().fg(Color::Green)),
-            ]),
-        ]
+            )));
+        } else {
+            for tool in &app.tools {
+                placeholder_lines.push(Line::from(vec![
+                    Span::styled("  • ", Style::default().fg(Color::Green)),
+                    Span::styled(tool.clone(), Style::default().fg(Color::Yellow)),
+                ]));
+            }
+        }
+
+        placeholder_lines.push(Line::from(""));
+        placeholder_lines.push(Line::from(Span::styled(
+            "Waiting for activity...",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        )));
+        placeholder_lines.push(Line::from(""));
+        placeholder_lines.push(Line::from(Span::styled(
+            "Activity legend:",
+            Style::default().fg(Color::DarkGray),
+        )));
+        placeholder_lines.push(Line::from(vec![
+            Span::styled("  🧠 Think  ", Style::default().fg(Color::Cyan)),
+            Span::styled("⚙ Tool  ", Style::default().fg(Color::Yellow)),
+            Span::styled("📤 LLM  ", Style::default().fg(Color::Blue)),
+            Span::styled("✓ Done", Style::default().fg(Color::Green)),
+        ]));
+
+        placeholder_lines
     } else {
-        app.activities.iter()
-            .map(|activity| {
-                let (icon, color) = match &activity.activity_type {
-                    ActivityType::Thinking | ActivityType::Analyzing => ("🧠", Color::Cyan),
-                    ActivityType::LlmCall | ActivityType::LlmWaiting => ("📤", Color::Blue),
-                    ActivityType::LlmResponse => ("📥", Color::Blue),
-                    ActivityType::ToolDiscovery => ("🔧", Color::Magenta),
-                    ActivityType::ToolExecuting => ("⚙️", Color::Yellow),
-                    ActivityType::ToolComplete => ("✓", Color::Green),
-                    ActivityType::ToolFailed => ("✗", Color::Red),
-                    ActivityType::Memory => ("💾", Color::Cyan),
-                    ActivityType::McpCall => ("🔌", Color::Magenta),
-                    ActivityType::Validation => ("📋", Color::Blue),
-                    ActivityType::Warning => ("⚠", Color::Yellow),
-                    ActivityType::Error => ("❌", Color::Red),
-                    ActivityType::Info | ActivityType::Debug => ("ℹ", Color::Gray),
-                    ActivityType::Started => ("▶", Color::Green),
-                    ActivityType::Completed => ("●", Color::Green),
-                    ActivityType::Cancelled => ("⏹", Color::Yellow),
-                };
+        let mut lines = Vec::new();
+        for activity in app.activities.iter() {
+            let (icon, color) = match &activity.activity_type {
+                ActivityType::Thinking | ActivityType::Analyzing => ("🧠", Color::Cyan),
+                ActivityType::LlmCall | ActivityType::LlmWaiting => ("📤", Color::Blue),
+                ActivityType::LlmResponse => ("📥", Color::LightBlue),
+                ActivityType::ToolDiscovery => ("🔧", Color::Magenta),
+                ActivityType::ToolExecuting => ("⚙", Color::Yellow),
+                ActivityType::ToolComplete => ("✓", Color::Green),
+                ActivityType::ToolFailed => ("✗", Color::Red),
+                ActivityType::Memory => ("💾", Color::Cyan),
+                ActivityType::McpCall => ("🔌", Color::Magenta),
+                ActivityType::Validation => ("📋", Color::Blue),
+                ActivityType::Warning => ("⚠", Color::Yellow),
+                ActivityType::Error => ("❌", Color::Red),
+                ActivityType::Info | ActivityType::Debug => ("ℹ", Color::Gray),
+                ActivityType::Started => ("▶", Color::Green),
+                ActivityType::Completed => ("●", Color::Green),
+                ActivityType::Cancelled => ("⏹", Color::Yellow),
+            };
 
-                let time_str = activity.timestamp.format("%H:%M:%S").to_string();
-                let max_width = right_panel[0].width.saturating_sub(14) as usize;
-                let msg = if activity.message.len() > max_width {
-                    format!("{}...", &activity.message[..max_width.saturating_sub(3)])
-                } else {
-                    activity.message.clone()
-                };
+            let time_str = activity.timestamp.format("%H:%M:%S").to_string();
+            let max_width = right_panel[0].width.saturating_sub(16) as usize;
 
-                // Add duration if available
-                let duration_str = activity.details.as_ref()
-                    .and_then(|d| d.duration_ms)
-                    .map(|ms| format!(" ({}ms)", ms))
-                    .unwrap_or_default();
+            // Extract tool name and details if available
+            let (tool_name, tool_args, duration_ms, tokens) = activity.details.as_ref()
+                .map(|d| (
+                    d.tool_name.clone(),
+                    d.tool_args.clone(),
+                    d.duration_ms,
+                    d.tokens.as_ref().map(|t| (t.input, t.output)),
+                ))
+                .unwrap_or((None, None, None, None));
 
-                Line::from(vec![
-                    Span::styled(format!("{} ", time_str), Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("{} ", icon), Style::default()),
-                    Span::styled(msg, Style::default().fg(color)),
-                    Span::styled(duration_str, Style::default().fg(Color::DarkGray)),
-                ])
-            })
-            .collect()
+            // Format the main message line
+            let msg = if activity.message.len() > max_width {
+                format!("{}...", &activity.message[..max_width.saturating_sub(3)])
+            } else {
+                activity.message.clone()
+            };
+
+            // Build duration/tokens suffix
+            let mut suffix_parts = Vec::new();
+            if let Some(ms) = duration_ms {
+                suffix_parts.push(format!("{}ms", ms));
+            }
+            if let Some((inp, out)) = tokens {
+                suffix_parts.push(format!("{}→{}", inp, out));
+            }
+            let suffix = if suffix_parts.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", suffix_parts.join(" "))
+            };
+
+            // Main activity line
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", time_str), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{} ", icon), Style::default()),
+                Span::styled(msg, Style::default().fg(color)),
+                Span::styled(suffix, Style::default().fg(Color::DarkGray)),
+            ]));
+
+            // Show tool details for tool-related activities
+            if matches!(activity.activity_type, ActivityType::ToolExecuting | ActivityType::ToolComplete | ActivityType::ToolFailed) {
+                if let Some(ref name) = tool_name {
+                    let detail_line = format!("         └─ {}", name);
+                    lines.push(Line::from(Span::styled(
+                        detail_line,
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
+                if let Some(ref args) = tool_args {
+                    let truncated_args = if args.len() > 50 {
+                        format!("{}...", &args[..47])
+                    } else {
+                        args.clone()
+                    };
+                    let args_line = format!("            args: {}", truncated_args);
+                    lines.push(Line::from(Span::styled(
+                        args_line,
+                        Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                    )));
+                }
+            }
+        }
+        lines
     };
 
     let logs_para = Paragraph::new(activity_lines)
@@ -1352,7 +1868,9 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
 
     f.render_widget(logs_para, right_panel[0]);
 
-    // Bottom row - Context Stats
+    // ═══════════════════════════════════════════════════════════════════════
+    // RIGHT BOTTOM - Context Stats Gauge
+    // ═══════════════════════════════════════════════════════════════════════
     let context_used = app.input_tokens + app.output_tokens;
     let context_percentage = if app.context_window > 0 {
         (context_used as f64 / app.context_window as f64) * 100.0
@@ -1360,56 +1878,81 @@ fn ui(f: &mut Frame, agent_name: &str, app: &AppState) {
         0.0
     };
 
+    // Color based on usage level
+    let gauge_color = if context_percentage > 80.0 {
+        Color::Red
+    } else if context_percentage > 60.0 {
+        Color::Yellow
+    } else {
+        accent_green
+    };
+
     // Create gauge for visual representation
     let gauge = Gauge::default()
         .block(
             Block::default()
                 .title(Span::styled(
-                    " CONTEXT USAGE ",
-                    Style::default().fg(primary_white).add_modifier(Modifier::BOLD),
+                    " TOKEN USAGE ",
+                    Style::default().fg(accent_cyan).add_modifier(Modifier::BOLD),
                 ))
                 .title_alignment(Alignment::Left)
                 .borders(Borders::ALL)
-                .border_type(ratatui::widgets::BorderType::Thick)
-                .border_style(Style::default().fg(primary_white))
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(Color::DarkGray))
         )
-        .gauge_style(Style::default().fg(Color::Green))
-        .ratio(context_percentage / 100.0)
+        .gauge_style(Style::default().fg(gauge_color))
+        .ratio((context_percentage / 100.0).min(1.0))
         .label(Span::raw(format!(
-            "  IN: {} │ OUT: {} │ TOTAL: {} / {} ({:.1}%)",
+            " IN:{} OUT:{} │ {}/{} ({:.0}%)",
             app.input_tokens, app.output_tokens, context_used, app.context_window, context_percentage
         )));
 
     f.render_widget(gauge, right_panel[1]);
 
-    // Footer metrics bar with keybinding hints
-    let metrics_text = if app.agent_busy {
-        format!(
-            "  {} {:>5}ms │ {} msgs │ {} │ {} │ ESC:cancel  Ctrl+C:quit",
-            app.get_spinner(),
-            app.execution_time_ms,
-            app.message_count / 2,
-            app.model_name,
-            tools_str
-        )
+    // ═══════════════════════════════════════════════════════════════════════
+    // FOOTER BAR - Keyboard shortcuts and status
+    // ═══════════════════════════════════════════════════════════════════════
+    let footer_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Double)
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    let footer_inner = footer_block.inner(main_layout[2]);
+    f.render_widget(footer_block, main_layout[2]);
+
+    let shortcuts = if app.agent_busy {
+        vec![
+            ("ESC", "Cancel"),
+            ("Ctrl+C", "Quit"),
+        ]
     } else {
-        format!(
-            "  ✓ {} msgs │ {} │ {} │ ?:help  Ctrl+S:save  Ctrl+L:new  Ctrl+C:quit",
-            app.message_count / 2,
-            app.model_name,
-            tools_str
-        )
+        vec![
+            ("Enter", "Send"),
+            ("?", "Help"),
+            ("Ctrl+S", "Save"),
+            ("Ctrl+L", "New"),
+            ("↑/↓", "Scroll"),
+            ("Ctrl+C", "Quit"),
+        ]
     };
 
-    let metrics_block = Block::default()
-        .style(Style::default().fg(Color::White).bg(Color::Black))
-        .padding(ratatui::widgets::Padding::symmetric(1, 0));
+    let footer_spans: Vec<Span> = shortcuts.iter().enumerate()
+        .flat_map(|(i, (key, action))| {
+            let mut spans = vec![
+                Span::styled(format!(" {} ", key), Style::default().fg(Color::Black).bg(Color::DarkGray)),
+                Span::styled(format!(" {} ", action), Style::default().fg(Color::Gray)),
+            ];
+            if i < shortcuts.len() - 1 {
+                spans.push(Span::raw(" │"));
+            }
+            spans
+        })
+        .collect();
 
-    let metrics_para = Paragraph::new(metrics_text)
-        .block(metrics_block)
-        .style(Style::default().fg(Color::Green));
+    let footer_para = Paragraph::new(Line::from(footer_spans))
+        .alignment(Alignment::Center);
 
-    f.render_widget(metrics_para, main_layout[1]);
+    f.render_widget(footer_para, footer_inner);
 
     // Render help overlay if enabled
     if app.show_help {
@@ -1449,6 +1992,42 @@ fn render_help_overlay(f: &mut Frame) {
     let help_lines = vec![
         Line::from(""),
         Line::from(vec![
+            Span::styled("  EDITING", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("    ←/→          ", Style::default().fg(Color::White)),
+            Span::styled("Move cursor left/right", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+←/→     ", Style::default().fg(Color::White)),
+            Span::styled("Move cursor by word", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Home/End     ", Style::default().fg(Color::White)),
+            Span::styled("Move to start/end", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+A/E     ", Style::default().fg(Color::White)),
+            Span::styled("Start/End (bash-style)", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+W       ", Style::default().fg(Color::White)),
+            Span::styled("Delete word before cursor", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+U       ", Style::default().fg(Color::White)),
+            Span::styled("Clear entire input", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Alt+Enter    ", Style::default().fg(Color::White)),
+            Span::styled("Insert newline (multi-line)", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("    Ctrl+J       ", Style::default().fg(Color::White)),
+            Span::styled("Insert newline (alternative)", Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
             Span::styled("  NAVIGATION", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
@@ -1458,10 +2037,6 @@ fn render_help_overlay(f: &mut Frame) {
         Line::from(vec![
             Span::styled("    PageUp/Down  ", Style::default().fg(Color::White)),
             Span::styled("Scroll 5 lines", Style::default().fg(Color::Gray)),
-        ]),
-        Line::from(vec![
-            Span::styled("    Mouse scroll ", Style::default().fg(Color::White)),
-            Span::styled("Scroll chat history", Style::default().fg(Color::Gray)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -1473,7 +2048,7 @@ fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("    ESC          ", Style::default().fg(Color::White)),
-            Span::styled("Cancel running execution", Style::default().fg(Color::Gray)),
+            Span::styled("Cancel (or ESC×2 to quit)", Style::default().fg(Color::Gray)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -1481,11 +2056,11 @@ fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("    Ctrl+S       ", Style::default().fg(Color::White)),
-            Span::styled("Save session manually", Style::default().fg(Color::Gray)),
+            Span::styled("Save session", Style::default().fg(Color::Gray)),
         ]),
         Line::from(vec![
             Span::styled("    Ctrl+L       ", Style::default().fg(Color::White)),
-            Span::styled("Clear chat / new session", Style::default().fg(Color::Gray)),
+            Span::styled("New session", Style::default().fg(Color::Gray)),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -1493,7 +2068,7 @@ fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(vec![
             Span::styled("    ?            ", Style::default().fg(Color::White)),
-            Span::styled("Toggle this help panel", Style::default().fg(Color::Gray)),
+            Span::styled("Toggle this help", Style::default().fg(Color::Gray)),
         ]),
         Line::from(vec![
             Span::styled("    Ctrl+C       ", Style::default().fg(Color::White)),

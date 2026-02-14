@@ -9,7 +9,9 @@
 use aof_core::{
     AgentConfig, AgentContext, AofError, AofResult, Memory, MessageRole, Model, ModelRequest,
     ModelToolDefinition, RequestMessage, StopReason, StreamChunk, ToolCall, ToolExecutor, ToolInput, ToolResult,
+    ActivityEvent, CoordinationEvent,
 };
+use aof_coordination::EventBroadcaster;
 use aof_memory::SimpleMemory;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -98,6 +100,23 @@ pub struct AgentExecutor {
 
     /// Memory backend (optional)
     memory: Option<Arc<SimpleMemory>>,
+
+    /// Optional event bus for coordination events
+    event_bus: Option<Arc<EventBroadcaster>>,
+
+    /// Session ID for grouping events
+    session_id: Option<String>,
+
+    /// Optional decision logger for agent decisions
+    decision_logger: Option<Arc<aof_coordination::DecisionLogger>>,
+
+    /// Optional composed persona prompt (overrides config.system_prompt when set)
+    ///
+    /// Set via `with_persona_prompt()`. When present, this prompt is used
+    /// as the system message instead of the static config.system_prompt.
+    /// This enables dynamic prompt composition from AGENTS.md + SOUL.md
+    /// workspace files via the PromptComposer (aof-personas crate).
+    persona_prompt: Option<String>,
 }
 
 impl AgentExecutor {
@@ -113,6 +132,69 @@ impl AgentExecutor {
             model,
             tool_executor,
             memory,
+            event_bus: None,
+            session_id: None,
+            decision_logger: None,
+            persona_prompt: None,
+        }
+    }
+
+    /// Set the event bus for coordination event emission
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBroadcaster>, session_id: String) -> Self {
+        self.event_bus = Some(event_bus);
+        self.session_id = Some(session_id);
+        self
+    }
+
+    /// Set the decision logger for decision tracking
+    pub fn with_decision_logger(mut self, logger: Arc<aof_coordination::DecisionLogger>) -> Self {
+        self.decision_logger = Some(logger);
+        self
+    }
+
+    /// Set a composed persona prompt (overrides config.system_prompt)
+    ///
+    /// When set, this prompt is used as the system message for all LLM calls
+    /// instead of the static config.system_prompt. The prompt is composed once
+    /// at agent initialization from AGENTS.md + SOUL.md workspace files by the
+    /// PromptComposer (aof-personas crate).
+    ///
+    /// If the agent config also has a system_prompt set (manual override / expert mode),
+    /// the config system_prompt takes precedence. This method only applies when
+    /// config.system_prompt is None.
+    pub fn with_persona_prompt(mut self, prompt: String) -> Self {
+        debug!("Setting persona prompt ({} chars) for agent: {}", prompt.len(), self.config.name);
+        self.persona_prompt = Some(prompt);
+        self
+    }
+
+    /// Emit a coordination event if event bus is configured
+    fn emit_event(&self, activity: ActivityEvent) {
+        if let (Some(ref bus), Some(ref session_id)) = (&self.event_bus, &self.session_id) {
+            let coord_event = CoordinationEvent::from_activity(
+                activity,
+                self.config.name.clone(),
+                session_id.clone(),
+            );
+            bus.emit(coord_event);
+        }
+    }
+
+    /// Log a decision if decision logger is configured
+    async fn log_decision(&self, action: &str, reasoning: &str, confidence: f64, tags: Vec<String>, metadata: serde_json::Value) {
+        if let Some(ref logger) = self.decision_logger {
+            let entry = aof_core::DecisionLogEntry::new(
+                self.config.name.clone(),
+                action,
+                reasoning,
+                confidence,
+            )
+            .with_tags(tags)
+            .with_metadata(metadata);
+
+            if let Err(e) = logger.log(entry).await {
+                warn!("Failed to log decision: {}", e);
+            }
         }
     }
 
@@ -159,6 +241,21 @@ impl AgentExecutor {
         info!("Starting streaming agent execution: {}", self.config.name);
         let execution_start = Instant::now();
 
+        // Emit agent start event
+        self.emit_event(ActivityEvent::started(&self.config.name));
+
+        // Log decision: agent started
+        self.log_decision(
+            "agent_started",
+            &format!("Processing request: {}", ctx.input),
+            0.95,
+            vec!["agent".to_string(), "lifecycle".to_string()],
+            serde_json::json!({
+                "input": ctx.input,
+                "max_iterations": self.config.max_iterations
+            })
+        ).await;
+
         // Add user message if not already in history
         if ctx.messages.is_empty() {
             ctx.add_message(MessageRole::User, ctx.input.clone());
@@ -173,6 +270,22 @@ impl AgentExecutor {
 
             if iteration > max_iterations {
                 let error_msg = format!("Exceeded max iterations ({})", max_iterations);
+
+                // Emit error event
+                self.emit_event(ActivityEvent::error(&error_msg));
+
+                // Log decision: error occurred
+                self.log_decision(
+                    "error_occurred",
+                    &error_msg,
+                    0.0,
+                    vec!["error".to_string(), "max_iterations".to_string()],
+                    serde_json::json!({
+                        "error": error_msg,
+                        "max_iterations": max_iterations
+                    })
+                ).await;
+
                 let _ = stream_tx.send(StreamEvent::Error {
                     message: error_msg.clone(),
                 }).await;
@@ -182,6 +295,8 @@ impl AgentExecutor {
             }
 
             // Emit iteration start event
+            self.emit_event(ActivityEvent::info(format!("Iteration {}/{}", iteration, max_iterations)));
+
             let _ = stream_tx.send(StreamEvent::IterationStart {
                 iteration,
                 max_iterations,
@@ -193,6 +308,9 @@ impl AgentExecutor {
             let mut request = self.build_model_request(ctx)?;
             request.stream = true;
 
+            // Emit LLM call event
+            self.emit_event(ActivityEvent::info(format!("Calling model for iteration {}", iteration)));
+
             // Call model streaming API
             let stream_result = self.model.generate_stream(&request).await;
 
@@ -200,6 +318,10 @@ impl AgentExecutor {
                 Ok(s) => s,
                 Err(e) => {
                     let error_msg = format!("Model streaming failed: {}", e);
+
+                    // Emit error event
+                    self.emit_event(ActivityEvent::error(&error_msg));
+
                     let _ = stream_tx.send(StreamEvent::Error {
                         message: error_msg.clone(),
                     }).await;
@@ -250,6 +372,10 @@ impl AgentExecutor {
                     }
                     Err(e) => {
                         let error_msg = format!("Stream chunk error: {}", e);
+
+                        // Emit error event
+                        self.emit_event(ActivityEvent::error(&error_msg));
+
                         let _ = stream_tx.send(StreamEvent::Error {
                             message: error_msg.clone(),
                         }).await;
@@ -298,6 +424,23 @@ impl AgentExecutor {
                     info!("Agent execution completed in {} iterations", iteration);
                     ctx.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
 
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(ctx.metadata.execution_time_ms));
+
+                    // Log decision: agent completed
+                    self.log_decision(
+                        "agent_completed",
+                        &format!("Task completed with result: {}", accumulated_content.chars().take(100).collect::<String>()),
+                        0.95,
+                        vec!["agent".to_string(), "lifecycle".to_string(), "completed".to_string()],
+                        serde_json::json!({
+                            "iterations": iteration,
+                            "execution_time_ms": ctx.metadata.execution_time_ms,
+                            "tool_calls": ctx.metadata.tool_calls,
+                            "output_length": accumulated_content.len()
+                        })
+                    ).await;
+
                     // Emit done event
                     let _ = stream_tx.send(StreamEvent::Done {
                         content: accumulated_content.clone(),
@@ -321,6 +464,9 @@ impl AgentExecutor {
                         let args_str = serde_json::to_string(&tool_call.arguments)
                             .unwrap_or_else(|_| "{}".to_string());
                         info!("  • {} {}", tool_call.name, args_str);
+
+                        // Emit tool executing event
+                        self.emit_event(ActivityEvent::tool_executing(&tool_call.name, Some(args_str.clone())));
                     }
 
                     // Execute tools and emit events
@@ -331,6 +477,40 @@ impl AgentExecutor {
 
                     // Add tool results to context and log them
                     for (tool_call, result) in tool_calls_buffer.iter().zip(tool_results.iter()) {
+                        // Emit tool complete or failed event
+                        if result.success {
+                            self.emit_event(ActivityEvent::tool_complete(&tool_call.name, result.execution_time_ms));
+
+                            // Log decision: tool executed successfully
+                            self.log_decision(
+                                "tool_executed",
+                                &format!("Executed {} successfully", tool_call.name),
+                                0.9,
+                                vec!["tool".to_string(), tool_call.name.clone()],
+                                serde_json::json!({
+                                    "tool": tool_call.name,
+                                    "execution_time_ms": result.execution_time_ms,
+                                    "success": true
+                                })
+                            ).await;
+                        } else {
+                            let error_msg = result.error.as_deref().unwrap_or("Unknown error");
+                            self.emit_event(ActivityEvent::tool_failed(&tool_call.name, error_msg));
+
+                            // Log decision: tool execution failed
+                            self.log_decision(
+                                "tool_failed",
+                                &format!("Tool {} failed: {}", tool_call.name, error_msg),
+                                0.5,
+                                vec!["tool".to_string(), "error".to_string(), tool_call.name.clone()],
+                                serde_json::json!({
+                                    "tool": tool_call.name,
+                                    "error": error_msg,
+                                    "success": false
+                                })
+                            ).await;
+                        }
+
                         // Log tool result
                         if result.success {
                             let result_summary = match &result.data {
@@ -381,6 +561,9 @@ impl AgentExecutor {
                     warn!("Model reached max tokens");
                     ctx.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
 
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(ctx.metadata.execution_time_ms));
+
                     let _ = stream_tx.send(StreamEvent::Done {
                         content: accumulated_content.clone(),
                         total_iterations: iteration,
@@ -396,6 +579,9 @@ impl AgentExecutor {
                     info!("Model hit stop sequence");
                     ctx.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
 
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(ctx.metadata.execution_time_ms));
+
                     let _ = stream_tx.send(StreamEvent::Done {
                         content: accumulated_content.clone(),
                         total_iterations: iteration,
@@ -409,6 +595,10 @@ impl AgentExecutor {
 
                 StopReason::ContentFilter => {
                     let error_msg = "Content filter triggered by model".to_string();
+
+                    // Emit error event
+                    self.emit_event(ActivityEvent::error(&error_msg));
+
                     let _ = stream_tx.send(StreamEvent::Error {
                         message: error_msg.clone(),
                     }).await;
@@ -432,6 +622,9 @@ impl AgentExecutor {
         warn!("=== AGENT EXECUTOR START === name={}", self.config.name);
         let execution_start = Instant::now();
 
+        // Emit agent start event
+        self.emit_event(ActivityEvent::started(&self.config.name));
+
         // Restore conversation history from memory if available
         if let Some(memory) = &self.memory {
             warn!("[EXECUTOR] Restoring conversation history from memory...");
@@ -453,15 +646,20 @@ impl AgentExecutor {
             iteration += 1;
 
             if iteration > max_iterations {
+                let error_msg = format!("Exceeded max iterations ({})", max_iterations);
+
+                // Emit error event
+                self.emit_event(ActivityEvent::error(&error_msg));
+
                 error!(
                     "[EXECUTOR] Reached max iterations ({}) for agent: {}",
                     max_iterations, self.config.name
                 );
-                return Err(AofError::agent(format!(
-                    "Exceeded max iterations ({})",
-                    max_iterations
-                )));
+                return Err(AofError::agent(error_msg));
             }
+
+            // Emit iteration start event
+            self.emit_event(ActivityEvent::info(format!("Iteration {}/{}", iteration, max_iterations)));
 
             warn!(
                 "[EXECUTOR] Iteration {}/{} for agent: {}",
@@ -485,6 +683,9 @@ impl AgentExecutor {
                 }
             };
 
+            // Emit LLM call event
+            self.emit_event(ActivityEvent::info(format!("Calling model for iteration {}", iteration)));
+
             // Call model
             warn!("[EXECUTOR] Calling model.generate()...");
             let generate_start = Instant::now();
@@ -499,10 +700,15 @@ impl AgentExecutor {
                     resp
                 }
                 Err(e) => {
+                    let error_msg = format!("Model generation failed: {}", e);
+
+                    // Emit error event
+                    self.emit_event(ActivityEvent::error(&error_msg));
+
                     error!("[EXECUTOR] model.generate() FAILED in {}ms: {:?}",
                         generate_start.elapsed().as_millis(), e
                     );
-                    return Err(AofError::agent(format!("Model generation failed: {}", e)));
+                    return Err(AofError::agent(error_msg));
                 }
             };
 
@@ -545,6 +751,10 @@ impl AgentExecutor {
                         iteration
                     );
                     context.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
+
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(context.metadata.execution_time_ms));
+
                     return Ok(response.content);
                 }
 
@@ -559,6 +769,9 @@ impl AgentExecutor {
                         let args_str = serde_json::to_string(&tool_call.arguments)
                             .unwrap_or_else(|_| "{}".to_string());
                         info!("  • {} {}", tool_call.name, args_str);
+
+                        // Emit tool executing event
+                        self.emit_event(ActivityEvent::tool_executing(&tool_call.name, Some(args_str.clone())));
                     }
 
                     // Execute tools
@@ -569,6 +782,14 @@ impl AgentExecutor {
 
                     // Add tool results to context and log them
                     for (tool_call, result) in response.tool_calls.iter().zip(tool_results.iter()) {
+                        // Emit tool complete or failed event
+                        if result.success {
+                            self.emit_event(ActivityEvent::tool_complete(&tool_call.name, result.execution_time_ms));
+                        } else {
+                            let error_msg = result.error.as_deref().unwrap_or("Unknown error");
+                            self.emit_event(ActivityEvent::tool_failed(&tool_call.name, error_msg));
+                        }
+
                         // Log tool result
                         if result.success {
                             let result_summary = match &result.data {
@@ -620,20 +841,31 @@ impl AgentExecutor {
                 StopReason::MaxTokens => {
                     warn!("Model reached max tokens");
                     context.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
+
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(context.metadata.execution_time_ms));
+
                     return Ok(response.content);
                 }
 
                 StopReason::StopSequence => {
                     info!("Model hit stop sequence");
                     context.metadata.execution_time_ms = execution_start.elapsed().as_millis() as u64;
+
+                    // Emit agent completed event
+                    self.emit_event(ActivityEvent::completed(context.metadata.execution_time_ms));
+
                     return Ok(response.content);
                 }
 
                 StopReason::ContentFilter => {
+                    let error_msg = "Content filter triggered by model".to_string();
+
+                    // Emit error event
+                    self.emit_event(ActivityEvent::error(&error_msg));
+
                     error!("Content filter triggered");
-                    return Err(AofError::agent(
-                        "Content filter triggered by model".to_string(),
-                    ));
+                    return Err(AofError::agent(error_msg));
                 }
             }
         }
@@ -683,16 +915,23 @@ impl AgentExecutor {
             Vec::new()
         };
 
+        // Determine base system prompt:
+        // 1. config.system_prompt (manual override / expert mode) takes precedence
+        // 2. persona_prompt (composed from AGENTS.md + SOUL.md) used as fallback
+        // 3. None if neither is set
+        let base_system_prompt = self.config.system_prompt.clone()
+            .or_else(|| self.persona_prompt.clone());
+
         // Enhance system prompt with output schema instructions if schema is present
         let system_prompt = if let Some(schema) = &context.output_schema {
             warn!("[BUILD_REQUEST] Output schema present, adding structured output instructions");
 
-            let base_prompt = self.config.system_prompt.as_deref().unwrap_or("");
+            let base_prompt = base_system_prompt.as_deref().unwrap_or("");
             let schema_instructions = schema.to_system_instructions();
 
             Some(format!("{}\n\n{}", base_prompt, schema_instructions))
         } else {
-            self.config.system_prompt.clone()
+            base_system_prompt
         };
 
         warn!("[BUILD_REQUEST] Final: messages={}, tools={}, system_prompt={:?}, has_schema={}",

@@ -78,5 +78,20 @@ secrets/
 *.log
 logs/
 
+# Planning docs (except summaries and state)
+.planning/*
+!.planning/STATE.md
+!.planning/PROJECT.md
+!.planning/ROADMAP.md
+!.planning/REQUIREMENTS.md
+!.planning/CONTEXT.md
+!.planning/ARCHITECTURE.md
+!.planning/phases/
+!.planning/phases/**/
+!.planning/phases/**/*-SUMMARY.md
+!.planning/phases/**/*-PLAN.md
+!.planning/phases/**/CONTEXT.md
+!.planning/phases/**/RESEARCH.md
+
 # OS files
 Thumbs.db

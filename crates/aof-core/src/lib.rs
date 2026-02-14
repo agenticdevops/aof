@@ -7,7 +7,11 @@ pub mod activity;
 pub mod agent;
 pub mod agentflow;
 pub mod binding;
+pub mod config;
 pub mod context;
+pub mod coordination;
+pub mod credential;
+pub mod device;
 pub mod error;
 pub mod error_tracker;
 pub mod fleet;
@@ -76,6 +80,17 @@ pub use trigger::{
 };
 pub use activity::{
     ActivityDetails, ActivityEvent, ActivityLogger, ActivityType, NoopActivityLogger, TokenCount,
+};
+pub use coordination::{
+    AgentIntroduction, CoordinationActivity, CoordinationEvent, DecisionLogEntry, SessionState,
+    AgentState, AgentStatus, TaskInfo, TaskStatus,
+};
+pub use credential::{
+    AccessMode, AnomalyAction, CredentialAccessAnomaly, CredentialAccessEvent, CredentialType,
+    RiskLevel, ToolContext,
+};
+pub use device::{
+    DeviceCertificate, DeviceInfo, DeviceStatus, DeviceType,
 };
 
 /// Version information

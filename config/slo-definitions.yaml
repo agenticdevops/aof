@@ -1,0 +1,68 @@
+# AOF Service Level Objectives
+# These define the reliability targets for production deployments.
+# Use `aofctl metrics` to view current SLO compliance.
+
+apiVersion: aof.dev/v1
+kind: SLODefinitions
+
+slos:
+  - name: api_availability
+    description: "Percentage of successful API requests"
+    sli:
+      type: availability
+      metric: "rate(aof_requests_total{status='success'}[5m]) / rate(aof_requests_total[5m])"
+    target: 99.9  # percent
+    window: 30d
+    error_budget:
+      total: 0.1%  # 43.2 minutes downtime per month
+      burn_rate_alert: 2.0  # Alert if burning budget 2x faster than sustainable
+
+  - name: agent_execution_latency
+    description: "99th percentile agent execution time"
+    sli:
+      type: latency
+      metric: "histogram_quantile(0.99, rate(aof_agent_execution_duration_seconds_bucket[5m]))"
+    target: 500  # milliseconds
+    window: 24h
+    error_budget:
+      total: 1.0%  # 14.4 minutes above threshold per day
+
+  - name: event_delivery_latency
+    description: "95th percentile event broadcast latency"
+    sli:
+      type: latency
+      metric: "histogram_quantile(0.95, rate(aof_event_broadcast_latency_seconds_bucket[5m]))"
+    target: 100  # milliseconds
+    window: 24h
+    error_budget:
+      total: 1.0%
+
+  - name: agent_success_rate
+    description: "Percentage of agent tasks completing successfully"
+    sli:
+      type: success_rate
+      metric: "rate(aof_agent_executions_total{status='success'}[1h]) / rate(aof_agent_executions_total[1h])"
+    target: 95.0  # percent
+    window: 7d
+    error_budget:
+      total: 5.0%  # Up to 5% task failures acceptable
+
+  - name: websocket_connection_success
+    description: "Percentage of WebSocket connections established successfully"
+    sli:
+      type: availability
+      metric: "rate(aof_websocket_connections_total{status='success'}[5m]) / rate(aof_websocket_connections_total[5m])"
+    target: 99.5  # percent
+    window: 7d
+    error_budget:
+      total: 0.5%
+
+alerting:
+  # Alert when error budget is being consumed too fast
+  burn_rate_windows:
+    - window: 1h
+      threshold: 14.4  # 14.4x burn rate for 1 hour = 1% budget consumed
+    - window: 6h
+      threshold: 6.0   # 6x burn rate for 6 hours = 1.5% budget consumed
+    - window: 24h
+      threshold: 3.0   # 3x burn rate for 24 hours = 3% budget consumed

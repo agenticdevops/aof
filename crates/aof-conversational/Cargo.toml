@@ -1,0 +1,60 @@
+[package]
+name = "aof-conversational"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[dependencies]
+# Workspace crates
+aof-core = { workspace = true }
+aof-llm = { workspace = true }
+aof-personas = { workspace = true }
+aof-skills = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+serde_path_to_error = "0.1"
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Date/Time
+chrono = { workspace = true }
+chrono-tz = "0.8"
+
+# UUID
+uuid = { workspace = true }
+
+# Regex
+regex = { workspace = true }
+
+# Unicode
+unicode-segmentation = "1.12"
+
+# LRU cache
+lru = "0.12"
+
+# Cron parsing
+cron = "0.12"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3.15"

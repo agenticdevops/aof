@@ -1,0 +1,67 @@
+[package]
+name = "aof-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[dependencies]
+# Workspace dependencies
+aof-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+serde_path_to_error = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+
+# Rate limiting
+governor = "0.6"
+
+# Slack adapter
+slack-morphism = "2.17"
+slack-morphism-hyper = "0.41"
+
+# Discord adapter
+serenity = { version = "0.12", features = ["client", "gateway", "model", "rustls_backend"] }
+
+# Telegram adapter
+teloxide = { version = "0.17", features = ["macros", "rustls"] }
+
+# HTTP client (shared across adapters)
+hyper = { version = "1.0", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+
+# TLS
+rustls = "0.23"
+tokio-rustls = "0.26"
+
+# Markdown parsing/rendering
+pulldown-cmark = "0.11"
+comrak = "0.24"
+
+# Additional async utilities
+futures = "0.3"
+
+# Random number generation (for retry jitter)
+rand = "0.8"
+
+# Environment variable loading (for development)
+dotenv = "0.15"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
+tracing-subscriber = { workspace = true }

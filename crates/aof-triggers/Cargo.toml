@@ -15,6 +15,7 @@ documentation.workspace = true
 [dependencies]
 # Workspace dependencies
 aof-core.workspace = true
+aof-coordination.workspace = true
 aof-runtime.workspace = true
 aof-llm.workspace = true
 aof-memory.workspace = true
@@ -24,6 +25,7 @@ aof-tools = { workspace = true, features = ["all"] }
 tokio.workspace = true
 async-trait.workspace = true
 futures.workspace = true
+futures-util = "0.3"
 
 # Serialization
 serde.workspace = true
@@ -38,7 +40,7 @@ anyhow.workspace = true
 tracing.workspace = true
 
 # HTTP server
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 hyper.workspace = true

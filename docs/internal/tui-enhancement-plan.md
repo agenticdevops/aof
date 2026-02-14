@@ -1,18 +1,26 @@
 # TUI Enhancement Plan
 
+## Status: ✅ COMPLETED (v0.4.0-beta)
+
+All planned TUI enhancements have been implemented.
+
 ## Overview
 
 Enhance the AOF agentic console TUI to provide a sophisticated, LazyGit-inspired experience with rich agent activity logging, cancellation support, and conversation persistence.
 
-## Current State
+## Implemented Features (v0.4.0-beta)
 
-The current TUI (`crates/aofctl/src/commands/run.rs`) provides:
-- Two-column layout (60% chat, 40% system log + context usage)
-- Chat history with user/assistant/error messages
-- Token usage gauge
-- Spinner animation during execution
-- Basic keyboard navigation (scroll, enter, ctrl+c)
-- Tracing log capture (but system log panel is mostly empty)
+The TUI (`crates/aofctl/src/commands/run.rs`) now provides:
+- **Three-row layout**: Header bar, Content area (chat + activity), Footer bar
+- **Header status bar**: Agent name, model, tool count, LLM calls, session duration, current tool
+- **Chat panel**: Timestamped messages with role indicators (YOU/AI/SYS/ERR)
+- **Activity panel**: Real-time agent activity with tool names, arguments, and durations
+- **Token usage gauge**: Color-coded (green/yellow/red based on usage level)
+- **Input area**: Character count, placeholder text, animated cursor
+- **Footer bar**: Context-aware keyboard shortcuts
+- **Session persistence**: Auto-save/resume with JSON format
+- **Agent cancellation**: ESC key to cancel, graceful cleanup
+- **Help overlay**: Press `?` for keyboard shortcuts
 
 ## Enhancements
 
@@ -143,32 +151,38 @@ The current TUI (`crates/aofctl/src/commands/run.rs`) provides:
 [Running] ◐ 2.3s │ Executing tool: kubectl │ ESC to cancel
 ```
 
-## Implementation Order
+## Implementation Status
 
-1. **Phase 1: Activity Logging** (Priority: High)
-   - Add activity events to executor
-   - Display in system log panel
-   - Color-code by activity type
+1. **Phase 1: Activity Logging** ✅ COMPLETED
+   - Activity events in executor
+   - Activity panel with real-time updates
+   - Color-coded by activity type
+   - Tool name, arguments, and duration display
 
-2. **Phase 2: Cancellation** (Priority: High)
-   - Add CancellationToken support
-   - Handle Escape key
+2. **Phase 2: Cancellation** ✅ COMPLETED
+   - CancellationToken support
+   - ESC key handling
    - Graceful cleanup
+   - Status updates in UI
 
-3. **Phase 3: Session Persistence** (Priority: Medium)
-   - Create session file format
+3. **Phase 3: Session Persistence** ✅ COMPLETED
+   - JSON session file format
    - Auto-save on exit
-   - Resume from file
+   - Resume with `--resume` flag
+   - `aofctl get sessions` command
 
-4. **Phase 4: UI Polish** (Priority: Medium)
-   - Help overlay
+4. **Phase 4: UI Polish** ✅ COMPLETED
+   - Help overlay (`?` key)
    - Enhanced keybindings
-   - Better styling
+   - Header/footer status bars
+   - Timestamped messages
+   - Professional color scheme
 
-5. **Phase 5: Advanced Features** (Priority: Low)
-   - Search in history
-   - Activity filters
-   - Compact mode
+5. **Phase 5: Advanced Features** (Partially implemented)
+   - ✅ Session info in header
+   - ⏳ Search in history (future)
+   - ⏳ Activity filters (future)
+   - ⏳ Compact mode (future)
 
 ## Files to Modify
 

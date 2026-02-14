@@ -131,6 +131,16 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Skills',
+      items: [
+        'skills/index',
+        'skills/writing-skills',
+        'skills/skill-reference',
+        'skills/bundled-skills',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Agent Library',
       items: [
         'agent-library/index',

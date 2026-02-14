@@ -1,0 +1,65 @@
+[Unit]
+Description=AOF Daemon - Agentic Ops Framework
+Documentation=https://docs.aof.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aof
+Group=aof
+WorkingDirectory=/opt/aof
+
+Environment="RUST_LOG=info,aofctl=info,aof_runtime=info"
+Environment="AOF_CONFIG_DIR=/etc/aof"
+Environment="AOF_DATA_DIR=/var/lib/aof"
+EnvironmentFile=-/etc/aof/daemon.env
+
+ExecStart=/usr/local/bin/aofctl serve \
+    --config /etc/aof/daemon.yaml \
+    --port 8080 \
+    --host 0.0.0.0 \
+    --json-logs
+
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=300s
+StartLimitBurst=5
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryMax=2G
+TasksMax=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aof-daemon
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Filesystem access
+ReadWritePaths=/var/lib/aof /var/log/aof
+ReadOnlyPaths=/etc/aof
+
+# Graceful shutdown
+TimeoutStopSec=30s
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

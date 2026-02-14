@@ -17,13 +17,23 @@ readme = "../../README.md"
 name = "aofctl"
 path = "src/main.rs"
 
+[features]
+tokio-console = ["dep:console-subscriber"]
+
 [dependencies]
+console-subscriber = { version = "0.4", optional = true }
 aof-core = { workspace = true }
+aof-coordination = { workspace = true }
+aof-coordination-protocols = { workspace = true }
+aof-conversational = { workspace = true }
 aof-mcp = { workspace = true, features = ["all-transports"] }
 aof-llm = { workspace = true, features = ["all-providers"] }
 aof-runtime = { workspace = true }
 aof-memory = { workspace = true, features = ["all-backends"] }
 aof-triggers = { workspace = true }
+aof-skills = { workspace = true }
+aof-gateway = { workspace = true }
+aof-personas = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -44,6 +54,17 @@ colored = "2.1"
 uuid = { version = "1.6", features = ["v4"] }
 dirs = "5.0"
 tokio-util = { version = "0.7", features = ["rt"] }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { workspace = true }
+bytes = { workspace = true }
+futures-util = "0.3"
+async-trait = { workspace = true }
+futures = { workspace = true }
+prometheus = { workspace = true }
+rustls = "0.23"
+tokio-rustls = "0.26"
+rustls-pemfile = "2"
+sha2 = "0.10"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
