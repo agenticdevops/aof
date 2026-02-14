@@ -24,39 +24,40 @@ export interface AgentGridProps {
 }
 
 /**
- * Skeleton loader for agent card.
+ * Skeleton loader for agent card (matches persona layout).
  */
 function AgentCardSkeleton(): React.ReactElement {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
-      {/* Avatar skeleton */}
-      <div className="flex justify-center mb-3">
-        <div className="w-16 h-16 bg-gray-300 dark:bg-gray-600 rounded-full" />
+      {/* Top section: Avatar + Name/Role + Metrics */}
+      <div className="flex items-start gap-3 mb-3">
+        <div className="w-14 h-14 bg-gray-300 dark:bg-gray-600 rounded-full flex-shrink-0" />
+        <div className="flex-1 space-y-2">
+          <div className="h-5 bg-gray-300 dark:bg-gray-600 rounded w-3/4" />
+          <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-1/2" />
+          <div className="flex gap-1">
+            <div className="h-5 w-16 bg-gray-300 dark:bg-gray-600 rounded-full" />
+            <div className="h-5 w-14 bg-gray-300 dark:bg-gray-600 rounded-full" />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <div className="h-3 w-14 bg-gray-300 dark:bg-gray-600 rounded" />
+          <div className="h-3 w-16 bg-gray-300 dark:bg-gray-600 rounded" />
+        </div>
       </div>
 
-      {/* Name and role skeleton */}
-      <div className="space-y-2 mb-3">
-        <div className="h-5 bg-gray-300 dark:bg-gray-600 rounded w-3/4 mx-auto" />
-        <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-1/2 mx-auto" />
+      {/* Middle: Status + Skills */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-3 h-3 bg-gray-300 dark:bg-gray-600 rounded-full" />
+        <div className="h-4 w-12 bg-gray-300 dark:bg-gray-600 rounded" />
+        <div className="flex gap-1">
+          <div className="h-5 w-12 bg-gray-300 dark:bg-gray-600 rounded" />
+          <div className="h-5 w-10 bg-gray-300 dark:bg-gray-600 rounded" />
+        </div>
       </div>
 
-      {/* Personality skeleton */}
-      <div className="space-y-1 mb-3">
-        <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-full" />
-        <div className="h-3 bg-gray-300 dark:bg-gray-600 rounded w-4/5 mx-auto" />
-      </div>
-
-      {/* Skills skeleton */}
-      <div className="flex gap-1 justify-center mb-3">
-        <div className="h-6 w-16 bg-gray-300 dark:bg-gray-600 rounded" />
-        <div className="h-6 w-20 bg-gray-300 dark:bg-gray-600 rounded" />
-        <div className="h-6 w-14 bg-gray-300 dark:bg-gray-600 rounded" />
-      </div>
-
-      {/* Status skeleton */}
-      <div className="flex justify-center">
-        <div className="h-4 w-20 bg-gray-300 dark:bg-gray-600 rounded" />
-      </div>
+      {/* Bottom: Capabilities placeholder */}
+      <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded" />
     </div>
   );
 }
@@ -229,9 +230,9 @@ export function AgentGrid({ onAgentClick, className = '' }: AgentGridProps): Rea
   if (loading && agents.length === 0) {
     return (
       <div
-        className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 ${className}`}
+        className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 ${className}`}
       >
-        {Array.from({ length: 5 }).map((_, i) => (
+        {Array.from({ length: 3 }).map((_, i) => (
           <AgentCardSkeleton key={i} />
         ))}
       </div>
@@ -260,7 +261,7 @@ export function AgentGrid({ onAgentClick, className = '' }: AgentGridProps): Rea
   return (
     <>
       <div
-        className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 ${className}`}
+        className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 ${className}`}
       >
         {agentsWithStatus.map((agent) => (
           <AgentCard
