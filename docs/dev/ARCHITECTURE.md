@@ -6,14 +6,16 @@ This document describes the internal architecture of AOF for developers contribu
 
 ```
 aof/
-├── aof-core       # Core traits and types
-├── aof-llm        # LLM provider abstraction
-├── aof-mcp        # MCP client implementation
-├── aof-runtime    # Agent execution runtime
-├── aof-memory     # Memory backends
-├── aof-tools      # Built-in tool implementations
-├── aof-triggers   # Event trigger system
-└── aofctl         # CLI binary
+├── aof-core          # Core traits, types, coordination events
+├── aof-llm           # LLM provider abstraction
+├── aof-mcp           # MCP client implementation
+├── aof-runtime       # Agent execution runtime
+├── aof-memory        # Memory backends
+├── aof-tools         # Built-in tool implementations
+├── aof-triggers      # Event trigger system
+├── aof-coordination  # Event broadcasting and session persistence
+├── aof-personas      # Agent persona system (AGENTS.md/SOUL.md)
+└── aofctl            # CLI binary
 ```
 
 ## Crate Dependencies
@@ -372,6 +374,51 @@ cargo test --test integration       # Integration tests
 ```bash
 ./scripts/test-pre-compile.sh       # Quick validation (5s)
 ```
+
+## Phase 5: Agent Personas
+
+The persona system gives agents distinct personalities, communication styles, and visual identities.
+
+### Crate: aof-personas
+
+```
+crates/aof-personas/
+├── src/
+│   ├── lib.rs          # Module declarations and re-exports
+│   ├── types.rs        # Agent, Soul, SoulFrontmatter, AgentsFile
+│   ├── loader.rs       # AgentLoader, SoulLoader, AgentCache
+│   ├── composer.rs     # PromptComposer (7-layer instruction composition)
+│   ├── events.rs       # Introduction event builders
+│   ├── metrics.rs      # ReliabilityMetrics, ReliabilityCache
+│   ├── validation.rs   # Structural validation, prompt injection detection
+│   └── watcher.rs      # File watching with debounce
+└── tests/              # 7 integration test files
+```
+
+### Data Flow
+
+```
+AGENTS.md ──> AgentLoader ──> Vec<Agent>
+                                │
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+         PromptComposer   IntroEvents      REST API
+         (system prompt)  (broadcast)      (/api/config)
+                │               │               │
+                ▼               ▼               ▼
+         AgentExecutor    WebSocket ──> Mission Control UI
+         (LLM context)   subscribers    (AgentCard, toasts)
+```
+
+### Key Types
+
+- `Agent` -- Structured agent identity from AGENTS.md
+- `Soul` -- Personality guidance from SOUL.md (YAML frontmatter + prose)
+- `PromptComposer` -- 7-layer system prompt composition with caching
+- `ReliabilityCache` -- Thread-safe metrics computation from event history
+- `PersonaWatcher` -- Filesystem change detection with debounced reload
+
+See [persona-system.md](./persona-system.md) for the complete developer guide.
 
 ## Contributing
 
