@@ -382,11 +382,11 @@ Phase 7 (Coordination)
 | **Phase 3: Messaging Gateway** | Complete (2026-02-13) | MSGG-01, MSGG-02, MSGG-03, MSGG-05 | 100% |
 | **Phase 4: Mission Control UI** | Complete (2026-02-14) | MCUI-01 to MCUI-07, COMM-05 | 100% |
 | **Phase 5: Agent Personas** | Complete (2026-02-14) | PERS-01 to PERS-05, MSGG-04 | 100% |
-| **Phase 6: Conversational Config** | Planned (5 plans) | CONV-01 to CONV-06 | 0% |
-| **Phase 7: Coordination Protocols** | Planned | CORD-01 to CORD-05, COMM-01 to COMM-04 | 0% |
-| **Phase 8: Production Readiness** | Planned | INFR-05 | 0% |
+| **Phase 6: Conversational Config** | Complete (2026-02-14) | CONV-01 to CONV-06 | 100% |
+| **Phase 7: Coordination Protocols** | Complete (2026-02-14) | CORD-01 to CORD-05, COMM-01 to COMM-04 | 100% |
+| **Phase 8: Production Readiness** | Planned | INFR-05, SEC-01 to SEC-03 | 0% |
 
-**Overall Progress:** 62.5% (5/8 phases complete)
+**Overall Progress:** 87.5% (7/8 phases complete)
 
 ---
 
@@ -489,9 +489,9 @@ Phase 2 (Real Ops) can run in parallel with Phase 3-4
 
 ---
 
-**Roadmap Status:** Phase 5 complete, Phase 6 planned (5 plans in 3 waves)
+**Roadmap Status:** Phase 7 complete (6 plans delivered), Phase 8 (Production Readiness) ready for planning
 
-**Next Step:** `/gsd:execute-phase 06-conversational-configuration` to begin execution.
+**Next Step:** `/gsd:plan-phase 8` to create execution plans for Phase 8 (Production Readiness).
 
 ---
 
