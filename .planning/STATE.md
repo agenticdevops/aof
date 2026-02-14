@@ -33,17 +33,17 @@ Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YA
 - **Requirements:** MSGG-01, MSGG-02, MSGG-03, MSGG-05 ✓
 
 ### Status
-Phase 4-03 (Real-Time Collaboration) complete. Squad chat with message dedup, activity feed with event timeline, task detail modal with comments/history. All components WCAG 2.1 AA accessible. Ready for Phase 4-04.
+Phase 4-04 (Configuration APIs & Production Integration) complete. Config API endpoints serve AGENTS.md/TOOLS.md as JSON, static file serving with SPA routing, single daemon deployment ready. Custom Axum router serves HTTP + WebSocket + static files on port 8080. Ready for Phase 4-05.
 
 ### Progress
 
 ```
-Milestone Progress: [█████░░░░░] 50% (12 of 24 plans complete)
+Milestone Progress: [█████░░░░░] 54% (13 of 24 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
 Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
-Phase 4: Mission Control UI      [██████░░░░] 60% (3/5 plans) ← Current
+Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans) ← Current
 Phase 5: Agent Personas          [░░░░░░░░░░] 0%
 Phase 6: Conversational Config   [░░░░░░░░░░] 0%
 Phase 7: Coordination Protocols  [░░░░░░░░░░] 0%
@@ -56,9 +56,9 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 
 ### Velocity
 - **Phases completed:** 3 (Phase 1, Phase 2, Phase 3)
-- **Plans completed:** 10
-- **Requirements delivered:** 22/48 (46%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01
-- **Avg. plan duration:** 641 seconds (10.7 minutes)
+- **Plans completed:** 13
+- **Requirements delivered:** 24/48 (50%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01-04
+- **Avg. plan duration:** 721 seconds (12.0 minutes)
 
 ### Quality
 - **Tests passing:** 254+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50)
@@ -74,13 +74,12 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 04 | 04 | 744s | 10 | 10 | 4 | 2026-02-14 |
 | 04 | 03 | 757s | 11 | 23 | 11 | 2026-02-14 |
 | 04 | 02 | 891s | 12 | 27 | 12 | 2026-02-14 |
 | 04 | 01 | 753s | 10 | 14 | 10 | 2026-02-14 |
 | 03 | 03 | 5400s | 8 | 13 | 7 | 2026-02-13 |
 | 03 | 02 | 993s | 10 | 4 | 9 | 2026-02-13 |
-| 03 | 01 | 565s | 10 | 15 | 5 | 2026-02-13 |
-| Phase 04 P03 | 757 | 11 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -112,6 +111,9 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Redux Toolkit for state management** | Familiar patterns, Redux DevTools support, clear separation of concerns. Event limit (500) prevents memory bloat. | 2026-02-14 | 04 | Implemented |
 | **String literal types instead of enums** | Vite's erasableSyntaxOnly doesn't allow enum syntax. String literals + const objects provide same DX without build errors. | 2026-02-14 | 04 | Implemented |
 | **Exponential backoff cap at 30s for WebSocket reconnection** | Prevents infinite growth. Fast reconnection for transient issues, reasonable delay for persistent outages. | 2026-02-14 | 04 | Implemented |
+| **Custom Axum router in serve.rs for unified daemon** | Build custom router combining TriggerHandler, config API, WebSocket, and static serving instead of modifying aof-triggers. Reuses handler logic while enabling single-daemon deployment. | 2026-02-14 | 04 | Implemented |
+| **SPA fallback routing with ServeDir** | Use tower-http ServeDir with index.html fallback for React Router client-side navigation. All non-API routes serve index.html, browser handles routing. | 2026-02-14 | 04 | Implemented |
+| **SHA256 version hashing for config cache invalidation** | Hash concatenated AGENTS.md + TOOLS.md content for X-Config-Version header. Browser detects changes without polling. Deterministic, efficient. | 2026-02-14 | 04 | Implemented |
 
 ### Todos
 
