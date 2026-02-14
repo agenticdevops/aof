@@ -686,6 +686,79 @@ mod tests {
         assert!(!prompt.contains("[BEHAVIORAL RULES]"), "Behavioral rules should be truncated");
     }
 
+    #[tokio::test]
+    async fn test_caching_works() {
+        let agents = vec![make_test_agent("cache-agent")];
+        let mut souls = HashMap::new();
+        souls.insert("cache-agent".to_string(), make_test_soul("cache-agent"));
+        let tools = vec![make_test_tool("testing")];
+
+        let composer = PromptComposer::new(agents, souls, tools);
+
+        // First call: cache miss
+        let prompt1 = composer.compose_system_prompt_cached("cache-agent").await.unwrap();
+        let stats1 = composer.cache_stats_async().await;
+        assert_eq!(stats1.misses, 1);
+        assert_eq!(stats1.hits, 0);
+        assert_eq!(stats1.entries, 1);
+
+        // Second call: cache hit
+        let prompt2 = composer.compose_system_prompt_cached("cache-agent").await.unwrap();
+        let stats2 = composer.cache_stats_async().await;
+        assert_eq!(stats2.hits, 1);
+        assert_eq!(stats2.misses, 1);
+
+        // Prompts should be identical
+        assert_eq!(prompt1, prompt2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_clear() {
+        let agents = vec![make_test_agent("clear-agent")];
+        let mut souls = HashMap::new();
+        souls.insert("clear-agent".to_string(), make_test_soul("clear-agent"));
+        let tools = vec![make_test_tool("testing")];
+
+        let composer = PromptComposer::new(agents, souls, tools);
+
+        // Populate cache
+        composer.compose_system_prompt_cached("clear-agent").await.unwrap();
+        let stats = composer.cache_stats_async().await;
+        assert_eq!(stats.entries, 1);
+
+        // Clear cache
+        composer.clear_cache().await;
+        let stats = composer.cache_stats_async().await;
+        assert_eq!(stats.entries, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cache_multiple_agents() {
+        let agents = vec![
+            make_test_agent("agent-a"),
+            make_test_agent("agent-b"),
+        ];
+        let mut souls = HashMap::new();
+        souls.insert("agent-a".to_string(), make_test_soul("agent-a"));
+        souls.insert("agent-b".to_string(), make_test_soul("agent-b"));
+        let tools = vec![make_test_tool("testing")];
+
+        let composer = PromptComposer::new(agents, souls, tools);
+
+        // Compose both
+        composer.compose_system_prompt_cached("agent-a").await.unwrap();
+        composer.compose_system_prompt_cached("agent-b").await.unwrap();
+        let stats = composer.cache_stats_async().await;
+        assert_eq!(stats.misses, 2);
+        assert_eq!(stats.entries, 2);
+
+        // Access again (cache hits)
+        composer.compose_system_prompt_cached("agent-a").await.unwrap();
+        composer.compose_system_prompt_cached("agent-b").await.unwrap();
+        let stats = composer.cache_stats_async().await;
+        assert_eq!(stats.hits, 2);
+    }
+
     #[test]
     fn test_large_skill_list_under_default_limit() {
         let mut agent = make_test_agent("big-agent");
