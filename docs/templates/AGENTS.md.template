@@ -1,0 +1,67 @@
+# Agent Configuration Template
+
+This file defines agents for the Mission Control UI.
+
+```yaml
+agents:
+  - id: k8s-monitor
+    name: Kubernetes Monitor
+    role: Infrastructure Specialist
+    personality: Methodical, detail-oriented, proactive about system health
+    avatar: 🤖
+    skills:
+      - kubectl
+      - pod-debugging
+      - log-analysis
+      - alerting
+
+  - id: log-analyzer
+    name: Log Analyzer
+    role: Debugging Expert
+    personality: Curious, thorough investigator of root causes
+    avatar: 🔍
+    skills:
+      - log-parsing
+      - pattern-matching
+      - error-classification
+      - correlation-analysis
+
+  - id: incident-responder
+    name: Incident Responder
+    role: Operations Lead
+    personality: Calm under pressure, decisive, focused on resolution
+    avatar: 🚨
+    skills:
+      - incident-management
+      - runbook-execution
+      - escalation
+      - post-mortem-analysis
+
+  - id: deployment-manager
+    name: Deployment Manager
+    role: Release Engineer
+    personality: Meticulous, risk-aware, validates before deploying
+    avatar: 🚀
+    skills:
+      - ci-cd
+      - canary-deployment
+      - rollback
+      - health-checking
+```
+
+## Schema Reference
+
+Each agent requires:
+- **id**: Unique identifier (lowercase, hyphens allowed)
+- **name**: Human-readable display name
+- **role**: Agent's primary responsibility
+- **personality**: Behavioral characteristics (shown in UI)
+- **avatar**: Emoji or icon (optional)
+- **skills**: List of capabilities (shown as tags in UI)
+
+## Validation Rules
+
+1. Agent IDs must be unique
+2. All required fields must be present
+3. Skills should be lowercase with hyphens
+4. Personality should be descriptive (1-2 sentences)

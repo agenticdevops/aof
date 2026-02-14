@@ -1,0 +1,100 @@
+# Tool Configuration Template
+
+This file defines tools available to agents for the Mission Control UI.
+
+```yaml
+tools:
+  - name: kubectl
+    description: Kubernetes command-line tool for cluster management
+    category: infrastructure
+    input_schema:
+      type: object
+      properties:
+        command:
+          type: string
+          description: kubectl subcommand (get, describe, logs, etc.)
+        args:
+          type: array
+          items:
+            type: string
+          description: Additional arguments
+    output_schema:
+      type: object
+      properties:
+        stdout:
+          type: string
+        stderr:
+          type: string
+        exit_code:
+          type: integer
+
+  - name: curl
+    description: HTTP client for API requests
+    category: networking
+    input_schema:
+      type: object
+      properties:
+        url:
+          type: string
+          description: Target URL
+        method:
+          type: string
+          enum: [GET, POST, PUT, DELETE, PATCH]
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+
+  - name: jq
+    description: JSON processor for parsing and transforming data
+    category: data-processing
+
+  - name: grep
+    description: Text search tool for log analysis
+    category: text-processing
+
+  - name: slack-notify
+    description: Send notifications to Slack channels
+    category: communication
+    input_schema:
+      type: object
+      required: [channel, message]
+      properties:
+        channel:
+          type: string
+        message:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: object
+```
+
+## Schema Reference
+
+Each tool requires:
+- **name**: Unique tool identifier
+- **description**: Human-readable explanation
+- **category**: Tool classification (infrastructure, networking, data-processing, etc.)
+- **input_schema**: JSON Schema for tool inputs (optional)
+- **output_schema**: JSON Schema for tool outputs (optional)
+
+## Categories
+
+Common categories:
+- `infrastructure` - Kubernetes, cloud providers, infrastructure management
+- `networking` - HTTP clients, DNS tools, network diagnostics
+- `data-processing` - JSON, YAML, XML processors
+- `text-processing` - grep, sed, awk, log parsers
+- `communication` - Slack, email, notification services
+- `monitoring` - Metrics, logs, APM tools
+- `security` - Secret managers, authentication tools
+
+## Validation Rules
+
+1. Tool names must be unique
+2. Category should match predefined list (or custom)
+3. JSON schemas are optional but recommended for complex tools
+4. Schemas should follow JSON Schema Draft 7 specification
