@@ -89,6 +89,27 @@ pub struct Soul {
     pub communication_guide: String,
 }
 
+impl Agent {
+    /// Create a new agent with all required fields
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        role: impl Into<String>,
+        avatar: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            role: role.into(),
+            avatar: avatar.into(),
+            personality_traits: Vec::new(),
+            can: Vec::new(),
+            cannot: Vec::new(),
+            skills: Vec::new(),
+        }
+    }
+}
+
 impl From<SoulFrontmatter> for Soul {
     fn from(fm: SoulFrontmatter) -> Self {
         Soul {
@@ -101,5 +122,96 @@ impl From<SoulFrontmatter> for Soul {
             default_intro: fm.default_intro,
             communication_guide: String::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_agent_construction() {
+        let agent = Agent {
+            id: "test-agent".to_string(),
+            name: "Test Agent".to_string(),
+            role: "Tester".to_string(),
+            avatar: "\u{1F916}".to_string(),
+            personality_traits: vec!["curious".to_string()],
+            can: vec!["test things".to_string()],
+            cannot: vec!["break things".to_string()],
+            skills: vec!["testing".to_string()],
+        };
+        assert_eq!(agent.id, "test-agent");
+        assert_eq!(agent.name, "Test Agent");
+
+        // Test Clone
+        let cloned = agent.clone();
+        assert_eq!(cloned.id, agent.id);
+
+        // Test Debug
+        let debug_str = format!("{:?}", agent);
+        assert!(debug_str.contains("test-agent"));
+    }
+
+    #[test]
+    fn test_agent_new_constructor() {
+        let agent = Agent::new("k8s-monitor", "K8s Monitor", "Infra Specialist", "\u{1F916}");
+        assert_eq!(agent.id, "k8s-monitor");
+        assert!(agent.personality_traits.is_empty());
+        assert!(agent.skills.is_empty());
+    }
+
+    #[test]
+    fn test_soul_from_frontmatter() {
+        let fm = SoulFrontmatter {
+            id: "test".to_string(),
+            communication_style: "formal".to_string(),
+            tone: "calm".to_string(),
+            values: vec!["reliability".to_string()],
+            personality_summary: "A test agent".to_string(),
+            boundaries: vec!["Never break things".to_string()],
+            default_intro: "Hello, I am a test agent".to_string(),
+        };
+        let soul = Soul::from(fm);
+        assert_eq!(soul.id, "test");
+        assert_eq!(soul.communication_style, "formal");
+        assert!(soul.communication_guide.is_empty());
+    }
+
+    #[test]
+    fn test_agent_serialization_roundtrip() {
+        let agent = Agent {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            role: "Tester".to_string(),
+            avatar: "\u{1F916}".to_string(),
+            personality_traits: vec!["curious".to_string()],
+            can: vec!["test".to_string()],
+            cannot: vec!["break".to_string()],
+            skills: vec!["testing".to_string()],
+        };
+
+        let json = serde_json::to_string(&agent).unwrap();
+        let deserialized: Agent = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, agent.id);
+        assert_eq!(deserialized.skills, agent.skills);
+    }
+
+    #[test]
+    fn test_agents_file_yaml_parsing() {
+        let yaml = r#"
+agents:
+  - id: test
+    name: Test
+    role: Tester
+    avatar: "\U0001F916"
+    personality_traits: [curious]
+    can: [test]
+    cannot: [break]
+    skills: [testing]
+"#;
+        let file: AgentsFile = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(file.agents.len(), 1);
+        assert_eq!(file.agents[0].id, "test");
     }
 }
