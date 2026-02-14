@@ -2,6 +2,7 @@
  * AgentCard component - displays agent persona with status and capabilities.
  * Redesigned in Phase 5-04 to foreground personality traits, avatar,
  * CAN/CANNOT boundaries, and reliability metrics.
+ * Enhanced in Phase 5-05 with live reliability metrics via useAgentMetrics hook.
  */
 
 import React, { useState } from 'react';
@@ -9,6 +10,7 @@ import type { Agent } from '../types/events';
 import { StatusIndicator } from './StatusIndicator';
 import { PersonalityTraits } from './PersonalityTraits';
 import { CapabilityBoundaries } from './CapabilityBoundaries';
+import { useAgentMetrics } from '../hooks/useAgentMetrics';
 
 /**
  * Component props.
@@ -82,31 +84,50 @@ function getMetricColor(value: number): string {
 
 /**
  * Reliability metric badge component.
+ * Shows loading spinner when metrics are being fetched,
+ * "--" for null/insufficient data, and color-coded percentage otherwise.
  */
 function MetricBadge({
   label,
   value,
+  eventCount,
+  loading,
 }: {
   label: string;
-  value: number | undefined;
+  value: number | null | undefined;
+  eventCount?: number;
+  loading?: boolean;
 }): React.ReactElement {
+  if (loading) {
+    return (
+      <span className="text-xs text-gray-400 dark:text-gray-500 animate-pulse">
+        {label} ...
+      </span>
+    );
+  }
+
   if (value === undefined || value === null) {
     return (
       <span
         className="text-xs text-gray-400 dark:text-gray-500"
-        title={`${label}: unavailable`}
+        title={`${label}: insufficient data${eventCount !== undefined ? ` (${eventCount} events)` : ''}`}
       >
         {label} --
       </span>
     );
   }
 
+  const rounded = Math.round(value * 10) / 10;
+  const tooltipBase = eventCount !== undefined
+    ? `Based on ${eventCount} events`
+    : 'Based on event history';
+
   return (
     <span
       className={`text-xs font-medium ${getMetricColor(value)}`}
-      title={`${label}: ${value}% (based on last 24 hours of operation)`}
+      title={`${label}: ${rounded}% (${tooltipBase})`}
     >
-      {label} {value}%
+      {label} {rounded}%
     </span>
   );
 }
@@ -143,6 +164,18 @@ export const AgentCard = React.memo(function AgentCard({
   className = '',
 }: AgentCardProps): React.ReactElement {
   const [showTooltip, setShowTooltip] = useState(false);
+
+  // Live reliability metrics from API (polls every 5s)
+  const {
+    uptime_percent: liveUptime,
+    success_rate: liveSuccess,
+    event_count: metricsEventCount,
+    loading: metricsLoading,
+  } = useAgentMetrics(agent.id, 5000);
+
+  // Prefer live metrics over static agent props (fallback to agent props)
+  const effectiveUptime = liveUptime ?? agent.uptime_percent ?? null;
+  const effectiveSuccess = liveSuccess ?? agent.success_rate ?? null;
 
   const avatar = agent.avatar || getDefaultAvatar(agent.role);
   const formattedActivity = formatLastActivity(lastActivity);
@@ -197,10 +230,20 @@ export const AgentCard = React.memo(function AgentCard({
           )}
         </div>
 
-        {/* Reliability metrics (right aligned) */}
+        {/* Reliability metrics (right aligned, live from API) */}
         <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
-          <MetricBadge label="Uptime" value={agent.uptime_percent} />
-          <MetricBadge label="Success" value={agent.success_rate} />
+          <MetricBadge
+            label="Uptime"
+            value={effectiveUptime}
+            eventCount={metricsEventCount}
+            loading={metricsLoading}
+          />
+          <MetricBadge
+            label="Success"
+            value={effectiveSuccess}
+            eventCount={metricsEventCount}
+            loading={metricsLoading}
+          />
         </div>
       </div>
 
