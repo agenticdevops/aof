@@ -297,6 +297,65 @@ impl GatewayHub {
             .values()
             .find(|adapter| adapter.platform() == platform)
     }
+
+    /// Handle an agent introduction event by routing to all connected adapters
+    ///
+    /// When a CoordinationEvent with introduction data is received, this method
+    /// formats platform-specific introduction messages and sends them to all
+    /// channels in the agent's squad.
+    pub async fn handle_introduction_event(&self, event: &CoordinationEvent) -> Result<(), AofError> {
+        let introduction = match &event.introduction {
+            Some(intro) => intro,
+            None => return Ok(()), // Not an introduction event
+        };
+
+        tracing::info!(
+            agent_id = %introduction.agent_id,
+            agent_name = %introduction.agent_name,
+            "Routing introduction event to messaging platforms"
+        );
+
+        // Format introduction message for broadcast
+        let message_content = format!(
+            "{} {} joined the squad - \"{}\"",
+            introduction.avatar,
+            introduction.agent_name,
+            introduction.intro_message
+        );
+
+        // Try to broadcast via squad channels if config is available
+        if self.config.is_some() {
+            let broadcast_msg = BroadcastMessage {
+                content: message_content.clone(),
+                target: BroadcastTarget::AllAgents,
+                priority: crate::broadcast::Priority::Normal,
+                source_platform: None,
+                source_channel: None,
+            };
+
+            match self.broadcast(broadcast_msg).await {
+                Ok(result) => {
+                    tracing::info!(
+                        sent = result.sent_count,
+                        failed = result.failed_channels.len(),
+                        "Introduction event broadcast complete"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Failed to broadcast introduction event (non-fatal)"
+                    );
+                }
+            }
+        } else {
+            tracing::debug!(
+                "No gateway config set, skipping introduction broadcast to platforms"
+            );
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
