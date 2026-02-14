@@ -30,6 +30,9 @@ pub struct CoordinationEvent {
     /// Optional agent introduction data (present for AgentIntroduction events)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub introduction: Option<AgentIntroduction>,
+    /// Optional coordination protocol activity (heartbeat, standup, session message)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coordination_activity: Option<CoordinationActivity>,
 }
 
 /// Agent introduction event data
@@ -115,6 +118,55 @@ pub enum IncidentEvent {
     },
 }
 
+/// Protocol-specific coordination activity types
+///
+/// Used for coordination protocols (heartbeat, standup, session messaging)
+/// added in Phase 7. These are optional extensions to CoordinationEvent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum CoordinationActivity {
+    /// Heartbeat health check request
+    HeartbeatRequest {
+        request_id: String,
+    },
+    /// Heartbeat health check response
+    HeartbeatResponse {
+        request_id: String,
+        agent_id: String,
+        status: String,
+    },
+    /// Heartbeat timeout (agent unresponsive)
+    HeartbeatTimeout {
+        request_id: String,
+        unresponsive_agents: Vec<String>,
+    },
+    /// Standup request trigger
+    StandupRequest {
+        request_id: String,
+    },
+    /// Standup response from agent
+    StandupResponse {
+        request_id: String,
+        agent_id: String,
+        what_i_did: String,
+        what_im_doing: String,
+        blockers: Vec<String>,
+    },
+    /// Standup summary (aggregated from all agents)
+    StandupSummary {
+        request_id: String,
+        summary: String,
+        agent_count: usize,
+    },
+    /// Session message between agents
+    SessionMessage {
+        from_agent: String,
+        to_agent: String,
+        message_type: String,
+        content: String,
+    },
+}
+
 impl CoordinationEvent {
     /// Create a coordination event from an activity event
     ///
@@ -131,6 +183,7 @@ impl CoordinationEvent {
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             introduction: None,
+            coordination_activity: None,
         }
     }
 
@@ -155,6 +208,7 @@ impl CoordinationEvent {
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             introduction: Some(introduction),
+            coordination_activity: None,
         }
     }
 
@@ -211,6 +265,148 @@ impl CoordinationEvent {
         let agent_id_str = agent_id.into();
         let activity = ActivityEvent::error(message);
         Self::from_activity(activity, agent_id_str, session_id)
+    }
+
+    // Coordination protocol convenience constructors
+
+    /// Create heartbeat request event
+    pub fn heartbeat_request(
+        session_id: impl Into<String>,
+        request_id: impl Into<String>,
+    ) -> Self {
+        let activity = ActivityEvent::info("Heartbeat request");
+        Self {
+            activity,
+            agent_id: "coordinator".to_string(),
+            session_id: session_id.into(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            introduction: None,
+            coordination_activity: Some(CoordinationActivity::HeartbeatRequest {
+                request_id: request_id.into(),
+            }),
+        }
+    }
+
+    /// Create heartbeat response event
+    pub fn heartbeat_response(
+        session_id: impl Into<String>,
+        request_id: impl Into<String>,
+        agent_id: impl Into<String>,
+        status: impl Into<String>,
+    ) -> Self {
+        let agent_id_str = agent_id.into();
+        let activity = ActivityEvent::info(format!("Heartbeat response from {}", agent_id_str));
+        Self {
+            activity,
+            agent_id: agent_id_str.clone(),
+            session_id: session_id.into(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            introduction: None,
+            coordination_activity: Some(CoordinationActivity::HeartbeatResponse {
+                request_id: request_id.into(),
+                agent_id: agent_id_str,
+                status: status.into(),
+            }),
+        }
+    }
+
+    /// Create heartbeat timeout event
+    pub fn heartbeat_timeout(
+        session_id: impl Into<String>,
+        request_id: impl Into<String>,
+        unresponsive_agents: Vec<String>,
+    ) -> Self {
+        let activity = ActivityEvent::info(format!(
+            "Heartbeat timeout: {} agents unresponsive",
+            unresponsive_agents.len()
+        ));
+        Self {
+            activity,
+            agent_id: "coordinator".to_string(),
+            session_id: session_id.into(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            introduction: None,
+            coordination_activity: Some(CoordinationActivity::HeartbeatTimeout {
+                request_id: request_id.into(),
+                unresponsive_agents,
+            }),
+        }
+    }
+
+    /// Create standup request event
+    pub fn standup_request(
+        session_id: impl Into<String>,
+        request_id: impl Into<String>,
+    ) -> Self {
+        let activity = ActivityEvent::info("Standup request");
+        Self {
+            activity,
+            agent_id: "coordinator".to_string(),
+            session_id: session_id.into(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            introduction: None,
+            coordination_activity: Some(CoordinationActivity::StandupRequest {
+                request_id: request_id.into(),
+            }),
+        }
+    }
+
+    /// Create standup response event
+    pub fn standup_response(
+        session_id: impl Into<String>,
+        request_id: impl Into<String>,
+        agent_id: impl Into<String>,
+        what_i_did: impl Into<String>,
+        what_im_doing: impl Into<String>,
+        blockers: Vec<String>,
+    ) -> Self {
+        let agent_id_str = agent_id.into();
+        let activity = ActivityEvent::info(format!("Standup response from {}", agent_id_str));
+        Self {
+            activity,
+            agent_id: agent_id_str.clone(),
+            session_id: session_id.into(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            introduction: None,
+            coordination_activity: Some(CoordinationActivity::StandupResponse {
+                request_id: request_id.into(),
+                agent_id: agent_id_str,
+                what_i_did: what_i_did.into(),
+                what_im_doing: what_im_doing.into(),
+                blockers,
+            }),
+        }
+    }
+
+    /// Create session message event
+    pub fn session_message(
+        session_id: impl Into<String>,
+        from_agent: impl Into<String>,
+        to_agent: impl Into<String>,
+        message_type: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        let from_agent_str = from_agent.into();
+        let activity = ActivityEvent::info(format!("Session message from {}", from_agent_str));
+        Self {
+            activity,
+            agent_id: from_agent_str.clone(),
+            session_id: session_id.into(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            introduction: None,
+            coordination_activity: Some(CoordinationActivity::SessionMessage {
+                from_agent: from_agent_str,
+                to_agent: to_agent.into(),
+                message_type: message_type.into(),
+                content: content.into(),
+            }),
+        }
     }
 }
 
@@ -737,5 +933,155 @@ mod tests {
         assert_eq!(deserialized.action, "classify");
         assert_eq!(deserialized.confidence, 0.88);
         assert_eq!(deserialized.tags.len(), 1);
+    }
+
+    #[test]
+    fn test_heartbeat_request_constructor() {
+        let event = CoordinationEvent::heartbeat_request("session-123", "req-001");
+        assert_eq!(event.session_id, "session-123");
+        assert_eq!(event.agent_id, "coordinator");
+        assert!(event.coordination_activity.is_some());
+        match event.coordination_activity.unwrap() {
+            CoordinationActivity::HeartbeatRequest { request_id } => {
+                assert_eq!(request_id, "req-001");
+            }
+            _ => panic!("Expected HeartbeatRequest"),
+        }
+    }
+
+    #[test]
+    fn test_heartbeat_response_constructor() {
+        let event = CoordinationEvent::heartbeat_response(
+            "session-123",
+            "req-001",
+            "agent-a",
+            "healthy",
+        );
+        assert_eq!(event.session_id, "session-123");
+        assert_eq!(event.agent_id, "agent-a");
+        assert!(event.coordination_activity.is_some());
+        match event.coordination_activity.unwrap() {
+            CoordinationActivity::HeartbeatResponse {
+                request_id,
+                agent_id,
+                status,
+            } => {
+                assert_eq!(request_id, "req-001");
+                assert_eq!(agent_id, "agent-a");
+                assert_eq!(status, "healthy");
+            }
+            _ => panic!("Expected HeartbeatResponse"),
+        }
+    }
+
+    #[test]
+    fn test_heartbeat_timeout_constructor() {
+        let unresponsive = vec!["agent-x".to_string(), "agent-y".to_string()];
+        let event = CoordinationEvent::heartbeat_timeout(
+            "session-123",
+            "req-001",
+            unresponsive.clone(),
+        );
+        assert_eq!(event.session_id, "session-123");
+        assert!(event.coordination_activity.is_some());
+        match event.coordination_activity.unwrap() {
+            CoordinationActivity::HeartbeatTimeout {
+                request_id,
+                unresponsive_agents,
+            } => {
+                assert_eq!(request_id, "req-001");
+                assert_eq!(unresponsive_agents, unresponsive);
+            }
+            _ => panic!("Expected HeartbeatTimeout"),
+        }
+    }
+
+    #[test]
+    fn test_standup_request_constructor() {
+        let event = CoordinationEvent::standup_request("session-123", "standup-001");
+        assert_eq!(event.session_id, "session-123");
+        assert!(event.coordination_activity.is_some());
+        match event.coordination_activity.unwrap() {
+            CoordinationActivity::StandupRequest { request_id } => {
+                assert_eq!(request_id, "standup-001");
+            }
+            _ => panic!("Expected StandupRequest"),
+        }
+    }
+
+    #[test]
+    fn test_standup_response_constructor() {
+        let event = CoordinationEvent::standup_response(
+            "session-123",
+            "standup-001",
+            "agent-a",
+            "Fixed bug",
+            "Working on feature",
+            vec!["Need database access".to_string()],
+        );
+        assert_eq!(event.session_id, "session-123");
+        assert_eq!(event.agent_id, "agent-a");
+        assert!(event.coordination_activity.is_some());
+        match event.coordination_activity.unwrap() {
+            CoordinationActivity::StandupResponse {
+                request_id,
+                agent_id,
+                what_i_did,
+                what_im_doing,
+                blockers,
+            } => {
+                assert_eq!(request_id, "standup-001");
+                assert_eq!(agent_id, "agent-a");
+                assert_eq!(what_i_did, "Fixed bug");
+                assert_eq!(what_im_doing, "Working on feature");
+                assert_eq!(blockers.len(), 1);
+            }
+            _ => panic!("Expected StandupResponse"),
+        }
+    }
+
+    #[test]
+    fn test_session_message_constructor() {
+        let event = CoordinationEvent::session_message(
+            "session-123",
+            "agent-a",
+            "agent-b",
+            "announcement",
+            "Hello from A",
+        );
+        assert_eq!(event.session_id, "session-123");
+        assert_eq!(event.agent_id, "agent-a");
+        assert!(event.coordination_activity.is_some());
+        match event.coordination_activity.unwrap() {
+            CoordinationActivity::SessionMessage {
+                from_agent,
+                to_agent,
+                message_type,
+                content,
+            } => {
+                assert_eq!(from_agent, "agent-a");
+                assert_eq!(to_agent, "agent-b");
+                assert_eq!(message_type, "announcement");
+                assert_eq!(content, "Hello from A");
+            }
+            _ => panic!("Expected SessionMessage"),
+        }
+    }
+
+    #[test]
+    fn test_coordination_activity_serialization() {
+        let event = CoordinationEvent::heartbeat_request("session-123", "req-001");
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: CoordinationEvent = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.coordination_activity.is_some());
+    }
+
+    #[test]
+    fn test_coordination_event_without_coordination_activity() {
+        let event = CoordinationEvent::agent_started("agent-1", "session-123");
+        assert!(event.coordination_activity.is_none());
+        let json = serde_json::to_string(&event).unwrap();
+        // Should not contain coordination_activity in JSON
+        assert!(!json.contains("coordination_activity"));
     }
 }

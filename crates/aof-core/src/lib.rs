@@ -80,8 +80,8 @@ pub use activity::{
     ActivityDetails, ActivityEvent, ActivityLogger, ActivityType, NoopActivityLogger, TokenCount,
 };
 pub use coordination::{
-    AgentIntroduction, CoordinationEvent, DecisionLogEntry, SessionState, AgentState, AgentStatus,
-    TaskInfo, TaskStatus,
+    AgentIntroduction, CoordinationActivity, CoordinationEvent, DecisionLogEntry, SessionState,
+    AgentState, AgentStatus, TaskInfo, TaskStatus,
 };
 
 /// Version information
