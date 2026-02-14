@@ -101,14 +101,20 @@ const tasksSlice = createSlice({
      * Set all tasks (batch load from server).
      */
     setTasks(state, action: PayloadAction<Task[]>) {
-      const lanes = { ...emptyLanes };
+      const lanes: TasksByLane = {
+        backlog: [],
+        assigned: [],
+        'in-progress': [],
+        review: [],
+        done: [],
+      };
 
       action.payload.forEach((task) => {
         lanes[task.lane].push(task);
       });
 
       state.tasks = lanes;
-      state.optimisticTasks = { ...lanes };
+      state.optimisticTasks = JSON.parse(JSON.stringify(lanes));
       state.loading = false;
       state.error = null;
     },
