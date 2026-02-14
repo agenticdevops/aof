@@ -39,3 +39,19 @@ export {
   isConfirmation,
   isError,
 } from './conversation';
+
+export type {
+  AgentHealthRecord,
+  AgentHealthStatus,
+  HeartbeatHealthResponse,
+  StandupResponseRecord,
+  StandupResult,
+  CoordinationMetrics,
+  CoordinationMode,
+  CoordinationState,
+  CoordinationEventType,
+  HeartbeatResponsePayload,
+  HeartbeatTimeoutPayload,
+  StandupResponsePayload,
+  StandupSummaryPayload,
+} from './coordination';

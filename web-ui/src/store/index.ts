@@ -10,6 +10,7 @@ import tasksReducer from './tasksSlice';
 import chatReducer from './chatSlice';
 import activitiesReducer from './activitiesSlice';
 import conversationReducer from './conversationSlice';
+import coordinationReducer from './coordinationSlice';
 
 /**
  * Configure Redux store with slices.
@@ -22,6 +23,7 @@ export const store = configureStore({
     chat: chatReducer,
     activities: activitiesReducer,
     conversation: conversationReducer,
+    coordination: coordinationReducer,
   },
   // Enable Redux DevTools in development
   devTools: import.meta.env.DEV,
