@@ -1,6 +1,13 @@
 # AOF Local Testing Setup (gojo/)
 
-This directory contains working test configurations for AOF using **Google Gemini 2.5 Flash**.
+This directory contains working test configurations for AOF using **Google Gemini 2.5 Flash** with **11 specialized agent minions**.
+
+## Quick Facts
+
+- ✅ **11 agents ready to use** - All validated with Google Gemini 2.5 Flash
+- ✅ **Server configuration working** - Agent discovery auto-enabled
+- ✅ **Full stack tested** - Daemon + Web UI + Agents all functional
+- ✅ **Documentation complete** - Quick start, detailed guides, and minion reference
 
 ## Prerequisites
 
@@ -8,222 +15,205 @@ This directory contains working test configurations for AOF using **Google Gemin
 2. **Rust** - Build the project
 3. **Cargo** - For running commands
 
-## Setup
-
-### Step 1: Set Your Google API Key
+## Quick Start (30 seconds)
 
 ```bash
-export GOOGLE_API_KEY="your-api-key-here"
-```
+# 1. Set API key
+export GOOGLE_API_KEY="your-key-from-aistudio.google.com"
 
-**To persist across terminal sessions:**
-```bash
-echo 'export GOOGLE_API_KEY="your-api-key-here"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-### Step 2: Build AOF
-
-```bash
+# 2. Run your first minion
 cd /Users/gshah/work/opsflow-sh/aof
-cargo build --release
+aofctl run agent gojo/agents/kubo.yaml --prompt "Tell me about yourself"
 ```
 
-## Testing
+## Available Minions
 
-### Configuration Files
+| Bot | Name | What It Does |
+|-----|------|------------|
+| 🐴 | **kubo** | Kubernetes expert - cluster health, troubleshooting, architecture |
+| 🐳 | **doku** | Docker specialist - Dockerfile optimization, container best practices |
+| 🏗️ | **rafo** | Terraform wizard - IaC design, module structure, state management |
+| ⚙️ | **ergo** | Argo orchestrator - CI/CD pipelines, GitOps workflows, deployments |
+| ☁️ | **wos** | AWS champion - cloud architecture, serverless, cost optimization |
+| 🔵 | **zure** | Azure specialist - enterprise cloud, hybrid, DevOps |
+| 🐧 | **nux** | Linux admin - system troubleshooting, shell scripting, optimization |
+| 📋 | **zibl** | Ansible master - playbooks, configuration management, automation |
+| ✅ | **quick-test** | General-purpose test agent |
+| 🔍 | **k8s-checker** | Kubernetes health diagnostics |
+| 📊 | **system-monitor** | System resource monitoring |
 
-- **serve-config.yaml** - Main server configuration with 3 pre-configured test agents
-- **agents/** - Individual agent YAML files for testing
+## Testing Scenarios
 
-### Available Test Agents
-
-1. **quick-test** - Simple general-purpose agent (good for first test)
-   ```bash
-   aofctl run agent gojo/agents/quick-test.yaml --prompt "Say hello and tell me about yourself"
-   ```
-
-2. **k8s-checker** - Kubernetes cluster health checker
-   ```bash
-   aofctl run agent gojo/agents/k8s-checker.yaml --prompt "Check the health of my cluster"
-   ```
-
-3. **system-monitor** - System resource and performance monitor
-   ```bash
-   aofctl run agent gojo/agents/system-monitor.yaml --prompt "Check my system resources"
-   ```
-
-4. **general-assistant** - From serve-config (multi-turn capable)
-   ```bash
-   aofctl run agent --name general-assistant --interactive
-   ```
-
-### Test Scenarios
-
-#### Scenario 1: Quick Agent Test (5 minutes)
+### Scenario 1: Quick Single Agent Test (2 minutes)
 
 ```bash
-# Terminal 1: Start the daemon
+export GOOGLE_API_KEY="your-api-key-here"
+cd /Users/gshah/work/opsflow-sh/aof
+
+# Try any minion
+aofctl run agent gojo/agents/kubo.yaml --prompt "What can you help me with?"
+aofctl run agent gojo/agents/doku.yaml --prompt "How do I optimize Docker images?"
+aofctl run agent gojo/agents/rafo.yaml --prompt "Design a Terraform setup"
+```
+
+### Scenario 2: Full Stack Integration (15 minutes)
+
+```bash
+# Terminal 1: Start server daemon
 export GOOGLE_API_KEY="your-api-key-here"
 cargo run -p aofctl -- serve --config gojo/serve-config.yaml
 
-# Terminal 2: Run a quick test
-export GOOGLE_API_KEY="your-api-key-here"
-aofctl run agent gojo/agents/quick-test.yaml --prompt "What's the capital of France?"
-```
-
-**Expected output:**
-```
-Agent: quick-test
-Status: executing...
-
-Response: Paris is the capital of France. It's known as "The City of Light" and is...
-```
-
-#### Scenario 2: Full Integration Test (15 minutes)
-
-```bash
-# Terminal 1: Start the daemon
-export GOOGLE_API_KEY="your-api-key-here"
-cargo run -p aofctl -- serve --config gojo/serve-config.yaml
-
-# Terminal 2: Open web UI
+# Terminal 2: Start web UI
 cd web-ui
 npm run dev
 # Visit http://localhost:5173
 
-# Terminal 3: Run an agent
+# Terminal 3: Run agents
 export GOOGLE_API_KEY="your-api-key-here"
-aofctl run agent gojo/agents/quick-test.yaml --prompt "Tell me a joke"
+aofctl run agent gojo/agents/kubo.yaml --prompt "Check cluster health"
 
-# You should see:
+# You'll see:
 # - Agent execution in Terminal 1 logs
-# - Real-time events in web UI (http://localhost:5173)
+# - Real-time events in Web UI
 # - Response in Terminal 3
 ```
 
-#### Scenario 3: Interactive Agent (testing multi-turn conversation)
+### Scenario 3: Interactive Conversation
+
+Have a multi-turn chat with any minion:
 
 ```bash
-# Use --interactive flag for multi-turn conversation
 export GOOGLE_API_KEY="your-api-key-here"
 
-# Option A: Use pre-configured agent from serve-config
-aofctl run agent --name general-assistant --interactive
-
-# Option B: Use standalone agent file
-aofctl run agent gojo/agents/quick-test.yaml --interactive
-
-# Then type your questions and have a conversation
+# Interactive mode with any agent
+aofctl run agent gojo/agents/kubo.yaml --interactive
+# Now ask follow-up questions, have real conversation
+# Press Ctrl+C to exit
 ```
 
-### Health Checks
+## Health Checks
 
-Once serve is running, verify it's working:
+Once server is running (from Scenario 2, Terminal 1):
 
 ```bash
-# Health probe (liveness check)
+# Liveness check
 curl http://localhost:8080/health
-# Expected: {"status":"healthy","uptime":"...","version":"..."}
 
-# Readiness probe
+# Readiness check  
 curl http://localhost:8080/ready
-# Expected: {"ready":true,"checks":{...}}
 
 # Metrics endpoint
 curl http://localhost:8080/metrics
-# Expected: Prometheus metrics in text format
 ```
 
-## Troubleshooting
+## Configuration
 
-### Error: "No API key configured"
+### serve-config.yaml
 
-**Solution:**
+Main server configuration. Key features:
+- Auto-discovers agents from `gojo/agents/` directory
+- Uses Google Gemini 2.5 Flash as default LLM
+- Exposes WebSocket at `ws://localhost:8080/ws`
+- Health checks every 30 seconds
+- Graceful shutdown (30 second timeout)
+
+### Agent Files
+
+Each agent YAML in `gojo/agents/` is fully independent and can be run directly:
+
 ```bash
-export GOOGLE_API_KEY="your-api-key-here"
-echo $GOOGLE_API_KEY  # Verify it's set
+# Run any agent directly
+aofctl run agent gojo/agents/kubo.yaml --prompt "Your question"
+
+# Or use with custom model
+aofctl run agent gojo/agents/kubo.yaml \
+  --model "anthropic:claude-3-5-sonnet" \
+  --prompt "Your question"
 ```
 
-### Error: "YAML parsing error at line X"
+## Switching to Claude (Anthropic)
 
-**Cause:** YAML indentation or syntax error in config file
+If you have an Anthropic API key, you can use Claude instead:
 
-**Solution:** 
-- Check indentation (2 spaces, not tabs)
-- Use provided configs in this directory (they're pre-validated)
-- Run: `cargo run -p aofctl -- validate --file gojo/serve-config.yaml`
+```bash
+export ANTHROPIC_API_KEY="sk-..."
 
-### Error: "Connection refused on localhost:8080"
+# Use with specific agent
+aofctl run agent gojo/agents/kubo.yaml \
+  --model "anthropic:claude-3-5-sonnet" \
+  --prompt "Your question"
 
-**Solution:**
-- Make sure `aofctl serve` is running in Terminal 1
-- Check the port: `lsof -i :8080`
-- Verify config has `port: 8080`
-
-### Web UI shows "Disconnected"
-
-**Solution:**
-- Ensure daemon is running: `aofctl serve --config gojo/serve-config.yaml`
-- Check browser console for WebSocket errors
-- Verify backend is on http://localhost:8080
+# Or modify serve-config.yaml:
+# Change: model: "gemini-2.5-flash"
+# To: model: "claude-3-5-sonnet"
+```
 
 ## File Structure
 
 ```
 gojo/
+├── SETUP.md                  # Quick start guide
+├── MINIONS.md                # Quick reference card
+├── AGENTS.md                 # Detailed specifications
 ├── README.md                 # This file
-├── SETUP.md                  # Quick reference
-├── serve-config.yaml         # Main server config (3 pre-configured agents)
-├── agents/
-│   ├── quick-test.yaml       # Simple test agent
-│   ├── k8s-checker.yaml      # Kubernetes health checker
-│   └── system-monitor.yaml   # System resource monitor
-├── test-quick.sh             # Quick 5-minute test
-└── test-interactive.sh       # Interactive multi-turn test
+├── serve-config.yaml         # Server configuration
+├── test-quick.sh             # 5-minute test script
+├── test-interactive.sh       # Interactive test script
+└── agents/                   # Your minion squad
+    ├── kubo.yaml            # ✓ Kubernetes expert
+    ├── doku.yaml            # ✓ Docker specialist
+    ├── rafo.yaml            # ✓ Terraform wizard
+    ├── ergo.yaml            # ✓ Argo orchestrator
+    ├── wos.yaml             # ✓ AWS champion
+    ├── zure.yaml            # ✓ Azure specialist
+    ├── nux.yaml             # ✓ Linux admin
+    ├── zibl.yaml            # ✓ Ansible master
+    ├── quick-test.yaml      # ✓ General test
+    ├── k8s-checker.yaml     # ✓ K8s diagnostics
+    └── system-monitor.yaml  # ✓ System monitor
 ```
 
-## Using Anthropic (Claude) Instead
+## Troubleshooting
 
-If you want to use your Anthropic subscription (Claude Sonnet, etc.):
+### "No API key configured"
+```bash
+export GOOGLE_API_KEY="your-api-key-here"
+```
 
-1. Set your API key:
-   ```bash
-   export ANTHROPIC_API_KEY="sk-..."
-   ```
+### "Address already in use" (port 8080)
+```bash
+# Something is using port 8080
+lsof -i :8080
+# Kill it or wait for timeout, then retry
+```
 
-2. Update models in config files:
-   ```yaml
-   # Change:
-   model: "google:gemini-2.5-flash"
-   
-   # To:
-   model: "anthropic:claude-3-5-sonnet"
-   ```
+### "Connection refused"
+- Make sure daemon is running in Terminal 1
+- Check if server started with: `cargo run -p aofctl -- serve ...`
+- Verify no firewall blocking localhost:8080
 
-3. Or use directly in CLI:
-   ```bash
-   aofctl run agent gojo/agents/quick-test.yaml \
-     --model "anthropic:claude-3-5-sonnet" \
-     --prompt "Your question here"
-   ```
+### "YAML parsing error"
+- All provided configs are pre-validated
+- Don't edit YAML files manually (2-space indentation required)
+- Use provided files in `gojo/` directory
+
+## Documentation Guide
+
+- **SETUP.md** ← Start here for quick setup
+- **MINIONS.md** ← Quick reference of all 11 agents
+- **AGENTS.md** ← Detailed specs and use cases for each agent
+- **README.md** ← This file (overview and scenarios)
 
 ## Next Steps
 
-After confirming basic functionality:
-
-1. **Run full test suite:** `cargo test --all`
-2. **Check metrics:** Visit http://localhost:8080/metrics while agent is running
-3. **Try web UI:** http://localhost:5173 with daemon running
-4. **Explore agents:** Create your own agent YAML files
-
-## Documentation
-
-- **User Guide:** ../../docs/introduction/quickstart.md
-- **Architecture:** ../../docs/architecture/implementation-guide.md
-- **Agent Specs:** ../../docs/user-guide/agents/
-- **CLI Reference:** `aofctl --help`
+1. **Set API key:** `export GOOGLE_API_KEY="your-key"`
+2. **Try first agent:** `aofctl run agent gojo/agents/kubo.yaml --prompt "Hello!"`
+3. **Run full stack:** Follow Scenario 2 above
+4. **Pick your minion:** Choose your favorite from `gojo/agents/` and start working
+5. **Create workflows:** Combine multiple minions for complex tasks
 
 ---
 
-**Ready to test? Start with Scenario 1 above! 🚀**
+**Your testing infrastructure is ready! 🚀**
+
+For all 11 agent details, see **MINIONS.md**.

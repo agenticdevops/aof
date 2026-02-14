@@ -1,50 +1,29 @@
-server:
-  host: "127.0.0.1"
-  port: 8080
-  health_check_interval_secs: 30
-  shutdown_timeout_secs: 30
-  cors_enabled: true
-  max_connections: 1000
-
-llm:
-  provider: "google"
-  model: "gemini-2.5-flash"
-  timeout_secs: 60
-  retry_attempts: 3
-
-agents:
-  - name: "k8s-helper"
-    model: "google:gemini-2.5-flash"
-    tools:
-      - kubectl
-      - shell
-    instructions: "You are a Kubernetes expert assistant. Help diagnose and resolve cluster issues."
-    memory_type: "InMemory"
-
-  - name: "general-assistant"
-    model: "google:gemini-2.5-flash"
-    tools:
-      - shell
-    instructions: "You are a helpful general-purpose assistant. Respond accurately and concisely to any question."
-    memory_type: "InMemory"
-
-  - name: "code-analyzer"
-    model: "google:gemini-2.5-flash"
-    tools:
-      - shell
-    instructions: "You are an expert code analyzer. Review code for quality, performance, and best practices."
-    memory_type: "InMemory"
-
-triggers:
-  slack:
-    enabled: false
-  discord:
-    enabled: false
-
-logging:
-  level: "info"
-  format: "json"
-
-observability:
-  metrics_enabled: true
-  tracing_enabled: true
+apiVersion: aof.dev/v1
+kind: ServerConfig
+metadata:
+  name: aof-server
+  namespace: default
+spec:
+  server:
+    host: "127.0.0.1"
+    port: 8080
+    health_check_interval_secs: 30
+    shutdown_timeout_secs: 30
+  
+  llm:
+    provider: "google"
+    model: "gemini-2.5-flash"
+  
+  agent_discovery:
+    paths:
+      - "./gojo/agents"
+  
+  triggers:
+    slack:
+      enabled: false
+    discord:
+      enabled: false
+  
+  logging:
+    level: "info"
+    format: "json"
