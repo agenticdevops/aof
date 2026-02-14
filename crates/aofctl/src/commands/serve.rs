@@ -1106,15 +1106,6 @@ pub async fn execute(
     use axum::response::IntoResponse;
     use axum::Json as AxumJson;
 
-    // Root handler
-    async fn root_handler() -> impl IntoResponse {
-        AxumJson(serde_json::json!({
-            "service": "aof-daemon",
-            "version": env!("CARGO_PKG_VERSION"),
-            "status": "running"
-        }))
-    }
-
     // Health check handler
     async fn health_handler() -> impl IntoResponse {
         AxumJson(serde_json::json!({
@@ -1249,8 +1240,8 @@ pub async fn execute(
     }
 
     // Build main router with all routes
+    // Note: Don't add route for "/" here - fallback_service will handle it
     let mut app = Router::new()
-        .route("/", get(root_handler))
         .route("/health", get(health_handler))
         .route("/webhook/:platform", post(webhook_handler))
         .route("/ws", get(handle_websocket_upgrade))
