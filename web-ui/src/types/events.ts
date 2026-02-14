@@ -55,6 +55,7 @@ export type AgentStatus = "idle" | "working" | "blocked" | "error";
 
 /**
  * Agent configuration interface.
+ * Extended with persona fields from AGENTS.md (Phase 5).
  */
 export interface Agent {
   /** Agent unique identifier */
@@ -63,13 +64,13 @@ export interface Agent {
   /** Human-readable agent name */
   name: string;
 
-  /** Agent role/persona */
+  /** Agent role/persona (e.g., "Infrastructure Specialist") */
   role: string;
 
-  /** Personality description */
+  /** Personality description (free-form text) */
   personality?: string;
 
-  /** Avatar URL or emoji */
+  /** Avatar emoji (from AGENTS.md, e.g., "🤖") */
   avatar?: string;
 
   /** Agent skills/capabilities */
@@ -77,6 +78,69 @@ export interface Agent {
 
   /** Current agent status */
   status: AgentStatus;
+
+  /** Personality trait keywords (e.g., ["methodical", "proactive", "detail-oriented"]) */
+  personality_traits?: string[];
+
+  /** Actions the agent CAN perform (from AGENTS.md) */
+  can?: string[];
+
+  /** Actions the agent CANNOT perform (from AGENTS.md) */
+  cannot?: string[];
+
+  /** Communication style (e.g., "calm-professional") */
+  communication_style?: string;
+
+  /** Tone descriptor (e.g., "formal", "friendly") */
+  tone?: string;
+
+  /** Introduction message shown on first appearance */
+  intro_message?: string;
+
+  /** Uptime percentage (computed from event history, 0-100) */
+  uptime_percent?: number;
+
+  /** Success rate percentage (computed from event history, 0-100) */
+  success_rate?: number;
+}
+
+/**
+ * Persona information subset of Agent.
+ * Used when only persona-related fields are needed.
+ */
+export interface PersonaInfo {
+  /** Personality trait keywords */
+  personality_traits: string[];
+
+  /** Actions the agent CAN perform */
+  can: string[];
+
+  /** Actions the agent CANNOT perform */
+  cannot: string[];
+
+  /** Communication style */
+  communication_style?: string;
+
+  /** Tone descriptor */
+  tone?: string;
+}
+
+/**
+ * Introduction message event data.
+ * Matches Phase 1 CoordinationEvent::AgentIntroduction structure.
+ */
+export interface IntroductionMessage {
+  /** Agent identifier */
+  agent_name: string;
+
+  /** Introduction message text */
+  intro_message: string;
+
+  /** Agent skills for display */
+  skills: string[];
+
+  /** Agent avatar emoji */
+  avatar?: string;
 }
 
 /**
