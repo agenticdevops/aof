@@ -6,7 +6,7 @@ metadata:
 spec:
   server:
     host: "127.0.0.1"
-    port: 8080
+    port: 7777
     health_check_interval_secs: 30
     shutdown_timeout_secs: 30
   

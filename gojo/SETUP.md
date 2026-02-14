@@ -23,6 +23,7 @@ All working test configurations have been created in `gojo/` directory.
 - ✅ **README.md** - Full testing guide with scenarios
 - ✅ **MINIONS.md** - Quick reference card for all agents
 - ✅ **AGENTS.md** - Detailed agent specifications
+- ✅ **PORT-CONFIG.md** - Port configuration guide (currently using 7777)
 - ✅ **SETUP.md** - This file
 
 ## Quick Start (Copy-Paste Ready)
@@ -50,7 +51,12 @@ cargo run -p aofctl -- serve --config gojo/serve-config.yaml
 
 **Terminal 2 - Web UI:**
 ```bash
-cd web-ui
+# First time only: Create environment config
+cd ../web-ui
+cp .env.local.template .env.local
+# (URLs already configured for port 7777)
+
+# Start the web UI
 npm run dev
 # Visit http://localhost:5173
 ```
@@ -137,24 +143,24 @@ export GOOGLE_API_KEY="your-api-key-here"
 echo $GOOGLE_API_KEY  # Verify it's set
 ```
 
-### "Address already in use" on port 8080
+### "Address already in use" on port 7777
 ```bash
-# Find what's using port 8080:
-lsof -i :8080
+# Find what's using port 7777:
+lsof -i :7777
 
 # Kill the process or wait for it to timeout
 # Then retry the serve command
 ```
 
-### "Connection refused" to localhost:8080
+### "Connection refused" to localhost:7777
 - Verify daemon is running in Terminal 1
 - Check `cargo run -p aofctl -- serve` output
-- Ensure no firewall blocking localhost:8080
+- Ensure no firewall blocking localhost:7777
 
 ### Web UI shows "Disconnected"
 - Verify daemon is running: `cargo run -p aofctl -- serve --config gojo/serve-config.yaml`
 - Check browser console for errors
-- Verify WebSocket is at ws://localhost:8080/ws
+- Verify WebSocket is at ws://localhost:7777/ws
 
 ## Next: Try It Out!
 

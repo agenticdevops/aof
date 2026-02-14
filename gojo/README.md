@@ -97,13 +97,13 @@ Once server is running (from Scenario 2, Terminal 1):
 
 ```bash
 # Liveness check
-curl http://localhost:8080/health
+curl http://localhost:7777/health
 
 # Readiness check  
-curl http://localhost:8080/ready
+curl http://localhost:7777/ready
 
 # Metrics endpoint
-curl http://localhost:8080/metrics
+curl http://localhost:7777/metrics
 ```
 
 ## Configuration
@@ -113,7 +113,7 @@ curl http://localhost:8080/metrics
 Main server configuration. Key features:
 - Auto-discovers agents from `gojo/agents/` directory
 - Uses Google Gemini 2.5 Flash as default LLM
-- Exposes WebSocket at `ws://localhost:8080/ws`
+- Exposes WebSocket at `ws://localhost:7777/ws`
 - Health checks every 30 seconds
 - Graceful shutdown (30 second timeout)
 
@@ -180,17 +180,17 @@ gojo/
 export GOOGLE_API_KEY="your-api-key-here"
 ```
 
-### "Address already in use" (port 8080)
+### "Address already in use" (port 7777)
 ```bash
-# Something is using port 8080
-lsof -i :8080
+# Something is using port 7777
+lsof -i :7777
 # Kill it or wait for timeout, then retry
 ```
 
 ### "Connection refused"
 - Make sure daemon is running in Terminal 1
 - Check if server started with: `cargo run -p aofctl -- serve ...`
-- Verify no firewall blocking localhost:8080
+- Verify no firewall blocking localhost:7777
 
 ### "YAML parsing error"
 - All provided configs are pre-validated
