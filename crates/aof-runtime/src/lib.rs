@@ -7,12 +7,16 @@
 //! - Error handling and recovery
 //! - Task orchestration
 
+pub mod credential_anomaly;
+pub mod credential_audit;
 pub mod executor;
 pub mod fleet;
 pub mod orchestrator;
 pub mod sandbox;
 pub mod task;
 
+pub use credential_anomaly::{AnomalyDetector, AgentBaseline, FrequencyBaseline, VolumeBaseline};
+pub use credential_audit::CredentialAccessInterceptor;
 pub use executor::{
     AgentExecutor, AgentFlowEvent, AgentFlowExecutor, ApprovalDecision, HumanInput, Runtime,
     StreamEvent, WorkflowEvent, WorkflowExecutor,
