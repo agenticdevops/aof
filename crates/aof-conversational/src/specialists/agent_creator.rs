@@ -313,8 +313,7 @@ fn format_validation_errors(errors: &[GenerationError]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aof_core::{ModelResponse, StopReason, Usage, AofResult};
-    use std::sync::Arc;
+    use aof_core::{ModelResponse, StopReason, Usage, AofResult, ModelConfig, ModelProvider, StreamChunk};
 
     /// Mock Model for testing
     struct MockModel {
@@ -346,23 +345,25 @@ mod tests {
                     input_tokens: 100,
                     output_tokens: 200,
                 },
+                tool_calls: Vec::new(),
+                metadata: HashMap::new(),
             })
         }
 
         async fn generate_stream(
             &self,
             _request: &ModelRequest,
-        ) -> AofResult<std::pin::Pin<Box<dyn futures::Stream<Item = AofResult<crate::StreamChunk>> + Send>>>
+        ) -> AofResult<std::pin::Pin<Box<dyn futures::Stream<Item = AofResult<StreamChunk>> + Send>>>
         {
             unimplemented!("Stream not needed for tests")
         }
 
-        fn config(&self) -> &crate::ModelConfig {
+        fn config(&self) -> &ModelConfig {
             unimplemented!("Config not needed for tests")
         }
 
-        fn provider(&self) -> crate::ModelProvider {
-            crate::ModelProvider::Anthropic
+        fn provider(&self) -> ModelProvider {
+            ModelProvider::Anthropic
         }
     }
 
