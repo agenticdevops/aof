@@ -706,6 +706,252 @@ manager.apply_mode_change(CoordinationMode::HeartbeatOnly).await;
 
 ---
 
+## Mission Control UI (Phase 7 Plan 05)
+
+### Overview
+
+The coordination protocols backend is made visible through **Mission Control UI components** that display real-time agent health, standup results, and token overhead metrics.
+
+### Component Architecture
+
+```
+CoordinationPage (page container)
+  ├── CoordinationStatus (status bar at top)
+  │   ├── Mode badge (Full/Standard/Reduced/HeartbeatOnly/Disabled)
+  │   ├── Token overhead gauge (visual bar with threshold)
+  │   ├── Token breakdown (heartbeat/standup/production)
+  │   └── Mode selector dropdown (manual override)
+  │
+  ├── HeartbeatDashboard (left panel, 40%)
+  │   ├── Summary bar (X/Y healthy | N degraded | M unresponsive)
+  │   └── Agent health cards grid
+  │       ├── Status indicator (green/yellow/red dot)
+  │       ├── Last heartbeat time (relative: 5s ago)
+  │       ├── Response latency (ms)
+  │       └── Consecutive miss count
+  │
+  └── StandupFeed (right panel, 60%)
+      ├── Date header + trigger button
+      ├── AI-generated summary (when available)
+      └── Agent response cards (expandable)
+          ├── DID section (green)
+          ├── DOING section (blue)
+          ├── BLOCKERS section (red or gray)
+          └── Token count badge
+```
+
+### Redux State Management
+
+**coordinationSlice.ts** manages coordination state:
+
+```typescript
+interface CoordinationState {
+  health: AgentHealthRecord[];
+  latestStandup: StandupResult | null;
+  metrics: CoordinationMetrics | null;
+  isLoading: boolean;
+  error: string | null;
+  coordinationEnabled: boolean;
+}
+```
+
+**Actions:**
+- `setHealth(AgentHealthRecord[])` - Full health array from REST API
+- `updateAgentHealth(AgentHealthRecord)` - Single agent update from WebSocket
+- `setLatestStandup(StandupResult)` - Latest standup from REST API
+- `addStandupResponse(StandupResponseRecord)` - Individual response from WebSocket
+- `updateStandupSummary({ request_id, summary })` - Summary from WebSocket
+- `setMetrics(CoordinationMetrics)` - Metrics from REST API
+- `setLoading(boolean)` - Loading state for async operations
+- `setError(string | null)` - Error message
+
+### WebSocket Event Handling
+
+**useWebSocket.ts extended** to handle coordination events:
+
+```typescript
+// Handles coordination_activity field in CoordinationEvent
+switch (coordType) {
+  case 'HeartbeatResponse':
+    // Update agent health in real-time
+    dispatch(updateAgentHealth(healthRecord));
+    break;
+
+  case 'HeartbeatTimeout':
+    // Mark agents as Unresponsive
+    payload.agent_ids.forEach(agentId => {
+      dispatch(updateAgentHealth({ ...healthRecord, status: 'Unresponsive' }));
+    });
+    break;
+
+  case 'StandupResponse':
+    // Add standup response as it arrives
+    dispatch(addStandupResponse(payload.response));
+    break;
+
+  case 'StandupSummary':
+    // Update standup summary
+    dispatch(updateStandupSummary({ request_id, summary }));
+    break;
+}
+```
+
+**Backward compatibility:** Existing WebSocket event handling (ActivityEvent, chat, etc.) remains unchanged. Coordination events are additive.
+
+### REST API Polling
+
+**useCoordination.ts hook** fetches initial data and polls metrics:
+
+```typescript
+// On mount: fetch all coordination data
+useEffect(() => {
+  fetchHealth();        // GET /api/coordination/health
+  fetchLatestStandup(); // GET /api/coordination/standup/latest
+  fetchMetrics();       // GET /api/coordination/metrics
+}, []);
+
+// Poll metrics every 30 seconds (configurable)
+useInterval(() => {
+  fetchMetrics();
+}, 30000);
+```
+
+**Actions provided:**
+- `triggerStandup()` - POST /api/coordination/standup/trigger
+- `forceMode(mode)` - POST /api/coordination/mode
+- `refreshHealth()` - Manual health refresh
+- `refreshMetrics()` - Manual metrics refresh
+
+### Visual Design Patterns
+
+**Status color coding:**
+
+| Status | Color | Dot Animation | Use Case |
+|--------|-------|---------------|----------|
+| Healthy | Green | Static | Agent responded within timeout |
+| Degraded | Yellow | Static | Reserved for slow responses (future) |
+| Unresponsive | Red | Pulsing | Agent missed heartbeat timeout |
+
+**Overhead gauge color coding:**
+
+| Overhead | Color | Meaning |
+|----------|-------|---------|
+| < 20% | Green | Healthy coordination overhead |
+| 20-30% | Yellow | Approaching threshold (hysteresis zone) |
+| > 30% | Red | Over budget (auto-degradation active) |
+
+**Mode badge color coding:**
+
+| Mode | Color | Meaning |
+|------|-------|---------|
+| Full | Green | All protocols enabled |
+| Standard | Blue | Default balance (heartbeat + standup) |
+| Reduced | Yellow | Minimal coordination (heartbeat at 5min intervals) |
+| HeartbeatOnly | Orange | Only heartbeat, no standup |
+| Disabled | Red | All coordination paused |
+
+### Data Flow Diagram
+
+```
+1. Initial Load (REST API)
+   GET /api/coordination/health ──────> Redux: setHealth()
+   GET /api/coordination/standup/latest > Redux: setLatestStandup()
+   GET /api/coordination/metrics ─────> Redux: setMetrics()
+                                              │
+                                              ▼
+                              Components re-render with data
+
+2. Real-time Updates (WebSocket)
+   HeartbeatResponse event ────> Redux: updateAgentHealth()
+   StandupResponse event ──────> Redux: addStandupResponse()
+                                        │
+                                        ▼
+                        Components re-render (live updates)
+
+3. Manual Actions (User Interaction)
+   Click "Trigger Standup" ────> POST /api/coordination/standup/trigger
+   Select "Reduced" mode ──────> POST /api/coordination/mode
+                                        │
+                                        ▼
+                              Backend applies change
+                                        │
+                                        ▼
+                        WebSocket events reflect change
+```
+
+### Component Testing
+
+**HeartbeatDashboard.test.tsx:**
+- Empty state rendering
+- Agent health cards with correct colors
+- Last heartbeat time (relative)
+- Response latency display
+- Consecutive misses display
+- Summary bar calculations
+
+**StandupFeed.test.tsx:**
+- Empty state rendering
+- Trigger button functionality
+- DID/DOING/BLOCKERS sections
+- Summary display
+- Response count
+- Expand/collapse functionality
+
+**CoordinationStatus.test.tsx:**
+- Unavailable state
+- Mode badge display
+- Overhead color coding (green/yellow/red)
+- Token breakdown with K/M formatting
+- Auto-degrade indicator
+- Mode selector dropdown
+- Compact mode rendering
+
+### Integration with Existing UI
+
+**CoordinationPage** added to app routing:
+- Path: `/coordination` (or `#/coordination` with hash routing)
+- Added to navigation menu
+- Responsive layout (grid stacks on mobile)
+
+**Reused components:**
+- `StatusIndicator` for colored dots
+- Existing typography and color scheme (Tailwind CSS)
+- Existing loading/error patterns
+
+### Empty States
+
+**Coordination disabled:**
+- Shows info message with config example
+- Link to documentation (https://docs.aof.sh/coordination/protocols)
+- No API calls made
+
+**No standup results:**
+- Shows "No standup results yet" message
+- Trigger button prominently displayed
+
+**No agents:**
+- Shows "Coordination not enabled" (same as disabled state)
+
+### Error Handling
+
+**Non-blocking errors:**
+- Network failures show yellow warning banner
+- Page remains functional with cached data
+- Retry button available
+
+**Blocking errors:**
+- Coordination disabled: redirect to enablement guide
+- API unreachable: show red error box with retry
+
+### Performance Considerations
+
+- **React.memo** on components to prevent unnecessary re-renders
+- **Debounced WebSocket updates** (100ms) to prevent UI thrashing
+- **Metrics polling** at 30s (configurable) to reduce API load
+- **Lazy loading** of coordination page (code splitting)
+
+---
+
 ## Implementation Checklist
 
 ### Phase 7 Plan 01: Session Tools Foundation ✓
@@ -739,21 +985,35 @@ manager.apply_mode_change(CoordinationMode::HeartbeatOnly).await;
 - [x] Internal developer documentation
 - [x] User-facing heartbeat monitoring docs
 
-### Phase 7 Plan 03: Standup Protocol
+### Phase 7 Plan 03: Standup Protocol ✓
 
-- [ ] StandupScheduler with cron + timezone
-- [ ] Daily trigger (configurable time, e.g., 9am EST)
-- [ ] Collect StandupResponse from all agents
-- [ ] Aggregate to StandupSummary (LLM summarization)
-- [ ] Emit to virtual office (visible in Mission Control)
-- [ ] Integration with CoordinationMode (disabled for Reduced/HeartbeatOnly)
+- [x] StandupScheduler with cron + timezone
+- [x] Daily trigger (configurable time, e.g., 9am EST)
+- [x] Collect StandupResponse from all agents
+- [x] Aggregate to StandupSummary (LLM summarization)
+- [x] Emit to virtual office (visible in Mission Control)
+- [x] Integration with CoordinationMode (disabled for Reduced/HeartbeatOnly)
 
-### Phase 7 Plan 04: Token Metrics
+### Phase 7 Plan 04: Token Metrics ✓
 
-- [ ] Track tokens spent on coordination vs. production work
-- [ ] Measure overhead % per agent
-- [ ] Alert if >30% overhead detected
-- [ ] Suggest fallback to lower coordination mode
+- [x] Track tokens spent on coordination vs. production work
+- [x] Measure overhead % per agent
+- [x] Alert if >30% overhead detected
+- [x] Suggest fallback to lower coordination mode
+
+### Phase 7 Plan 05: Mission Control UI ✓
+
+- [x] TypeScript types for coordination data
+- [x] Redux coordinationSlice with reducers
+- [x] useCoordination hook (REST API + polling)
+- [x] Extended useWebSocket for coordination events
+- [x] HeartbeatDashboard component
+- [x] StandupFeed component
+- [x] CoordinationStatus component
+- [x] CoordinationPage composition
+- [x] Component tests (HeartbeatDashboard, StandupFeed, CoordinationStatus)
+- [x] Internal developer documentation
+- [x] User-facing Mission Control coordination docs
 
 ## Testing Strategy
 
