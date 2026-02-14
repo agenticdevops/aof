@@ -106,7 +106,7 @@ impl GracefulShutdown {
             }
             Err(_) => {
                 warn!(timeout_secs = self.timeout.as_secs(), "Graceful shutdown timed out, forcing exit");
-                Err(crate::AofError::internal(format!(
+                Err(crate::AofError::agent(format!(
                     "Shutdown timeout after {} seconds",
                     self.timeout.as_secs()
                 )))

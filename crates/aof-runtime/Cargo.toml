@@ -37,6 +37,9 @@ regex = { workspace = true }
 redis = { workspace = true }
 bollard = { workspace = true }
 prometheus = { workspace = true }
+rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
+sha2 = "0.10"
+time = "0.3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }
