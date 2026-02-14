@@ -9,6 +9,7 @@ import type { RootState } from '../store';
 import { AgentCard } from './AgentCard';
 import { useAgentsConfig } from '../hooks/useAgentsConfig';
 import { useConfigVersion } from '../hooks/useConfigVersion';
+import { useAgentIntroduction } from '../hooks/useAgentIntroduction';
 import type { Agent } from '../types/events';
 
 /**
@@ -145,6 +146,9 @@ export function AgentGrid({ onAgentClick, className = '' }: AgentGridProps): Rea
   const { agents, loading, error, refetch } = useAgentsConfig();
   const [showToast, setShowToast] = useState(false);
 
+  // Introduction toast handling (Phase 5-04)
+  const { activeToasts, dismissToast, focusAgent } = useAgentIntroduction();
+
   // Get agent status from eventsSlice (maps agent_id to last activity)
   const events = useSelector((state: RootState) => state.events.events);
 
@@ -271,6 +275,49 @@ export function AgentGrid({ onAgentClick, className = '' }: AgentGridProps): Rea
       {/* Config update toast */}
       {showToast && (
         <Toast message="Config updated, reloading agents..." onClose={() => setShowToast(false)} />
+      )}
+
+      {/* Introduction toasts (Phase 5-04) */}
+      {activeToasts.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+          {activeToasts.map((toast) => (
+            <div
+              key={toast.agentName}
+              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
+              role="alert"
+              aria-label={`Introduction from ${toast.agentName}`}
+              onClick={() => {
+                focusAgent(toast.agentName);
+                dismissToast(toast.agentName);
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="text-2xl flex-shrink-0">{toast.avatar}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    {toast.agentName}
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-3">
+                    &ldquo;{toast.message}&rdquo;
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 flex-shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dismissToast(toast.agentName);
+                  }}
+                  aria-label={`Dismiss introduction from ${toast.agentName}`}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </>
   );
