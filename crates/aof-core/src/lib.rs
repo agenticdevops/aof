@@ -10,6 +10,7 @@ pub mod binding;
 pub mod config;
 pub mod context;
 pub mod coordination;
+pub mod credential;
 pub mod error;
 pub mod error_tracker;
 pub mod fleet;
@@ -82,6 +83,10 @@ pub use activity::{
 pub use coordination::{
     AgentIntroduction, CoordinationActivity, CoordinationEvent, DecisionLogEntry, SessionState,
     AgentState, AgentStatus, TaskInfo, TaskStatus,
+};
+pub use credential::{
+    AccessMode, AnomalyAction, CredentialAccessAnomaly, CredentialAccessEvent, CredentialType,
+    RiskLevel, ToolContext,
 };
 
 /// Version information
