@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-14
 **Milestone:** Reinvention (Humanized Agent Platform)
-**Status:** In Progress (Phase 5-01 Complete)
+**Status:** In Progress (Phase 5-04 Complete)
 
 ---
 
@@ -21,7 +21,7 @@ Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YA
 ### Active Phase
 **Phase 5: Agent Personas** (in progress)
 - **Goal:** Agent persona system with AGENTS.md/SOUL.md workspace files, system prompt composition, introduction events
-- **Status:** 05-01 complete (Workspace File Format & Loaders), ready for Wave 2
+- **Status:** 05-04 complete (AgentCard Persona Display), ready for 05-05
 
 ### Last Completed Phase
 **Phase 4: Mission Control UI** (4/5 plans)
@@ -29,18 +29,18 @@ Phase 3 (Messaging Gateway) complete. All platform adapters, squad broadcast, YA
 - **Status:** 04-04 complete (Configuration APIs & Production Integration)
 
 ### Status
-Phase 5-01 (Workspace File Format & Loaders) complete. aof-personas crate created with AgentLoader, SoulLoader, validation, caching, and file watcher. 3 reference agents in workspace fixtures. 33 tests passing. Ready for 05-02 (System Prompt Composer).
+Phase 5-04 (AgentCard Persona Display) complete. Mission Control UI updated with persona-first AgentCard layout showing avatar, personality traits, CAN/CANNOT boundaries, reliability metrics, and introduction toasts. 22 component tests passing. Ready for 05-05 (Persona Metrics).
 
 ### Progress
 
 ```
-Milestone Progress: [██████░░░░] 56% (14 of 25 plans complete)
+Milestone Progress: [███████░░░] 68% (17 of 25 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
 Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
 Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
-Phase 5: Agent Personas          [██░░░░░░░░] 17% (1/6 plans) ← Current
+Phase 5: Agent Personas          [███████░░░] 67% (4/6 plans) ← Current
 Phase 6: Conversational Config   [░░░░░░░░░░] 0%
 Phase 7: Coordination Protocols  [░░░░░░░░░░] 0%
 Phase 8: Production Readiness    [░░░░░░░░░░] 0%
@@ -52,12 +52,12 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 
 ### Velocity
 - **Phases completed:** 3 (Phase 1, Phase 2, Phase 3)
-- **Plans completed:** 14
+- **Plans completed:** 17
 - **Requirements delivered:** 24/48 (50%) - INFR-01-04, ROPS-01-05, ENGN-01, ENGN-04, SREW-02-03, MSGG-01-05, MSCT-01-04
 - **Avg. plan duration:** 721 seconds (12.0 minutes)
 
 ### Quality
-- **Tests passing:** 287+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 33)
+- **Tests passing:** 309+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 33+22+3=58)
 - **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
@@ -70,6 +70,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 05 | 04 | 546s | 8 | 11 | 7 | 2026-02-14 |
 | 05 | 01 | 619s | 8 | 12 | 5 | 2026-02-14 |
 | 04 | 04 | 744s | 10 | 10 | 4 | 2026-02-14 |
 | 04 | 03 | 757s | 11 | 23 | 11 | 2026-02-14 |
@@ -116,6 +117,10 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **SoulLoader returns empty map on missing file** | Graceful degradation: souls are optional per agent. Missing SOUL.md logs warning but doesn't error, allowing agents to operate without personality guidance. | 2026-02-14 | 05 | Implemented |
 | **6 prompt injection regex patterns** | Extended from 4 in plan to cover "you are now a different" and "ignore the above" variants for better security coverage. | 2026-02-14 | 05 | Implemented |
 | **Unicode grapheme + codepoint validation for emoji** | Using unicode-segmentation for grapheme counting plus codepoint range checks for known emoji Unicode blocks. More reliable than regex-based emoji detection. | 2026-02-14 | 05 | Implemented |
+| **React.memo on AgentCard** | Prevents unnecessary re-renders when agent grid updates. Agent cards are the most frequently rendered components in Mission Control. | 2026-02-14 | 05 | Implemented |
+| **Category-based trait color mapping** | Blue for analytical, purple for investigative, green for leadership, gray for unrecognized. Visual grouping without per-trait config. | 2026-02-14 | 05 | Implemented |
+| **Introduction toast max 3 with queue** | Prevents toast spam when many agents start simultaneously. Oldest dismissed to make room. 8s auto-dismiss. | 2026-02-14 | 05 | Implemented |
+| **Optional persona fields for backward compat** | All persona fields (personality_traits, can, cannot, etc.) are optional. Existing agents without persona config still display correctly. | 2026-02-14 | 05 | Implemented |
 
 ### Todos
 
@@ -156,9 +161,9 @@ No blockers.
 
 ### What to Do Next
 
-**Immediate next action:** Execute Phase 5 Plan 02 (System Prompt Composer)
+**Immediate next action:** Execute Phase 5 Plan 05 (Persona Metrics / Reliability Computation)
 
-Phase 5-01 complete (Workspace File Format & Loaders). aof-personas crate ready for downstream consumers. Next: compose system prompts from loaded Agent + Soul data.
+Phase 5-04 complete (AgentCard Persona Display). Mission Control UI updated with persona-first layout. Next: compute reliability metrics from event history for agent cards.
 
 ### Context for Next Agent
 
@@ -170,7 +175,7 @@ Phase 5-01 complete (Workspace File Format & Loaders). aof-personas crate ready 
 
 **Roadmap:** 8 phases, standard depth (3-6 plans each), parallelization enabled.
 
-**Current status:** Phase 5-01 complete (1/6 plans). Persona system foundation delivered with loaders, validators, caching, file watcher, and 33 tests. Ready for 05-02.
+**Current status:** Phase 5-04 complete (4/6 plans). Persona UI display delivered with trait badges, CAN/CANNOT boundaries, metrics, introduction toasts, and 22 component tests. Ready for 05-05.
 
 **Key files:**
 - `.planning/PROJECT.md` — Core value, constraints, key decisions
@@ -234,4 +239,4 @@ Each plan should have:
 ---
 
 *State tracking initialized: 2026-02-11*
-*Last updated: 2026-02-14*
+*Last updated: 2026-02-14T04:25:51Z*
