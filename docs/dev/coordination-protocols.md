@@ -448,6 +448,264 @@ agents:
     coordination_mode: disabled    # No coordination overhead
 ```
 
+---
+
+## Token Measurement & Auto-Degradation
+
+### Overview
+
+Token metrics track coordination vs production token usage to enforce the **30% coordination overhead budget**. Auto-degradation automatically scales back coordination protocols when overhead exceeds the threshold.
+
+### Architecture
+
+```
+TokenMetrics (atomic counters, lock-free)
+  ├── coordination_input_tokens (atomic u64)
+  ├── coordination_output_tokens (atomic u64)
+  ├── production_input_tokens (atomic u64)
+  ├── production_output_tokens (atomic u64)
+  ├── heartbeat_tokens (per-protocol breakdown)
+  └── standup_tokens (per-protocol breakdown)
+
+DegradationManager (state machine)
+  ├── Evaluate overhead every 60s
+  ├── Degrade if > 30%: Full → Standard → Reduced → HeartbeatOnly → Disabled
+  └── Recover if < 20%: Disabled → HeartbeatOnly → Reduced → Standard → Full
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Atomic counters (not Mutex)** | Lock-free concurrent access, no contention |
+| **30% overhead threshold** | User requirement: coordination must never exceed production work |
+| **20% recovery threshold (hysteresis)** | Prevents flapping between modes when overhead oscillates |
+| **Per-protocol breakdown** | Visibility into which protocols consume most tokens |
+| **24-hour rolling window** | Long enough for daily patterns, short enough for responsiveness |
+| **60s evaluation interval** | Balance between responsiveness and evaluation cost |
+
+### Overhead Calculation
+
+Formula:
+```
+overhead_percent = (coordination_tokens / (coordination_tokens + production_tokens)) * 100
+```
+
+Example:
+- Coordination tokens: 720,000 (heartbeat)
+- Production tokens: 10,000,000 (agent tasks)
+- Overhead: 720k / 10.72M * 100 = **6.7%** ✅ (well under 30%)
+
+### Degradation State Machine
+
+```
+            Overhead > 30%
+┌────────────────────────────────────────────────────┐
+│                                                    │
+Full ──────> Standard ──────> Reduced ──────> HeartbeatOnly ──────> Disabled
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+            Overhead < 20% (recovery)
+```
+
+**Mode Transitions:**
+
+| From Mode | To Mode | Trigger | Protocol Changes |
+|-----------|---------|---------|-----------------|
+| Full | Standard | Overhead > 30% | Disable roundtables (Plan 05) |
+| Standard | Reduced | Overhead > 30% | Disable standup, heartbeat at 60s |
+| Reduced | HeartbeatOnly | Overhead > 30% | Only heartbeat remains |
+| HeartbeatOnly | Disabled | Overhead > 30% | All coordination paused |
+| Disabled | HeartbeatOnly | Overhead < 20% | Resume heartbeat only |
+| HeartbeatOnly | Reduced | Overhead < 20% | Re-enable standup |
+| Reduced | Standard | Overhead < 20% | Restore full standup frequency |
+| Standard | Full | Overhead < 20% | Re-enable all protocols |
+
+### Hysteresis Prevents Flapping
+
+Without hysteresis (single threshold at 30%):
+```
+Overhead: 29% → 31% → 29% → 31% → ...
+Mode:     Full → Standard → Full → Standard → ... (FLAPPING)
+```
+
+With hysteresis (30% degrade, 20% recover):
+```
+Overhead: 29% → 31% → 29% → 25% → 19% → 21%
+Mode:     Full → Standard → Standard → Standard → Full → Full (STABLE)
+```
+
+Between 20-30% = **hysteresis zone** (no mode change).
+
+### Token Recording
+
+**Coordination protocols:**
+```rust
+// After heartbeat LLM call
+coordination_manager.record_coordination_tokens(
+    input_tokens: 50,
+    output_tokens: 30,
+    protocol: "heartbeat",
+);
+```
+
+**Production work:**
+```rust
+// After agent task LLM call
+coordination_manager.record_production_tokens(
+    input_tokens: 5000,
+    output_tokens: 3000,
+);
+```
+
+### Metrics Snapshot
+
+```rust
+let snapshot = coordination_manager.metrics_snapshot().await;
+
+// MetricsSnapshot {
+//     coordination_tokens: 720_000,
+//     production_tokens: 10_000_000,
+//     overhead_percent: 6.7,
+//     heartbeat_tokens: 700_000,
+//     standup_tokens: 20_000,
+//     window_start: 2026-02-14T00:00:00Z,
+//     current_mode: "Full",
+// }
+```
+
+### REST API Endpoints
+
+**GET /api/coordination/metrics**
+
+Response:
+```json
+{
+  "coordination_tokens": 720000,
+  "production_tokens": 10000000,
+  "overhead_percent": 6.7,
+  "heartbeat_tokens": 700000,
+  "standup_tokens": 20000,
+  "current_mode": "Full",
+  "window_start": "2026-02-14T00:00:00Z",
+  "auto_degrade_enabled": true,
+  "max_overhead_percent": 30.0
+}
+```
+
+**POST /api/coordination/mode**
+
+Force mode change (manual override):
+```json
+{
+  "mode": "heartbeat_only"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "mode": "HeartbeatOnly",
+  "message": "Coordination mode updated"
+}
+```
+
+Valid modes: `"full"`, `"standard"`, `"reduced"`, `"heartbeat_only"`, `"disabled"`.
+
+### Configuration
+
+**serve-config.yaml:**
+```yaml
+spec:
+  coordination:
+    enabled: true
+    mode: full
+    heartbeat:
+      frequency_secs: 60
+      timeout_secs: 120
+    token_limits:
+      max_overhead_percent: 30    # Degrade if exceeded (default: 30)
+      auto_degrade: true           # Enable automatic degradation (default: true)
+      recovery_threshold: 20       # Recover if overhead drops below (default: 20)
+```
+
+### Cost Projections
+
+**10 agents, 24 hours:**
+
+| Scenario | Heartbeat Tokens | Standup Tokens | Production Tokens | Overhead % | Cost (Haiku) |
+|----------|-----------------|----------------|-------------------|-----------|-------------|
+| Light work (100 tasks) | 720,000 | 18,000 | 500,000 | 59.6% ❌ | $0.15/day |
+| Normal work (500 tasks) | 720,000 | 18,000 | 2,500,000 | 22.8% ✅ | $0.40/day |
+| Heavy work (2000 tasks) | 720,000 | 18,000 | 10,000,000 | 6.7% ✅ | $1.30/day |
+
+**Auto-degradation saves cost when agents are idle:**
+- Light work scenario degrades to HeartbeatOnly (disables standup)
+- New overhead: 720k / 1.22M = 59% → degrades to Disabled
+- Final cost: $0.00/day (coordination paused)
+
+### Integration with CoordinationManager
+
+```rust
+// Manager creates TokenMetrics and DegradationManager automatically
+let manager = CoordinationManager::new(config, event_tx, session_id);
+
+// Record tokens from heartbeat handler
+manager.record_coordination_tokens(50, 30, "heartbeat");
+
+// Record tokens from agent executor
+manager.record_production_tokens(5000, 3000);
+
+// Query metrics for REST API
+let snapshot = manager.metrics_snapshot().await;
+
+// Force mode change (manual override)
+manager.apply_mode_change(CoordinationMode::HeartbeatOnly).await;
+```
+
+### Testing Strategy
+
+**Unit tests (17 tests in metrics.rs):**
+- Token counter initialization (zero)
+- Record coordination/production increments
+- Overhead calculation (0%, 30%, 100%)
+- Per-protocol breakdown (heartbeat vs standup)
+- Reset clears counters
+- Snapshot serialization
+- Concurrent recording (10 threads × 100 iterations)
+- Degradation at threshold (30%)
+- Degradation cascade (Full → Standard → ... → Disabled)
+- Recovery under threshold (20%)
+- Hysteresis prevents flapping (25% = no change)
+- Force mode override
+- Disabled auto-degradation
+
+**Integration tests (Plan 06):**
+- Simulate token load, verify degradation triggers
+- Verify recovery when overhead drops
+- Test REST endpoints (GET /metrics, POST /mode)
+- Verify mode changes reflected in scheduler behavior
+
+### Production Readiness
+
+**Alerts:**
+- Warn when overhead > 25% (approaching threshold)
+- Warn when mode degrades (visibility into cost issues)
+- Info when mode recovers
+
+**Monitoring:**
+- Track `overhead_percent` metric (CloudWatch, Grafana)
+- Track `current_mode` (Full, Standard, Reduced, etc.)
+- Track `degradation_event_count` (how often auto-degrade fires)
+
+**Runbooks:**
+- If overhead consistently > 30%: reduce heartbeat frequency or disable agents
+- If mode stuck at Disabled: increase production work or disable coordination
+- If mode flapping: adjust hysteresis thresholds (default 20-30% is conservative)
+
+---
+
 ## Implementation Checklist
 
 ### Phase 7 Plan 01: Session Tools Foundation ✓
