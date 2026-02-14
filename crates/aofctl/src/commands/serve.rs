@@ -16,6 +16,7 @@ use axum::{
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::cors::{CorsLayer, Any};
 use aof_coordination::{EventBroadcaster, SessionPersistence, SessionState, AgentState};
+use aof_coordination_protocols::{CoordinationManager, CoordinationConfig, CoordinationMode};
 use aof_core::{TriggerRegistry, Registry, StandaloneTriggerType};
 use aof_runtime::{Runtime, RuntimeOrchestrator};
 
@@ -142,6 +143,10 @@ pub struct ServeSpec {
     /// Decision logging settings
     #[serde(default)]
     pub decision_log: DecisionLogConfig,
+
+    /// Coordination protocol settings
+    #[serde(default)]
+    pub coordination: Option<CoordinationServeConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,6 +166,49 @@ impl Default for DecisionLogConfig {
             path: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CoordinationServeConfig {
+    /// Enable coordination protocols
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Global coordination mode ("full", "standard", "reduced", "heartbeat_only", "disabled")
+    #[serde(default)]
+    pub mode: Option<String>,
+
+    /// Heartbeat protocol settings
+    #[serde(default)]
+    pub heartbeat: Option<HeartbeatServeConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeartbeatServeConfig {
+    /// Heartbeat frequency in seconds (default: 60)
+    #[serde(default = "default_heartbeat_frequency")]
+    pub frequency_secs: u64,
+
+    /// Heartbeat timeout in seconds (default: 120)
+    #[serde(default = "default_heartbeat_timeout")]
+    pub timeout_secs: u64,
+}
+
+impl Default for HeartbeatServeConfig {
+    fn default() -> Self {
+        Self {
+            frequency_secs: default_heartbeat_frequency(),
+            timeout_secs: default_heartbeat_timeout(),
+        }
+    }
+}
+
+fn default_heartbeat_frequency() -> u64 {
+    60 // 60 seconds (updated from 30s in plan)
+}
+
+fn default_heartbeat_timeout() -> u64 {
+    120 // 120 seconds (2x interval)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -549,6 +597,7 @@ pub async fn execute(
                 },
                 runtime: RuntimeConfig::default(),
                 decision_log: DecisionLogConfig::default(),
+                coordination: None,
             },
         }
     };
@@ -593,6 +642,89 @@ pub async fn execute(
         });
     }
     println!("  Metrics cache: initialized (max 10000 events)");
+
+    // Initialize coordination manager if enabled in config
+    let coordination_manager = if let Some(coord_config) = &config.spec.coordination {
+        if coord_config.enabled {
+            // Parse coordination mode (default to Full if not specified)
+            let mode = match coord_config.mode.as_deref() {
+                Some("full") => CoordinationMode::Full,
+                Some("standard") => CoordinationMode::Standard,
+                Some("reduced") => CoordinationMode::Reduced,
+                Some("heartbeat_only") => CoordinationMode::HeartbeatOnly,
+                Some("disabled") => CoordinationMode::Disabled,
+                _ => CoordinationMode::Full,
+            };
+
+            // Create heartbeat config
+            let heartbeat_config = if let Some(hb_config) = &coord_config.heartbeat {
+                aof_coordination_protocols::HeartbeatConfig {
+                    frequency: std::time::Duration::from_secs(hb_config.frequency_secs),
+                    timeout: std::time::Duration::from_secs(hb_config.timeout_secs),
+                    enabled: true,
+                }
+            } else {
+                aof_coordination_protocols::HeartbeatConfig::default()
+            };
+
+            // Create coordination config
+            let coordination_config = CoordinationConfig {
+                enabled: true,
+                mode,
+                heartbeat: heartbeat_config,
+            };
+
+            // Generate session ID
+            let session_id = uuid::Uuid::new_v4().to_string();
+
+            // Create a dedicated broadcast channel for coordination events
+            // The coordination manager will emit to this, and we'll forward to main event bus
+            let (coord_event_tx, mut coord_event_rx) = tokio::sync::broadcast::channel(1000);
+
+            // Create coordination manager
+            let manager = Arc::new(CoordinationManager::new(
+                coordination_config,
+                coord_event_tx,
+                session_id,
+            ));
+
+            // Forward coordination events to main event bus
+            let event_bus_clone = Arc::clone(&event_bus);
+            tokio::spawn(async move {
+                loop {
+                    match coord_event_rx.recv().await {
+                        Ok(event) => {
+                            event_bus_clone.emit(event);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("Coordination event forwarder lagged, dropped {} events", n);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            tracing::info!("Coordination event channel closed, stopping forwarder");
+                            break;
+                        }
+                    }
+                }
+            });
+
+            println!("  Coordination: enabled (mode: {:?}, heartbeat: {}s/{}s)",
+                mode,
+                coord_config.heartbeat.as_ref().map(|c| c.frequency_secs).unwrap_or(60),
+                coord_config.heartbeat.as_ref().map(|c| c.timeout_secs).unwrap_or(120)
+            );
+
+            // TODO: Register discovered agents with coordination manager
+            // This will happen after agent discovery below
+
+            Some(manager)
+        } else {
+            println!("  Coordination: disabled in config");
+            None
+        }
+    } else {
+        println!("  Coordination: not configured (disabled)");
+        None
+    };
 
     // Initialize gateway if config provided
     let gateway_handle = if let Some(gw_config_path) = gateway_config_file {
@@ -1564,6 +1696,19 @@ pub async fn execute(
         .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", bind_addr, e))?;
 
     tracing::info!("Listening on {}", bind_addr);
+
+    // Start coordination manager if initialized
+    if let Some(manager) = &coordination_manager {
+        match manager.start().await {
+            Ok(handles) => {
+                println!("  Coordination manager: started ({} background tasks)", handles.len());
+            }
+            Err(e) => {
+                eprintln!("Failed to start coordination manager: {}", e);
+                return Err(anyhow::anyhow!("Coordination manager start error: {}", e));
+            }
+        }
+    }
 
     // Handle graceful shutdown
     let shutdown_signal = async {

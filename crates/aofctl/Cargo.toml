@@ -20,6 +20,7 @@ path = "src/main.rs"
 [dependencies]
 aof-core = { workspace = true }
 aof-coordination = { workspace = true }
+aof-coordination-protocols = { workspace = true }
 aof-conversational = { workspace = true }
 aof-mcp = { workspace = true, features = ["all-transports"] }
 aof-llm = { workspace = true, features = ["all-providers"] }
@@ -53,6 +54,8 @@ axum = { version = "0.7", features = ["ws"] }
 tower-http = { workspace = true }
 bytes = { workspace = true }
 futures-util = "0.3"
+async-trait = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
