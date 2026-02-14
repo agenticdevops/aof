@@ -15,7 +15,7 @@ members = [
     "crates/aofctl",
     "crates/aof-personas",
     "crates/smoke-test-mcp",
-    "crates/test-trigger-server",
+    "crates/test-trigger-server", "crates/aof-conversational",
 ]
 
 [workspace.package]
