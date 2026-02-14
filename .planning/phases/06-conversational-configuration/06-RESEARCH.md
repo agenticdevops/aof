@@ -11,7 +11,7 @@ Phase 6 wraps the agent creation and management system in a conversational inter
 This phase sits on top of Phase 5 (agent personas), Phase 4 (Mission Control UI for the interface), Phase 3 (messaging gateway for squad announcements), and Phase 2 (skills platform for skill assignment and discovery). Phase 6 adds the conversational layer that makes agent creation feel natural instead of requiring YAML expertise.
 
 **Primary recommendation:** Implement a three-tier architecture:
-1. **Intent Classification** — Use aof-llm (with Google Gemini 3.5 Flash as default provider for speed and cost) with few-shot examples to classify user requests into 7 core intents. Support other providers (Anthropic, OpenAI, Ollama, etc.) via aof-llm abstraction.
+1. **Intent Classification** — Use aof-llm (with Google Gemini 2.5 Flash as default provider for speed and cost) with few-shot examples to classify user requests into 7 core intents. Support other providers (Anthropic, OpenAI, Ollama, etc.) via aof-llm abstraction.
 2. **Specialist Agent Delegation** — Orchestrator routes to agent_creator, squad_builder, scheduler, skill_teacher, agent_modifier
 3. **YAML Generation & Review** — Each specialist generates candidate files, system shows preview, user confirms before writing workspace files
 
@@ -24,7 +24,7 @@ This phase sits on top of Phase 5 (agent personas), Phase 4 (Mission Control UI 
 ### Core
 | Library/Tool | Version | Purpose | Why Standard |
 |--------------|---------|---------|--------------|
-| aof-llm | v0.4.0+ | LLM abstraction layer (providers: Google, Anthropic, OpenAI, Ollama, etc.) | AOF stack standard, provider agnostic, consistent interface. Default provider: Google Gemini 3.5 Flash for speed, cost-efficiency, and structured output (JSON mode). Alternative providers supported. |
+| aof-llm | v0.4.0+ | LLM abstraction layer (providers: Google, Anthropic, OpenAI, Ollama, etc.) | AOF stack standard, provider agnostic, consistent interface. Default provider: Google Gemini 2.5 Flash for speed, cost-efficiency, and structured output (JSON mode). Alternative providers supported. |
 | serde_json | 1.0 | Intent classification responses (JSON mode) | AOF already uses, structured intent + confidence scores |
 | serde_yaml | 0.9+ | YAML file parsing and generation | AOF stack, seamless Rust serialization |
 | tokio | 1.35+ | Async orchestrator agent runtime | AOF foundation, event-driven execution model |
@@ -43,7 +43,7 @@ This phase sits on top of Phase 5 (agent personas), Phase 4 (Mission Control UI 
 ### Alternatives Considered
 | Instead of | Could Use | Tradeoff |
 |------------|-----------|----------|
-| Google Gemini 3.5 Flash (default) | Anthropic Claude, OpenAI GPT, Ollama, other aof-llm providers | AOF is provider-agnostic via aof-llm abstraction. Gemini 3.5 Flash is default for cost-efficiency and latency. Claude/GPT available for higher accuracy if needed. Users can configure alternative providers via environment/config. |
+| Google Gemini 2.5 Flash (default) | Anthropic Claude, OpenAI GPT, Ollama, other aof-llm providers | AOF is provider-agnostic via aof-llm abstraction. Gemini 2.5 Flash is default for cost-efficiency and latency. Claude/GPT available for higher accuracy if needed. Users can configure alternative providers via environment/config. |
 | JSON mode for intent responses | String parsing | JSON mode is strict (no hallucination risk), 100% reliable. String parsing error-prone. |
 | Specialist agent delegation | Single monolithic agent | Monolithic easier to implement, but specialist agents enable parallel execution (future) and clearer separation of concerns. |
 | Preview before writing | Direct write to workspace | Preview prevents accidents (user deletes agent by mistake), builds trust in system. |
@@ -103,7 +103,7 @@ aof-core = { path = "../aof-core" }
 ```
 User Message
     ↓
-Intent Classifier (aof-llm with structured JSON output, default: Google Gemini 3.5 Flash)
+Intent Classifier (aof-llm with structured JSON output, default: Google Gemini 2.5 Flash)
     ├─ Extract intent type
     ├─ Extract confidence (0-1)
     ├─ Extract parameters (e.g., agent_type, skills, schedule)
@@ -1313,9 +1313,9 @@ When creating agent, system should:
 
 | Component | Tech | Rationale |
 |-----------|------|-----------|
-| Intent classification | aof-llm (default: Google Gemini 3.5 Flash) | Provider-agnostic via aof-llm abstraction. Structured JSON output. Gemini 3.5 Flash default for speed and cost-efficiency. |
+| Intent classification | aof-llm (default: Google Gemini 2.5 Flash) | Provider-agnostic via aof-llm abstraction. Structured JSON output. Gemini 2.5 Flash default for speed and cost-efficiency. |
 | Orchestrator agent runtime | Rust + tokio | AOF native, async-first, integrates with aof-llm |
-| Specialist agents | aof-llm (configurable provider) | Provider-agnostic via aof-llm. Default: Google Gemini 3.5 Flash. Users can configure alternative providers (Claude, GPT, etc.). |
+| Specialist agents | aof-llm (configurable provider) | Provider-agnostic via aof-llm. Default: Google Gemini 2.5 Flash. Users can configure alternative providers (Claude, GPT, etc.). |
 | YAML generation | serde_yaml + askama templates | Type-safe templates, avoid string concat errors |
 | Conversation UI | React + Redux Toolkit | Already in Phase 4, familiar patterns |
 | WebSocket communication | Existing Phase 1 infrastructure | Reuse event broadcaster |
@@ -1872,14 +1872,14 @@ pub fn validate_cron(cron: &str, tz: &str) -> Result<(), CronError> {
 ## Sources
 
 ### Primary (HIGH confidence)
-- **aof-llm crate**: Multi-provider LLM abstraction with Google, Anthropic, OpenAI, Ollama support (verified in source). Default provider: Google Gemini 3.5 Flash for cost-efficiency and speed.
+- **aof-llm crate**: Multi-provider LLM abstraction with Google, Anthropic, OpenAI, Ollama support (verified in source). Default provider: Google Gemini 2.5 Flash for cost-efficiency and speed.
 - **aof-personas crate**: AGENTS.md/SOUL.md loaders, PromptComposer, validation (verified Phase 5 implementation)
 - **aof-skills crate**: SKILL.md format, skill discovery API (verified Phase 2 implementation)
 - **Phase 5 RESEARCH.md**: Agent personas, system prompt composition (existing research)
 - **Phase 2 RESEARCH.md**: Skills platform, decision logging patterns (existing research)
 
 ### Secondary (MEDIUM confidence)
-- Google Gemini 3.5 Flash API documentation (2026): JSON mode, cost-efficiency, fast inference (default provider)
+- Google Gemini 2.5 Flash API documentation (2026): JSON mode, cost-efficiency, fast inference (default provider)
 - Anthropic Claude documentation: Alternative provider for higher accuracy scenarios
 - OpenAI GPT documentation: Alternative provider for intent classification via aof-llm abstraction
 - OpenClaw research on squad composition and routing (referenced in Phase 3 RESEARCH)
@@ -1893,7 +1893,7 @@ pub fn validate_cron(cron: &str, tz: &str) -> Result<(), CronError> {
 ## Metadata
 
 **Confidence breakdown:**
-- Intent classification strategy: **HIGH** (aof-llm with Gemini 3.5 Flash default for speed/cost. Proven multi-provider abstraction. Other providers available.)
+- Intent classification strategy: **HIGH** (aof-llm with Gemini 2.5 Flash default for speed/cost. Proven multi-provider abstraction. Other providers available.)
 - Specialist agent architecture: **MEDIUM-HIGH** (pattern proven in aof-llm, but orchestrator design is new)
 - Squad templates: **MEDIUM** (template composition proven, but customization strategy needs testing)
 - Skill teaching: **MEDIUM** (SKILL.md format exists Phase 2, but conversational generation is new)
@@ -1902,11 +1902,11 @@ pub fn validate_cron(cron: &str, tz: &str) -> Result<(), CronError> {
 - Provider agnosticism: **HIGH** (aof-llm abstraction proven multi-provider support via Google/Anthropic/OpenAI/Ollama)
 
 **Research date:** 2026-02-14
-**Valid until:** 2026-03-14 (30 days for stable domain. AOF uses aof-llm for provider flexibility with Gemini 3.5 Flash default.)
+**Valid until:** 2026-03-14 (30 days for stable domain. AOF uses aof-llm for provider flexibility with Gemini 2.5 Flash default.)
 
 **Assumptions validated:**
 - ✅ aof-llm supports multiple providers (Google, Anthropic, OpenAI, Ollama) with consistent interface
-- ✅ Google Gemini 3.5 Flash supports structured JSON output for intent classification
+- ✅ Google Gemini 2.5 Flash supports structured JSON output for intent classification
 - ✅ aof-personas provides loader/validation infrastructure
 - ✅ Phase 1 WebSocket + EventBroadcaster can handle session communication
 - ✅ Mission Control UI (Phase 4) has WebSocket integration
