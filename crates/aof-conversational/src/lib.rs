@@ -11,6 +11,8 @@ pub mod sanitize;
 pub mod schedule;
 pub mod specialists;
 pub mod templates;
+pub mod generation;
+pub mod validation;
 
 // Re-export key types for convenience
 pub use types::{

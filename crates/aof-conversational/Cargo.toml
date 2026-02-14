@@ -27,6 +27,7 @@ futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+serde_path_to_error = "0.1"
 
 # Error handling
 thiserror = { workspace = true }
@@ -47,6 +48,9 @@ regex = { workspace = true }
 
 # LRU cache
 lru = "0.12"
+
+# Cron parsing
+cron = "0.12"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
