@@ -215,10 +215,70 @@ Persona data flows into system prompt composition (Phase 5-02). The composed pro
 5. Capabilities and boundaries (from AGENTS.md)
 6. Available tools (from skills mapping)
 
+## Introduction Events
+
+When the daemon starts, each agent emits an introduction event. These events:
+
+- Flow through the Phase 1 broadcast channel
+- Appear in WebSocket connections (Mission Control UI)
+- Route to messaging platforms (Slack, Discord) via the gateway
+- Use the `default_intro` from SOUL.md as the introduction message
+
+### Event Structure
+
+Introduction events are `CoordinationEvent` instances with an `introduction` field:
+
+```json
+{
+  "event_id": "uuid",
+  "agent_id": "k8s-monitor",
+  "timestamp": "2026-02-14T10:30:00Z",
+  "activity": { "activity_type": "Info", "message": "Kubernetes Monitor introduced: ..." },
+  "introduction": {
+    "agent_id": "k8s-monitor",
+    "agent_name": "Kubernetes Monitor",
+    "role": "Infrastructure Specialist",
+    "avatar": "\u{1F916}",
+    "intro_message": "I'm Kubernetes Monitor, your infrastructure specialist...",
+    "personality_summary": "A methodical specialist...",
+    "skills": ["kubectl", "pod-debugging", "log-analysis", "alerting"]
+  }
+}
+```
+
+### Squad-Specific Introductions
+
+Create an optional `workspace/squads.yaml` to customize introductions per squad:
+
+```yaml
+squads:
+  - name: incident-response
+    agents:
+      - id: incident-responder
+        intro_override: "Incident mode activated. I'm coordinating the response."
+      - id: log-analyzer
+        intro_override: "Standing by to dig into the incident logs."
+      - id: k8s-monitor
+        # No override - uses SOUL.md default_intro
+```
+
+When `squads.yaml` is present and an agent has an `intro_override`, it replaces the `default_intro` from SOUL.md. If the file is missing or an agent has no override, the SOUL.md value (or fallback) is used.
+
+### Fallback Behavior
+
+When no SOUL.md entry exists for an agent, the introduction uses a fallback:
+
+```
+"I'm [agent name], your [agent role]."
+```
+
+For example: "I'm Log Analyzer, your Debugging Expert."
+
 ## API Reference
 
 ```rust
 use aof_personas::{AgentLoader, SoulLoader, validate_personas, AgentCache};
+use aof_personas::events::{build_introduction_event, build_introduction_event_batch};
 
 // Load from files
 let agents = AgentLoader::load_from_file("workspace/AGENTS.md").await?;
@@ -226,6 +286,12 @@ let souls = SoulLoader::load_from_file("workspace/SOUL.md").await?;
 
 // Validate
 validate_personas(&agents, &souls)?;
+
+// Build introduction events for all agents
+let events = build_introduction_event_batch(&agents, &souls, &session_id);
+for event in events {
+    event_bus.emit(event);
+}
 
 // Use caching for repeated access
 let cache = AgentCache::new();

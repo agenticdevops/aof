@@ -57,7 +57,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 - **Avg. plan duration:** 721 seconds (12.0 minutes)
 
 ### Quality
-- **Tests passing:** 309+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 33+22+3=58)
+- **Tests passing:** 320+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 33+22+3+11=69)
 - **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
@@ -70,6 +70,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 05 | 03 | 824s | 7 | 16 | 7 | 2026-02-14 |
 | 05 | 04 | 546s | 8 | 11 | 7 | 2026-02-14 |
 | 05 | 01 | 619s | 8 | 12 | 5 | 2026-02-14 |
 | 04 | 04 | 744s | 10 | 10 | 4 | 2026-02-14 |
@@ -121,6 +122,10 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Category-based trait color mapping** | Blue for analytical, purple for investigative, green for leadership, gray for unrecognized. Visual grouping without per-trait config. | 2026-02-14 | 05 | Implemented |
 | **Introduction toast max 3 with queue** | Prevents toast spam when many agents start simultaneously. Oldest dismissed to make room. 8s auto-dismiss. | 2026-02-14 | 05 | Implemented |
 | **Optional persona fields for backward compat** | All persona fields (personality_traits, can, cannot, etc.) are optional. Existing agents without persona config still display correctly. | 2026-02-14 | 05 | Implemented |
+| **Optional introduction field on CoordinationEvent** | Using `Option<AgentIntroduction>` with `skip_serializing_if` keeps backward compatibility. Existing events omit introduction from JSON. No breaking changes. | 2026-02-14 | 05 | Implemented |
+| **Builder functions in aof-personas for events** | Separating event composition from daemon code enables unit testing without starting the server. Pure functions, no I/O. | 2026-02-14 | 05 | Implemented |
+| **Squad overrides via squads.yaml (not SOUL.md)** | Keeps SOUL.md format unchanged. Squad-specific customization is conceptually separate from personality. Optional file for backward compatibility. | 2026-02-14 | 05 | Implemented |
+| **Graceful degradation for missing persona files** | Missing AGENTS.md skips intros. Missing SOUL.md uses fallback. Invalid squads.yaml ignored. Daemon never crashes from missing persona files. | 2026-02-14 | 05 | Implemented |
 
 ### Todos
 

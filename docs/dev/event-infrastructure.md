@@ -19,6 +19,7 @@ The event infrastructure spans four crates with clear separation of concerns:
 aof-core (foundation types)
   ├─ coordination.rs
   │  ├─ CoordinationEvent (event envelope with routing metadata)
+  │  ├─ AgentIntroduction (persona announcement data)
   │  ├─ SessionState (serializable session snapshot)
   │  ├─ AgentState (individual agent status)
   │  └─ TaskInfo (task coordination queue)
@@ -37,6 +38,11 @@ aof-runtime                  aof-triggers
   └─ 8 lifecycle points        └─ WebSocket /ws route
                                   ├─ handle_websocket_upgrade()
                                   └─ websocket_handler()
+       ↓
+aof-personas (persona events)
+  └─ events.rs
+     ├─ build_introduction_event() (single agent)
+     └─ build_introduction_event_batch() (all agents)
        ↓                           ↓
 aofctl serve (orchestration)
   ├─ Create EventBroadcaster (1000 buffer)
@@ -504,6 +510,51 @@ cat ~/.local/share/aof/sessions/session-state.json
 - **Heartbeat protocol:** Agents send periodic heartbeat events
 - **Agent discovery:** Broadcast agent capabilities on startup
 - **Task delegation:** Agents communicate via CoordinationEvent protocol messages
+
+### Phase 5: Agent Introduction Events
+
+Introduction events are emitted at daemon startup for each configured agent. They flow through the same broadcast channel as regular coordination events.
+
+**Event structure:**
+
+```rust
+// CoordinationEvent with introduction data
+CoordinationEvent {
+    activity: ActivityEvent::info("Kubernetes Monitor introduced: I'm..."),
+    agent_id: "k8s-monitor",
+    session_id: "uuid",
+    event_id: "uuid",
+    timestamp: Utc::now(),
+    introduction: Some(AgentIntroduction {
+        agent_id: "k8s-monitor",
+        agent_name: "Kubernetes Monitor",
+        role: "Infrastructure Specialist",
+        avatar: "\u{1F916}",
+        intro_message: "I'm Kubernetes Monitor...",
+        personality_summary: "A methodical specialist...",
+        skills: vec!["kubectl", "pod-debugging"],
+    }),
+}
+```
+
+**Building introduction events:**
+
+```rust
+use aof_personas::events::{build_introduction_event, build_introduction_event_batch};
+
+// Single agent
+let event = build_introduction_event(&agent, Some(&soul), &session_id);
+
+// All agents at startup
+let events = build_introduction_event_batch(&agents, &souls, &session_id);
+for event in events {
+    event_bus.emit(event);
+}
+```
+
+**Squad overrides:** Optional `workspace/squads.yaml` provides per-squad introduction overrides. When present, `intro_override` replaces `default_intro` from SOUL.md.
+
+**Gateway integration:** `GatewayHub::handle_introduction_event()` routes introductions to messaging platforms (Slack, Discord, etc.) via broadcast.
 
 ### Phase 8: Production Readiness
 - **Multi-daemon coordination:** Event bus spans multiple daemons (NATS, Redis Pub/Sub)
