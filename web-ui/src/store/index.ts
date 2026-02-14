@@ -6,6 +6,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import eventsReducer from './eventsSlice';
 import configReducer from './configSlice';
+import tasksReducer from './tasksSlice';
 
 /**
  * Configure Redux store with slices.
@@ -14,6 +15,7 @@ export const store = configureStore({
   reducer: {
     events: eventsReducer,
     config: configReducer,
+    tasks: tasksReducer,
   },
   // Enable Redux DevTools in development
   devTools: import.meta.env.DEV,
