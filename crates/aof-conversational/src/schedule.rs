@@ -1,6 +1,8 @@
+use aof_core::{Model, ModelRequest};
 use chrono::{DateTime, Utc};
 use cron::Schedule;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -301,6 +303,78 @@ pub fn validate_cron(cron_expr: &str, timezone: &str) -> Result<Vec<DateTime<Utc
     Ok(next_runs)
 }
 
+/// Response format from LLM for schedule parsing
+#[derive(Debug, Serialize, Deserialize)]
+struct LlmScheduleResponse {
+    cron: String,
+    timezone: String,
+    description: String,
+}
+
+/// Parse schedule using LLM fallback for complex patterns
+///
+/// This is used when regex-based parsing fails. Handles edge cases like:
+/// - "every third Tuesday"
+/// - "first Monday of each month"
+/// - Other complex patterns that regex can't capture
+pub async fn parse_with_llm(
+    input: &str,
+    model: &dyn Model,
+) -> Result<ParsedSchedule, ScheduleError> {
+    let prompt = format!(
+        r#"Convert this natural language schedule to a cron expression:
+"{}"
+
+Respond in JSON:
+{{
+  "cron": "standard 6-field cron expression (sec min hour day month dow)",
+  "timezone": "IANA timezone string or UTC",
+  "description": "human-readable description"
+}}
+
+Rules:
+- Use standard 6-field cron (second minute hour day-of-month month day-of-week)
+- Default timezone is UTC unless user specifies
+- Common timezone abbreviations: EST=America/New_York, CST=America/Chicago, MST=America/Denver, PST=America/Los_Angeles
+- Examples:
+  - "every 30 minutes" -> "0 */30 * * * *"
+  - "daily at 6am" -> "0 0 6 * * *"
+  - "every weekday at 9am" -> "0 0 9 * * 1-5""#,
+        input
+    );
+
+    let request = ModelRequest {
+        messages: vec![RequestMessage {
+            role: MessageRole::User,
+            content: prompt.into(),
+        }],
+        system: None,
+        tools: Vec::new(),
+        tool_choice: None,
+        max_tokens: None,
+        temperature: None,
+    };
+
+    let response = model
+        .generate(&request)
+        .await
+        .map_err(|e| ScheduleError::LlmError(e.to_string()))?;
+
+    // Parse JSON response
+    let llm_result: LlmScheduleResponse = serde_json::from_str(&response.content)
+        .map_err(|e| ScheduleError::LlmError(format!("Invalid JSON response: {}", e)))?;
+
+    // Validate the generated cron expression
+    let next_runs = validate_cron(&llm_result.cron, &llm_result.timezone)?;
+
+    Ok(ParsedSchedule {
+        cron_expression: llm_result.cron,
+        timezone: llm_result.timezone,
+        description: llm_result.description,
+        next_runs,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,5 +495,82 @@ mod tests {
     fn test_12pm_is_noon() {
         let result = parse_natural_schedule("daily at 12pm").unwrap();
         assert_eq!(result.cron_expression, "0 0 12 * * *");
+    }
+
+    // LLM fallback tests
+    use aof_core::{AofResult, ModelProvider, ModelResponse, StopReason, Usage};
+    use async_trait::async_trait;
+    use std::collections::HashMap;
+    use std::pin::Pin;
+
+    struct MockModel {
+        response: String,
+    }
+
+    #[async_trait]
+    impl Model for MockModel {
+        async fn generate(&self, _request: &ModelRequest) -> AofResult<ModelResponse> {
+            Ok(ModelResponse {
+                content: self.response.clone(),
+                stop_reason: StopReason::EndTurn,
+                usage: Usage {
+                    input_tokens: 100,
+                    output_tokens: 50,
+                },
+                tool_calls: Vec::new(),
+                metadata: HashMap::new(),
+            })
+        }
+
+        async fn generate_stream(
+            &self,
+            _request: &ModelRequest,
+        ) -> AofResult<Pin<Box<dyn futures::Stream<Item = AofResult<aof_core::StreamChunk>> + Send>>>
+        {
+            unimplemented!()
+        }
+
+        fn config(&self) -> &aof_core::ModelConfig {
+            unimplemented!()
+        }
+
+        fn provider(&self) -> ModelProvider {
+            ModelProvider::Anthropic
+        }
+    }
+
+    #[tokio::test]
+    async fn test_llm_fallback_parses_complex() {
+        let model = MockModel {
+            response: r#"{"cron": "0 0 9 * * 2", "timezone": "UTC", "description": "Every Tuesday at 9am"}"#.to_string(),
+        };
+
+        let result = parse_with_llm("every Tuesday at 9am", &model).await.unwrap();
+        assert_eq!(result.cron_expression, "0 0 9 * * 2");
+        assert_eq!(result.timezone, "UTC");
+        assert_eq!(result.next_runs.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_llm_result_validated() {
+        // LLM returns invalid cron
+        let model = MockModel {
+            response: r#"{"cron": "invalid cron", "timezone": "UTC", "description": "Invalid"}"#.to_string(),
+        };
+
+        let result = parse_with_llm("complex pattern", &model).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ScheduleError::InvalidCron(_)));
+    }
+
+    #[tokio::test]
+    async fn test_llm_invalid_json_handled() {
+        let model = MockModel {
+            response: "not valid json".to_string(),
+        };
+
+        let result = parse_with_llm("some pattern", &model).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ScheduleError::LlmError(_)));
     }
 }
