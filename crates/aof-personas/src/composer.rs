@@ -760,6 +760,109 @@ mod tests {
     }
 
     #[test]
+    fn test_skill_to_tool_mapping() {
+        let mut agent = make_test_agent("tool-agent");
+        agent.skills = vec!["kubectl".to_string(), "jq".to_string(), "curl".to_string()];
+        let agents = vec![agent];
+        let tools = vec![
+            Tool {
+                name: "kubectl".to_string(),
+                description: "Kubernetes CLI for cluster management".to_string(),
+                category: "infrastructure".to_string(),
+            },
+            Tool {
+                name: "jq".to_string(),
+                description: "JSON processor for data transformation".to_string(),
+                category: "data-processing".to_string(),
+            },
+            Tool {
+                name: "curl".to_string(),
+                description: "HTTP client for API requests".to_string(),
+                category: "networking".to_string(),
+            },
+        ];
+
+        let composer = PromptComposer::new(agents, HashMap::new(), tools);
+        let prompt = composer.compose_system_prompt("tool-agent").unwrap();
+
+        assert!(prompt.contains("kubectl"), "Prompt should contain kubectl");
+        assert!(prompt.contains("Kubernetes CLI"), "kubectl description should be present");
+        assert!(prompt.contains("jq"), "Prompt should contain jq");
+        assert!(prompt.contains("JSON processor"), "jq description should be present");
+        assert!(prompt.contains("curl"), "Prompt should contain curl");
+        assert!(prompt.contains("HTTP client"), "curl description should be present");
+    }
+
+    #[test]
+    fn test_missing_skill_not_in_tools() {
+        let mut agent = make_test_agent("missing-tool-agent");
+        agent.skills = vec!["kubectl".to_string(), "unknown-tool".to_string()];
+        let agents = vec![agent];
+        let tools = vec![Tool {
+            name: "kubectl".to_string(),
+            description: "Kubernetes CLI".to_string(),
+            category: "infrastructure".to_string(),
+        }];
+
+        let composer = PromptComposer::new(agents, HashMap::new(), tools);
+        let prompt = composer.compose_system_prompt("missing-tool-agent").unwrap();
+
+        // kubectl should have description
+        assert!(prompt.contains("kubectl"));
+        assert!(prompt.contains("Kubernetes CLI"));
+        // unknown-tool should appear but with "not found" marker
+        assert!(prompt.contains("unknown-tool"));
+        assert!(prompt.contains("not found in TOOLS.md"));
+    }
+
+    #[test]
+    fn test_tool_deduplication() {
+        let mut agent = make_test_agent("dup-tool-agent");
+        agent.skills = vec![
+            "kubectl".to_string(),
+            "kubectl".to_string(), // duplicate
+            "jq".to_string(),
+        ];
+        let agents = vec![agent];
+        let tools = vec![
+            Tool {
+                name: "kubectl".to_string(),
+                description: "Kubernetes CLI".to_string(),
+                category: "infrastructure".to_string(),
+            },
+            Tool {
+                name: "jq".to_string(),
+                description: "JSON processor".to_string(),
+                category: "data".to_string(),
+            },
+        ];
+
+        let composer = PromptComposer::new(agents, HashMap::new(), tools);
+        let prompt = composer.compose_system_prompt("dup-tool-agent").unwrap();
+
+        // Count occurrences of kubectl in the tool section
+        let tools_section = prompt.split("[TOOLS]").nth(1).unwrap();
+        let kubectl_count = tools_section.matches("- kubectl").count();
+        assert_eq!(kubectl_count, 1, "kubectl should appear only once, found {}", kubectl_count);
+    }
+
+    #[test]
+    fn test_empty_skills_handled() {
+        let mut agent = make_test_agent("no-skills-agent");
+        agent.skills = vec![];
+        // Override to allow empty skills (bypass validation for unit test)
+        agent.can = vec!["do things".to_string()];
+        agent.cannot = vec!["break things".to_string()];
+        let agents = vec![agent];
+
+        let composer = PromptComposer::new(agents, HashMap::new(), vec![]);
+        let prompt = composer.compose_system_prompt("no-skills-agent").unwrap();
+
+        assert!(prompt.contains("[TOOLS]"), "Tools section header should still be present");
+        assert!(prompt.contains("No tools configured"), "Should indicate no tools");
+    }
+
+    #[test]
     fn test_large_skill_list_under_default_limit() {
         let mut agent = make_test_agent("big-agent");
         agent.skills = (0..50).map(|i| format!("tool-{}", i)).collect();
