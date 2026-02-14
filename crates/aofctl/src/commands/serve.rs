@@ -34,6 +34,8 @@ use tokio::sync::RwLock;
 
 // Config API
 use crate::api::config::{ConfigState, get_agents_config, get_tools_config, get_config_version};
+// Metrics API
+use crate::api::metrics::{MetricsState, get_agent_metrics};
 
 // Additional imports for inline handlers
 use bytes::Bytes;
@@ -518,6 +520,32 @@ pub async fn execute(
     // Create event broadcaster for real-time event streaming
     let event_bus = Arc::new(EventBroadcaster::new(1000)); // 1000 event buffer
     println!("  Event bus: initialized (buffer: 1000)");
+
+    // Create reliability metrics cache and subscribe to event bus
+    let metrics_cache = Arc::new(aof_personas::ReliabilityCache::default_capacity());
+    {
+        let cache = Arc::clone(&metrics_cache);
+        let mut event_rx = event_bus.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match event_rx.recv().await {
+                    Ok(event) => {
+                        if let Err(e) = cache.update_with_event(&event).await {
+                            tracing::warn!("Failed to update metrics cache: {}", e);
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!("Metrics cache lagged, dropped {} events", n);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        tracing::info!("Event bus closed, stopping metrics cache updates");
+                        break;
+                    }
+                }
+            }
+        });
+    }
+    println!("  Metrics cache: initialized (max 10000 events)");
 
     // Initialize gateway if config provided
     let gateway_handle = if let Some(gw_config_path) = gateway_config_file {
@@ -1177,12 +1205,21 @@ pub async fn execute(
         event_bus: Some(event_bus.clone()),
     };
 
-    // Build API router
-    let api_router = Router::new()
+    // Build API router (config endpoints)
+    let config_router = Router::new()
         .route("/config/agents", get(get_agents_config))
         .route("/config/tools", get(get_tools_config))
         .route("/config/version", get(get_config_version))
         .with_state(config_state.clone());
+
+    // Build metrics router
+    let metrics_state = MetricsState::new(Arc::clone(&metrics_cache));
+    let metrics_router = Router::new()
+        .route("/agents/:id/metrics", get(get_agent_metrics))
+        .with_state(metrics_state);
+
+    // Merge all API sub-routers
+    let api_router = config_router.merge(metrics_router);
 
     // Import handlers from aof-triggers server (inline to avoid duplicating logic)
     use axum::extract::State;
@@ -1369,6 +1406,7 @@ pub async fn execute(
     println!("  Config API: http://{}/api/config/agents", bind_addr);
     println!("  Config API: http://{}/api/config/tools", bind_addr);
     println!("  Config API: http://{}/api/config/version", bind_addr);
+    println!("  Metrics API: http://{}/api/agents/{{id}}/metrics", bind_addr);
     if static_dir.is_some() {
         println!("  Web UI: http://{}/", bind_addr);
     }
