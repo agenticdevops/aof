@@ -19,9 +19,9 @@ Phase 5 (Agent Personas) complete. All 6 plans delivered: workspace file loaders
 ## Current Position
 
 ### Active Phase
-**Phase 7: Coordination Protocols** (1/4 plans)
+**Phase 7: Coordination Protocols** (3/4 plans)
 - **Goal:** Agents proactively monitor, report status, and coordinate via session tools
-- **Status:** In Progress - Plan 01 (Session Tools Foundation) complete
+- **Status:** In Progress - Plans 01-04 complete (Session Tools, Heartbeat, Token Metrics)
 
 ### Last Completed Phase
 **Phase 6: Conversational Config** (5/5 plans)
@@ -29,7 +29,7 @@ Phase 5 (Agent Personas) complete. All 6 plans delivered: workspace file loaders
 - **Status:** Complete. All 5 plans delivered.
 
 ### Status
-Phase 7 Plan 02 COMPLETE. Heartbeat protocol delivered: HeartbeatScheduler (60s frequency, 120s timeout), CoordinationManager orchestrator, per-agent CoordinationMode enforcement, AgentHealthRecord tracking, timeout detection with alerts, REST endpoint GET /api/coordination/health, serve-config.yaml integration. 40 tests passing (16 new + 24 from Plan 01). Super-lightweight Haiku checks (~50 tokens). Token efficiency: <5% overhead. Documentation: internal architecture + user heartbeat guide. Ready for standup protocol (Plan 03).
+Phase 7 Plan 04 COMPLETE. Token measurement and auto-degradation delivered: TokenMetrics with atomic counters tracking coordination vs production tokens, DegradationManager state machine (Full → Standard → Reduced → HeartbeatOnly → Disabled), 30% overhead threshold with 20% hysteresis recovery, REST endpoints GET /api/coordination/metrics and POST /api/coordination/mode, TokenLimitsServeConfig in serve-config.yaml. 56 tests passing (17 new + 39 from Plans 01-02). Documentation: comprehensive developer guide + user token budget management guide. Token efficiency: <30% enforced automatically. Ready for standup protocol (Plan 03) and integration testing (Plan 06).
 
 **Documentation Summary:**
 - ✅ PHASE-6-IMPLEMENTATION-SUMMARY.md (phase overview)
@@ -54,7 +54,7 @@ Phase 3: Messaging Gateway       [██████████] 100% (3/3 plan
 Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
 Phase 5: Agent Personas          [██████████] 100% (6/6 plans) ✓
 Phase 6: Conversational Config   [██████████] 100% (5/5 plans) ✓
-Phase 7: Coordination Protocols  [█████░░░░░] 50% (2/4 plans)
+Phase 7: Coordination Protocols  [███████░░░] 75% (3/4 plans)
 Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ```
 
@@ -69,7 +69,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 - **Avg. plan duration:** 750 seconds (12.5 minutes)
 
 ### Quality
-- **Tests passing:** 464+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 142 + Phase 7: 71)
+- **Tests passing:** 481+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 142 + Phase 7: 88)
 - **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration, persona loaders, prompt composition, introduction events, reliability metrics, E2E pipeline, session tools messaging, TTL filtering, bounded queues, heartbeat scheduler, agent health tracking, coordination manager, timeout detection
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
@@ -82,6 +82,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 07 | 04 | 1078s | 6 | 6 | 5 | 2026-02-14 |
 | 07 | 02 | 2057s | 9 | 7 | 6 | 2026-02-14 |
 | 07 | 01 | 842s | 10 | 10 | 6 | 2026-02-14 |
 | 06 | 05 | 472s | 10 | 13 | 7 | 2026-02-14 |
@@ -103,6 +104,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | Phase 06 P05 | 472 | 10 tasks | 13 files |
 | Phase 07 P01 | 842 | 10 tasks | 10 files |
 | Phase 07 P02 | 2057 | 9 tasks | 7 files |
+| Phase 07 P04 | 1078 | 6 tasks | 6 files |
 
 ## Accumulated Context
 
