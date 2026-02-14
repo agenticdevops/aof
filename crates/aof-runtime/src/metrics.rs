@@ -27,6 +27,10 @@ pub struct AofMetrics {
     pub agent_execution_duration: Histogram,
     /// Currently active agents
     pub agents_active: Gauge,
+    /// Total agent restarts (for supervision)
+    pub agent_restarts_total: Counter,
+    /// Total agent failures (exhausted retry budget)
+    pub agent_failures_total: Counter,
 
     // Event metrics
     /// Total events emitted
@@ -93,6 +97,18 @@ impl AofMetrics {
             "Number of currently executing agents"
         )?;
         registry.register(Box::new(agents_active.clone()))?;
+
+        let agent_restarts_total = Counter::new(
+            "aof_agent_restarts_total",
+            "Total number of agent restarts due to crashes"
+        )?;
+        registry.register(Box::new(agent_restarts_total.clone()))?;
+
+        let agent_failures_total = Counter::new(
+            "aof_agent_failures_total",
+            "Total number of agent failures after exhausting retry budget"
+        )?;
+        registry.register(Box::new(agent_failures_total.clone()))?;
 
         // Event metrics
         let events_emitted_total = Counter::new(
@@ -192,6 +208,8 @@ impl AofMetrics {
             agent_executions_total,
             agent_execution_duration,
             agents_active,
+            agent_restarts_total,
+            agent_failures_total,
             events_emitted_total,
             event_broadcast_latency,
             websocket_clients,

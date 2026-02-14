@@ -15,6 +15,7 @@ pub mod fleet;
 pub mod health;
 pub mod metrics;
 pub mod orchestrator;
+pub mod resilience;
 pub mod sandbox;
 pub mod shutdown;
 pub mod task;
