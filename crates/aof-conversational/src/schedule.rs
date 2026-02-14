@@ -1,4 +1,6 @@
-use aof_core::{Model, ModelRequest};
+use aof_core::model::MessageRole;
+use std::collections::HashMap;
+use aof_core::{Model, ModelRequest, RequestMessage};
 use chrono::{DateTime, Utc};
 use cron::Schedule;
 use regex::Regex;
@@ -345,14 +347,17 @@ Rules:
 
     let request = ModelRequest {
         messages: vec![RequestMessage {
-            role: MessageRole::User,
-            content: prompt.into(),
+            role: aof_core::model::MessageRole::User,
+            content: prompt,
+            tool_calls: None,
+            tool_call_id: None,
         }],
         system: None,
         tools: Vec::new(),
-        tool_choice: None,
-        max_tokens: None,
         temperature: None,
+        max_tokens: Some(150),
+        stream: false,
+        extra: HashMap::new(),
     };
 
     let response = model

@@ -1,5 +1,5 @@
 pub mod traits;
-pub mod agent_creator;
+pub mod squad_builder;
 
 pub use traits::{Specialist, SpecialistOutput};
-pub use agent_creator::AgentCreator;
+pub use squad_builder::SquadBuilder;
