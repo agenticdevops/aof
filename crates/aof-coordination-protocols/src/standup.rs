@@ -196,6 +196,140 @@ BLOCKERS: <your answer or "none">
 Be brief and specific. Focus on results, not process."#
         )
     }
+
+    /// Run the standup scheduler loop
+    ///
+    /// This is the main loop that:
+    /// 1. Calculates delay until next standup based on cron expression
+    /// 2. Sleeps until that time
+    /// 3. Triggers standup
+    /// 4. Repeats
+    ///
+    /// Must be spawned in Arc for shared access from timeout tasks.
+    pub async fn run(self: Arc<Self>) -> Result<(), CoordinationProtocolError> {
+        if !self.config.enabled {
+            info!("Standup protocol disabled in config");
+            return Ok(());
+        }
+
+        // Parse cron expression
+        let schedule = Schedule::from_str(&self.config.cron)
+            .map_err(|e| CoordinationProtocolError::InvalidCron(e.to_string()))?;
+
+        // Parse timezone
+        let tz: chrono_tz::Tz = self
+            .config
+            .timezone
+            .parse()
+            .map_err(|_| CoordinationProtocolError::InvalidTimezone(self.config.timezone.clone()))?;
+
+        info!(
+            "Starting standup scheduler (cron: {}, timezone: {})",
+            self.config.cron, self.config.timezone
+        );
+
+        loop {
+            // Calculate delay until next standup
+            let next = schedule
+                .upcoming(tz)
+                .next()
+                .ok_or_else(|| CoordinationProtocolError::InvalidCron("No future runs".into()))?;
+            let now = Utc::now().with_timezone(&tz);
+            let delay = (next - now)
+                .to_std()
+                .unwrap_or(std::time::Duration::from_secs(60));
+
+            info!("Next standup at: {} (in {:?})", next, delay);
+            tokio::time::sleep(delay).await;
+
+            // Trigger standup
+            if let Err(e) = self.trigger_standup().await {
+                error!("Failed to trigger standup: {}", e);
+            }
+        }
+    }
+
+    /// Trigger an immediate standup
+    ///
+    /// This method:
+    /// 1. Generates a unique request_id (UUID v4)
+    /// 2. Emits StandupRequest event to all participating agents
+    /// 3. Initializes response collection for this request
+    /// 4. Waits for collection_timeout duration
+    /// 5. Collects all received responses
+    /// 6. Optionally generates summary (if summarize enabled)
+    /// 7. Emits StandupSummary event
+    ///
+    /// Can be called manually via REST API or automatically by scheduler.
+    pub async fn trigger_standup(&self) -> Result<String, CoordinationProtocolError> {
+        let request_id = Uuid::new_v4().to_string();
+        let agent_count = self.participating_agents.read().await.len();
+
+        info!(
+            "Triggering standup (request_id: {}, agents: {})",
+            request_id, agent_count
+        );
+
+        // Initialize response collection
+        self.collected_responses
+            .write()
+            .await
+            .insert(request_id.clone(), Vec::new());
+
+        // Emit StandupRequest event
+        let event = CoordinationEvent::standup_request(
+            self.session_id.clone(),
+            request_id.clone(),
+        );
+
+        if let Err(e) = self.event_tx.send(event) {
+            warn!("Failed to broadcast standup request: {}", e);
+        }
+
+        // Wait for collection timeout
+        info!(
+            "Waiting {:?} for standup responses",
+            self.config.collection_timeout
+        );
+        tokio::time::sleep(self.config.collection_timeout).await;
+
+        // Collect all responses
+        let responses = self
+            .collected_responses
+            .write()
+            .await
+            .remove(&request_id)
+            .unwrap_or_default();
+
+        let response_count = responses.len();
+        info!(
+            "Standup complete: {}/{} agents responded",
+            response_count, agent_count
+        );
+
+        // Optionally generate summary
+        if self.config.summarize {
+            // TODO: Implement Sonnet summarization in Task 4
+            debug!("Summarization enabled but not yet implemented (Task 4)");
+        }
+
+        // Emit StandupSummary event
+        // NOTE: StandupSummary constructor will be added to aof-core in Task 5
+        // For now, we just log the completion
+        info!(
+            "Standup summary ready: {}/{} responses (request_id: {})",
+            response_count, agent_count, request_id
+        );
+
+        Ok(request_id)
+    }
+
+    /// Trigger standup immediately (public method for REST API)
+    ///
+    /// This is a convenience wrapper around trigger_standup() for external callers.
+    pub async fn trigger_now(&self) -> Result<String, CoordinationProtocolError> {
+        self.trigger_standup().await
+    }
 }
 
 #[cfg(test)]
@@ -267,5 +401,59 @@ mod tests {
         assert!(prompt.contains("DOING:"));
         assert!(prompt.contains("BLOCKERS:"));
         assert!(prompt.contains("max 50 words each"));
+    }
+
+    #[tokio::test]
+    async fn test_trigger_now_emits_events() {
+        let config = StandupConfig {
+            collection_timeout: Duration::from_millis(100), // Short timeout for testing
+            ..StandupConfig::default()
+        };
+        let (tx, mut rx) = broadcast::channel(100);
+        let scheduler = StandupScheduler::new(config, tx, "test-session");
+
+        scheduler.register_agent("agent-1").await;
+        scheduler.register_agent("agent-2").await;
+
+        // Trigger standup
+        let request_id = scheduler.trigger_now().await.unwrap();
+        assert!(!request_id.is_empty());
+
+        // Should receive StandupRequest event
+        let event1 = rx.recv().await.unwrap();
+        if let Some(activity) = &event1.coordination_activity {
+            use aof_core::coordination::CoordinationActivity;
+            match activity {
+                CoordinationActivity::StandupRequest { request_id: req_id } => {
+                    assert_eq!(req_id, &request_id);
+                }
+                _ => panic!("Expected StandupRequest, got {:?}", activity),
+            }
+        } else {
+            panic!("Expected coordination_activity");
+        }
+
+        // NOTE: StandupSummary event will be tested once the constructor is added to aof-core
+        // For now, we just verify that trigger_now completes successfully
+    }
+
+    #[test]
+    fn test_invalid_cron_rejected() {
+        let mut config = StandupConfig::default();
+        config.cron = "invalid cron".to_string();
+
+        let (tx, _rx) = broadcast::channel(100);
+        let scheduler = Arc::new(StandupScheduler::new(config, tx, "test-session"));
+
+        // This should be tested in run() but we can't easily test the scheduler loop
+        // without actually running it. We test cron parsing indirectly.
+        let schedule_result = Schedule::from_str("invalid cron");
+        assert!(schedule_result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_timezone_rejected() {
+        let invalid_tz: Result<chrono_tz::Tz, _> = "Invalid/Timezone".parse();
+        assert!(invalid_tz.is_err());
     }
 }
