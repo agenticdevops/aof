@@ -29,5 +29,6 @@ notify = { version = "6.1", features = ["macos_fsevent"] }
 unicode-segmentation = "1.11"
 
 [dev-dependencies]
+aof-coordination = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }
 tempfile = "3.8"
