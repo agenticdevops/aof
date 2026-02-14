@@ -13,6 +13,7 @@ pub mod specialists;
 pub mod templates;
 pub mod generation;
 pub mod validation;
+pub mod persistence;
 
 // Re-export key types for convenience
 pub use types::{
@@ -25,3 +26,4 @@ pub use session::ConversationSessionStore;
 pub use orchestrator::Orchestrator;
 pub use specialists::{Specialist, SpecialistOutput};
 pub use templates::{SquadTemplate, TemplateAgent, SquadConfig, SquadTemplateLibrary};
+pub use persistence::{WorkspacePersistence, PersistenceResult};
