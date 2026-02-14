@@ -4,6 +4,7 @@ import viteCompression from 'vite-plugin-compression'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // @ts-ignore - Vitest config
   test: {
     globals: true,
     environment: 'jsdom',

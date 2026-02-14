@@ -132,12 +132,10 @@ export function TaskCard({ task, className = '' }: TaskCardProps): React.ReactEl
       ref={setNodeRef}
       style={style}
       className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border-l-4 ${borderColor} border border-gray-200 dark:border-gray-700 p-3 mb-2 cursor-grab active:cursor-grabbing ${isDragging ? 'shadow-2xl' : ''} ${className}`}
-      role="button"
-      tabIndex={0}
-      aria-label={`Task: ${task.title}, in ${task.lane} lane`}
-      aria-describedby={`${descriptionId} ${statusId}`}
       {...attributes}
       {...listeners}
+      aria-label={`Task: ${task.title}, in ${task.lane} lane`}
+      aria-describedby={`${descriptionId} ${statusId}`}
     >
       {/* Drag handle indicator */}
       <div className="flex items-start gap-2 mb-2">

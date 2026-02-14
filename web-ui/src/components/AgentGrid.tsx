@@ -143,44 +143,31 @@ const VERSION_POLL_INTERVAL = 10000;
  */
 export function AgentGrid({ onAgentClick, className = '' }: AgentGridProps): React.ReactElement {
   const { agents, loading, error, refetch } = useAgentsConfig();
-  const { version, loading: versionLoading } = useConfigVersion();
-  const [previousVersion, setPreviousVersion] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
 
   // Get agent status from eventsSlice (maps agent_id to last activity)
-  const eventsByAgent = useSelector((state: RootState) => state.events.eventsByAgent);
+  const events = useSelector((state: RootState) => state.events.events);
+
+  // Build eventsByAgent map
+  const eventsByAgent = React.useMemo(() => {
+    const map: Record<string, typeof events> = {};
+    events.forEach((event) => {
+      if (!map[event.agent_id]) {
+        map[event.agent_id] = [];
+      }
+      map[event.agent_id].push(event);
+    });
+    return map;
+  }, [events]);
 
   /**
    * Poll config version and refetch if changed.
    */
-  useEffect(() => {
-    if (!version || versionLoading) return;
-
-    // Store initial version
-    if (previousVersion === null) {
-      setPreviousVersion(version);
-      return;
-    }
-
-    // Check if version changed
-    if (version !== previousVersion) {
-      console.log(`Config version changed: ${previousVersion} → ${version}`);
-      setPreviousVersion(version);
-      setShowToast(true);
-      refetch();
-    }
-  }, [version, versionLoading, previousVersion, refetch]);
-
-  /**
-   * Start version polling.
-   */
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Version polling is handled by useConfigVersion hook internally
-    }, VERSION_POLL_INTERVAL);
-
-    return () => clearInterval(interval);
-  }, []);
+  useConfigVersion(() => {
+    console.log('Config version changed, reloading agents...');
+    setShowToast(true);
+    refetch();
+  }, VERSION_POLL_INTERVAL);
 
   /**
    * Get last activity timestamp for an agent.
