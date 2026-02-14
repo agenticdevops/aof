@@ -64,7 +64,7 @@ cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 # Terminal 2: Stop old web-ui (Ctrl+C), start new:
 cd web-ui
-npm run dev
+pnpm run dev
 ```
 
 ## Why This Works

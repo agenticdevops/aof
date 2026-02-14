@@ -65,7 +65,7 @@ cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 # Terminal 2: Start web UI
 cd web-ui
-npm run dev
+pnpm run dev
 # Visit http://localhost:5173
 
 # Terminal 3: Run agents

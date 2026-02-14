@@ -100,7 +100,7 @@ quickstart/
 
 3. **Start the Full Stack:**
    - Terminal 1: `cargo run -p aofctl -- serve --config quickstart/serve-config.yaml`
-   - Terminal 2: `cd web-ui && npm run dev` (visit http://localhost:5173)
+   - Terminal 2: `cd web-ui && pnpm run dev` (visit http://localhost:5173)
    - Terminal 3: `aofctl run agent quickstart/agents/kubo.yaml --prompt "Hello!"`
 
 4. **Use Different Models:**

@@ -51,14 +51,18 @@ cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 **Terminal 2 - Web UI:**
 ```bash
-# First time only: Create environment config
-cd ../web-ui
-cp .env.local.template .env.local
-# (URLs already configured for port 7777)
+# Navigate to web-ui directory
+cd web-ui
 
-# Start the web UI
-npm run dev
-# Visit http://localhost:5173
+# First time only: Install dependencies
+pnpm install
+
+# First time only: Create environment config
+cp .env.local.template .env.local
+
+# Start the development server
+pnpm run dev
+# Visit: http://localhost:5173
 ```
 
 **Terminal 3 - Run Any Minion:**
@@ -123,7 +127,7 @@ aofctl run agent quickstart/agents/quick-test.yaml --prompt "Your question" --pr
 cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 # Terminal 2:
-cd web-ui && npm run dev
+cd web-ui && pnpm run dev
 
 # Visit: http://localhost:5173
 ```

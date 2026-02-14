@@ -133,7 +133,8 @@ cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 # Terminal 2: Start web UI
 cd web-ui
-npm run dev
+pnpm install  # First time only
+pnpm run dev
 # Wait for: "Local: http://localhost:5173"
 
 # Terminal 3: Run agent
@@ -216,7 +217,7 @@ aofctl run agent quickstart/agents/k8s-checker.yaml --prompt "Cluster health?"
 cargo run -p aofctl -- serve --config quickstart/serve-config.yaml
 
 # Terminal 2: Web UI
-cd web-ui && npm run dev
+cd web-ui && pnpm run dev
 
 # Terminal 3: Multiple sequential tests
 export GOOGLE_API_KEY="your-key"
@@ -394,7 +395,7 @@ curl -v http://localhost:7777/health
 cat web-ui/.env.local
 
 # Verify it matches serve-config port (7777)
-# Restart web-ui: npm run dev in Terminal 2
+# Restart web-ui: pnpm run dev in Terminal 2
 ```
 
 ### Full Stack Tests
