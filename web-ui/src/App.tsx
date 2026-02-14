@@ -8,6 +8,8 @@ import { useSelector } from 'react-redux';
 import { useWebSocket } from './hooks/useWebSocket';
 import { StatusIndicator } from './components/StatusIndicator';
 import { Skeleton } from './components/Skeleton';
+import { SquadChat } from './components/SquadChat';
+import { ActivityFeed } from './components/ActivityFeed';
 import type { RootState } from './store';
 
 // Lazy load heavy components
@@ -62,10 +64,10 @@ export function App(): React.ReactElement {
   const lastEventTimestamp = events.length > 0 ? events[events.length - 1].timestamp : 'N/A';
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow">
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="max-w-full mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
               AOF Mission Control
@@ -75,8 +77,10 @@ export function App(): React.ReactElement {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+      {/* Main Content with Sidebar Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Content Area */}
+        <main className="flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8">
         {/* Agent Grid */}
         <section className="mb-8">
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">
@@ -111,6 +115,13 @@ export function App(): React.ReactElement {
           >
             <KanbanBoard />
           </Suspense>
+        </section>
+
+        {/* Activity Feed (Left side, below kanban) */}
+        <section className="mb-8">
+          <div style={{ height: '500px' }}>
+            <ActivityFeed />
+          </div>
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -191,7 +202,13 @@ export function App(): React.ReactElement {
             </div>
           </div>
         </div>
-      </main>
+        </main>
+
+        {/* Right Sidebar: Squad Chat */}
+        <aside className="w-96 flex-shrink-0 overflow-hidden">
+          <SquadChat />
+        </aside>
+      </div>
     </div>
   );
 }
