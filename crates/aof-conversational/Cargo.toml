@@ -46,6 +46,9 @@ uuid = { workspace = true }
 # Regex
 regex = { workspace = true }
 
+# Unicode
+unicode-segmentation = "1.12"
+
 # LRU cache
 lru = "0.12"
 
@@ -54,3 +57,4 @@ cron = "0.12"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3.15"

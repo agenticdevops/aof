@@ -18,6 +18,7 @@ pub trait Specialist: Send + Sync {
 }
 
 /// Output from a specialist handler
+#[derive(Debug)]
 pub struct SpecialistOutput {
     /// Files to be created/modified (path -> content)
     pub files: HashMap<String, String>,
