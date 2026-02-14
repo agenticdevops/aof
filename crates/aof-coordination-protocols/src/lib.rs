@@ -70,10 +70,10 @@ pub mod session_tools;
 pub mod events;
 pub mod error;
 
-// Re-exports (will be enabled as types are implemented)
-// pub use session_tools::SessionTools;
-// pub use events::{
-//     SessionMessage, MessageType, AgentHealthStatus,
-//     StandupReport, CoordinationMode,
-// };
+// Re-exports
+pub use session_tools::SessionTools;
+pub use events::{
+    SessionMessage, MessageType, AgentHealthStatus,
+    StandupReport, CoordinationMode,
+};
 pub use error::CoordinationProtocolError;
