@@ -70,6 +70,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 05 | 02 | 813s | 9 | 7 | 9 | 2026-02-14 |
 | 05 | 03 | 824s | 7 | 16 | 7 | 2026-02-14 |
 | 05 | 04 | 546s | 8 | 11 | 7 | 2026-02-14 |
 | 05 | 01 | 619s | 8 | 12 | 5 | 2026-02-14 |
@@ -126,6 +127,10 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **Builder functions in aof-personas for events** | Separating event composition from daemon code enables unit testing without starting the server. Pure functions, no I/O. | 2026-02-14 | 05 | Implemented |
 | **Squad overrides via squads.yaml (not SOUL.md)** | Keeps SOUL.md format unchanged. Squad-specific customization is conceptually separate from personality. Optional file for backward compatibility. | 2026-02-14 | 05 | Implemented |
 | **Graceful degradation for missing persona files** | Missing AGENTS.md skips intros. Missing SOUL.md uses fallback. Invalid squads.yaml ignored. Daemon never crashes from missing persona files. | 2026-02-14 | 05 | Implemented |
+| **7-layer instruction composition** | Clear separation of concerns: base -> role -> personality -> communication -> capabilities -> tools -> behavioral rules. Section headers aid debugging. | 2026-02-14 | 05 | Implemented |
+| **Token estimation at len/4 with 8000 default limit** | Claude standard approximation, conservative. Truncation by priority: behavioral rules first, personality never dropped. | 2026-02-14 | 05 | Implemented |
+| **SHA256 for prompt cache invalidation** | Deterministic hash of agent+soul+tool data. Same pattern as version_hash in config.rs. Arc<RwLock> cache with AtomicU32 hit/miss counters. | 2026-02-14 | 05 | Implemented |
+| **Persona prompt as optional AgentExecutor override** | config.system_prompt takes precedence (expert mode). with_persona_prompt() builder is purely additive, no breaking changes. | 2026-02-14 | 05 | Implemented |
 
 ### Todos
 
@@ -244,4 +249,4 @@ Each plan should have:
 ---
 
 *State tracking initialized: 2026-02-11*
-*Last updated: 2026-02-14T04:25:51Z*
+*Last updated: 2026-02-14T04:35:00Z*
