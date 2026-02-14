@@ -64,10 +64,9 @@ impl MockAgent {
                         // Send heartbeat response
                         let response = CoordinationEvent::heartbeat_response(
                             &session,
-                            &id,
                             request_id.clone(),
-                            AgentHealthStatus::Healthy,
-                            Some(delay.as_millis() as u64),
+                            &id,
+                            "healthy",
                         );
 
                         let _ = tx.send(response);
@@ -95,19 +94,14 @@ impl MockAgent {
                         ..
                     } = activity
                     {
-                        // Create mock standup report
-                        let report = StandupReport {
-                            what_i_did: format!("{}: Completed task X", id),
-                            what_im_doing: format!("{}: Working on task Y", id),
-                            blockers: None,
-                        };
-
                         // Send standup response
                         let response = CoordinationEvent::standup_response(
                             &session,
-                            &id,
                             request_id.clone(),
-                            report,
+                            &id,
+                            format!("{}: Completed task X", id),
+                            format!("{}: Working on task Y", id),
+                            vec![],
                         );
 
                         let _ = tx.send(response);
@@ -137,10 +131,9 @@ impl MockAgent {
                             tokio::time::sleep(heartbeat_delay).await;
                             let response = CoordinationEvent::heartbeat_response(
                                 &session,
-                                &id,
                                 request_id.clone(),
-                                AgentHealthStatus::Healthy,
-                                Some(heartbeat_delay.as_millis() as u64),
+                                &id,
+                                "healthy",
                             );
                             let _ = tx.send(response);
                         }
@@ -148,16 +141,13 @@ impl MockAgent {
                             request_id,
                             ..
                         } => {
-                            let report = StandupReport {
-                                what_i_did: format!("{}: Completed tasks", id),
-                                what_im_doing: format!("{}: Working on features", id),
-                                blockers: None,
-                            };
                             let response = CoordinationEvent::standup_response(
                                 &session,
-                                &id,
                                 request_id.clone(),
-                                report,
+                                &id,
+                                format!("{}: Completed tasks", id),
+                                format!("{}: Working on features", id),
+                                vec![],
                             );
                             let _ = tx.send(response);
                         }
@@ -208,14 +198,26 @@ impl TestConfig {
     pub fn create_test_coordination_manager(
         session_id: impl Into<String>,
     ) -> (
-        CoordinationManager,
+        Arc<CoordinationManager>,
         broadcast::Sender<CoordinationEvent>,
         broadcast::Receiver<CoordinationEvent>,
     ) {
         let config = Self::coordination_config();
         let (event_tx, event_rx) = broadcast::channel(1000);
-        let manager = CoordinationManager::new(config, event_tx.clone(), session_id.into());
+        let manager = Arc::new(CoordinationManager::new(config, event_tx.clone(), session_id.into()));
 
         (manager, event_tx, event_rx)
+    }
+
+    /// Start event processing loop for manager (routes events to handle_event)
+    pub fn start_event_processor(
+        manager: Arc<CoordinationManager>,
+        mut event_rx: broadcast::Receiver<CoordinationEvent>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            while let Ok(event) = event_rx.recv().await {
+                manager.handle_event(&event).await;
+            }
+        })
     }
 }
