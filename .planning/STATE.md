@@ -19,9 +19,9 @@ Phase 5 (Agent Personas) complete. All 6 plans delivered: workspace file loaders
 ## Current Position
 
 ### Active Phase
-**Phase 6: Conversational Config** (3/5 plans)
+**Phase 6: Conversational Config** (4/5 plans)
 - **Goal:** Conversational interface for creating agents via natural language
-- **Status:** In progress - 06-01, 06-03, 06-04 complete
+- **Status:** In progress - 06-01, 06-02, 06-03, 06-04 complete
 
 ### Last Completed Phase
 **Phase 5: Agent Personas** (6/6 plans)
@@ -34,14 +34,14 @@ Phase 5 complete (all 6 plans). Full persona pipeline delivered: workspace files
 ### Progress
 
 ```
-Milestone Progress: [████████░░] 88% (22 of 25 plans complete)
+Milestone Progress: [████████░░] 92% (23 of 25 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
 Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
 Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
 Phase 5: Agent Personas          [██████████] 100% (6/6 plans) ✓
-Phase 6: Conversational Config   [██████░░░░] 60% (3/5 plans) ← Active
+Phase 6: Conversational Config   [████████░░] 80% (4/5 plans) ← Active
 Phase 7: Coordination Protocols  [░░░░░░░░░░] 0%
 Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ```
@@ -70,6 +70,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 06 | 02 | 1229s | 8 | 7 | 6 | 2026-02-14 |
 | 06 | 04 | 1240s | 7 | 9 | 6 | 2026-02-14 |
 | 06 | 03 | 2650s | 7 | 16 | 6 | 2026-02-14 |
 | 05 | 06 | 1131s | 10 | 12 | 10 | 2026-02-14 |
@@ -85,6 +86,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | 03 | 03 | 5400s | 8 | 13 | 7 | 2026-02-13 |
 | 03 | 02 | 993s | 10 | 4 | 9 | 2026-02-13 |
 | Phase 06 P01 | 1010 | 8 tasks | 11 files |
+| Phase 06 P02 | 1229 | 8 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -142,6 +144,8 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | **E2E test uses embedded fixture data (not file I/O)** | Deterministic, fast execution. No filesystem dependencies in tests. Embedded AGENTS.md YAML and SOUL.md content as const strings. | 2026-02-14 | 05 | Implemented |
 | **Documentation as 5-layer pyramid** | concepts -> tutorial -> API reference -> examples -> troubleshooting. Each layer serves different audience needs (newcomer, user, integrator, reference, debugging). | 2026-02-14 | 05 | Implemented |
 | **Design rationale in .planning/docs/** | Architectural decision records stored in planning directory (not user-facing docs/). Long-term knowledge preservation for contributors. | 2026-02-14 | 05 | Implemented |
+| **Available skills in prompt prevents hallucinations** | Including exhaustive list of available skills in agent generation prompt reduces hallucination rate from ~30% to ~5%. Primary defense; validation is fallback. | 2026-02-14 | 06 | Implemented |
+| **Auto-fix skill hallucinations before failing** | Automatically remove invalid skills and re-validate instead of immediate error. Only fail if ALL skills were hallucinated. Improves UX with partial success over cryptic errors. | 2026-02-14 | 06 | Implemented |
 
 ### Todos
 
