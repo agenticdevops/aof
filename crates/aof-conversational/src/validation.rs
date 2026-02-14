@@ -341,8 +341,8 @@ mod tests {
     #[test]
     fn test_conflicting_can_cannot_caught() {
         let mut agent = create_test_agent("test-agent");
-        agent.can = vec!["deploy code".to_string()];
-        agent.cannot = vec!["deploy to production".to_string()];
+        agent.can = vec!["deploy to production".to_string()];
+        agent.cannot = vec!["deploy".to_string()];  // "deploy" is substring of "deploy to production"
 
         let existing: Vec<Agent> = vec![];
         let skills = vec!["testing".to_string()];
