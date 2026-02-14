@@ -69,6 +69,7 @@
 pub mod session_tools;
 pub mod events;
 pub mod error;
+pub mod heartbeat;
 
 // Re-exports
 pub use session_tools::SessionTools;
@@ -77,3 +78,4 @@ pub use events::{
     StandupReport, CoordinationMode,
 };
 pub use error::CoordinationProtocolError;
+pub use heartbeat::{HeartbeatScheduler, HeartbeatConfig, AgentHealthRecord};
