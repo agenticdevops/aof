@@ -618,6 +618,95 @@ pub async fn execute(
         }
     }
 
+    // Determine workspace root early (used for introductions and config API)
+    let workspace_path = workspace_root
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    println!("  Workspace root: {}", workspace_path.display());
+
+    // ========================================================================
+    // Agent Introduction Events
+    // ========================================================================
+    // Load workspace persona files (AGENTS.md, SOUL.md) and emit introduction
+    // events via the broadcast channel. These events flow to WebSocket clients
+    // and messaging gateways. Introduction happens once per cold start.
+    {
+        let agents_md_path = workspace_path.join("AGENTS.md");
+        let soul_md_path = workspace_path.join("SOUL.md");
+
+        if agents_md_path.exists() {
+            match aof_personas::AgentLoader::load_from_file(
+                agents_md_path.to_str().unwrap_or("workspace/AGENTS.md"),
+            )
+            .await
+            {
+                Ok(agents) => {
+                    let souls = aof_personas::SoulLoader::load_from_file(
+                        soul_md_path.to_str().unwrap_or("workspace/SOUL.md"),
+                    )
+                    .await
+                    .unwrap_or_default();
+
+                    // Load optional squads.yaml for introduction overrides
+                    let squads_path = workspace_path.join("squads.yaml");
+                    let squad_overrides = load_squad_overrides(&squads_path).await;
+
+                    let intro_events = aof_personas::build_introduction_event_batch(
+                        &agents, &souls, &session_id,
+                    );
+
+                    tracing::info!(
+                        agent_count = agents.len(),
+                        "Emitting introduction events for {} agents",
+                        agents.len()
+                    );
+                    println!(
+                        "  Introductions: emitting for {} agents",
+                        agents.len()
+                    );
+
+                    for mut event in intro_events {
+                        // Apply squad override if present
+                        if let Some(ref overrides) = squad_overrides {
+                            if let Some(intro) = event.introduction.as_mut() {
+                                if let Some(override_msg) = overrides.get(&intro.agent_id) {
+                                    tracing::debug!(
+                                        agent_id = %intro.agent_id,
+                                        "Applying squad intro override"
+                                    );
+                                    intro.intro_message = override_msg.clone();
+                                }
+                            }
+                        }
+
+                        if let Some(ref intro) = event.introduction {
+                            tracing::debug!(
+                                agent = %intro.agent_name,
+                                message = %intro.intro_message,
+                                "Agent {} introduced",
+                                intro.agent_name
+                            );
+                        }
+                        event_bus.emit(event);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Failed to load AGENTS.md for introductions, skipping"
+                    );
+                    println!(
+                        "  Introductions: skipped (AGENTS.md load error: {})",
+                        e
+                    );
+                }
+            }
+        } else {
+            tracing::debug!("No AGENTS.md found at {:?}, skipping introductions", agents_md_path);
+            println!("  Introductions: skipped (no AGENTS.md)");
+        }
+    }
+
     // Create runtime orchestrator
     let orchestrator = Arc::new(
         RuntimeOrchestrator::with_max_concurrent(config.spec.runtime.max_concurrent_tasks)
@@ -1074,11 +1163,7 @@ pub async fn execute(
     // 4. Static file serving (React build)
 
     // Create config state for API endpoints
-    let workspace_path = workspace_root
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let config_state = ConfigState::new(workspace_path.clone());
-    println!("  Workspace root: {}", workspace_path.display());
 
     // Create shared state for handlers
     #[derive(Clone)]
@@ -1341,4 +1426,76 @@ pub async fn execute(
     }
 
     Ok(())
+}
+
+/// Load optional squad-specific introduction overrides from squads.yaml
+///
+/// Returns a map of agent_id -> intro_override. If the file doesn't exist
+/// or can't be parsed, returns None (graceful degradation).
+async fn load_squad_overrides(
+    path: &std::path::Path,
+) -> Option<HashMap<String, String>> {
+    if !path.exists() {
+        return None;
+    }
+
+    #[derive(serde::Deserialize)]
+    struct SquadsFile {
+        squads: Vec<SquadConfig>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct SquadConfig {
+        #[allow(dead_code)]
+        name: String,
+        agents: Vec<SquadAgentConfig>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct SquadAgentConfig {
+        id: String,
+        intro_override: Option<String>,
+    }
+
+    match tokio::fs::read_to_string(path).await {
+        Ok(content) => {
+            match serde_yaml::from_str::<SquadsFile>(&content) {
+                Ok(file) => {
+                    let mut overrides = HashMap::new();
+                    for squad in file.squads {
+                        for agent in squad.agents {
+                            if let Some(intro) = agent.intro_override {
+                                overrides.insert(agent.id, intro);
+                            }
+                        }
+                    }
+                    if overrides.is_empty() {
+                        None
+                    } else {
+                        tracing::info!(
+                            count = overrides.len(),
+                            "Loaded {} squad intro overrides from {:?}",
+                            overrides.len(),
+                            path
+                        );
+                        Some(overrides)
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Failed to parse squads.yaml, ignoring overrides"
+                    );
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "Failed to read squads.yaml, ignoring overrides"
+            );
+            None
+        }
+    }
 }
