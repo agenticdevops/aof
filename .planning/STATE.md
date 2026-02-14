@@ -19,17 +19,17 @@ Phase 5 (Agent Personas) complete. All 6 plans delivered: workspace file loaders
 ## Current Position
 
 ### Active Phase
-**Phase 7: Coordination Protocols** (6/6 plans)
-- **Goal:** Agents proactively monitor, report status, and coordinate via session tools
-- **Status:** Complete - All 6 plans delivered (Session Tools, Heartbeat, Standup, Token Metrics, UI Integration, E2E Validation)
+**Phase 8: Production Readiness** (2/6 plans)
+- **Goal:** Harden security, optimize performance, deploy infrastructure
+- **Status:** In Progress - Plan 02 (Security Hardening) complete
 
 ### Last Completed Phase
-**Phase 6: Conversational Config** (5/5 plans)
-- **Goal:** Conversational interface for creating agents via natural language
-- **Status:** Complete. All 5 plans delivered.
+**Phase 7: Coordination Protocols** (6/6 plans)
+- **Goal:** Agents proactively monitor, report status, and coordinate via session tools
+- **Status:** Complete. All 6 plans delivered.
 
 ### Status
-Phase 7 COMPLETE. Plan 06 delivered integration test infrastructure and comprehensive user documentation: MockAgent test helpers, 6 heartbeat integration tests (3 passing, timing fixes needed), example coordination-config.yaml (126 lines, fully commented), user setup guide (527 lines, 3-step quickstart), troubleshooting guide (837 lines, 8 common issues). Documentation enables user adoption: setup, configuration, monitoring, debugging. Integration test foundation complete for follow-up work. Phase 7 validates coordination protocols with user-facing documentation and test infrastructure. Ready for Phase 8 (Production Readiness).
+Phase 8 Plan 02 (Security Hardening) COMPLETE. Enhanced sandbox isolation with per-tool seccomp profiles (4 profiles blocking 23 escape syscalls), capability dropping (--cap-drop=ALL default), credential access auditing (tamper-proof sequence numbers), and behavioral anomaly detection (4-component scoring with 7-day learning period). 20 security tests passing. Comprehensive documentation created (internal dev guide, user concepts, credential auditing guide). Defense-in-depth now has 6 layers. Ready for Phase 8 Plan 03 (Performance Optimization).
 
 **Documentation Summary:**
 - ✅ PHASE-6-IMPLEMENTATION-SUMMARY.md (phase overview)
@@ -46,7 +46,7 @@ Phase 7 COMPLETE. Plan 06 delivered integration test infrastructure and comprehe
 ### Progress
 
 ```
-Milestone Progress: [██████████] 100% (29 of 29 plans complete)
+Milestone Progress: [██████████] 100% (31 of 35 plans complete)
 
 Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
 Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
@@ -55,7 +55,7 @@ Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans
 Phase 5: Agent Personas          [██████████] 100% (6/6 plans) ✓
 Phase 6: Conversational Config   [██████████] 100% (5/5 plans) ✓
 Phase 7: Coordination Protocols  [██████████] 100% (6/6 plans) ✓
-Phase 8: Production Readiness    [░░░░░░░░░░] 0%
+Phase 8: Production Readiness    [███░░░░░░░] 33% (2/6 plans)
 ```
 
 ---
@@ -69,8 +69,8 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 - **Avg. plan duration:** 750 seconds (12.5 minutes)
 
 ### Quality
-- **Tests passing:** 481+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 142 + Phase 7: 88)
-- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration, persona loaders, prompt composition, introduction events, reliability metrics, E2E pipeline, session tools messaging, TTL filtering, bounded queues, heartbeat scheduler, agent health tracking, coordination manager, timeout detection
+- **Tests passing:** 530+ (Phase 1: 45 + Phase 2: 156 + Phase 3: 50 + Phase 5: 142 + Phase 7: 88 + Phase 8: 49)
+- **Coverage:** Decision logging, skills validation, incident triage, resource locking, sandbox isolation, gateway hub/adapters/broadcast, rate limiting, squad configuration, persona loaders, prompt composition, introduction events, reliability metrics, E2E pipeline, session tools messaging, TTL filtering, bounded queues, heartbeat scheduler, agent health tracking, coordination manager, timeout detection, seccomp escape prevention, credential access auditing, behavioral anomaly detection
 - **Blockers encountered:** 1 (dependency issue in 02-02, fixed)
 - **Blockers resolved:** 1 (100% resolution rate)
 
@@ -82,6 +82,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 ### Recent Execution
 | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-------|------|----------|-------|-------|---------|------|
+| 08 | 02 | 1402s | 7 | 24 | 6 | 2026-02-14 |
 | 07 | 06 | 724s | 4 | 5 | 5 | 2026-02-14 |
 | 07 | 04 | 1078s | 6 | 6 | 5 | 2026-02-14 |
 | 07 | 02 | 2057s | 9 | 7 | 6 | 2026-02-14 |
@@ -97,7 +98,6 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | 05 | 04 | 546s | 8 | 11 | 7 | 2026-02-14 |
 | 04 | 04 | 744s | 10 | 10 | 4 | 2026-02-14 |
 | 04 | 03 | 757s | 11 | 23 | 11 | 2026-02-14 |
-| 04 | 02 | 891s | 12 | 27 | 12 | 2026-02-14 |
 | 04 | 01 | 753s | 10 | 14 | 10 | 2026-02-14 |
 | 03 | 03 | 5400s | 8 | 13 | 7 | 2026-02-13 |
 | Phase 06 P01 | 1010 | 8 tasks | 11 files |
@@ -107,6 +107,7 @@ Phase 8: Production Readiness    [░░░░░░░░░░] 0%
 | Phase 07 P02 | 2057 | 9 tasks | 7 files |
 | Phase 07 P04 | 1078 | 6 tasks | 6 files |
 | Phase 07 P06 | 724 | 4 tasks | 5 files |
+| Phase 08 P01 | 1500 | 7 tasks | 21 files |
 
 ## Accumulated Context
 
