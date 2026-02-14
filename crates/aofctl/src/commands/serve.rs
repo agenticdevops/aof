@@ -3,6 +3,34 @@
 //! This command starts a long-running HTTP server that accepts webhooks
 //! from messaging platforms (Slack, Discord, Telegram, WhatsApp) and
 //! routes them to configured agents.
+//!
+//! # Performance Profiling with tokio-console
+//!
+//! To profile async runtime performance using tokio-console:
+//!
+//! 1. Build with tokio-console feature and tokio_unstable flag:
+//!    ```bash
+//!    RUSTFLAGS="--cfg tokio_unstable" cargo build --features tokio-console
+//!    ```
+//!
+//! 2. Run aofctl serve:
+//!    ```bash
+//!    RUSTFLAGS="--cfg tokio_unstable" cargo run --features tokio-console -- serve
+//!    ```
+//!
+//! 3. In another terminal, launch tokio-console:
+//!    ```bash
+//!    tokio-console
+//!    ```
+//!
+//! The console will connect to the running daemon and display:
+//! - Task list with CPU/poll time
+//! - Async resource usage (channels, mutexes)
+//! - Task durations and wait times
+//! - Waker churn and blocking detection
+//!
+//! Note: tokio-console adds overhead (~10-15%) and should only be used for profiling,
+//! not in production deployments.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
