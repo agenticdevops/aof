@@ -27,6 +27,46 @@ pub struct CoordinationEvent {
     pub event_id: String,
     /// When the coordination event was created (may differ from activity timestamp)
     pub timestamp: DateTime<Utc>,
+    /// Optional agent introduction data (present for AgentIntroduction events)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduction: Option<AgentIntroduction>,
+}
+
+/// Agent introduction event data
+///
+/// Contains persona information emitted when an agent introduces itself,
+/// typically at daemon startup or when joining a squad. This data comes
+/// from AGENTS.md (identity) and SOUL.md (personality) workspace files.
+///
+/// # Example JSON shape
+///
+/// ```json
+/// {
+///   "agent_id": "k8s-monitor",
+///   "agent_name": "Kubernetes Monitor",
+///   "role": "Infrastructure Specialist",
+///   "avatar": "\u{1F916}",
+///   "intro_message": "I'm Kubernetes Monitor, your infrastructure specialist...",
+///   "personality_summary": "A methodical Kubernetes specialist...",
+///   "skills": ["kubectl", "pod-debugging", "log-analysis", "alerting"]
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentIntroduction {
+    /// Agent unique identifier (matches AGENTS.md id)
+    pub agent_id: String,
+    /// Display name (e.g., "Kubernetes Monitor")
+    pub agent_name: String,
+    /// Role description (e.g., "Infrastructure Specialist")
+    pub role: String,
+    /// Emoji avatar (e.g., "\u{1F916}")
+    pub avatar: String,
+    /// Introduction message (from SOUL.md default_intro or fallback)
+    pub intro_message: String,
+    /// One-line personality summary (from SOUL.md personality_summary)
+    pub personality_summary: String,
+    /// Agent skills/capabilities
+    pub skills: Vec<String>,
 }
 
 /// Incident response event variants for CoordinationEvent
@@ -90,6 +130,31 @@ impl CoordinationEvent {
             session_id: session_id.into(),
             event_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
+            introduction: None,
+        }
+    }
+
+    /// Create an agent introduction event
+    ///
+    /// Used when agents introduce themselves at daemon startup or squad join.
+    /// The introduction data comes from AGENTS.md and SOUL.md workspace files.
+    pub fn agent_introduction(
+        session_id: impl Into<String>,
+        introduction: AgentIntroduction,
+    ) -> Self {
+        let agent_id = introduction.agent_id.clone();
+        let intro_message = introduction.intro_message.clone();
+        let activity = ActivityEvent::info(format!(
+            "{} introduced: {}",
+            introduction.agent_name, intro_message
+        ));
+        Self {
+            activity,
+            agent_id,
+            session_id: session_id.into(),
+            event_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            introduction: Some(introduction),
         }
     }
 
@@ -550,6 +615,70 @@ mod tests {
         assert_eq!(event.agent_id, "agent-1");
         assert_eq!(event.activity.activity_type, ActivityType::Error);
         assert_eq!(event.activity.message, "Connection failed");
+    }
+
+    #[test]
+    fn test_agent_introduction_construction() {
+        let intro = AgentIntroduction {
+            agent_id: "k8s-monitor".to_string(),
+            agent_name: "Kubernetes Monitor".to_string(),
+            role: "Infrastructure Specialist".to_string(),
+            avatar: "\u{1F916}".to_string(),
+            intro_message: "I'm Kubernetes Monitor, your infrastructure specialist.".to_string(),
+            personality_summary: "A methodical Kubernetes specialist who takes system health seriously.".to_string(),
+            skills: vec!["kubectl".to_string(), "pod-debugging".to_string()],
+        };
+
+        let event = CoordinationEvent::agent_introduction("session-123", intro.clone());
+
+        assert_eq!(event.agent_id, "k8s-monitor");
+        assert_eq!(event.session_id, "session-123");
+        assert!(event.introduction.is_some());
+        let event_intro = event.introduction.unwrap();
+        assert_eq!(event_intro.agent_name, "Kubernetes Monitor");
+        assert_eq!(event_intro.role, "Infrastructure Specialist");
+        assert_eq!(event_intro.skills.len(), 2);
+        assert_eq!(event_intro, intro);
+    }
+
+    #[test]
+    fn test_agent_introduction_serialization() {
+        let intro = AgentIntroduction {
+            agent_id: "k8s-monitor".to_string(),
+            agent_name: "Kubernetes Monitor".to_string(),
+            role: "Infrastructure Specialist".to_string(),
+            avatar: "\u{1F916}".to_string(),
+            intro_message: "I'm Kubernetes Monitor.".to_string(),
+            personality_summary: "A methodical specialist.".to_string(),
+            skills: vec!["kubectl".to_string(), "jq".to_string()],
+        };
+
+        let event = CoordinationEvent::agent_introduction("session-123", intro);
+        let json = serde_json::to_string(&event).unwrap();
+
+        // Verify JSON contains introduction fields
+        assert!(json.contains("\"agent_name\":\"Kubernetes Monitor\""));
+        assert!(json.contains("\"role\":\"Infrastructure Specialist\""));
+        assert!(json.contains("\"intro_message\":\"I'm Kubernetes Monitor.\""));
+        assert!(json.contains("\"skills\":[\"kubectl\",\"jq\"]"));
+        assert!(json.contains("\"introduction\""));
+
+        // Verify round-trip deserialization
+        let deserialized: CoordinationEvent = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.introduction.is_some());
+        let deser_intro = deserialized.introduction.unwrap();
+        assert_eq!(deser_intro.agent_name, "Kubernetes Monitor");
+        assert_eq!(deser_intro.skills, vec!["kubectl", "jq"]);
+    }
+
+    #[test]
+    fn test_coordination_event_without_introduction() {
+        let event = CoordinationEvent::agent_started("agent-1", "session-123");
+        assert!(event.introduction.is_none());
+
+        // Verify introduction is NOT in JSON when None (skip_serializing_if)
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(!json.contains("introduction"));
     }
 
     #[test]
