@@ -70,6 +70,30 @@ The AgentGrid component (`web-ui/src/components/AgentGrid.tsx`) maps event activ
 
 **Critical linkage:** The `agent_id` field in the CoordinationEvent must match the `id` field from the agent config loaded via `/api/config/agents` (sourced from AGENTS.md). If these don't match, the AgentGrid cannot associate events with agent cards.
 
+**Current AGENTS.md agent IDs:** `k8s-monitor`, `log-analyzer`. When emitting test events, use one of these IDs for the AgentGrid to display status changes. For example:
+
+```bash
+# This will update k8s-monitor's status in AgentGrid to "working"
+curl -X POST http://localhost:8080/api/test/emit-event \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"k8s-monitor","event_type":"agent_started","details":{}}'
+```
+
+**Verified status mapping (AgentGrid.tsx getAgentStatus):**
+
+| Backend ActivityType | Frontend `activity_type` value | AgentGrid Status |
+|---------------------|-------------------------------|------------------|
+| `Started`           | `"Started"`                   | `"working"`      |
+| `Thinking`          | `"Thinking"`                  | `"working"`      |
+| `Analyzing`         | `"Analyzing"`                 | `"working"`      |
+| `ToolExecuting`     | `"ToolExecuting"`             | `"working"`      |
+| `LlmCall`           | `"LlmCall"`                   | `"working"`      |
+| `Completed`         | `"Completed"`                 | `"idle"`         |
+| `ToolComplete`      | `"ToolComplete"`              | `"idle"`         |
+| `Error`             | `"Error"`                     | `"error"`        |
+| `ToolFailed`        | `"ToolFailed"`                | `"error"`        |
+| `Info`              | `"Info"`                      | `"idle"`         |
+
 ## Task and Chat Event Flow
 
 ### Task Events (from tasks.rs)
