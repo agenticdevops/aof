@@ -130,6 +130,64 @@ export const dashboardSlice = createSlice({
       state.error = null
       state.isLoading = false
     },
+
+    /**
+     * Update agent's last active timestamp
+     */
+    updateAgentLastActive: (
+      state,
+      action: PayloadAction<{ id: string; timestamp: Date }>
+    ) => {
+      const agent = state.agents.find(a => a.id === action.payload.id)
+      if (agent) {
+        agent.updatedAt = action.payload.timestamp
+      }
+
+      if (state.selectedAgent?.id === action.payload.id) {
+        state.selectedAgent.updatedAt = action.payload.timestamp
+      }
+    },
+
+    /**
+     * Increment agent's task counter
+     */
+    addAgentTask: (
+      state,
+      action: PayloadAction<{ id: string; taskCount?: number }>
+    ) => {
+      const agent = state.agents.find(a => a.id === action.payload.id)
+      if (agent) {
+        agent.metrics.tasksCompleted += action.payload.taskCount || 1
+        agent.updatedAt = new Date()
+      }
+
+      if (state.selectedAgent?.id === action.payload.id) {
+        state.selectedAgent.metrics.tasksCompleted += action.payload.taskCount || 1
+        state.selectedAgent.updatedAt = new Date()
+      }
+    },
+
+    /**
+     * Update agent health score (computed from metrics)
+     */
+    updateAgentHealth: (
+      state,
+      action: PayloadAction<{ id: string; healthScore: number }>
+    ) => {
+      const agent = state.agents.find(a => a.id === action.payload.id)
+      if (agent) {
+        // Store health score in status or separate field
+        // For now, update status based on health
+        const health = action.payload.healthScore
+        if (health < 30) {
+          agent.status = 'error'
+        } else if (health < 70) {
+          agent.status = 'idle'
+        } else {
+          agent.status = 'active'
+        }
+      }
+    },
   },
 })
 
@@ -144,6 +202,9 @@ export const {
   updateAgentMetrics,
   removeAgent,
   clearDashboard,
+  updateAgentLastActive,
+  addAgentTask,
+  updateAgentHealth,
 } = dashboardSlice.actions
 
 // Export reducer

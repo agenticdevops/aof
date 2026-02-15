@@ -8,6 +8,11 @@
 export type MessageType = 'user' | 'agent' | 'system' | 'announcement'
 
 /**
+ * Message delivery status for read receipts
+ */
+export type MessageStatus = 'pending' | 'sent' | 'received' | 'read'
+
+/**
  * Squad member representation (agent or human)
  */
 export interface SquadMember {
@@ -47,6 +52,8 @@ export interface Message {
   personaIcon: string
   /** Read status (for future read receipts) */
   isRead: boolean
+  /** Delivery status for tracking message lifecycle */
+  status?: MessageStatus
 }
 
 /**

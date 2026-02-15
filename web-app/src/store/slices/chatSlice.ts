@@ -1,18 +1,27 @@
 import { createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import type { ChatState, Message, SquadMember } from '@/types/chat'
+import type { ChatState, Message, SquadMember, MessageStatus } from '@/types/chat'
 import type { RootState } from '../store'
 import { useAppSelector } from '../hooks'
 
 /**
+ * Extended chat state with offline queue
+ */
+interface ExtendedChatState extends ChatState {
+  /** Messages queued for sending when offline */
+  offlineQueue: Message[]
+}
+
+/**
  * Initial chat state
  */
-const initialState: ChatState = {
+const initialState: ExtendedChatState = {
   messages: [],
   squadMembers: [],
   searchQuery: '',
   isLoading: false,
   error: null,
   typingAgentId: null,
+  offlineQueue: [],
 }
 
 /**
@@ -125,6 +134,67 @@ export const chatSlice = createSlice({
     setTypingAgent: (state, action: PayloadAction<string | null>) => {
       state.typingAgentId = action.payload
     },
+
+    /**
+     * Set message delivery status (for read receipts)
+     */
+    setMessageStatus: (
+      state,
+      action: PayloadAction<{ messageId: string; status: MessageStatus }>
+    ) => {
+      const message = state.messages.find(m => m.id === action.payload.messageId)
+      if (message) {
+        message.status = action.payload.status
+      }
+
+      // Also update in offline queue
+      const queuedMessage = state.offlineQueue.find(m => m.id === action.payload.messageId)
+      if (queuedMessage) {
+        queuedMessage.status = action.payload.status
+      }
+    },
+
+    /**
+     * Mark messages as read by IDs
+     */
+    markMessagesAsReadByIds: (state, action: PayloadAction<string[]>) => {
+      const messageIds = new Set(action.payload)
+      state.messages.forEach(msg => {
+        if (messageIds.has(msg.id)) {
+          msg.isRead = true
+          msg.status = 'read'
+        }
+      })
+    },
+
+    /**
+     * Add message to offline queue
+     */
+    queueOfflineMessage: (state, action: PayloadAction<Message>) => {
+      const message = { ...action.payload, status: 'pending' as MessageStatus }
+      state.offlineQueue.push(message)
+      state.messages.push(message)
+    },
+
+    /**
+     * Clear offline queue (after successful send)
+     */
+    clearOfflineQueue: (state) => {
+      state.offlineQueue = []
+    },
+
+    /**
+     * Move queued messages to sent status
+     */
+    flushOfflineQueue: (state) => {
+      state.offlineQueue.forEach(queuedMsg => {
+        const message = state.messages.find(m => m.id === queuedMsg.id)
+        if (message) {
+          message.status = 'sent'
+        }
+      })
+      state.offlineQueue = []
+    },
   },
 })
 
@@ -142,6 +212,11 @@ export const {
   addSquadMember,
   removeSquadMember,
   setTypingAgent,
+  setMessageStatus,
+  markMessagesAsReadByIds,
+  queueOfflineMessage,
+  clearOfflineQueue,
+  flushOfflineQueue,
 } = chatSlice.actions
 
 // Export reducer
@@ -153,6 +228,7 @@ export const selectSquadMembers = (state: RootState) => state.chat.squadMembers
 export const selectSearchQuery = (state: RootState) => state.chat.searchQuery
 export const selectChatLoading = (state: RootState) => state.chat.isLoading
 export const selectChatError = (state: RootState) => state.chat.error
+export const selectOfflineQueue = (state: RootState) => (state.chat as ExtendedChatState).offlineQueue
 
 /**
  * Memoized selector for filtered messages based on search query
