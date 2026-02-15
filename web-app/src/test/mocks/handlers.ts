@@ -126,4 +126,46 @@ export const handlers = [
     const body = (await request.json()) as any
     return HttpResponse.json({ confirmed: true, agent: body })
   }),
+
+  // Squad endpoints
+  http.get('http://localhost:7777/api/config/squads', () => {
+    return HttpResponse.json([])
+  }),
+
+  http.post('http://localhost:7777/api/config/squads', async ({ request }) => {
+    const body = (await request.json()) as any
+    return HttpResponse.json({
+      id: `squad-${Date.now()}`,
+      ...body,
+      createdAt: new Date().toISOString(),
+      lastModified: new Date().toISOString()
+    })
+  }),
+
+  http.get('http://localhost:7777/api/config/squads/:squadId', ({ params }) => {
+    return HttpResponse.json({
+      id: params.squadId,
+      name: 'Example Squad',
+      templateId: 'kubernetes-ops-squad',
+      agents: [],
+      createdAt: new Date().toISOString(),
+      lastModified: new Date().toISOString()
+    })
+  }),
+
+  http.put('http://localhost:7777/api/config/squads/:squadId', async ({ request }) => {
+    const body = (await request.json()) as any
+    return HttpResponse.json({
+      ...body,
+      lastModified: new Date().toISOString()
+    })
+  }),
+
+  http.delete('http://localhost:7777/api/config/squads/:squadId/agents/:agentId', () => {
+    return HttpResponse.json({ success: true }, { status: 204 })
+  }),
+
+  http.delete('http://localhost:7777/api/config/squads/:squadId', () => {
+    return HttpResponse.json({ success: true }, { status: 204 })
+  }),
 ]
