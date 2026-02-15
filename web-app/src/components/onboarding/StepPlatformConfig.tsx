@@ -1,139 +1,154 @@
 import React, { useState } from 'react'
 import { useAppDispatch, useAppSelector, addWizardPlatform, removeWizardPlatform } from '@/store'
-import Card from '@/components/common/Card'
-import Input from '@/components/common/Input'
+import { Slack, MessageCircle, Send, Github, Layers, MessageSquare } from 'lucide-react'
 import Button from '@/components/common/Button'
+import Card from '@/components/common/Card'
 import Modal from '@/components/common/Modal'
+import Input from '@/components/common/Input'
 import Badge from '@/components/common/Badge'
 
 interface StepPlatformConfigProps {
-  onBack: () => void
   onNext: () => void
+  onBack: () => void
 }
 
-const platforms = [
-  { type: 'slack', name: 'Slack', icon: '💬' },
-  { type: 'discord', name: 'Discord', icon: '🎮' },
-  { type: 'telegram', name: 'Telegram', icon: '✈️' },
-  { type: 'whatsapp', name: 'WhatsApp', icon: '📱' },
-  { type: 'github', name: 'GitHub', icon: '🐙' },
-  { type: 'jira', name: 'Jira', icon: '📋' },
+interface Platform {
+  id: string
+  name: string
+  icon: React.ReactNode
+  description: string
+}
+
+const platforms: Platform[] = [
+  {
+    id: 'slack',
+    name: 'Slack',
+    icon: <Slack className="w-6 h-6" />,
+    description: 'Connect to Slack workspace',
+  },
+  {
+    id: 'discord',
+    name: 'Discord',
+    icon: <MessageCircle className="w-6 h-6" />,
+    description: 'Add to Discord server',
+  },
+  {
+    id: 'telegram',
+    name: 'Telegram',
+    icon: <Send className="w-6 h-6" />,
+    description: 'Bot for Telegram chat',
+  },
+  {
+    id: 'whatsapp',
+    name: 'WhatsApp',
+    icon: <MessageSquare className="w-6 h-6" />,
+    description: 'WhatsApp Business API',
+  },
+  {
+    id: 'github',
+    name: 'GitHub',
+    icon: <Github className="w-6 h-6" />,
+    description: 'Access to repositories',
+  },
+  {
+    id: 'jira',
+    name: 'Jira',
+    icon: <Layers className="w-6 h-6" />,
+    description: 'Project management sync',
+  },
 ]
 
-interface PlatformModalState {
-  isOpen: boolean
-  platform: (typeof platforms)[0] | null
-  configValue: string
-  isTesting: boolean
-  testResult: 'success' | 'error' | null
-}
-
-export const StepPlatformConfig: React.FC<StepPlatformConfigProps> = ({ onBack, onNext }) => {
+export const StepPlatformConfig: React.FC<StepPlatformConfigProps> = ({ onNext, onBack }) => {
   const dispatch = useAppDispatch()
   const { platforms: connectedPlatforms } = useAppSelector((state) => state.onboarding)
-  const [modalState, setModalState] = useState<PlatformModalState>({
-    isOpen: false,
-    platform: null,
-    configValue: '',
-    isTesting: false,
-    testResult: null,
-  })
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
+  const [showModal, setShowModal] = useState(false)
+  const [token, setToken] = useState('')
+  const [testingPlatform, setTestingPlatform] = useState<string | null>(null)
+  const [testResult, setTestResult] = useState<{ platform: string; success: boolean; message: string } | null>(null)
 
-  const openModal = (platform: (typeof platforms)[0]) => {
-    setModalState({
-      isOpen: true,
-      platform,
-      configValue: '',
-      isTesting: false,
-      testResult: null,
-    })
-  }
-
-  const closeModal = () => {
-    setModalState({ isOpen: false, platform: null, configValue: '', isTesting: false, testResult: null })
+  const handleConnectClick = (platformId: string) => {
+    setSelectedPlatform(platformId)
+    setToken('')
+    setTestResult(null)
+    setShowModal(true)
   }
 
   const handleTestConnection = async () => {
-    setModalState((prev) => ({ ...prev, isTesting: true }))
+    if (!selectedPlatform || !token) return
+
+    setTestingPlatform(selectedPlatform)
     // Simulate API call
-    setTimeout(() => {
-      setModalState((prev) => ({ ...prev, isTesting: false, testResult: 'success' }))
-    }, 1500)
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    setTestResult({
+      platform: selectedPlatform,
+      success: true,
+      message: `Successfully connected to ${platforms.find((p) => p.id === selectedPlatform)?.name}`,
+    })
+    setTestingPlatform(null)
   }
 
-  const handleSave = () => {
-    if (modalState.platform && modalState.configValue) {
-      dispatch(
-        addWizardPlatform({
-          type: modalState.platform.type,
-          config: {
-            type: modalState.platform.type as any,
-            name: modalState.platform.name,
-            connected: true,
-            username: modalState.configValue.split(':')[0],
-            config: { token: modalState.configValue },
-          },
-        })
-      )
-      closeModal()
-    }
+  const handleConfirmConnection = () => {
+    if (!selectedPlatform || !token) return
+
+    dispatch(
+      addWizardPlatform({
+        key: selectedPlatform,
+        platform: {
+          connected: true,
+          username: token.substring(0, 10) + '...',
+          config: { token },
+        },
+      })
+    )
+
+    setShowModal(false)
+    setSelectedPlatform(null)
+    setToken('')
+    setTestResult(null)
   }
 
-  const handleRemove = (platformType: string) => {
-    dispatch(removeWizardPlatform(platformType))
+  const handleDisconnect = (platformId: string) => {
+    dispatch(removeWizardPlatform(platformId))
   }
 
-  const isConnected = (platformType: string) => {
-    return connectedPlatforms[platformType]?.connected || false
-  }
+  const isConnected = (platformId: string) => connectedPlatforms[platformId]?.connected
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Where should your agent listen?</h2>
-        <p className="text-gray-600 dark:text-gray-400">Connect platforms where your agent will receive messages (optional).</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Connect your platforms</h2>
+        <p className="text-gray-600 dark:text-gray-400">Choose where your agent should listen for messages</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         {platforms.map((platform) => (
-          <Card
-            key={platform.type}
-            className="relative"
-            elevation={isConnected(platform.type) ? 'focused' : 'lifted'}
-            hoverable
-          >
+          <Card key={platform.id} elevation={isConnected(platform.id) ? 'focused' : 'lifted'} hoverable>
             <div className="space-y-4">
               <div className="flex items-start justify-between">
-                <div className="text-4xl">{platform.icon}</div>
-                {isConnected(platform.type) && <Badge variant="success" size="sm">Connected</Badge>}
-              </div>
-
-              <div>
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100">{platform.name}</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Connect your {platform.name} account</p>
-              </div>
-
-              {isConnected(platform.type) ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    ✓ Connected as @{connectedPlatforms[platform.type]?.username}
-                  </p>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    fullWidth
-                    onClick={() => handleRemove(platform.type)}
-                  >
-                    Disconnect
-                  </Button>
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-sky-100 dark:bg-sky-900/30 rounded-lg text-sky-600 dark:text-sky-300">
+                    {platform.icon}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">{platform.name}</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{platform.description}</p>
+                  </div>
                 </div>
+                {isConnected(platform.id) && (
+                  <Badge variant="success" size="sm">
+                    Connected
+                  </Badge>
+                )}
+              </div>
+
+              {isConnected(platform.id) ? (
+                <Button variant="secondary" size="sm" onClick={() => handleDisconnect(platform.id)} fullWidth>
+                  Disconnect
+                </Button>
               ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  fullWidth
-                  onClick={() => openModal(platform)}
-                >
+                <Button variant="primary" size="sm" onClick={() => handleConnectClick(platform.id)} fullWidth>
                   Connect
                 </Button>
               )}
@@ -144,58 +159,64 @@ export const StepPlatformConfig: React.FC<StepPlatformConfigProps> = ({ onBack, 
 
       {/* Connection Modal */}
       <Modal
-        isOpen={modalState.isOpen}
-        onClose={closeModal}
-        title={`Connect ${modalState.platform?.name}`}
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={`Connect ${selectedPlatform ? platforms.find((p) => p.id === selectedPlatform)?.name : ''}`}
         size="md"
         footer={
           <div className="flex gap-3 justify-end">
-            <Button variant="secondary" onClick={closeModal} disabled={modalState.isTesting}>
+            <Button variant="secondary" onClick={() => setShowModal(false)} disabled={testingPlatform !== null}>
               Cancel
             </Button>
-            <Button
-              variant="primary"
-              onClick={handleTestConnection}
-              loading={modalState.isTesting}
-              disabled={!modalState.configValue || modalState.isTesting}
-            >
-              Test Connection
-            </Button>
+            {!testResult?.success ? (
+              <Button
+                variant="primary"
+                onClick={handleTestConnection}
+                loading={testingPlatform !== null}
+                disabled={!token || testingPlatform !== null}
+              >
+                Test Connection
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={handleConfirmConnection}>
+                Confirm Connection
+              </Button>
+            )}
           </div>
         }
       >
         <div className="space-y-4">
           <Input
-            label={`${modalState.platform?.name} Token/Key`}
-            placeholder="Enter your API token or authentication key"
-            value={modalState.configValue}
-            onChange={(e) => setModalState((prev) => ({ ...prev, configValue: e.target.value }))}
+            label="Authentication Token"
+            placeholder="Paste your API token or authentication key"
             type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            helperText="Your token is never stored or shared"
             fullWidth
           />
 
-          {modalState.testResult === 'success' && (
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-900 border border-emerald-200 dark:border-emerald-700 rounded-lg">
-              <p className="text-sm text-emerald-800 dark:text-emerald-200">✓ Connection successful! Click Save to continue.</p>
-              <Button variant="primary" size="sm" fullWidth className="mt-3" onClick={handleSave}>
-                Save Connection
-              </Button>
-            </div>
-          )}
-
-          {modalState.testResult === 'error' && (
-            <div className="p-3 bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg">
-              <p className="text-sm text-red-800 dark:text-red-200">✗ Connection failed. Check your token and try again.</p>
+          {testResult && (
+            <div
+              className={`p-4 rounded-lg ${
+                testResult.success
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
+                  : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300'
+              }`}
+            >
+              {testResult.message}
             </div>
           )}
         </div>
       </Modal>
 
-      <div className="flex justify-between gap-3 pt-4">
+      <div className="flex gap-3 justify-end">
         <Button variant="secondary" onClick={onBack}>
           Back
         </Button>
-        <Button onClick={onNext}>Next</Button>
+        <Button variant="primary" onClick={onNext}>
+          Next
+        </Button>
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAppDispatch, useAppSelector, toggleTheme } from '@/store'
 import { Moon, Sun } from 'lucide-react'
 
@@ -10,7 +10,8 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
-  const { theme, navigation } = useAppSelector((state) => state.app)
+  const location = useLocation()
+  const { theme } = useAppSelector((state) => state.app)
 
   const handleThemeToggle = () => {
     dispatch(toggleTheme())
@@ -23,10 +24,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   ]
 
   const isActivePath = (path: string) => {
-    if (path === '/welcome' && navigation === 'welcome') return true
-    if (path === '/config' && navigation === 'config') return true
-    if (path === '/wizard' && navigation === 'wizard') return true
-    return false
+    return location.pathname === path
   }
 
   return (

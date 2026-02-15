@@ -1,37 +1,42 @@
-export { default as store, persistor, type RootState, type AppDispatch } from './store'
+export { store, persistor, type RootState, type AppDispatch } from './store'
 export { useAppDispatch, useAppSelector } from './hooks'
 
-// App slice exports
+// App Slice exports
 export {
   setNavigation,
   setTheme,
-  setFirstVisit,
   toggleTheme,
+  setFirstVisit,
+  setDaemonUrl,
 } from './slices/appSlice'
-export { default as appReducer } from './slices/appSlice'
 
-// Onboarding slice exports
+// Onboarding Slice exports
 export {
   setStep,
   updateProject,
   updateAgent,
-  updatePlatforms,
   addWizardPlatform,
   removeWizardPlatform,
+  updatePlatforms,
   setLoading as setOnboardingLoading,
   setError as setOnboardingError,
   markStepCompleted,
   reset as resetOnboarding,
+  type OnboardingProject,
+  type OnboardingAgent,
+  type OnboardingPlatform,
 } from './slices/onboardingSlice'
-export { default as onboardingReducer } from './slices/onboardingSlice'
 
-// Config slice exports
+// Config Slice exports
 export {
   setAgents,
   addAgent,
   updateConfigAgent,
   removeAgent,
   setTools,
+  addTool,
+  updateTool,
+  removeTool,
   setPlatforms,
   addPlatform,
   updatePlatform,
@@ -43,4 +48,3 @@ export {
   setSelectedAgent,
   setSelectedPlatform,
 } from './slices/configSlice'
-export { default as configReducer } from './slices/configSlice'

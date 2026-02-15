@@ -1,9 +1,9 @@
 import React from 'react'
-import { Platform } from '@/types'
-import { Slack, MessageCircle, Send, MessageSquare, Github, Layers } from 'lucide-react'
+import { Slack, MessageCircle, Send, Github, Layers, MessageSquare, Settings, Unlink } from 'lucide-react'
 import Card from '@/components/common/Card'
 import Badge from '@/components/common/Badge'
 import Button from '@/components/common/Button'
+import { Platform } from '@/types'
 
 interface PlatformCardProps {
   platform: Platform
@@ -33,38 +33,45 @@ export const PlatformCard: React.FC<PlatformCardProps> = ({ platform, onManage, 
   }
 
   return (
-    <Card elevation="lifted" hoverable>
+    <Card elevation="lifted">
       <div className="space-y-4">
+        {/* Header with icon and status */}
         <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900 flex items-center justify-center">
-                {getIcon()}
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{platform.name}</h3>
-              </div>
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-sky-100 dark:bg-sky-900/30 rounded-lg">{getIcon()}</div>
+            <div>
+              <h3 className="font-semibold text-gray-900 dark:text-white capitalize">{platform.name}</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {platform.connected ? 'Connected' : 'Not connected'}
+              </p>
             </div>
           </div>
+          <Badge
+            variant={platform.connected ? 'success' : 'warning'}
+            size="sm"
+            icon={platform.connected ? <Slack className="w-3 h-3" /> : undefined}
+          >
+            {platform.connected ? 'Active' : 'Inactive'}
+          </Badge>
         </div>
 
-        {platform.connected ? (
-          <div className="space-y-3">
-            <Badge variant="success">Connected</Badge>
-            {platform.username && (
-              <p className="text-sm text-gray-600 dark:text-gray-400">Connected as @{platform.username}</p>
-            )}
+        {/* Username if connected */}
+        {platform.connected && platform.config?.username && (
+          <div className="text-sm">
+            <p className="text-gray-500 dark:text-gray-400 mb-1">Username</p>
+            <p className="font-medium text-gray-900 dark:text-white">{platform.config.username}</p>
           </div>
-        ) : (
-          <Badge variant="warning">Not connected</Badge>
         )}
 
-        <div className="flex gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+        {/* Actions */}
+        <div className="flex gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
           <Button
             variant="secondary"
             size="sm"
-            fullWidth
             onClick={() => onManage(platform)}
+            icon={<Settings className="w-4 h-4" />}
+            iconPosition="left"
+            fullWidth
           >
             Manage
           </Button>
@@ -72,8 +79,10 @@ export const PlatformCard: React.FC<PlatformCardProps> = ({ platform, onManage, 
             <Button
               variant="danger"
               size="sm"
-              fullWidth
               onClick={() => onDisconnect(platform.id)}
+              icon={<Unlink className="w-4 h-4" />}
+              iconPosition="left"
+              fullWidth
             >
               Disconnect
             </Button>

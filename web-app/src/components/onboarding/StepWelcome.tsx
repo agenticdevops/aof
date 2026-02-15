@@ -11,24 +11,22 @@ interface StepWelcomeProps {
 export const StepWelcome: React.FC<StepWelcomeProps> = ({ onNext }) => {
   const dispatch = useAppDispatch()
   const { project } = useAppSelector((state) => state.onboarding)
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [errors, setErrors] = useState<{ name?: string; description?: string }>({})
 
   const handleChange = (field: string, value: string) => {
-    dispatch(updateProject({ [field]: value }))
-    if (errors[field]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev }
-        delete newErrors[field]
-        return newErrors
-      })
+    dispatch(updateProject({ [field]: value } as any))
+    if (errors[field as keyof typeof errors]) {
+      setErrors({ ...errors, [field]: undefined })
     }
   }
 
   const handleNext = () => {
-    const newErrors: Record<string, string> = {}
-
-    if (!project.name || project.name.length < 3) {
+    const newErrors: typeof errors = {}
+    if (!project.name || project.name.trim().length < 3) {
       newErrors.name = 'Project name must be at least 3 characters'
+    }
+    if (!project.description || project.description.trim().length < 10) {
+      newErrors.description = 'Project description must be at least 10 characters'
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -42,36 +40,33 @@ export const StepWelcome: React.FC<StepWelcomeProps> = ({ onNext }) => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Let's set up your first AOF project</h2>
-        <p className="text-gray-600 dark:text-gray-400">Create your project and we'll configure your first agent in the next step.</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Let's set up your project</h2>
+        <p className="text-gray-600 dark:text-gray-400">Start by giving your project a name and description</p>
       </div>
 
-      <div className="space-y-4">
-        <Input
-          label="Project Name"
-          placeholder="My AOF Project"
-          value={project.name}
-          onChange={(e) => handleChange('name', e.target.value)}
-          error={errors.name}
-          required
-          fullWidth
-        />
+      <Input
+        label="Project Name"
+        placeholder="My Agent Squad"
+        value={project.name}
+        onChange={(e) => handleChange('name', e.target.value)}
+        error={errors.name}
+        fullWidth
+      />
 
-        <TextArea
-          label="Description"
-          placeholder="What will this project do? (optional)"
-          value={project.description}
-          onChange={(e) => handleChange('description', e.target.value)}
-          rows={3}
-          fullWidth
-        />
-      </div>
+      <TextArea
+        label="Project Description"
+        placeholder="What will your agents do? Describe the purpose and goals of this project..."
+        value={project.description}
+        onChange={(e) => handleChange('description', e.target.value)}
+        error={errors.description}
+        rows={4}
+        fullWidth
+      />
 
-      <div className="flex justify-end gap-3 pt-4">
-        <Button variant="secondary" onClick={() => {}}>
-          Skip
+      <div className="flex gap-3 justify-end">
+        <Button variant="primary" onClick={handleNext} fullWidth>
+          Next
         </Button>
-        <Button onClick={handleNext}>Next</Button>
       </div>
     </div>
   )

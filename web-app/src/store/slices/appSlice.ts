@@ -1,8 +1,11 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
 
+type NavigationState = 'welcome' | 'wizard' | 'config' | 'missionControl'
+type ThemeMode = 'light' | 'dark'
+
 interface AppState {
-  navigation: 'welcome' | 'wizard' | 'config' | 'missionControl'
-  theme: 'light' | 'dark'
+  navigation: NavigationState
+  theme: ThemeMode
   firstVisit: boolean
   daemonUrl: string
 }
@@ -11,27 +14,30 @@ const initialState: AppState = {
   navigation: 'welcome',
   theme: 'light',
   firstVisit: true,
-  daemonUrl: import.meta.env.VITE_API_URL || 'http://localhost:7777',
+  daemonUrl: 'http://localhost:7777',
 }
 
 const appSlice = createSlice({
   name: 'app',
   initialState,
   reducers: {
-    setNavigation: (state, action: PayloadAction<AppState['navigation']>) => {
+    setNavigation: (state, action: PayloadAction<NavigationState>) => {
       state.navigation = action.payload
     },
-    setTheme: (state, action: PayloadAction<'light' | 'dark'>) => {
+    setTheme: (state, action: PayloadAction<ThemeMode>) => {
       state.theme = action.payload
-    },
-    setFirstVisit: (state, action: PayloadAction<boolean>) => {
-      state.firstVisit = action.payload
     },
     toggleTheme: (state) => {
       state.theme = state.theme === 'light' ? 'dark' : 'light'
     },
+    setFirstVisit: (state, action: PayloadAction<boolean>) => {
+      state.firstVisit = action.payload
+    },
+    setDaemonUrl: (state, action: PayloadAction<string>) => {
+      state.daemonUrl = action.payload
+    },
   },
 })
 
-export const { setNavigation, setTheme, setFirstVisit, toggleTheme } = appSlice.actions
+export const { setNavigation, setTheme, toggleTheme, setFirstVisit, setDaemonUrl } = appSlice.actions
 export default appSlice.reducer

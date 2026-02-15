@@ -7,65 +7,45 @@ import Checkbox from '@/components/common/Checkbox'
 import Button from '@/components/common/Button'
 
 interface StepAgentSetupProps {
-  onBack: () => void
   onNext: () => void
+  onBack: () => void
 }
 
-const models = [
-  { value: 'claude', label: 'Claude 3.5 Sonnet (Anthropic)' },
-  { value: 'gpt-4', label: 'GPT-4 (OpenAI)' },
-  { value: 'gemini', label: 'Gemini 2.5 Flash (Google)' },
-  { value: 'ollama', label: 'Ollama (Self-hosted)' },
-]
-
-const agentTypes = [
-  { value: 'analyst', label: 'Analyst', description: 'Specialized in data analysis and reporting' },
-  { value: 'coordinator', label: 'Coordinator', description: 'Orchestrates workflows and team tasks' },
-  { value: 'specialist', label: 'Specialist', description: 'Expert in specific domains' },
-]
-
-const allCapabilities = [
+const capabilities = [
   'Shell Commands',
   'HTTP Requests',
   'File Operations',
-  'Database Access',
-  'Email Sending',
-  'Git Operations',
-  'Kubernetes Commands',
-  'Custom Integrations',
+  'Database Queries',
+  'API Integrations',
+  'Code Execution',
 ]
 
-export const StepAgentSetup: React.FC<StepAgentSetupProps> = ({ onBack, onNext }) => {
+export const StepAgentSetup: React.FC<StepAgentSetupProps> = ({ onNext, onBack }) => {
   const dispatch = useAppDispatch()
   const { agent } = useAppSelector((state) => state.onboarding)
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [errors, setErrors] = useState<{ name?: string; instructions?: string }>({})
 
   const handleChange = (field: string, value: any) => {
-    dispatch(updateAgent({ [field]: value }))
-    if (errors[field]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev }
-        delete newErrors[field]
-        return newErrors
-      })
+    dispatch(updateAgent({ [field]: value } as any))
+    if (errors[field as keyof typeof errors]) {
+      setErrors({ ...errors, [field]: undefined })
     }
   }
 
-  const toggleCapability = (capability: string) => {
-    const newCapabilities = agent.capabilities?.includes(capability)
-      ? agent.capabilities.filter((c) => c !== capability)
-      : [...(agent.capabilities || []), capability]
-    handleChange('capabilities', newCapabilities)
+  const handleCapabilityToggle = (capability: string) => {
+    const currentCapabilities = agent.capabilities || []
+    const updated = currentCapabilities.includes(capability)
+      ? currentCapabilities.filter((c) => c !== capability)
+      : [...currentCapabilities, capability]
+    dispatch(updateAgent({ capabilities: updated }))
   }
 
   const handleNext = () => {
-    const newErrors: Record<string, string> = {}
-
-    if (!agent.name || agent.name.length < 2) {
-      newErrors.name = 'Agent name is required'
+    const newErrors: typeof errors = {}
+    if (!agent.name || agent.name.trim().length < 2) {
+      newErrors.name = 'Agent name must be at least 2 characters'
     }
-
-    if (!agent.instructions || agent.instructions.length < 10) {
+    if (!agent.instructions || agent.instructions.trim().length < 10) {
       newErrors.instructions = 'Instructions must be at least 10 characters'
     }
 
@@ -80,82 +60,82 @@ export const StepAgentSetup: React.FC<StepAgentSetupProps> = ({ onBack, onNext }
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Create your first agent</h2>
-        <p className="text-gray-600 dark:text-gray-400">Configure the agent that will perform your tasks.</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Create your first agent</h2>
+        <p className="text-gray-600 dark:text-gray-400">Configure the AI model, personality, and capabilities</p>
       </div>
 
-      <div className="space-y-4">
-        <Input
-          label="Agent Name"
-          placeholder="e.g., DevOps Specialist"
-          value={agent.name}
-          onChange={(e) => handleChange('name', e.target.value)}
-          error={errors.name}
-          required
-          fullWidth
-        />
+      <Input
+        label="Agent Name"
+        placeholder="e.g., Analyzer, Coordinator, Specialist"
+        value={agent.name}
+        onChange={(e) => handleChange('name', e.target.value)}
+        error={errors.name}
+        fullWidth
+      />
 
-        <Select
-          label="LLM Model"
-          options={models}
-          value={agent.model}
-          onChange={(value) => handleChange('model', value)}
-          fullWidth
-        />
+      <Select
+        label="AI Model"
+        value={agent.model}
+        onChange={(e) => handleChange('model', e.target.value)}
+        options={[
+          { value: 'claude', label: 'Claude 3.5 Sonnet' },
+          { value: 'gpt-4', label: 'GPT-4 Turbo' },
+          { value: 'gemini', label: 'Gemini 2.5 Pro' },
+          { value: 'ollama', label: 'Ollama (Local)' },
+        ]}
+        fullWidth
+      />
 
-        <div className="space-y-3">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Agent Type</label>
-          <div className="space-y-2">
-            {agentTypes.map((type) => (
-              <label key={type.value} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700">
-                <input
-                  type="radio"
-                  name="agentType"
-                  value={type.value}
-                  checked={agent.type === type.value}
-                  onChange={(e) => handleChange('type', e.target.value)}
-                  className="mt-1"
-                />
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">{type.label}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{type.description}</p>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <TextArea
-          label="Instructions"
-          placeholder="Give detailed instructions about what this agent should do..."
-          value={agent.instructions}
-          onChange={(e) => handleChange('instructions', e.target.value)}
-          error={errors.instructions}
-          rows={4}
-          required
-          fullWidth
-        />
-
-        <div className="space-y-3">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Capabilities</label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {allCapabilities.map((cap) => (
-              <Checkbox
-                key={cap}
-                label={cap}
-                checked={agent.capabilities?.includes(cap) || false}
-                onChange={() => toggleCapability(cap)}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Agent Type</label>
+        <div className="space-y-2">
+          {(['analyst', 'coordinator', 'specialist'] as const).map((type) => (
+            <label key={type} className="flex items-center cursor-pointer">
+              <input
+                type="radio"
+                name="agent-type"
+                value={type}
+                checked={agent.type === type}
+                onChange={(e) => handleChange('type', e.target.value)}
+                className="w-4 h-4 text-sky-400 dark:text-sky-500"
               />
-            ))}
-          </div>
+              <span className="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">{type}</span>
+            </label>
+          ))}
         </div>
       </div>
 
-      <div className="flex justify-between gap-3 pt-4">
+      <TextArea
+        label="Instructions"
+        placeholder="Tell the agent what it should do, its behavior, and any constraints..."
+        value={agent.instructions}
+        onChange={(e) => handleChange('instructions', e.target.value)}
+        error={errors.instructions}
+        rows={4}
+        fullWidth
+      />
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Agent Capabilities</label>
+        <div className="space-y-2">
+          {capabilities.map((capability) => (
+            <Checkbox
+              key={capability}
+              label={capability}
+              checked={(agent.capabilities || []).includes(capability)}
+              onChange={() => handleCapabilityToggle(capability)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-3 justify-end">
         <Button variant="secondary" onClick={onBack}>
           Back
         </Button>
-        <Button onClick={handleNext}>Next</Button>
+        <Button variant="primary" onClick={handleNext}>
+          Next
+        </Button>
       </div>
     </div>
   )

@@ -1,82 +1,73 @@
 import React, { useState } from 'react'
-import clsx from 'clsx'
 import { useAppDispatch, useAppSelector, setNavigation } from '@/store'
 import { ChevronDown, FolderOpen, Bot, Globe, CheckCircle } from 'lucide-react'
-import Card from '@/components/common/Card'
 import Button from '@/components/common/Button'
+import Card from '@/components/common/Card'
 import Badge from '@/components/common/Badge'
 
 interface StepReviewProps {
   onBack: () => void
 }
 
+type SectionKey = 'project' | 'agent' | 'platforms'
+
 export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
   const dispatch = useAppDispatch()
   const { project, agent, platforms } = useAppSelector((state) => state.onboarding)
-  const [isLaunching, setIsLaunching] = useState(false)
-  const [expandedSections, setExpandedSections] = useState({
+  const [expandedSections, setExpandedSections] = useState<Record<SectionKey, boolean>>({
     project: true,
     agent: true,
     platforms: true,
   })
 
-  const toggleSection = (section: 'project' | 'agent' | 'platforms') => {
+  const toggleSection = (section: SectionKey) => {
     setExpandedSections((prev) => ({
       ...prev,
       [section]: !prev[section],
     }))
   }
 
-  const handleLaunch = async () => {
-    setIsLaunching(true)
-    // Simulate API call to save configuration
-    setTimeout(() => {
-      setIsLaunching(false)
-      dispatch(setNavigation('config'))
-    }, 1500)
+  const handleLaunch = () => {
+    dispatch(setNavigation('config'))
   }
 
-  const connectedPlatformCount = Object.values(platforms).filter((p) => p.connected).length
+  const connectedPlatforms = Object.entries(platforms).filter(([, p]) => p.connected).length
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Review your setup</h2>
-        <p className="text-gray-600 dark:text-gray-400">Everything looks good? Launch your agent and start automating!</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Review and launch</h2>
+        <p className="text-gray-600 dark:text-gray-400">
+          Review your configuration before launching your agent squad
+        </p>
       </div>
 
       {/* Project Section */}
       <Card elevation="lifted">
         <button
           onClick={() => toggleSection('project')}
-          className="w-full flex items-center justify-between hover:text-sky-600 dark:hover:text-sky-400"
+          className="w-full flex items-center justify-between hover:opacity-80 transition-opacity"
         >
           <div className="flex items-center gap-3">
-            <FolderOpen className="w-5 h-5 text-sky-500 dark:text-sky-400" />
-            <div className="text-left">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Project</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{project.name}</p>
-            </div>
+            <FolderOpen className="w-5 h-5 text-sky-500" />
+            <h3 className="font-semibold text-gray-900 dark:text-white">Project</h3>
           </div>
           <ChevronDown
-            className={clsx('w-5 h-5 transition-transform', {
-              'transform rotate-180': expandedSections.project,
-            })}
+            className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${
+              expandedSections.project ? 'rotate-180' : ''
+            }`}
           />
         </button>
-
         {expandedSections.project && (
-          <div className="mt-4 space-y-2 border-t border-gray-200 dark:border-gray-700 pt-4">
+          <div className="mt-4 space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Name</p>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{project.name}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Name</p>
+              <p className="font-medium text-gray-900 dark:text-white">{project.name}</p>
             </div>
-            {project.description && (
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Description</p>
-                <p className="font-medium text-gray-900 dark:text-gray-100">{project.description}</p>
-              </div>
-            )}
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Description</p>
+              <p className="text-gray-700 dark:text-gray-300">{project.description}</p>
+            </div>
           </div>
         )}
       </Card>
@@ -85,50 +76,48 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
       <Card elevation="lifted">
         <button
           onClick={() => toggleSection('agent')}
-          className="w-full flex items-center justify-between hover:text-sky-600 dark:hover:text-sky-400"
+          className="w-full flex items-center justify-between hover:opacity-80 transition-opacity"
         >
           <div className="flex items-center gap-3">
-            <Bot className="w-5 h-5 text-sky-500 dark:text-sky-400" />
-            <div className="text-left">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Agent</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{agent.name}</p>
-            </div>
+            <Bot className="w-5 h-5 text-sky-500" />
+            <h3 className="font-semibold text-gray-900 dark:text-white">Agent Configuration</h3>
           </div>
           <ChevronDown
-            className={clsx('w-5 h-5 transition-transform', {
-              'transform rotate-180': expandedSections.agent,
-            })}
+            className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${
+              expandedSections.agent ? 'rotate-180' : ''
+            }`}
           />
         </button>
-
         {expandedSections.agent && (
-          <div className="mt-4 space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Name</p>
-              <p className="font-medium text-gray-900 dark:text-gray-100">{agent.name}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Model</p>
-              <p className="font-medium text-gray-900 dark:text-gray-100 capitalize">{agent.model}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Type</p>
+          <div className="mt-4 space-y-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Name</p>
               <Badge variant="info" size="sm">
+                {agent.name}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Model</p>
+              <Badge variant="neutral" size="sm">
+                {agent.model}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Type</p>
+              <Badge variant="info" size="sm" className="capitalize">
                 {agent.type}
               </Badge>
             </div>
-            {agent.capabilities && agent.capabilities.length > 0 && (
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Capabilities</p>
-                <div className="flex flex-wrap gap-2">
-                  {agent.capabilities.map((cap) => (
-                    <Badge key={cap} variant="success" size="sm">
-                      {cap}
-                    </Badge>
-                  ))}
-                </div>
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Capabilities</p>
+              <div className="flex flex-wrap gap-2">
+                {agent.capabilities.map((cap) => (
+                  <Badge key={cap} variant="success" size="sm">
+                    {cap}
+                  </Badge>
+                ))}
               </div>
-            )}
+            </div>
           </div>
         )}
       </Card>
@@ -137,49 +126,58 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
       <Card elevation="lifted">
         <button
           onClick={() => toggleSection('platforms')}
-          className="w-full flex items-center justify-between hover:text-sky-600 dark:hover:text-sky-400"
+          className="w-full flex items-center justify-between hover:opacity-80 transition-opacity"
         >
           <div className="flex items-center gap-3">
-            <Globe className="w-5 h-5 text-sky-500 dark:text-sky-400" />
-            <div className="text-left">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Platforms</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {connectedPlatformCount} platform{connectedPlatformCount !== 1 ? 's' : ''} connected
-              </p>
-            </div>
+            <Globe className="w-5 h-5 text-sky-500" />
+            <h3 className="font-semibold text-gray-900 dark:text-white">Platform Connections</h3>
+            <Badge variant="info" size="sm">
+              {connectedPlatforms}
+            </Badge>
           </div>
           <ChevronDown
-            className={clsx('w-5 h-5 transition-transform', {
-              'transform rotate-180': expandedSections.platforms,
-            })}
+            className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${
+              expandedSections.platforms ? 'rotate-180' : ''
+            }`}
           />
         </button>
-
         {expandedSections.platforms && (
-          <div className="mt-4 space-y-2 border-t border-gray-200 dark:border-gray-700 pt-4">
-            {connectedPlatformCount > 0 ? (
-              Object.entries(platforms)
-                .filter(([, p]) => p.connected)
-                .map(([type, p]) => (
-                  <div key={type} className="flex items-center justify-between p-2 bg-sky-50 dark:bg-sky-900/20 rounded">
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-sky-600 dark:text-sky-400" /> {p.name}
-                    </span>
-                    {p.username && <span className="text-xs text-gray-500 dark:text-gray-400">@{p.username}</span>}
-                  </div>
-                ))
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            {connectedPlatforms > 0 ? (
+              <div className="space-y-2">
+                {Object.entries(platforms).map(
+                  ([key, platform]) =>
+                    platform.connected && (
+                      <div key={key} className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                          <span className="font-medium text-gray-900 dark:text-white capitalize">{key}</span>
+                        </div>
+                        {platform.username && (
+                          <span className="text-sm text-gray-500 dark:text-gray-400">{platform.username}</span>
+                        )}
+                      </div>
+                    )
+                )}
+              </div>
             ) : (
-              <p className="text-sm text-gray-500 dark:text-gray-400">No platforms connected (optional)</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No platforms connected yet</p>
             )}
           </div>
         )}
       </Card>
 
-      <div className="flex justify-between gap-3 pt-4">
+      <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+        <p className="text-sm text-blue-900 dark:text-blue-300">
+          Once you launch, your agent will be live and ready to handle messages from connected platforms.
+        </p>
+      </div>
+
+      <div className="flex gap-3 justify-end">
         <Button variant="secondary" onClick={onBack}>
           Back
         </Button>
-        <Button onClick={handleLaunch} loading={isLaunching} disabled={isLaunching}>
+        <Button variant="primary" onClick={handleLaunch}>
           Launch Agent
         </Button>
       </div>

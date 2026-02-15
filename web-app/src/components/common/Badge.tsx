@@ -1,34 +1,47 @@
 import React from 'react'
-import clsx from 'clsx'
-import { BadgeProps } from '@/types'
 
-export const Badge: React.FC<BadgeProps> = ({ variant = 'neutral', size = 'md', children, className, icon }) => {
-  const variantStyles = {
-    success: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
-    error: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    warning: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-    info: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-    neutral: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
-  }
+type BadgeVariant = 'success' | 'error' | 'warning' | 'info' | 'neutral'
+type BadgeSize = 'sm' | 'md'
 
-  const sizeStyles = {
-    sm: 'px-2 py-1 text-xs font-medium',
-    md: 'px-3 py-1.5 text-sm font-medium',
-  }
-
-  return (
-    <span
-      className={clsx(
-        'inline-flex items-center gap-1.5 rounded-full',
-        variantStyles[variant],
-        sizeStyles[size],
-        className
-      )}
-    >
-      {icon && <span className="shrink-0">{icon}</span>}
-      {children}
-    </span>
-  )
+interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
+  variant?: BadgeVariant
+  size?: BadgeSize
+  icon?: React.ReactNode
+  children: React.ReactNode
 }
 
+const variantStyles: Record<BadgeVariant, string> = {
+  success: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300',
+  error: 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300',
+  warning: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300',
+  info: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300',
+  neutral: 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-300',
+}
+
+const sizeStyles: Record<BadgeSize, string> = {
+  sm: 'px-2 py-1 text-xs',
+  md: 'px-3 py-1.5 text-sm',
+}
+
+export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
+  ({ variant = 'neutral', size = 'md', icon, children, className = '', ...props }, ref) => {
+    return (
+      <span
+        ref={ref}
+        className={`
+          inline-flex items-center gap-1.5 font-medium rounded-full
+          ${variantStyles[variant]}
+          ${sizeStyles[size]}
+          ${className}
+        `}
+        {...props}
+      >
+        {icon}
+        {children}
+      </span>
+    )
+  }
+)
+
+Badge.displayName = 'Badge'
 export default Badge

@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
-import { Agent, Tool, Platform } from '@/types'
+import type { Agent, Tool, Platform } from '@/types'
 
 interface ConfigState {
   agents: Agent[]
@@ -9,8 +9,8 @@ interface ConfigState {
   isLoading: boolean
   error: string | null
   searchQuery: string
-  selectedAgent: Agent | null
-  selectedPlatform: Platform | null
+  selectedAgentId: string | null
+  selectedPlatformId: string | null
 }
 
 const initialState: ConfigState = {
@@ -21,8 +21,8 @@ const initialState: ConfigState = {
   isLoading: false,
   error: null,
   searchQuery: '',
-  selectedAgent: null,
-  selectedPlatform: null,
+  selectedAgentId: null,
+  selectedPlatformId: null,
 }
 
 const configSlice = createSlice({
@@ -43,9 +43,24 @@ const configSlice = createSlice({
     },
     removeAgent: (state, action: PayloadAction<string>) => {
       state.agents = state.agents.filter((a) => a.id !== action.payload)
+      if (state.selectedAgentId === action.payload) {
+        state.selectedAgentId = null
+      }
     },
     setTools: (state, action: PayloadAction<Tool[]>) => {
       state.tools = action.payload
+    },
+    addTool: (state, action: PayloadAction<Tool>) => {
+      state.tools.push(action.payload)
+    },
+    updateTool: (state, action: PayloadAction<Tool>) => {
+      const index = state.tools.findIndex((t) => t.id === action.payload.id)
+      if (index >= 0) {
+        state.tools[index] = action.payload
+      }
+    },
+    removeTool: (state, action: PayloadAction<string>) => {
+      state.tools = state.tools.filter((t) => t.id !== action.payload)
     },
     setPlatforms: (state, action: PayloadAction<Platform[]>) => {
       state.platforms = action.payload
@@ -61,6 +76,9 @@ const configSlice = createSlice({
     },
     removePlatform: (state, action: PayloadAction<string>) => {
       state.platforms = state.platforms.filter((p) => p.id !== action.payload)
+      if (state.selectedPlatformId === action.payload) {
+        state.selectedPlatformId = null
+      }
     },
     setSearchQuery: (state, action: PayloadAction<string>) => {
       state.searchQuery = action.payload
@@ -74,11 +92,11 @@ const configSlice = createSlice({
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload
     },
-    setSelectedAgent: (state, action: PayloadAction<Agent | null>) => {
-      state.selectedAgent = action.payload
+    setSelectedAgent: (state, action: PayloadAction<string | null>) => {
+      state.selectedAgentId = action.payload
     },
-    setSelectedPlatform: (state, action: PayloadAction<Platform | null>) => {
-      state.selectedPlatform = action.payload
+    setSelectedPlatform: (state, action: PayloadAction<string | null>) => {
+      state.selectedPlatformId = action.payload
     },
   },
 })
@@ -89,6 +107,9 @@ export const {
   updateConfigAgent,
   removeAgent,
   setTools,
+  addTool,
+  updateTool,
+  removeTool,
   setPlatforms,
   addPlatform,
   updatePlatform,
@@ -100,4 +121,5 @@ export const {
   setSelectedAgent,
   setSelectedPlatform,
 } = configSlice.actions
+
 export default configSlice.reducer

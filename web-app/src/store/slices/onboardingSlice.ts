@@ -1,14 +1,36 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
-import { Agent, Platform, Project } from '@/types'
+
+interface OnboardingProject {
+  name: string
+  description: string
+}
+
+interface OnboardingAgent {
+  name: string
+  model: string
+  type: 'analyst' | 'coordinator' | 'specialist'
+  instructions: string
+  capabilities: string[]
+}
+
+interface OnboardingPlatform {
+  connected: boolean
+  config: Record<string, any>
+  username?: string
+  testResult?: {
+    success: boolean
+    message: string
+  }
+}
 
 interface OnboardingState {
   currentStep: 1 | 2 | 3 | 4
-  project: Partial<Project>
-  agent: Partial<Agent>
-  platforms: Record<string, Partial<Platform>>
+  project: OnboardingProject
+  agent: OnboardingAgent
+  platforms: Record<string, OnboardingPlatform>
+  completedSteps: number[]
   isLoading: boolean
   error: string | null
-  completedSteps: Set<number>
 }
 
 const initialState: OnboardingState = {
@@ -25,9 +47,9 @@ const initialState: OnboardingState = {
     capabilities: [],
   },
   platforms: {},
+  completedSteps: [],
   isLoading: false,
   error: null,
-  completedSteps: new Set(),
 }
 
 const onboardingSlice = createSlice({
@@ -37,20 +59,23 @@ const onboardingSlice = createSlice({
     setStep: (state, action: PayloadAction<1 | 2 | 3 | 4>) => {
       state.currentStep = action.payload
     },
-    updateProject: (state, action: PayloadAction<Partial<Project>>) => {
+    updateProject: (state, action: PayloadAction<Partial<OnboardingProject>>) => {
       state.project = { ...state.project, ...action.payload }
     },
-    updateAgent: (state, action: PayloadAction<Partial<Agent>>) => {
+    updateAgent: (state, action: PayloadAction<Partial<OnboardingAgent>>) => {
       state.agent = { ...state.agent, ...action.payload }
     },
-    updatePlatforms: (state, action: PayloadAction<Record<string, Partial<Platform>>>) => {
-      state.platforms = action.payload
-    },
-    addWizardPlatform: (state, action: PayloadAction<{ type: string; config: Partial<Platform> }>) => {
-      state.platforms[action.payload.type] = action.payload.config
+    addWizardPlatform: (
+      state,
+      action: PayloadAction<{ key: string; platform: OnboardingPlatform }>
+    ) => {
+      state.platforms[action.payload.key] = action.payload.platform
     },
     removeWizardPlatform: (state, action: PayloadAction<string>) => {
       delete state.platforms[action.payload]
+    },
+    updatePlatforms: (state, action: PayloadAction<Record<string, OnboardingPlatform>>) => {
+      state.platforms = action.payload
     },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload
@@ -58,8 +83,10 @@ const onboardingSlice = createSlice({
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload
     },
-    markStepCompleted: (state, action: PayloadAction<number>) => {
-      state.completedSteps.add(action.payload)
+    markStepCompleted: (state, action: PayloadAction<1 | 2 | 3 | 4>) => {
+      if (!state.completedSteps.includes(action.payload)) {
+        state.completedSteps.push(action.payload)
+      }
     },
     reset: () => initialState,
   },
@@ -69,12 +96,14 @@ export const {
   setStep,
   updateProject,
   updateAgent,
-  updatePlatforms,
   addWizardPlatform,
   removeWizardPlatform,
+  updatePlatforms,
   setLoading,
   setError,
   markStepCompleted,
   reset,
 } = onboardingSlice.actions
+
+export type { OnboardingProject, OnboardingAgent, OnboardingPlatform }
 export default onboardingSlice.reducer

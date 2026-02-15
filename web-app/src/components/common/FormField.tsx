@@ -1,21 +1,25 @@
 import React from 'react'
-import clsx from 'clsx'
-import { FormFieldProps } from '@/types'
 
-export const FormField: React.FC<FormFieldProps> = ({ label, error, required, helperText, children, className }) => {
+interface FormFieldProps {
+  label?: string
+  error?: string
+  helperText?: string
+  required?: boolean
+  children: React.ReactNode
+}
+
+export const FormField: React.FC<FormFieldProps> = ({ label, error, helperText, required, children }) => {
   return (
-    <div className={clsx('flex flex-col gap-1.5', className)}>
+    <div>
       {label && (
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           {label}
-          {required && <span className="text-red-500 ml-0.5">*</span>}
+          {required && <span className="text-red-500 ml-1">*</span>}
         </label>
       )}
-
       {children}
-
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      {helperText && !error && <p className="text-sm text-gray-500 dark:text-gray-400">{helperText}</p>}
+      {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+      {helperText && <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{helperText}</p>}
     </div>
   )
 }
