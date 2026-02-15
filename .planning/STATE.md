@@ -19,35 +19,41 @@ Milestone 2 Phase 1 (Integration) complete. Delivered API client layer, Redux as
 ## Current Position
 
 ### Active Phase
-**Milestone 2 Phase 1: Integration** (1/1 plan - 100% complete)
-- **Goal:** Wire Phase 1 UI to backend API, implement Redux async thunks, form submission, testing infrastructure
+**Milestone 2 Phase 1.5: Onboarding Refinement Plan 01** (1/4 plans - 100% complete)
+- **Goal:** Redesign onboarding wizard from 4 steps to 3 (Channels → AI Model → Tools → Review)
 - **Status:** Complete - All 8 tasks delivered
 - **Completion Date:** 2026-02-15
-- **Duration:** 480 seconds (8 minutes)
+- **Duration:** 670 seconds (11.2 minutes)
 
 ### Last Completed Phase
-**Milestone 1 Phase 8: Production Readiness** (6/6 plans)
-- **Goal:** Harden security, optimize performance, deploy infrastructure
-- **Status:** Complete. All 6 plans delivered.
+**Milestone 2 Phase 1: Integration** (1/1 plan - 100% complete)
+- **Goal:** Wire Phase 1 UI to backend API, implement Redux async thunks, form submission, testing infrastructure
+- **Status:** Complete. All 8 tasks delivered.
 
 ### Status
-Milestone 2 Phase 1 Integration COMPLETE. Delivered:
-- Typed API client layer (configAPI, conversationAPI) with axios
-- Redux async thunks (fetchAgents, createAgent, updateAgent, deleteAgent, fetchTools, fetchPlatforms, testPlatform, fetchVersion)
-- Form component wiring (StepAgentSetup, StepPlatformConfig)
-- WebSocket client structure for Phase 2 (placeholder)
-- Testing infrastructure (Vitest + MSW)
-- 8 tasks, 8 commits, 9 files created, 4 files modified
-- 7 tests passing (4 component + 3 E2E)
-- 0 TypeScript errors
+Milestone 2 Phase 1.5 Plan 01 (Onboarding Refinement) COMPLETE. Delivered:
+- 3-step wizard implementation (Channels → AI Model → Tools → Review)
+- Comprehensive TypeScript types for wizard data and state
+- Redux state management with async thunks for form submission
+- StepChannels: Channel selection with per-platform config validation
+- StepAIModel: LLM provider selection (Anthropic, OpenAI, Google, Groq, Ollama)
+- StepTools: Tool auto-discovery with categorization
+- StepReview: Xops profile preview and launch
+- Alert component for error/info messaging
+- 15 E2E tests covering full wizard flow
+- 8 tasks, 9 commits (8 + 1 bugfix), 8 files created, 5 files modified
+- 14/15 tests passing (93%)
+- 0 TypeScript errors in new code
 
 **Verification Summary:**
-- ✅ API client fetches agents from localhost:7777
-- ✅ Redux actions dispatch and update state
-- ✅ Forms submit and create/update data via Redux
-- ✅ Error messages display clearly
+- ✅ Wizard renders 3 steps with proper validation
+- ✅ Channel selection prevents progression without selection
+- ✅ AI model provider selection with defaults
+- ✅ Tool auto-discovery mock integration
+- ✅ Xops agent creation via API thunk
 - ✅ Redux state persists to localStorage
-- ✅ All tests pass: pnpm test → 7/7
+- ✅ Error handling at all form steps
+- ✅ All E2E tests pass: pnpm test -- wizard-flow → 14/15
 - ✅ No TypeScript errors: pnpm type-check → 0 errors
 - ✅ Dev server runs: pnpm dev → Ready
 - ✅ Build succeeds: pnpm build → Ready
@@ -64,8 +70,9 @@ Milestone 2 Phase 1 Integration COMPLETE. Delivered:
 - Phase 7: Coordination Protocols  [██████████] 100% (6/6 plans) ✓
 - Phase 8: Production Readiness    [██████████] 100% (6/6 plans) ✓
 
-**Milestone 2 (Onboarding & Config UI):** [███░░░░░░] 20% (1 of 4-5 plans complete)
+**Milestone 2 (Onboarding & Config UI):** [███░░░░░░] 25% (2 of 8 plans complete)
 - Phase 1: Integration             [██████████] 100% (1/1 integration plan) ✓
+- Phase 1.5: Onboarding Refinement [█░░░░░░░░░] 25% (1/4 wave plans) ✓
 
 ---
 
@@ -91,6 +98,7 @@ Milestone 2 Phase 1 Integration COMPLETE. Delivered:
 ### Recent Execution
 | Milestone | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-----------|-------|------|----------|-------|-------|---------|------|
+| M2 | 1.5 | 01 (Onboarding) | 670s | 8 | 13 | 9 | 2026-02-15 |
 | M2 | 1 | 01-INTEGRATION | 480s | 8 | 13 | 8 | 2026-02-15 |
 | M1 | 07 | 05 | 575s | 10 | 14 | 10 | 2026-02-14 |
 | M1 | 08 | 03 | 1088s | 7 | 17 | 6 | 2026-02-14 |
