@@ -116,13 +116,14 @@ export const createSquadFromTemplate = createAsyncThunk(
   async (template: BotTemplate, { rejectWithValue }) => {
     try {
       const agents = await configAPI.createAgentFromTemplate(template)
+      const now = new Date()
       const squad: SquadConfig = {
         id: `squad-${Date.now()}`,
         name: template.name,
         templateId: template.id,
         agents: agents,
-        createdAt: new Date(),
-        lastModified: new Date()
+        createdAt: now,
+        lastModified: now
       }
       return squad
     } catch (error: any) {
