@@ -1,6 +1,7 @@
 import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAppDispatch, useAppSelector, toggleTheme } from '@/store'
+import { selectConnectionStatus } from '@/store/slices/appSlice'
 import { Moon, Sun } from 'lucide-react'
 
 interface LayoutProps {
@@ -12,6 +13,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate()
   const location = useLocation()
   const { theme } = useAppSelector((state) => state.app)
+  const connectionStatus = useAppSelector(selectConnectionStatus)
 
   const handleThemeToggle = () => {
     dispatch(toggleTheme())
@@ -28,6 +30,42 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isActivePath = (path: string) => {
     return location.pathname === path
   }
+
+  // Connection status styling
+  const getConnectionStyles = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return {
+          dotColor: 'bg-emerald-500',
+          text: 'Connected',
+          textColor: 'text-emerald-600 dark:text-emerald-400',
+          pulse: '',
+        }
+      case 'connecting':
+        return {
+          dotColor: 'bg-yellow-500',
+          text: 'Connecting...',
+          textColor: 'text-yellow-600 dark:text-yellow-400',
+          pulse: 'animate-pulse',
+        }
+      case 'disconnected':
+        return {
+          dotColor: 'bg-gray-400',
+          text: 'Disconnected',
+          textColor: 'text-gray-600 dark:text-gray-400',
+          pulse: '',
+        }
+      case 'error':
+        return {
+          dotColor: 'bg-red-500',
+          text: 'Error',
+          textColor: 'text-red-600 dark:text-red-400',
+          pulse: '',
+        }
+    }
+  }
+
+  const connectionStyles = getConnectionStyles()
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
@@ -49,19 +87,35 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
             </div>
 
-            {/* Theme Toggle */}
-            <button
-              onClick={handleThemeToggle}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              aria-label="Toggle theme"
-              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-            >
-              {theme === 'light' ? (
-                <Moon className="w-5 h-5 text-gray-600" />
-              ) : (
-                <Sun className="w-5 h-5 text-yellow-400" />
-              )}
-            </button>
+            {/* Right side: Connection status + Theme Toggle */}
+            <div className="flex items-center gap-4">
+              {/* Connection Status Indicator */}
+              <div
+                className="flex items-center gap-2"
+                title="WebSocket Connection Status"
+              >
+                <div
+                  className={`w-2 h-2 rounded-full ${connectionStyles.dotColor} ${connectionStyles.pulse}`}
+                />
+                <span className={`text-xs font-medium ${connectionStyles.textColor} hidden sm:inline`}>
+                  {connectionStyles.text}
+                </span>
+              </div>
+
+              {/* Theme Toggle */}
+              <button
+                onClick={handleThemeToggle}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                aria-label="Toggle theme"
+                title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+              >
+                {theme === 'light' ? (
+                  <Moon className="w-5 h-5 text-gray-600" />
+                ) : (
+                  <Sun className="w-5 h-5 text-yellow-400" />
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Navigation tabs */}
