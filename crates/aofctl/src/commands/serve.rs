@@ -1681,12 +1681,20 @@ pub async fn execute(
             .route("/coordination/mode", post(get_coordination_disabled))
     };
 
+    // Build chat router
+    use crate::api::chat::{ChatState, get_messages, send_message};
+    let chat_state = ChatState::new(Some(event_bus.clone()));
+    let chat_router = Router::new()
+        .route("/chat/messages", get(get_messages).post(send_message))
+        .with_state(chat_state);
+
     // Merge all API sub-routers
     let api_router = config_router
         .merge(tools_router)
         .merge(metrics_router)
         .merge(conversation_router)
-        .merge(coordination_router);
+        .merge(coordination_router)
+        .merge(chat_router);
 
     // Import handlers from aof-triggers server (inline to avoid duplicating logic)
     use axum::extract::State;
@@ -1875,6 +1883,7 @@ pub async fn execute(
     println!("  Config API: http://{}/api/config/version", bind_addr);
     println!("  Metrics API: http://{}/api/agents/{{id}}/metrics", bind_addr);
     println!("  Coordination API: http://{}/api/coordination/health", bind_addr);
+    println!("  Chat API: http://{}/api/chat/messages", bind_addr);
     if static_dir.is_some() {
         println!("  Web UI: http://{}/", bind_addr);
     }
