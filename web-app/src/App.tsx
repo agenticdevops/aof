@@ -12,12 +12,14 @@ import LoadingSpinner from '@/components/common/LoadingSpinner'
 function AppContent() {
   const { navigation, theme } = useAppSelector((state) => state.app)
 
-  // Apply theme class to document
+  // Apply theme class to document root
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark')
+      document.documentElement.style.colorScheme = 'dark'
     } else {
       document.documentElement.classList.remove('dark')
+      document.documentElement.style.colorScheme = 'light'
     }
   }, [theme])
 
