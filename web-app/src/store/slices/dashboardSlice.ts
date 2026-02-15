@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
-import type { DashboardState, DashboardAgent } from '@/types/dashboard'
+import type { DashboardState, DashboardAgent, AgentStatus, AgentMetrics } from '@/types/dashboard'
 import type { RootState } from '../store'
 import { useAppSelector } from '../hooks'
 
@@ -60,11 +60,64 @@ export const dashboardSlice = createSlice({
       const index = state.agents.findIndex(a => a.id === action.payload.id)
       if (index !== -1) {
         state.agents[index] = action.payload
+      } else {
+        // Add agent if not found (for WebSocket events)
+        state.agents.push(action.payload)
       }
 
       // Update selected agent if it's the same one
       if (state.selectedAgent?.id === action.payload.id) {
         state.selectedAgent = action.payload
+      }
+    },
+
+    /**
+     * Update agent status only (for WebSocket status change events)
+     */
+    updateAgentStatus: (
+      state,
+      action: PayloadAction<{ id: string; status: AgentStatus }>
+    ) => {
+      const agent = state.agents.find(a => a.id === action.payload.id)
+      if (agent) {
+        agent.status = action.payload.status
+        agent.updatedAt = new Date()
+      }
+
+      // Update selected agent if it's the same one
+      if (state.selectedAgent?.id === action.payload.id) {
+        state.selectedAgent.status = action.payload.status
+        state.selectedAgent.updatedAt = new Date()
+      }
+    },
+
+    /**
+     * Update agent metrics only (for WebSocket heartbeat events)
+     */
+    updateAgentMetrics: (
+      state,
+      action: PayloadAction<{ id: string; metrics: AgentMetrics }>
+    ) => {
+      const agent = state.agents.find(a => a.id === action.payload.id)
+      if (agent) {
+        agent.metrics = action.payload.metrics
+        agent.updatedAt = new Date()
+      }
+
+      // Update selected agent if it's the same one
+      if (state.selectedAgent?.id === action.payload.id) {
+        state.selectedAgent.metrics = action.payload.metrics
+        state.selectedAgent.updatedAt = new Date()
+      }
+    },
+
+    /**
+     * Remove an agent from the dashboard
+     */
+    removeAgent: (state, action: PayloadAction<string>) => {
+      state.agents = state.agents.filter(a => a.id !== action.payload)
+      if (state.selectedAgent?.id === action.payload) {
+        state.selectedAgent = null
       }
     },
 
@@ -87,6 +140,9 @@ export const {
   setLoading,
   setError,
   updateAgent,
+  updateAgentStatus,
+  updateAgentMetrics,
+  removeAgent,
   clearDashboard,
 } = dashboardSlice.actions
 
