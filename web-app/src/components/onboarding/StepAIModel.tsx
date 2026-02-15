@@ -185,7 +185,7 @@ export const StepAIModel: React.FC = () => {
                   setTestResult(null)
                   setTestError('')
                 }}
-                helperText={`Get your ${info.name} API key from: ${info.helpUrl || 'provider console'}`}
+                helperText={`Get your ${providerInfo.name} API key from: ${providerInfo.helpUrl || 'provider console'}`}
                 fullWidth
               />
             </div>
