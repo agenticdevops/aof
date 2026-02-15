@@ -7,6 +7,7 @@ import Layout from '@/components/layout/Layout'
 import WelcomePage from '@/pages/WelcomePage'
 import OnboardingWizard from '@/pages/OnboardingWizard'
 import ConfigurationPage from '@/pages/ConfigurationPage'
+import MissionControl from '@/pages/MissionControl'
 import LoadingSpinner from '@/components/common/LoadingSpinner'
 
 function AppContent() {
@@ -30,6 +31,7 @@ function AppContent() {
         <Route path="/welcome" element={<WelcomePage />} />
         <Route path="/wizard" element={<OnboardingWizard />} />
         <Route path="/config" element={<ConfigurationPage />} />
+        <Route path="/mission-control" element={<MissionControl />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
