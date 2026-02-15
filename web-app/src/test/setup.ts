@@ -4,6 +4,9 @@ import '@testing-library/jest-dom'
 import { setupServer } from 'msw/node'
 import { handlers } from './mocks/handlers'
 
+// Mock scrollIntoView for jsdom (not supported natively)
+Element.prototype.scrollIntoView = vi.fn()
+
 afterEach(() => {
   cleanup()
 })
