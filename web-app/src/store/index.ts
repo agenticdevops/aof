@@ -10,7 +10,7 @@ export {
   setDaemonUrl,
 } from './slices/appSlice'
 
-// Onboarding Slice exports
+// Onboarding Slice exports (Old interface - keeping for backward compatibility)
 export {
   setStep,
   updateProject,
@@ -25,6 +25,21 @@ export {
   type OnboardingProject,
   type OnboardingAgent,
   type OnboardingPlatform,
+} from './slices/onboardingSlice'
+
+// New Onboarding Wizard Thunks
+export {
+  setCurrentStep,
+  updateChannels,
+  updateModel,
+  updateTools,
+  updateXopsConfig,
+  clearErrors,
+  resetWizard,
+  submitWizard,
+  validateChannels,
+  validateModel,
+  discoverTools,
 } from './slices/onboardingSlice'
 
 // Config Slice exports
