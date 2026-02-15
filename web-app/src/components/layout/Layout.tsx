@@ -22,6 +22,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/wizard', label: 'Setup Wizard' },
     { path: '/config', label: 'Configuration' },
     { path: '/mission-control', label: 'Mission Control' },
+    { path: '/squad-chat', label: 'Squad Chat' },
   ]
 
   const isActivePath = (path: string) => {

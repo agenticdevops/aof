@@ -8,6 +8,7 @@ import WelcomePage from '@/pages/WelcomePage'
 import OnboardingWizard from '@/pages/OnboardingWizard'
 import ConfigurationPage from '@/pages/ConfigurationPage'
 import MissionControl from '@/pages/MissionControl'
+import SquadChat from '@/pages/SquadChat'
 import LoadingSpinner from '@/components/common/LoadingSpinner'
 
 function AppContent() {
@@ -32,6 +33,7 @@ function AppContent() {
         <Route path="/wizard" element={<OnboardingWizard />} />
         <Route path="/config" element={<ConfigurationPage />} />
         <Route path="/mission-control" element={<MissionControl />} />
+        <Route path="/squad-chat" element={<SquadChat />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
