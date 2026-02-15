@@ -2,6 +2,7 @@ use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod api;
+pub mod audit;
 mod cli;
 mod commands;
 mod output;
