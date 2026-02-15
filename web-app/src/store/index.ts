@@ -14,7 +14,7 @@ export {
 export {
   setStep,
   updateProject,
-  updateAgent,
+  updateAgent as updateOnboardingAgent,
   addWizardPlatform,
   removeWizardPlatform,
   updatePlatforms,
@@ -47,4 +47,13 @@ export {
   setError as setConfigError,
   setSelectedAgent,
   setSelectedPlatform,
+  // Async thunks
+  fetchAgents,
+  createAgent,
+  updateAgent,
+  deleteAgent,
+  fetchTools,
+  fetchPlatforms,
+  testPlatform,
+  fetchVersion,
 } from './slices/configSlice'
