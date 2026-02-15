@@ -144,6 +144,7 @@ Milestone 2 Phase 2 COMPLETE (5/5 plans - 100%). All Phase 2 deliverables achiev
 ### Recent Execution
 | Milestone | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-----------|-------|------|----------|-------|-------|---------|------|
+| M2 | 04-gap | 07 (Real-Time Verify) | 2801s | 8 | 12 | 8 | 2026-02-15 |
 | M2 | 04-gap | 06 (Chat API) | 356s | 8 | 5 | 4 | 2026-02-15 |
 | M2 | 2 | 05 (Integration) | 463s | 8 | 10 | 5 | 2026-02-15 |
 | M2 | 2 | 03 (WebSocket) | 731s | 8 | 14 | 8 | 2026-02-15 |
@@ -183,6 +184,8 @@ Milestone 2 Phase 2 COMPLETE (5/5 plans - 100%). All Phase 2 deliverables achiev
 | Phase 02 P03 | 731 | 8 tasks | 14 files |
 | Phase 04 P06 | 356 | 8 tasks | 5 files |
 | Phase 04 P05 | 820 | 8 tasks | 5 files |
+| Phase 04 P07 | 2801 | 8 tasks | 12 files |
+| Phase 04 P07 | 2801 | 8 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -278,6 +281,9 @@ Milestone 2 Phase 2 COMPLETE (5/5 plans - 100%). All Phase 2 deliverables achiev
 | **Type guards for WebSocket events** | TypeScript narrowing enables type-safe event handling. Compile-time type checking prevents runtime errors. Alternative (type assertions) is unsafe. | 2026-02-15 | 02-03 | Implemented |
 | **ActivityEvent::info with metadata for chat events** | Used existing ActivityType::Info with metadata HashMap containing chat message fields instead of adding new CoordinationActivity variant. Avoids modifying aof-core for feature-specific concern. Frontend identifies chat events via metadata.type == "chat_message". | 2026-02-15 | 04-06 | Implemented |
 | **Static session_id "chat" for chat events** | All chat-originated CoordinationEvents use session_id "chat" to distinguish from agent coordination sessions (which use UUID session IDs). Clean separation without new event type. | 2026-02-15 | 04-06 | Implemented |
+| **Test event endpoint for pipeline verification** | POST /api/test/emit-event emits CoordinationEvents via EventBroadcaster without running agents. Maps string event_type to Rust ActivityType enum. Enables integration testing and development. | 2026-02-15 | 04-07 | Implemented |
+| **Frontend types aligned to Rust serde serialization** | Fixed AgentActivity to use `activity_type` field (not `type`) and PascalCase values (Started, Completed, Error) matching Rust enum serialization. Without this fix, AgentGrid status mapping was completely non-functional. | 2026-02-15 | 04-07 | Implemented |
+| **FIFO pipe for WebSocket testing in bash** | mkfifo + sleep > fifo + websocat < fifo keeps WebSocket alive for reliable event capture. Direct stdin approaches fail on macOS. Used in integration test script. | 2026-02-15 | 04-07 | Implemented |
 
 ### Todos
 
@@ -428,6 +434,6 @@ Milestone 2 (Frontend - In Progress):
 ---
 
 *State tracking initialized: 2026-02-11*
-*Last updated: 2026-02-15T17:54:00Z*
+*Last updated: 2026-02-15T18:45:33Z*
 *Milestone 2 started: 2026-02-15*
 *Phase 1.5 complete: 2026-02-15 (4/4 plans, 2,790 seconds)*
