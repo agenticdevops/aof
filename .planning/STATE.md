@@ -144,6 +144,7 @@ Milestone 2 Phase 2 COMPLETE (5/5 plans - 100%). All Phase 2 deliverables achiev
 ### Recent Execution
 | Milestone | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-----------|-------|------|----------|-------|-------|---------|------|
+| M2 | 04-gap | 06 (Chat API) | 356s | 8 | 5 | 4 | 2026-02-15 |
 | M2 | 2 | 05 (Integration) | 463s | 8 | 10 | 5 | 2026-02-15 |
 | M2 | 2 | 03 (WebSocket) | 731s | 8 | 14 | 8 | 2026-02-15 |
 | M2 | 2 | 02 (Squad Chat) | 1758s | 8 | 14 | 8 | 2026-02-15 |
@@ -180,6 +181,7 @@ Milestone 2 Phase 2 COMPLETE (5/5 plans - 100%). All Phase 2 deliverables achiev
 | Phase 02 P04 | 612 | 8 tasks | 10 files |
 | Phase 02 P02 | 1758 | 8 tasks | 14 files |
 | Phase 02 P03 | 731 | 8 tasks | 14 files |
+| Phase 04 P06 | 356 | 8 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -273,6 +275,8 @@ Milestone 2 Phase 2 COMPLETE (5/5 plans - 100%). All Phase 2 deliverables achiev
 | **Event deduplication with ID cache (1000 events, 1min TTL)** | Prevents duplicate handling if same event received multiple times. Set-based O(1) lookup. Auto-cleanup keeps memory bounded. Essential for reliable event processing. | 2026-02-15 | 02-03 | Implemented |
 | **ToastProvider context for app-wide toast management** | Avoids prop drilling for toast notifications. Components can trigger toasts via useToast hook. Simpler than Redux for ephemeral UI state. | 2026-02-15 | 02-03 | Implemented |
 | **Type guards for WebSocket events** | TypeScript narrowing enables type-safe event handling. Compile-time type checking prevents runtime errors. Alternative (type assertions) is unsafe. | 2026-02-15 | 02-03 | Implemented |
+| **ActivityEvent::info with metadata for chat events** | Used existing ActivityType::Info with metadata HashMap containing chat message fields instead of adding new CoordinationActivity variant. Avoids modifying aof-core for feature-specific concern. Frontend identifies chat events via metadata.type == "chat_message". | 2026-02-15 | 04-06 | Implemented |
+| **Static session_id "chat" for chat events** | All chat-originated CoordinationEvents use session_id "chat" to distinguish from agent coordination sessions (which use UUID session IDs). Clean separation without new event type. | 2026-02-15 | 04-06 | Implemented |
 
 ### Todos
 
@@ -423,6 +427,6 @@ Milestone 2 (Frontend - In Progress):
 ---
 
 *State tracking initialized: 2026-02-11*
-*Last updated: 2026-02-15T11:30:00Z*
+*Last updated: 2026-02-15T17:47:00Z*
 *Milestone 2 started: 2026-02-15*
 *Phase 1.5 complete: 2026-02-15 (4/4 plans, 2,790 seconds)*
