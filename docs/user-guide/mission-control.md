@@ -283,3 +283,100 @@ Error response shape:
   "error": "content is required"
 }
 ```
+
+---
+
+## Real-Time Testing
+
+Mission Control includes a test event endpoint for verifying the real-time pipeline without running actual agents. This is useful for development, debugging, and demonstrations.
+
+### Quick Test with Test Endpoint
+
+```bash
+# Terminal 1: Start server
+aofctl serve --static-dir ./web-ui/dist
+
+# Terminal 2: Emit test events to simulate agent activity
+# Make agent appear as "working" (green indicator)
+curl -X POST http://localhost:8080/api/test/emit-event \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"k8s-monitor","event_type":"agent_started","details":{}}'
+
+# Observe: AgentGrid shows k8s-monitor card with "working" status
+# Observe: ActivityFeed shows new "Started" entry
+
+# Make agent appear as "idle" (default indicator)
+curl -X POST http://localhost:8080/api/test/emit-event \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"k8s-monitor","event_type":"agent_completed","details":{}}'
+
+# Make agent appear as "error" (red indicator)
+curl -X POST http://localhost:8080/api/test/emit-event \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"k8s-monitor","event_type":"agent_error","details":{"reason":"timeout"}}'
+```
+
+**Supported event types:** `agent_started`, `agent_completed`, `agent_error`, `thinking`, `tool_executing`, `tool_completed`, `tool_failed`, `task_assigned`, `info`, `warning`
+
+**Important:** The `agent_id` in the test event must match an agent ID in your AGENTS.md for the AgentGrid to display the status change. The default sample agents are `k8s-monitor` and `log-analyzer`.
+
+### Full Test with aofctl run
+
+When you have agents configured with an LLM API key:
+
+```bash
+# Terminal 1: Start server with agents directory
+aofctl serve --agents-dir ./agents/ --static-dir ./web-ui/dist
+
+# Terminal 2: Run agent (requires ANTHROPIC_API_KEY)
+aofctl run agent k8s-monitor.yaml
+
+# Observe: AgentGrid shows agent transitioning through states:
+#   idle -> working (agent_started)
+#   working (thinking, tool_executing)
+#   idle (agent_completed)
+#
+# Observe: ActivityFeed shows real-time entries for each execution step
+```
+
+**Current limitation:** Direct `aofctl run` (CLI mode) uses StreamEvents for TUI output. For events to flow through Mission Control's WebSocket, the agent must run through the daemon's `aofctl serve` process, which has the EventBroadcaster initialized. This integration is automatic when agents are triggered through the server (e.g., via webhook or API).
+
+### Automated Integration Test
+
+Run the full real-time pipeline test:
+
+```bash
+./scripts/test-mission-control-realtime.sh
+```
+
+This script starts a server, connects a WebSocket listener, emits events via all API endpoints, and verifies events arrive on the WebSocket. It tests 20 scenarios including:
+- Test event emission (7 event types + validation)
+- WebSocket event delivery and format verification
+- Task API events (create + move)
+- Chat API events (send + receive)
+- All 10 supported event types
+
+### Troubleshooting
+
+| Symptom | Cause | Solution |
+|---------|-------|----------|
+| WebSocket not connecting | Browser blocked ws:// | Check console for mixed-content errors; use same protocol |
+| Events not appearing in ActivityFeed | Redux not dispatching | Open Redux DevTools, check events slice for new entries |
+| Agent status not updating | agent_id mismatch | Verify event agent_id matches an id in AGENTS.md |
+| ActivityFeed empty on startup | No agents running | Use test endpoint to emit events, or wait for agent introduction events |
+| WebSocket disconnects frequently | Network instability | useWebSocket auto-reconnects with exponential backoff (1s to 30s) |
+| Task drag not syncing between tabs | WebSocket not connected | Check connection indicator in UI header; verify server is running |
+| Chat messages not persisting | Server restarted | Messages are in-memory only; they reset on daemon restart |
+
+### Event Pipeline Overview
+
+```
+API Endpoint → EventBroadcaster → WebSocket Handler → Browser WebSocket
+                                                            ↓
+                                                    Redux eventsSlice
+                                                            ↓
+                                               ┌────────────┼────────────┐
+                                               ↓            ↓            ↓
+                                          AgentGrid    ActivityFeed   SquadChat
+                                        (status map)   (timeline)   (chat events)
+```
