@@ -115,12 +115,12 @@ Purpose: Emit controlled CoordinationEvents for testing the real-time pipeline w
 
 | event_type        | Maps to ActivityType | AgentGrid Effect       |
 |-------------------|---------------------|------------------------|
-| `agent_started`   | `AgentStarted`      | Status -> working      |
-| `agent_completed` | `AgentCompleted`     | Status -> idle         |
+| `agent_started`   | `Started`           | Status -> working      |
+| `agent_completed` | `Completed`         | Status -> idle         |
 | `agent_error`     | `Error`             | Status -> error        |
 | `task_assigned`   | `Info`              | ActivityFeed entry     |
 | `tool_called`     | `ToolExecuting`     | Status -> working      |
-| `tool_completed`  | `ToolCompleted`     | Status -> idle         |
+| `tool_completed`  | `ToolComplete`      | Status -> idle         |
 | `thinking`        | `Thinking`          | Status -> working      |
 
 ### Response Format
@@ -136,17 +136,51 @@ Purpose: Emit controlled CoordinationEvents for testing the real-time pipeline w
 
 ## Integration Test Strategy
 
-The integration test script (`scripts/test-mission-control-realtime.sh`) validates:
+The integration test script (`scripts/test-mission-control-realtime.sh`) has been implemented and passes all 20 tests:
 
-1. **Server health** -- poll `/health` until ready
-2. **WebSocket connectivity** -- connect to `ws://localhost:8080/ws` and keep alive
-3. **Event emission** -- POST to `/api/test/emit-event` with various event types
-4. **Event delivery** -- verify emitted events arrive on the WebSocket within 1 second
-5. **Task events** -- POST to `/api/tasks` and `/api/tasks/move`, verify WebSocket events
-6. **Chat events** -- POST to `/api/chat/messages`, verify WebSocket events
+1. **Server health** -- poll `/health` until ready (1 test)
+2. **Test event endpoint** -- POST to `/api/test/emit-event` with various types + validation (7 tests)
+3. **WebSocket delivery** -- connect via websocat, emit event, verify arrival within 2s (3 tests)
+4. **Task events** -- create and move tasks, verify WebSocket events (4 tests)
+5. **Chat events** -- send message, verify WebSocket + persistence (3 tests)
+6. **Multiple event types** -- verify all 10 types emit successfully (1 test)
 7. **Cleanup** -- kill background server, report pass/fail
 
-The test uses `websocat` (if available) or falls back to a simpler curl-based verification pattern.
+The test uses `websocat` with a FIFO pipe for reliable WebSocket listening. If websocat is not installed, WebSocket tests are skipped but HTTP-level tests still run.
+
+### Verified WebSocket Event Format
+
+Task events arrive as:
+```json
+{
+  "activity": {
+    "activity_type": "Info",
+    "message": "TASK_MOVED: Monitor k8s cluster health (from in-progress to review)"
+  },
+  "agent_id": "task-api",
+  "session_id": "daemon",
+  "event_id": "uuid-here"
+}
+```
+
+Chat events arrive as:
+```json
+{
+  "activity": {
+    "activity_type": "Info",
+    "message": "Chat message from Operator",
+    "details": {
+      "metadata": {
+        "type": "chat_message",
+        "messageId": "uuid",
+        "content": "Hello!"
+      }
+    }
+  },
+  "agent_id": "operator_1",
+  "session_id": "chat"
+}
+```
 
 ## Manual Verification Procedure
 
