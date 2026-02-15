@@ -1,28 +1,50 @@
-import { configureStore } from '@reduxjs/toolkit'
-import { persistStore, persistReducer } from 'redux-persist'
-import storage from 'redux-persist/lib/storage'
+export { store, persistor, type RootState, type AppDispatch } from './store'
+export { useAppDispatch, useAppSelector } from './hooks'
 
-const persistConfig = {
-  key: 'root',
-  storage,
-}
+// App Slice exports
+export {
+  setNavigation,
+  setTheme,
+  toggleTheme,
+  setFirstVisit,
+  setDaemonUrl,
+} from './slices/appSlice'
 
-export const store = configureStore({
-  reducer: {
-    // Add reducers here
-  },
-  middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware({
-      serializableCheck: {
-        ignoredActions: ['persist/PERSIST'],
-      },
-    }),
-})
+// Onboarding Slice exports
+export {
+  setStep,
+  updateProject,
+  updateAgent,
+  addWizardPlatform,
+  removeWizardPlatform,
+  updatePlatforms,
+  setLoading as setOnboardingLoading,
+  setError as setOnboardingError,
+  markStepCompleted,
+  reset as resetOnboarding,
+  type OnboardingProject,
+  type OnboardingAgent,
+  type OnboardingPlatform,
+} from './slices/onboardingSlice'
 
-const persistedStore = persistReducer(persistConfig, store.getState as any)
-export const persistor = persistStore(store)
-
-export type RootState = ReturnType<typeof store.getState>
-export type AppDispatch = typeof store.dispatch
-
-export default store
+// Config Slice exports
+export {
+  setAgents,
+  addAgent,
+  updateConfigAgent,
+  removeAgent,
+  setTools,
+  addTool,
+  updateTool,
+  removeTool,
+  setPlatforms,
+  addPlatform,
+  updatePlatform,
+  removePlatform,
+  setSearchQuery,
+  setVersion,
+  setLoading as setConfigLoading,
+  setError as setConfigError,
+  setSelectedAgent,
+  setSelectedPlatform,
+} from './slices/configSlice'

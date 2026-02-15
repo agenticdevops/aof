@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <!-- Background circle -->
+  <circle cx="90" cy="90" r="90" fill="#38BDF8"/>
+  
+  <!-- "AOF" text -->
+  <text x="90" y="110" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">AOF</text>
+</svg>
