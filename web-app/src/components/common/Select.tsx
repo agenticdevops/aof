@@ -30,7 +30,7 @@ export const Select: React.FC<SelectProps> = ({
         className={clsx(
           'w-full px-4 py-2 border rounded-lg transition-colors duration-200',
           'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100',
-          'focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent',
+          'focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent',
           'appearance-none cursor-pointer',
           {
             'border-red-500 focus:ring-red-400': error,

@@ -1,5 +1,6 @@
 import React from 'react'
 import { Agent } from '@/types'
+import { CheckCircle, Edit, Trash2 } from 'lucide-react'
 import Card from '@/components/common/Card'
 import Badge from '@/components/common/Badge'
 import Button from '@/components/common/Button'
@@ -23,8 +24,8 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onEdit, onDelete })
           <Badge variant="info" size="sm">
             {agent.type}
           </Badge>
-          <Badge variant="success" size="sm">
-            ✓ Healthy
+          <Badge variant="success" size="sm" icon={<CheckCircle className="w-4 h-4" />}>
+            Healthy
           </Badge>
         </div>
 

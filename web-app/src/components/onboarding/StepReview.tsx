@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
+import clsx from 'clsx'
 import { useAppDispatch, useAppSelector, setNavigation } from '@/store'
+import { ChevronDown, FolderOpen, Bot, Globe, CheckCircle } from 'lucide-react'
 import Card from '@/components/common/Card'
 import Button from '@/components/common/Button'
 import Badge from '@/components/common/Badge'
@@ -47,25 +49,20 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
       <Card elevation="lifted">
         <button
           onClick={() => toggleSection('project')}
-          className="w-full flex items-center justify-between hover:text-emerald-600 dark:hover:text-emerald-400"
+          className="w-full flex items-center justify-between hover:text-sky-600 dark:hover:text-sky-400"
         >
           <div className="flex items-center gap-3">
-            <span className="text-xl">📁</span>
+            <FolderOpen className="w-5 h-5 text-sky-500 dark:text-sky-400" />
             <div className="text-left">
               <h3 className="font-semibold text-gray-900 dark:text-gray-100">Project</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">{project.name}</p>
             </div>
           </div>
-          <svg
+          <ChevronDown
             className={clsx('w-5 h-5 transition-transform', {
               'transform rotate-180': expandedSections.project,
             })}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
+          />
         </button>
 
         {expandedSections.project && (
@@ -88,25 +85,20 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
       <Card elevation="lifted">
         <button
           onClick={() => toggleSection('agent')}
-          className="w-full flex items-center justify-between hover:text-emerald-600 dark:hover:text-emerald-400"
+          className="w-full flex items-center justify-between hover:text-sky-600 dark:hover:text-sky-400"
         >
           <div className="flex items-center gap-3">
-            <span className="text-xl">🤖</span>
+            <Bot className="w-5 h-5 text-sky-500 dark:text-sky-400" />
             <div className="text-left">
               <h3 className="font-semibold text-gray-900 dark:text-gray-100">Agent</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">{agent.name}</p>
             </div>
           </div>
-          <svg
+          <ChevronDown
             className={clsx('w-5 h-5 transition-transform', {
               'transform rotate-180': expandedSections.agent,
             })}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
+          />
         </button>
 
         {expandedSections.agent && (
@@ -145,10 +137,10 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
       <Card elevation="lifted">
         <button
           onClick={() => toggleSection('platforms')}
-          className="w-full flex items-center justify-between hover:text-emerald-600 dark:hover:text-emerald-400"
+          className="w-full flex items-center justify-between hover:text-sky-600 dark:hover:text-sky-400"
         >
           <div className="flex items-center gap-3">
-            <span className="text-xl">🌐</span>
+            <Globe className="w-5 h-5 text-sky-500 dark:text-sky-400" />
             <div className="text-left">
               <h3 className="font-semibold text-gray-900 dark:text-gray-100">Platforms</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -156,16 +148,11 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
               </p>
             </div>
           </div>
-          <svg
+          <ChevronDown
             className={clsx('w-5 h-5 transition-transform', {
               'transform rotate-180': expandedSections.platforms,
             })}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
+          />
         </button>
 
         {expandedSections.platforms && (
@@ -174,8 +161,10 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
               Object.entries(platforms)
                 .filter(([, p]) => p.connected)
                 .map(([type, p]) => (
-                  <div key={type} className="flex items-center justify-between p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded">
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">✓ {p.name}</span>
+                  <div key={type} className="flex items-center justify-between p-2 bg-sky-50 dark:bg-sky-900/20 rounded">
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-sky-600 dark:text-sky-400" /> {p.name}
+                    </span>
                     {p.username && <span className="text-xs text-gray-500 dark:text-gray-400">@{p.username}</span>}
                   </div>
                 ))
@@ -197,7 +186,5 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
     </div>
   )
 }
-
-import clsx from 'clsx'
 
 export default StepReview

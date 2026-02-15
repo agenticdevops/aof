@@ -28,8 +28,8 @@ export const Checkbox: React.FC<CheckboxProps> = ({
           disabled={disabled}
           className={clsx(
             'w-4 h-4 rounded border border-gray-300 dark:border-gray-600',
-            'bg-white dark:bg-gray-800 text-emerald-500',
-            'focus:ring-2 focus:ring-emerald-400 focus:border-transparent',
+            'bg-white dark:bg-gray-800 text-sky-400',
+            'focus:ring-2 focus:ring-sky-400 focus:border-transparent',
             'cursor-pointer transition-colors',
             className
           )}

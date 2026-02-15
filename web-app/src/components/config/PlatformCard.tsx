@@ -1,5 +1,6 @@
 import React from 'react'
 import { Platform } from '@/types'
+import { Slack, MessageCircle, Send, MessageSquare, Github, Layers } from 'lucide-react'
 import Card from '@/components/common/Card'
 import Badge from '@/components/common/Badge'
 import Button from '@/components/common/Button'
@@ -10,17 +11,26 @@ interface PlatformCardProps {
   onDisconnect: (id: string) => void
 }
 
-const platformIcons: Record<string, string> = {
-  slack: '💬',
-  discord: '🎮',
-  telegram: '✈️',
-  whatsapp: '📱',
-  github: '🐙',
-  jira: '📋',
-}
-
 export const PlatformCard: React.FC<PlatformCardProps> = ({ platform, onManage, onDisconnect }) => {
-  const icon = platformIcons[platform.type] || '🔗'
+  const getIcon = () => {
+    const iconProps = { className: 'w-6 h-6 text-sky-600 dark:text-sky-300' }
+    switch (platform.type) {
+      case 'slack':
+        return <Slack {...iconProps} />
+      case 'discord':
+        return <MessageCircle {...iconProps} />
+      case 'telegram':
+        return <Send {...iconProps} />
+      case 'whatsapp':
+        return <MessageSquare {...iconProps} />
+      case 'github':
+        return <Github {...iconProps} />
+      case 'jira':
+        return <Layers {...iconProps} />
+      default:
+        return <MessageCircle {...iconProps} />
+    }
+  }
 
   return (
     <Card elevation="lifted" hoverable>
@@ -28,7 +38,9 @@ export const PlatformCard: React.FC<PlatformCardProps> = ({ platform, onManage, 
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <span className="text-3xl">{icon}</span>
+              <div className="w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900 flex items-center justify-center">
+                {getIcon()}
+              </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{platform.name}</h3>
               </div>
@@ -38,7 +50,7 @@ export const PlatformCard: React.FC<PlatformCardProps> = ({ platform, onManage, 
 
         {platform.connected ? (
           <div className="space-y-3">
-            <Badge variant="success">✓ Connected</Badge>
+            <Badge variant="success">Connected</Badge>
             {platform.username && (
               <p className="text-sm text-gray-600 dark:text-gray-400">Connected as @{platform.username}</p>
             )}

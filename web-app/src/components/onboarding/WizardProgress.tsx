@@ -25,8 +25,8 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({ currentStep, com
               className={clsx(
                 'w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all',
                 {
-                  'bg-emerald-500 text-white': step.number === currentStep,
-                  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200':
+                  'bg-sky-400/80 text-white dark:bg-sky-500': step.number === currentStep,
+                  'bg-sky-100 text-sky-700 dark:bg-sky-900 dark:text-sky-200':
                     completedSteps.has(step.number),
                   'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400':
                     step.number > currentStep && !completedSteps.has(step.number),
@@ -46,7 +46,7 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({ currentStep, com
             {index < steps.length - 1 && (
               <div
                 className={clsx('flex-1 h-1 transition-colors', {
-                  'bg-emerald-500': step.number < currentStep,
+                  'bg-sky-400/80 dark:bg-sky-500': step.number < currentStep,
                   'bg-gray-200 dark:bg-gray-700': step.number >= currentStep,
                 })}
               />
@@ -61,7 +61,7 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({ currentStep, com
           <span
             key={step.number}
             className={clsx('font-medium', {
-              'text-emerald-600 dark:text-emerald-400': step.number === currentStep,
+              'text-sky-600 dark:text-sky-400': step.number === currentStep,
               'text-gray-500 dark:text-gray-400': step.number !== currentStep,
             })}
           >

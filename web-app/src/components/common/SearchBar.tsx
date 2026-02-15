@@ -41,7 +41,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           'w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg',
           'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100',
           'placeholder-gray-400 dark:placeholder-gray-500',
-          'focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent'
+          'focus:outline-none focus:ring-2 focus:ring-sky-400 focus:border-transparent'
         )}
       />
     </div>

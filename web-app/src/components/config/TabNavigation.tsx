@@ -22,7 +22,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabCh
           className={clsx(
             'px-4 py-4 font-medium transition-colors border-b-2 -mb-[2px]',
             {
-              'border-emerald-500 text-emerald-600 dark:text-emerald-400': activeTab === tab.id,
+              'border-sky-400/80 text-sky-600 dark:text-sky-400 dark:border-sky-500': activeTab === tab.id,
               'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300':
                 activeTab !== tab.id,
             }
