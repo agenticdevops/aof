@@ -1,8 +1,8 @@
 # Project State: AOF - Humanized Agentic Ops Platform
 
-**Last Updated:** 2026-02-14
-**Milestone:** Reinvention (Humanized Agent Platform)
-**Status:** In Progress (Phase 5 Complete)
+**Last Updated:** 2026-02-15
+**Milestone:** Milestone 2 - Onboarding & Configuration UI (Starting)
+**Status:** In Progress (Milestone 2 Phase 1 Integration Complete)
 
 ---
 
@@ -12,51 +12,60 @@
 Agents that feel human — with personas, visible communication, and a Mission Control where you see your team of AI minions coordinating, reporting, and getting real work done.
 
 ### Current Focus
-Phase 5 (Agent Personas) complete. All 6 plans delivered: workspace file loaders, prompt composition, introduction events, AgentCard display, reliability metrics, integration testing & documentation. 142 tests passing. Ready for Phase 6: Conversational Config.
+Milestone 2 Phase 1 (Integration) complete. Delivered API client layer, Redux async thunks, form wiring, WebSocket placeholder, testing infrastructure with MSW, and E2E validation tests. 7 tests passing, full TypeScript type safety. Ready for Phase 2: Mission Control + Squad Chat UI.
 
 ---
 
 ## Current Position
 
 ### Active Phase
-**Phase 8: Production Readiness** (6/6 plans - 100% complete)
-- **Goal:** Harden security, optimize performance, deploy infrastructure
-- **Status:** Complete - All 6 plans delivered
+**Milestone 2 Phase 1: Integration** (1/1 plan - 100% complete)
+- **Goal:** Wire Phase 1 UI to backend API, implement Redux async thunks, form submission, testing infrastructure
+- **Status:** Complete - All 8 tasks delivered
+- **Completion Date:** 2026-02-15
+- **Duration:** 480 seconds (8 minutes)
 
 ### Last Completed Phase
-**Phase 7: Coordination Protocols** (6/6 plans)
-- **Goal:** Agents proactively monitor, report status, and coordinate via session tools
+**Milestone 1 Phase 8: Production Readiness** (6/6 plans)
+- **Goal:** Harden security, optimize performance, deploy infrastructure
 - **Status:** Complete. All 6 plans delivered.
 
 ### Status
-Phase 7 Plan 05 (Mission Control Coordination UI) COMPLETE. Delivered React components for real-time agent health monitoring, standup results, and token overhead visualization. HeartbeatDashboard shows agent status with color-coded indicators (green/yellow/red), StandupFeed displays expandable DID/DOING/BLOCKERS sections, CoordinationStatus shows token overhead gauge with threshold indicator. Redux coordinationSlice manages state, extended useWebSocket handles real-time updates. 10 tasks, 10 commits, 3 component test files, comprehensive documentation. 575 seconds (~9.5 minutes).
+Milestone 2 Phase 1 Integration COMPLETE. Delivered:
+- Typed API client layer (configAPI, conversationAPI) with axios
+- Redux async thunks (fetchAgents, createAgent, updateAgent, deleteAgent, fetchTools, fetchPlatforms, testPlatform, fetchVersion)
+- Form component wiring (StepAgentSetup, StepPlatformConfig)
+- WebSocket client structure for Phase 2 (placeholder)
+- Testing infrastructure (Vitest + MSW)
+- 8 tasks, 8 commits, 9 files created, 4 files modified
+- 7 tests passing (4 component + 3 E2E)
+- 0 TypeScript errors
 
-**Documentation Summary:**
-- ✅ PHASE-6-IMPLEMENTATION-SUMMARY.md (phase overview)
-- ✅ conversational-architecture.md (technical architecture)
-- ✅ conversation-api.md (REST API + testing guide)
-- ✅ squad-templates.md (squad system)
-- ✅ agent-generation-pipeline.md (agent creation)
-- ✅ ARCHITECTURE.md updated (Phase 6 section added)
-- ✅ INDEX.md updated (navigation + reading paths)
-- ✅ sidebar.js created (docusaurus configuration)
-- ✅ DOCUMENTATION_GUIDE.md created (maintenance guide)
-- ✅ docusaurus.config.example.js created (setup template)
+**Verification Summary:**
+- ✅ API client fetches agents from localhost:7777
+- ✅ Redux actions dispatch and update state
+- ✅ Forms submit and create/update data via Redux
+- ✅ Error messages display clearly
+- ✅ Redux state persists to localStorage
+- ✅ All tests pass: pnpm test → 7/7
+- ✅ No TypeScript errors: pnpm type-check → 0 errors
+- ✅ Dev server runs: pnpm dev → Ready
+- ✅ Build succeeds: pnpm build → Ready
 
 ### Progress
 
-```
-Milestone Progress: [██████████] 100% (35 of 35 plans complete)
+**Milestone 1 (Reinvention):** [██████████] 100% (35 of 35 plans complete)
+- Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
+- Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
+- Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
+- Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
+- Phase 5: Agent Personas          [██████████] 100% (6/6 plans) ✓
+- Phase 6: Conversational Config   [██████████] 100% (5/5 plans) ✓
+- Phase 7: Coordination Protocols  [██████████] 100% (6/6 plans) ✓
+- Phase 8: Production Readiness    [██████████] 100% (6/6 plans) ✓
 
-Phase 1: Event Infrastructure    [██████████] 100% (3/3 plans) ✓
-Phase 2: Real Ops Capabilities   [██████████] 100% (3/3 plans) ✓
-Phase 3: Messaging Gateway       [██████████] 100% (3/3 plans) ✓
-Phase 4: Mission Control UI      [████████░░] 80% (4/5 plans)
-Phase 5: Agent Personas          [██████████] 100% (6/6 plans) ✓
-Phase 6: Conversational Config   [██████████] 100% (5/5 plans) ✓
-Phase 7: Coordination Protocols  [██████████] 100% (6/6 plans) ✓
-Phase 8: Production Readiness    [██████████] 100% (6/6 plans) ✓
-```
+**Milestone 2 (Onboarding & Config UI):** [███░░░░░░] 20% (1 of 4-5 plans complete)
+- Phase 1: Integration             [██████████] 100% (1/1 integration plan) ✓
 
 ---
 
@@ -80,24 +89,20 @@ Phase 8: Production Readiness    [██████████] 100% (6/6 plan
 - **Research queries:** 2 (architecture research + phase research)
 
 ### Recent Execution
-| Phase | Plan | Duration | Tasks | Files | Commits | Date |
-|-------|------|----------|-------|-------|---------|------|
-| 07 | 05 | 575s | 10 | 14 | 10 | 2026-02-14 |
-| 08 | 03 | 1088s | 7 | 17 | 6 | 2026-02-14 |
-| 08 | 02 | 1402s | 7 | 24 | 6 | 2026-02-14 |
-| 07 | 06 | 724s | 4 | 5 | 5 | 2026-02-14 |
-| 07 | 04 | 1078s | 6 | 6 | 5 | 2026-02-14 |
-| 07 | 02 | 2057s | 9 | 7 | 6 | 2026-02-14 |
-| 06 | 05 | 472s | 10 | 13 | 7 | 2026-02-14 |
-| 06 | 02 | 1229s | 8 | 7 | 6 | 2026-02-14 |
-| 06 | 04 | 1240s | 7 | 9 | 6 | 2026-02-14 |
-| 06 | 03 | 2650s | 7 | 16 | 6 | 2026-02-14 |
-| 05 | 06 | 1131s | 10 | 12 | 10 | 2026-02-14 |
-| 05 | 05 | 636s | 7 | 12 | 6 | 2026-02-14 |
-| 05 | 02 | 813s | 9 | 7 | 9 | 2026-02-14 |
-| 05 | 03 | 824s | 7 | 16 | 7 | 2026-02-14 |
-| 05 | 04 | 546s | 8 | 11 | 7 | 2026-02-14 |
-| 04 | 04 | 744s | 10 | 10 | 4 | 2026-02-14 |
+| Milestone | Phase | Plan | Duration | Tasks | Files | Commits | Date |
+|-----------|-------|------|----------|-------|-------|---------|------|
+| M2 | 1 | 01-INTEGRATION | 480s | 8 | 13 | 8 | 2026-02-15 |
+| M1 | 07 | 05 | 575s | 10 | 14 | 10 | 2026-02-14 |
+| M1 | 08 | 03 | 1088s | 7 | 17 | 6 | 2026-02-14 |
+| M1 | 08 | 02 | 1402s | 7 | 24 | 6 | 2026-02-14 |
+| M1 | 07 | 06 | 724s | 4 | 5 | 5 | 2026-02-14 |
+| M1 | 07 | 04 | 1078s | 6 | 6 | 5 | 2026-02-14 |
+| M1 | 07 | 02 | 2057s | 9 | 7 | 6 | 2026-02-14 |
+| M1 | 06 | 05 | 472s | 10 | 13 | 7 | 2026-02-14 |
+| M1 | 06 | 02 | 1229s | 8 | 7 | 6 | 2026-02-14 |
+| M1 | 06 | 04 | 1240s | 7 | 9 | 6 | 2026-02-14 |
+| M1 | 06 | 03 | 2650s | 7 | 16 | 6 | 2026-02-14 |
+| M1 | 05 | 06 | 1131s | 10 | 12 | 10 | 2026-02-14 |
 | 04 | 03 | 757s | 11 | 23 | 11 | 2026-02-14 |
 | 04 | 01 | 753s | 10 | 14 | 10 | 2026-02-14 |
 | 03 | 03 | 5400s | 8 | 13 | 7 | 2026-02-13 |
@@ -228,66 +233,83 @@ No blockers.
 
 ### What to Do Next
 
-**Immediate next action:** Plan Phase 6 (Conversational Configuration)
+**Immediate next action:** Milestone 2 Phase 2 (Mission Control + Squad Chat UI)
 
-Phase 5 fully complete (6/6 plans, 142 tests). The persona system delivers workspace file loaders, 7-layer prompt composition, introduction events, AgentCard display, reliability metrics, and comprehensive documentation. Phase 6 will wrap persona creation in a conversational interface.
+Phase 1 Integration complete (8/8 tasks, 480s). API client, Redux thunks, form wiring, testing infrastructure all delivered. Phase 2 will add real-time WebSocket events, Squad Chat component, and Mission Control dashboard.
 
 ### Context for Next Agent
 
-**Project:** AOF - Humanized Agentic Ops Platform (Apache 2.0 open source)
+**Project:** AOF - Agentic Ops Framework (Apache 2.0 open source)
 
-**Mission:** Transform Rust CLI framework into humanized agentic ops platform with real-time Mission Control UI, agent personas, and visible squad communication.
+**Ecosystem:** Milestone 1 (Rust backend) complete. Milestone 2 focuses on web-app frontend integration.
 
-**Architecture:** Brownfield approach — extend existing 14-crate Rust foundation (including new aof-personas), add control plane layer.
-
-**Roadmap:** 8 phases, standard depth (3-6 plans each), parallelization enabled.
-
-**Current status:** Phase 5 complete (6/6 plans). Full persona pipeline: workspace files -> loaders -> 7-layer prompt composition -> introduction events -> AgentCard UI -> reliability metrics. 142 tests. Ready for Phase 6.
+**Current Milestone:** Milestone 2 - Onboarding & Configuration UI
+- **Goal:** 5-minute setup experience with zero YAML editing
+- **Status:** Phase 1 Integration complete (API client, Redux, testing)
+- **Next:** Phase 2 (Mission Control UI + real-time events)
 
 **Key files:**
-- `.planning/PROJECT.md` — Core value, constraints, key decisions
-- `.planning/REQUIREMENTS.md` — 48 v1 requirements across 10 categories
-- `.planning/ROADMAP.md` — 8 phases with goals, success criteria, dependencies
-- `.planning/research/SUMMARY.md` — Architecture research, stack recommendations
-- `.planning/research/ARCHITECTURE.md` — Build order, crate structure, data flows
+- `.planning/phases/01-onboarding-config-ui/01-INTEGRATION-SUMMARY.md` — Phase 1 completion summary
+- `.planning/phases/01-onboarding-config-ui/PHASE-CONTEXT.md` — Phase context and dependencies
+- `web-app/` — React 18 + TypeScript frontend
+- `web-app/src/api/` — Typed API client (configAPI, conversationAPI)
+- `web-app/src/store/` — Redux with async thunks and persistence
 
-**What's different:** This is NOT a greenfield project. AOF has 13 mature Rust crates (aof-core, aof-runtime, aof-llm, etc.) at v0.4.0-beta. Do not rewrite. Extend.
+**What's delivered so far:**
+1. ✅ Phase 1 UI (40+ components) from Builder.io
+2. ✅ API client layer with full TypeScript types
+3. ✅ Redux async thunks for CRUD operations
+4. ✅ Form components wired to Redux
+5. ✅ Testing infrastructure (Vitest + MSW)
+6. ⏳ WebSocket client structure (Phase 2 placeholder)
 
 **Critical success factors:**
-1. Event infrastructure is foundational — Phase 1 blocks everything else
-2. WASM UI (Phase 4) is most complex — expect iteration on bundle size optimization
-3. Avoid anthropomorphic trust trap — capability boundaries + reliability indicators required
-4. Coordination overhead <30% tokens — measure and implement fallback if exceeded
+1. Rapid onboarding (<5 minutes) — must be dead simple
+2. Form validation — clear error messages
+3. State persistence — survives daemon restart
+4. Real-time updates — WebSocket phase 2 requirement
+5. Type safety — no runtime errors in production
 
 ---
 
 ## Files Created/Modified This Session
 
-**Plan 07-05:**
-- Created `web-ui/src/types/coordination.ts` — TypeScript types for coordination data
-- Created `web-ui/src/store/coordinationSlice.ts` — Redux state management for coordination
-- Created `web-ui/src/hooks/useCoordination.ts` — Custom hook for coordination data and actions
-- Created `web-ui/src/components/HeartbeatDashboard.tsx` — Agent health status grid component
-- Created `web-ui/src/components/StandupFeed.tsx` — Standup results feed component
-- Created `web-ui/src/components/CoordinationStatus.tsx` — Token overhead and mode indicator component
-- Created `web-ui/src/pages/CoordinationPage.tsx` — Coordination dashboard page
-- Created `web-ui/src/components/__tests__/HeartbeatDashboard.test.tsx` — Component tests
-- Created `web-ui/src/components/__tests__/StandupFeed.test.tsx` — Component tests
-- Created `web-ui/src/components/__tests__/CoordinationStatus.test.tsx` — Component tests
-- Created `docs/concepts/mission-control-coordination.md` — User-facing coordination dashboard docs
-- Modified `web-ui/src/store/index.ts` — Register coordinationSlice
-- Modified `web-ui/src/hooks/useWebSocket.ts` — Extended for coordination events
-- Modified `web-ui/src/types/index.ts` — Export coordination types
-- Modified `docs/dev/coordination-protocols.md` — Added Mission Control UI section
-- `.planning/phases/07-coordination-protocols/07-05-SUMMARY.md` — Plan execution summary
+**Milestone 2 Phase 1 Integration:**
+
+Created:
+- `web-app/src/api/client.ts` — Typed axios client with interceptors
+- `web-app/src/api/config.ts` — configAPI endpoints (agents, tools, platforms, version)
+- `web-app/src/api/conversation.ts` — conversationAPI endpoints (sessions, messages)
+- `web-app/src/api/websocket.ts` — WebSocketClient class for Phase 2 real-time
+- `web-app/vitest.config.ts` — Vitest configuration with jsdom environment
+- `web-app/src/test/setup.ts` — MSW server setup and lifecycle
+- `web-app/src/test/mocks/handlers.ts` — HTTP handlers for all endpoints
+- `web-app/src/components/common/__tests__/Button.test.tsx` — Component unit tests
+- `web-app/src/test/e2e/onboarding.test.tsx` — E2E Redux store validation
+
+Modified:
+- `web-app/src/store/slices/configSlice.ts` — Added async thunks and extraReducers
+- `web-app/src/store/index.ts` — Exported async thunks and fixed name conflicts
+- `web-app/src/components/onboarding/StepAgentSetup.tsx` — Fixed Redux action reference
+- `web-app/src/components/common/SearchBar.tsx` — Fixed onChange type compatibility
+
+Results:
+- 9 files created, 4 files modified
+- 8 commits with atomic changes
+- 7 tests passing (4 component + 3 E2E)
+- 0 TypeScript errors
+- 0 deviations from plan
 
 ---
 
 ## Next Session Prep
 
-**All 8 phases complete!** 35 of 35 plans delivered.
+**Milestone 1: 35 of 35 plans delivered** (100% complete)
+**Milestone 2: 1 of 4+ plans delivered** (20% in progress)
 
 **Current milestone status:**
+
+Milestone 1 (Backend - Complete):
 - ✅ Phase 1: Event Infrastructure (3/3)
 - ✅ Phase 2: Real Ops Capabilities (3/3)
 - ✅ Phase 3: Messaging Gateway (3/3)
@@ -297,18 +319,24 @@ Phase 5 fully complete (6/6 plans, 142 tests). The persona system delivers works
 - ✅ Phase 7: Coordination Protocols (6/6)
 - ✅ Phase 8: Production Readiness (6/6)
 
-**Outstanding work:**
-- Phase 4 Plan 02: Complete WebSocket hook integration and ActivityFeed component (deferred)
+Milestone 2 (Frontend - In Progress):
+- ✅ Phase 1: Integration (API client, Redux, forms, testing)
+- ⏳ Phase 2: Mission Control + Squad Chat UI
+- ⏳ Phase 3: Real-time events wiring
+- ⏳ Phase 4: E2E validation & hardening
 
 **Readiness checklist:**
-- Event infrastructure: ✅ Complete
-- Backend capabilities: ✅ Complete (ops, messaging, coordination, security)
-- Agent personas: ✅ Complete (loaders, prompts, UI, metrics)
-- Conversational config: ✅ Complete (orchestrator, specialists, UI)
-- Mission Control UI: ⚠️ 80% complete (coordination dashboard added, ActivityFeed pending)
-- Production security: ✅ Complete (mTLS, device pairing, anomaly detection)
+- Milestone 1 Backend: ✅ Complete
+- Web-app structure: ✅ Complete (40+ components from Builder.io)
+- API client layer: ✅ Complete
+- Redux state management: ✅ Complete with async thunks
+- Testing infrastructure: ✅ Complete (Vitest + MSW)
+- Environment configuration: ✅ Complete (.env.local, .env.production)
+- Form submission: ✅ Complete (wired to Redux)
+- WebSocket placeholder: ✅ Complete (ready for Phase 2)
 
 ---
 
 *State tracking initialized: 2026-02-11*
-*Last updated: 2026-02-14T16:57:32Z*
+*Last updated: 2026-02-15T04:32:00Z*
+*Milestone 2 started: 2026-02-15*
