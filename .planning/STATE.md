@@ -12,22 +12,25 @@
 Agents that feel human — with personas, visible communication, and a Mission Control where you see your team of AI minions coordinating, reporting, and getting real work done.
 
 ### Current Focus
-Milestone 2 Phase 2 Plan 02 (Squad Chat Interface) complete. Delivered full messaging interface with persona-styled messages, search filtering, squad member sidebar, Redux state management, and 23 passing tests. Ready for Plan 03: WebSocket integration.
+Milestone 2 Phase 2 Plan 03 (WebSocket Integration) complete. Delivered real-time event streaming with Redux middleware, exponential backoff reconnection, event deduplication, toast notifications, connection status indicator, and 24 comprehensive integration tests with 85% coverage. Ready for Plan 04: Persona integration.
 
 ---
 
 ## Current Position
 
 ### Active Phase
+**Milestone 2 Phase 2: Mission Control & Squad Chat Plan 03** (3/5 plans - 60% complete)
+- **Goal:** WebSocket integration with real-time event handling, animations, and notifications
+- **Status:** Complete - All 8 tasks delivered
+- **Completion Date:** 2026-02-15
+- **Duration:** 731 seconds (12.2 minutes)
+
+### Recently Completed
 **Milestone 2 Phase 2: Mission Control & Squad Chat Plan 02** (2/5 plans - 40% complete)
 - **Goal:** Create Squad Chat interface with message feed, message input, and squad member list
 - **Status:** Complete - All 8 tasks delivered
 - **Completion Date:** 2026-02-15
 - **Duration:** 1758 seconds (29.3 minutes)
-
-### Recently Completed
-**Milestone 2 Phase 1.5: Onboarding Refinement Plan 04** (4/4 plans - 100% complete)
-- **Goal:** Implement operation classification, approval workflow, and immutable audit logging
 - **Status:** Complete - All 7 tasks delivered
 - **Completion Date:** 2026-02-15
 - **Duration:** 840 seconds (14 minutes)
@@ -38,30 +41,33 @@ Milestone 2 Phase 2 Plan 02 (Squad Chat Interface) complete. Delivered full mess
 - **Status:** Complete. All 8 tasks delivered.
 
 ### Status
-Milestone 2 Phase 2 Plan 02 (Squad Chat Interface) COMPLETE. Delivered:
-- SquadChat page with 2-column responsive layout (message feed + sidebar)
-- chatSlice Redux state with 9 actions, 8 selectors, and 6 custom hooks
-- MessageCard component with 4 message types (agent/user/system/announcement)
-- MessageFeed with auto-scroll to bottom and virtualization support
-- MessageInput with keyboard shortcuts (Enter/Shift+Enter) and validation
-- SquadMemberList sidebar with online/offline indicators
-- Message search functionality with real-time filtering
-- Mock data for development (5 members, 10 messages)
-- 8 tasks, 8 commits, 9 files created, 5 files modified
-- 23/23 tests passing (15 unit + 8 E2E)
+Milestone 2 Phase 2 Plan 03 (WebSocket Integration) COMPLETE. Delivered:
+- WebSocket event type system with 7 event types (HeartbeatEvent, StandupEvent, MessageEvent, etc.)
+- Toast notification component with 4 variants (success/error/info/warning)
+- useWebSocket hook with exponential backoff reconnection (3s → 6s → 12s → 30s)
+- Redux middleware for centralized event processing
+- Event deduplication with ID cache (1000 events, 1min TTL)
+- Connection status indicator in header (green/yellow/gray/red)
+- Real-time agent status updates in Mission Control
+- Real-time message delivery in Squad Chat
+- GPU-accelerated animations (toast, typing dots, fade-slide)
+- 8 tasks, 8 commits, 6 files created, 8 files modified
+- 24/24 integration tests passing (11 events + 13 websocket)
+- 85% test coverage on middleware and hooks
 - 0 TypeScript errors in new code
 
 **Verification Summary:**
-- ✅ 2-column layout responsive (feed + sidebar hidden <1024px)
-- ✅ Messages display chronologically with auto-scroll
-- ✅ Persona styling on agent messages (colors, fonts, icons)
-- ✅ Search filters messages in real-time
-- ✅ Message sending appends to feed and clears input
-- ✅ Squad member list shows online/offline status
-- ✅ All 23 tests passing: 15 unit + 8 E2E
+- ✅ WebSocket connection established on app startup
+- ✅ Connection persists with auto-reconnection on disconnect
+- ✅ HeartbeatEvent updates agent status within 100ms
+- ✅ MessageEvent adds messages to chat feed in real-time
+- ✅ Toast notifications display on connection events
+- ✅ Connection status indicator shows in header
+- ✅ Event deduplication prevents duplicate handling
+- ✅ Exponential backoff reconnection works (3s, 6s, 12s, 30s)
+- ✅ All 24 integration tests passing
 - ✅ No TypeScript errors: npm run build → 0 errors
-- ✅ Route /squad-chat accessible from navigation
-- ✅ Ready for Plan 03 (WebSocket integration)
+- ✅ Ready for Plan 04 (Persona integration)
 
 ### Progress
 
@@ -75,10 +81,10 @@ Milestone 2 Phase 2 Plan 02 (Squad Chat Interface) COMPLETE. Delivered:
 - Phase 7: Coordination Protocols  [██████████] 100% (6/6 plans) ✓
 - Phase 8: Production Readiness    [██████████] 100% (6/6 plans) ✓
 
-**Milestone 2 (Onboarding & Config UI):** [██████░░░] 67% (6 of 9 plans complete)
+**Milestone 2 (Onboarding & Config UI):** [███████░░░] 78% (7 of 9 plans complete)
 - Phase 1: Integration             [██████████] 100% (1/1 integration plan) ✓
 - Phase 1.5: Onboarding Refinement [██████████] 100% (4/4 wave plans) ✓
-- Phase 2: Mission Control & Chat  [████░░░░░░] 40% (2/5 plans)
+- Phase 2: Mission Control & Chat  [██████░░░░] 60% (3/5 plans)
 
 ---
 
@@ -104,6 +110,7 @@ Milestone 2 Phase 2 Plan 02 (Squad Chat Interface) COMPLETE. Delivered:
 ### Recent Execution
 | Milestone | Phase | Plan | Duration | Tasks | Files | Commits | Date |
 |-----------|-------|------|----------|-------|-------|---------|------|
+| M2 | 2 | 03 (WebSocket) | 731s | 8 | 14 | 8 | 2026-02-15 |
 | M2 | 2 | 02 (Squad Chat) | 1758s | 8 | 14 | 8 | 2026-02-15 |
 | M2 | 2 | 01 (Mission Control) | 739s | 8 | 14 | 8 | 2026-02-15 |
 | M2 | 1.5 | 04 (Approval/Audit) | 840s | 7 | 13 | 4 | 2026-02-15 |
@@ -137,6 +144,7 @@ Milestone 2 Phase 2 Plan 02 (Squad Chat Interface) COMPLETE. Delivered:
 | Phase 02 P01 | 739 | 8 tasks | 14 files |
 | Phase 02 P04 | 612 | 8 tasks | 10 files |
 | Phase 02 P02 | 1758 | 8 tasks | 14 files |
+| Phase 02 P03 | 731 | 8 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -224,6 +232,12 @@ Milestone 2 Phase 2 Plan 02 (Squad Chat Interface) COMPLETE. Delivered:
 | **ChatMessage type for persona integration** | MessageCard uses existing persona utilities (AgentAvatar, getPersonaColors, etc.) instead of duplicating styling logic. Promotes code reuse and consistent persona rendering across components. | 2026-02-15 | 02 | Implemented |
 | **Mock scrollIntoView for jsdom tests** | jsdom doesn't support scrollIntoView API natively. Mock prevents test failures while preserving auto-scroll behavior in browser. Standard testing pattern for DOM APIs unavailable in jsdom. | 2026-02-15 | 02 | Implemented |
 | **Search filtering with memoized selector** | createSelector prevents unnecessary recalculations when state changes. Performance optimization for large message lists (1000+ messages) with real-time search. | 2026-02-15 | 02 | Implemented |
+| **WebSocket connection initialized in App.tsx on mount** | App-wide availability of WebSocket connection. Enables all components to receive real-time events via Redux. Single connection point simplifies debugging and state management. | 2026-02-15 | 02-03 | Implemented |
+| **Exponential backoff reconnection (3s, 6s, 12s, 30s max)** | Prevents server overload during outages. Fast recovery for transient issues, reasonable delay for persistent problems. Capped at 30s to avoid excessive wait times. | 2026-02-15 | 02-03 | Implemented |
+| **Redux middleware pattern for event handling** | Centralized event processing in single middleware function. Easier to test, debug, and maintain vs. scattered event handlers. Type-safe discriminated union handling. | 2026-02-15 | 02-03 | Implemented |
+| **Event deduplication with ID cache (1000 events, 1min TTL)** | Prevents duplicate handling if same event received multiple times. Set-based O(1) lookup. Auto-cleanup keeps memory bounded. Essential for reliable event processing. | 2026-02-15 | 02-03 | Implemented |
+| **ToastProvider context for app-wide toast management** | Avoids prop drilling for toast notifications. Components can trigger toasts via useToast hook. Simpler than Redux for ephemeral UI state. | 2026-02-15 | 02-03 | Implemented |
+| **Type guards for WebSocket events** | TypeScript narrowing enables type-safe event handling. Compile-time type checking prevents runtime errors. Alternative (type assertions) is unsafe. | 2026-02-15 | 02-03 | Implemented |
 
 ### Todos
 
