@@ -20,39 +20,64 @@ class MockWebSocket {
   public onopen: ((event: Event) => void) | null = null
   public onclose: ((event: CloseEvent) => void) | null = null
   public onerror: ((event: Event) => void) | null = null
-  public onmessage: ((event: MessageEvent) => void) | null = null
-  public readyState = MockWebSocket.CONNECTING
+  public onmessage: ((event: MessageEvent<any>) => void) | null = null
+  public readyState = 0
   public url: string
+  public protocol = ''
+  public extensions = ''
+  public binaryType: 'blob' | 'arraybuffer' = 'blob'
+  public bufferedAmount = 0
 
   constructor(url: string) {
     this.url = url
+    this.readyState = MockWebSocket.CONNECTING
     // Simulate connection after a tick
     setTimeout(() => {
       this.readyState = MockWebSocket.OPEN
-      this.onopen?.(new Event('open'))
+      if (this.onopen) {
+        this.onopen(new Event('open'))
+      }
     }, 0)
   }
 
-  send(data: string) {
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
     // Mock send
   }
 
-  close() {
+  close(): void {
     this.readyState = MockWebSocket.CLOSED
-    this.onclose?.(new CloseEvent('close'))
+    if (this.onclose) {
+      this.onclose(new CloseEvent('close'))
+    }
+  }
+
+  addEventListener(): void {
+    // Mock
+  }
+
+  removeEventListener(): void {
+    // Mock
+  }
+
+  dispatchEvent(): boolean {
+    return true
   }
 
   // Helper to simulate receiving a message
-  simulateMessage(data: any) {
+  simulateMessage(data: any): void {
     const event = new MessageEvent('message', {
       data: JSON.stringify(data),
     })
-    this.onmessage?.(event)
+    if (this.onmessage) {
+      this.onmessage(event)
+    }
   }
 
   // Helper to simulate error
-  simulateError() {
-    this.onerror?.(new Event('error'))
+  simulateError(): void {
+    if (this.onerror) {
+      this.onerror(new Event('error'))
+    }
   }
 }
 

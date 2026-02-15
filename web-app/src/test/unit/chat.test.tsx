@@ -36,7 +36,7 @@ describe('MessageCard', () => {
       content: 'Hello from agent!',
       senderType: 'agent',
       senderName: 'TestBot',
-      senderPersonaType: 'orchestrator',
+      senderPersonaType: 'coordinator',
       senderIcon: '🤖',
       timestamp: new Date(),
     }
