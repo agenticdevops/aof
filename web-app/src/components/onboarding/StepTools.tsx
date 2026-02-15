@@ -41,7 +41,7 @@ export const StepTools: React.FC = () => {
 
   // Initialize expanded categories and pre-select recommended tools on mount
   useEffect(() => {
-    if (availableTools.length > 0) {
+    if (discoveredTools.length > 0 && selectedTools.length === 0) {
       // Initialize expansion state
       const grouped = groupToolsByCategory(discoveredTools)
       const initialExpanded: Record<string, boolean> = {}
@@ -50,12 +50,14 @@ export const StepTools: React.FC = () => {
       })
       setExpandedCategories(initialExpanded)
 
-      // Pre-select recommended tools
+      // Pre-select recommended tools only if none are selected
       const recommended = getRecommendedTools(discoveredTools)
-      const recommendedOnboarding = recommended.map(convertToOnboardingTool)
-      dispatch(updateTools(recommendedOnboarding))
+      if (recommended.length > 0) {
+        const recommendedOnboarding = recommended.map(convertToOnboardingTool)
+        dispatch(updateTools(recommendedOnboarding))
+      }
     }
-  }, [availableTools, dispatch, discoveredTools])
+  }, [discoveredTools, selectedTools.length, dispatch])
 
   const handleToolToggle = (tool: OnboardingTool) => {
     const isSelected = selectedTools.some((t) => t.id === tool.id)
