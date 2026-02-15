@@ -78,10 +78,11 @@ export const useToolDiscovery = (): ToolDiscoveryState => {
 export const groupToolsByCategory = (tools: Tool[]): Record<string, Tool[]> => {
   const grouped: Record<string, Tool[]> = {}
   tools.forEach(tool => {
-    if (!grouped[tool.category]) {
-      grouped[tool.category] = []
+    const category = tool.category ?? 'custom'
+    if (!grouped[category]) {
+      grouped[category] = []
     }
-    grouped[tool.category].push(tool)
+    grouped[category].push(tool)
   })
   return grouped
 }
@@ -102,7 +103,7 @@ export const filterTools = (tools: Tool[], query: string): Tool[] => {
  */
 export const getRecommendedTools = (tools: Tool[]): Tool[] => {
   const recommended = ['kubectl', 'terraform', 'docker', 'git', 'aws', 'helm']
-  return tools.filter(t => recommended.includes(t.id) && t.available)
+  return tools.filter(t => recommended.includes(t.id) && (t.available ?? false))
 }
 
 /**

@@ -14,10 +14,15 @@ export interface Agent {
 export interface Tool {
   id: string
   name: string
-  description: string
-  type: 'api' | 'integration' | 'script'
-  status: 'ready' | 'needs-config'
+  description?: string
+  type?: 'api' | 'integration' | 'script'
+  status?: 'ready' | 'needs-config'
   createdAt?: string
+  // Tool discovery properties
+  path?: string
+  version?: string | null
+  category?: string
+  available?: boolean
 }
 
 // Platform types

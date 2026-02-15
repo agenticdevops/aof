@@ -1,35 +1,26 @@
 import React, { useEffect, useState } from 'react'
-import { useAppDispatch, useAppSelector, updateTools, discoverTools } from '@/store'
-import { Tool, ToolCategory, RECOMMENDED_TOOLS } from '@/types/onboarding'
+import { useAppDispatch, useAppSelector, updateTools } from '@/store'
+import { Tool as OnboardingTool, ToolCategory, RECOMMENDED_TOOLS } from '@/types/onboarding'
 import Checkbox from '@/components/common/Checkbox'
 import LoadingSpinner from '@/components/common/LoadingSpinner'
 import Alert from '@/components/common/Alert'
+import { useToolDiscovery, groupToolsByCategory, getRecommendedTools, formatCategoryName, getCategoryIcon } from '@/services/toolDiscovery'
+import type { Tool as DiscoveredTool } from '@/api/config'
 
 /**
- * Group tools by category
+ * Convert discovered tool to onboarding tool format
  */
-function groupByCategory(tools: Tool[]): Record<ToolCategory, Tool[]> {
-  const grouped: Record<ToolCategory, Tool[]> = {
-    kubectl: [],
-    terraform: [],
-    docker: [],
-    git: [],
-    aws: [],
-    shell: [],
-    custom: [],
-    other: [],
+function convertToOnboardingTool(tool: DiscoveredTool): OnboardingTool {
+  return {
+    id: tool.id,
+    name: tool.name,
+    version: tool.version ?? 'unknown',
+    path: tool.path ?? '',
+    available: tool.available ?? false,
+    enabled: tool.available ?? false,
+    category: (tool.category ?? 'custom').toLowerCase() as ToolCategory,
+    description: `${tool.name}${tool.version ? ` (${tool.version})` : ''}`,
   }
-
-  tools.forEach((tool) => {
-    const category = tool.category || 'other'
-    if (category in grouped) {
-      grouped[category].push(tool)
-    } else {
-      grouped.other.push(tool)
-    }
-  })
-
-  return grouped
 }
 
 /**
@@ -39,151 +30,34 @@ function groupByCategory(tools: Tool[]): Record<ToolCategory, Tool[]> {
 export const StepTools: React.FC = () => {
   const dispatch = useAppDispatch()
   const selectedTools = useAppSelector((state) => state.onboarding.selectedTools)
-  const loading = useAppSelector((state) => state.onboarding.loading)
-  const error = useAppSelector((state) => state.onboarding.error)
 
-  const [availableTools, setAvailableTools] = useState<Tool[]>([])
-  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
-  const [isDiscovering, setIsDiscovering] = useState(true)
-  const [expandedCategories, setExpandedCategories] = useState<Record<ToolCategory, boolean>>({
-    kubectl: true,
-    terraform: true,
-    docker: true,
-    git: true,
-    aws: true,
-    shell: false,
-    custom: false,
-    other: false,
-  })
+  // Use the real tool discovery hook
+  const { tools: discoveredTools, loading, error, discover, lastDiscoveryTime } = useToolDiscovery()
 
-  // Auto-discover tools on mount
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
+
+  // Convert discovered tools to onboarding format
+  const availableTools = discoveredTools.map(convertToOnboardingTool)
+
+  // Initialize expanded categories and pre-select recommended tools on mount
   useEffect(() => {
-    const discoverAvailableTools = async () => {
-      setIsDiscovering(true)
-      setDiscoveryError(null)
+    if (availableTools.length > 0) {
+      // Initialize expansion state
+      const grouped = groupToolsByCategory(discoveredTools)
+      const initialExpanded: Record<string, boolean> = {}
+      Object.keys(grouped).forEach(category => {
+        initialExpanded[category] = true // Expand all by default
+      })
+      setExpandedCategories(initialExpanded)
 
-      try {
-        // Use mock data for now since backend discovery isn't fully implemented
-        const mockTools: Tool[] = [
-          // Kubernetes
-          {
-            id: 'kubectl',
-            name: 'kubectl',
-            version: '1.29.0',
-            path: '/usr/local/bin/kubectl',
-            available: true,
-            enabled: true,
-            category: 'kubectl',
-            description: 'Kubernetes command-line tool',
-          },
-          // Terraform
-          {
-            id: 'terraform',
-            name: 'terraform',
-            version: '1.6.0',
-            path: '/usr/local/bin/terraform',
-            available: true,
-            enabled: true,
-            category: 'terraform',
-            description: 'Infrastructure as Code tool',
-          },
-          // Docker
-          {
-            id: 'docker',
-            name: 'docker',
-            version: '24.0.0',
-            path: '/usr/bin/docker',
-            available: true,
-            enabled: true,
-            category: 'docker',
-            description: 'Container platform',
-          },
-          // Git
-          {
-            id: 'git',
-            name: 'git',
-            version: '2.42.0',
-            path: '/usr/bin/git',
-            available: true,
-            enabled: true,
-            category: 'git',
-            description: 'Version control system',
-          },
-          // AWS CLI
-          {
-            id: 'aws-cli',
-            name: 'aws',
-            version: '2.13.0',
-            path: '/usr/local/bin/aws',
-            available: true,
-            enabled: true,
-            category: 'aws',
-            description: 'Amazon Web Services CLI',
-          },
-          // Helm
-          {
-            id: 'helm',
-            name: 'helm',
-            version: '3.12.0',
-            path: '/usr/local/bin/helm',
-            available: true,
-            enabled: true,
-            category: 'kubectl',
-            description: 'Kubernetes package manager',
-          },
-          // Shell/Bash
-          {
-            id: 'shell',
-            name: 'bash',
-            version: '5.2.0',
-            path: '/bin/bash',
-            available: true,
-            enabled: true,
-            category: 'shell',
-            description: 'Shell command execution',
-          },
-          // jq
-          {
-            id: 'jq',
-            name: 'jq',
-            version: '1.7.0',
-            path: '/usr/bin/jq',
-            available: true,
-            enabled: false,
-            category: 'shell',
-            description: 'JSON command-line processor',
-          },
-          // yq
-          {
-            id: 'yq',
-            name: 'yq',
-            version: '4.34.0',
-            path: '/usr/local/bin/yq',
-            available: true,
-            enabled: false,
-            category: 'shell',
-            description: 'YAML command-line processor',
-          },
-        ]
-
-        setAvailableTools(mockTools)
-
-        // Pre-select recommended tools
-        const recommended = mockTools.filter((t) =>
-          RECOMMENDED_TOOLS.includes(t.name)
-        )
-        dispatch(updateTools(recommended))
-      } catch (err: any) {
-        setDiscoveryError(err.message || 'Failed to discover tools')
-      } finally {
-        setIsDiscovering(false)
-      }
+      // Pre-select recommended tools
+      const recommended = getRecommendedTools(discoveredTools)
+      const recommendedOnboarding = recommended.map(convertToOnboardingTool)
+      dispatch(updateTools(recommendedOnboarding))
     }
+  }, [availableTools, dispatch, discoveredTools])
 
-    discoverAvailableTools()
-  }, [dispatch])
-
-  const handleToolToggle = (tool: Tool) => {
+  const handleToolToggle = (tool: OnboardingTool) => {
     const isSelected = selectedTools.some((t) => t.id === tool.id)
 
     if (isSelected) {
@@ -193,19 +67,19 @@ export const StepTools: React.FC = () => {
     }
   }
 
-  const toggleCategory = (category: ToolCategory) => {
+  const toggleCategory = (category: string) => {
     setExpandedCategories((prev) => ({
       ...prev,
       [category]: !prev[category],
     }))
   }
 
-  const groupedTools = groupByCategory(availableTools)
-  const visibleCategories = (Object.keys(groupedTools) as ToolCategory[]).filter(
+  const groupedTools = groupToolsByCategory(discoveredTools)
+  const visibleCategories = Object.keys(groupedTools).filter(
     (cat) => groupedTools[cat].length > 0
   )
 
-  if (isDiscovering) {
+  if (loading) {
     return <LoadingSpinner text="Scanning for available tools..." />
   }
 
@@ -216,92 +90,112 @@ export const StepTools: React.FC = () => {
           Which tools can Xops use?
         </h2>
         <p className="text-gray-600 dark:text-gray-400">
-          Select the tools you want Xops to have access to. We found these on your system.
+          Select the tools you want Xops to have access to. We found {availableTools.length} on your system.
+          {lastDiscoveryTime && (
+            <span className="text-sm text-gray-500">
+              {' '}(discovered {lastDiscoveryTime.toLocaleTimeString()})
+            </span>
+          )}
         </p>
       </div>
 
-      {discoveryError && (
-        <Alert variant="warning" title="Tool Discovery">
-          Failed to auto-discover tools. You can add them manually later.
+      {error && (
+        <Alert variant="warning" title="Tool Discovery Failed">
+          {error}
+          <button
+            onClick={discover}
+            className="ml-2 underline hover:no-underline font-medium"
+          >
+            Retry
+          </button>
         </Alert>
       )}
 
       {/* Tool Categories */}
-      <div className="space-y-4">
-        {visibleCategories.map((category) => {
-          const tools = groupedTools[category]
-          const isExpanded = expandedCategories[category]
-          const categoryToolsSelected = tools.filter((t) =>
-            selectedTools.some((st) => st.id === t.id)
-          ).length
+      {availableTools.length === 0 ? (
+        <Alert variant="info" title="No tools found">
+          No tools were discovered on your system. You can add tools manually in the configuration dashboard.
+        </Alert>
+      ) : (
+        <div className="space-y-4">
+          {visibleCategories.map((category) => {
+            const tools = groupedTools[category]
+            const isExpanded = expandedCategories[category]
+            const categoryToolsSelected = availableTools.filter(
+              (t) =>
+                t.category === category && selectedTools.some((st) => st.id === t.id)
+            ).length
 
-          return (
-            <div
-              key={category}
-              className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
-            >
-              {/* Category Header */}
-              <button
-                onClick={() => toggleCategory(category)}
-                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-between transition"
+            return (
+              <div
+                key={category}
+                className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
               >
-                <div className="flex items-center gap-3 flex-1 text-left">
-                  <span className={`transition ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
-                  <span className="font-semibold text-gray-900 dark:text-white capitalize">
-                    {category}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {categoryToolsSelected} of {tools.length} selected
-                  </span>
-                </div>
-              </button>
+                {/* Category Header */}
+                <button
+                  onClick={() => toggleCategory(category)}
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-between transition"
+                >
+                  <div className="flex items-center gap-3 flex-1 text-left">
+                    <span className={`transition ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                    <span className="text-lg">{getCategoryIcon(category)}</span>
+                    <span className="font-semibold text-gray-900 dark:text-white capitalize">
+                      {formatCategoryName(category)}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {categoryToolsSelected} of {tools.length} selected
+                    </span>
+                  </div>
+                </button>
 
-              {/* Category Tools */}
-              {isExpanded && (
-                <div className="p-4 space-y-3 bg-white dark:bg-gray-900/50">
-                  {tools.map((tool) => {
-                    const isSelected = selectedTools.some((t) => t.id === tool.id)
+                {/* Category Tools */}
+                {isExpanded && (
+                  <div className="p-4 space-y-3 bg-white dark:bg-gray-900/50">
+                    {tools.map((tool) => {
+                      const onboardingTool = convertToOnboardingTool(tool)
+                      const isSelected = selectedTools.some((t) => t.id === tool.id)
 
-                    return (
-                      <label
-                        key={tool.id}
-                        className="flex items-start p-3 rounded hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition"
-                      >
-                        <Checkbox
-                          checked={isSelected}
-                          onChange={() => handleToolToggle(tool)}
-                          disabled={!tool.available}
-                        />
-                        <div className="ml-3 flex-1">
-                          <div className="font-medium text-gray-900 dark:text-white">
-                            {tool.name}
-                          </div>
-                          {tool.description && (
-                            <div className="text-sm text-gray-600 dark:text-gray-400">
-                              {tool.description}
+                      return (
+                        <label
+                          key={tool.id}
+                          className="flex items-start p-3 rounded hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition"
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onChange={() => handleToolToggle(onboardingTool)}
+                            disabled={!tool.available}
+                          />
+                          <div className="ml-3 flex-1">
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              {tool.name}
                             </div>
-                          )}
-                          <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                            {tool.available ? (
-                              <span className="text-green-600 dark:text-green-400">
-                                ✓ Found at {tool.path}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">
-                                ✗ Not installed (v{tool.version})
-                              </span>
+                            {tool.version && (
+                              <div className="text-sm text-gray-600 dark:text-gray-400">
+                                Version: {tool.version}
+                              </div>
                             )}
+                            <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                              {tool.available ? (
+                                <span className="text-green-600 dark:text-green-400">
+                                  ✓ Found at {tool.path}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">
+                                  ✗ Not installed
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </label>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Summary */}
       <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
