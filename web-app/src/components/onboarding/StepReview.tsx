@@ -18,7 +18,7 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
     platforms: true,
   })
 
-  const toggleSection = (section: string) => {
+  const toggleSection = (section: 'project' | 'agent' | 'platforms') => {
     setExpandedSections((prev) => ({
       ...prev,
       [section]: !prev[section],

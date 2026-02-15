@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useAppDispatch, useAppSelector, addPlatform, removePlatform } from '@/store'
+import { useAppDispatch, useAppSelector, addWizardPlatform, removeWizardPlatform } from '@/store'
 import Card from '@/components/common/Card'
 import Input from '@/components/common/Input'
 import Button from '@/components/common/Button'
@@ -64,7 +64,7 @@ export const StepPlatformConfig: React.FC<StepPlatformConfigProps> = ({ onBack, 
   const handleSave = () => {
     if (modalState.platform && modalState.configValue) {
       dispatch(
-        addPlatform({
+        addWizardPlatform({
           type: modalState.platform.type,
           config: {
             type: modalState.platform.type as any,
@@ -80,7 +80,7 @@ export const StepPlatformConfig: React.FC<StepPlatformConfigProps> = ({ onBack, 
   }
 
   const handleRemove = (platformType: string) => {
-    dispatch(removePlatform(platformType))
+    dispatch(removeWizardPlatform(platformType))
   }
 
   const isConnected = (platformType: string) => {

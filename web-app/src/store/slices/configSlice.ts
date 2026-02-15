@@ -35,7 +35,7 @@ const configSlice = createSlice({
     addAgent: (state, action: PayloadAction<Agent>) => {
       state.agents.push(action.payload)
     },
-    updateAgent: (state, action: PayloadAction<Agent>) => {
+    updateConfigAgent: (state, action: PayloadAction<Agent>) => {
       const index = state.agents.findIndex((a) => a.id === action.payload.id)
       if (index >= 0) {
         state.agents[index] = action.payload
@@ -86,7 +86,7 @@ const configSlice = createSlice({
 export const {
   setAgents,
   addAgent,
-  updateAgent,
+  updateConfigAgent,
   removeAgent,
   setTools,
   setPlatforms,

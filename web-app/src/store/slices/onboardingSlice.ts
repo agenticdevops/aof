@@ -46,10 +46,10 @@ const onboardingSlice = createSlice({
     updatePlatforms: (state, action: PayloadAction<Record<string, Partial<Platform>>>) => {
       state.platforms = action.payload
     },
-    addPlatform: (state, action: PayloadAction<{ type: string; config: Partial<Platform> }>) => {
+    addWizardPlatform: (state, action: PayloadAction<{ type: string; config: Partial<Platform> }>) => {
       state.platforms[action.payload.type] = action.payload.config
     },
-    removePlatform: (state, action: PayloadAction<string>) => {
+    removeWizardPlatform: (state, action: PayloadAction<string>) => {
       delete state.platforms[action.payload]
     },
     setLoading: (state, action: PayloadAction<boolean>) => {
@@ -70,8 +70,8 @@ export const {
   updateProject,
   updateAgent,
   updatePlatforms,
-  addPlatform,
-  removePlatform,
+  addWizardPlatform,
+  removeWizardPlatform,
   setLoading,
   setError,
   markStepCompleted,
