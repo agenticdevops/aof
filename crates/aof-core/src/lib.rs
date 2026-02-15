@@ -6,6 +6,7 @@
 pub mod activity;
 pub mod agent;
 pub mod agentflow;
+pub mod approval;
 pub mod binding;
 pub mod config;
 pub mod context;
@@ -91,6 +92,10 @@ pub use credential::{
 };
 pub use device::{
     DeviceCertificate, DeviceInfo, DeviceStatus, DeviceType,
+};
+pub use approval::{
+    ApprovalDecision, ApprovalPolicy, ApprovalRequest, ApprovalStatus, BlastRadius,
+    Environment, OperationCategory, classify_operation,
 };
 
 /// Version information
