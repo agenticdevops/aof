@@ -8,6 +8,7 @@ import auditReducer from './slices/auditSlice'
 import dashboardReducer from './slices/dashboardSlice'
 import chatReducer from './slices/chatSlice'
 import personaReducer from './slices/personaSlice'
+import { websocketMiddleware } from '@/middleware/websocketMiddleware'
 
 const persistConfig = {
   key: 'aof-root',
@@ -31,9 +32,9 @@ export const store = configureStore({
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: {
-        ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE'],
+        ignoredActions: ['persist/PERSIST', 'persist/REHYDRATE', 'websocket/eventReceived'],
       },
-    }),
+    }).concat(websocketMiddleware),
 })
 
 export const persistor = persistStore(store)

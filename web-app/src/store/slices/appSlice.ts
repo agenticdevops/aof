@@ -3,12 +3,15 @@ import type { RootState } from '../store'
 
 type NavigationState = 'welcome' | 'wizard' | 'config' | 'missionControl'
 type ThemeMode = 'light' | 'dark'
+type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
 interface AppState {
   navigation: NavigationState
   theme: ThemeMode
   firstVisit: boolean
   daemonUrl: string
+  connectionStatus: ConnectionStatus
+  wsUrl: string
 }
 
 const initialState: AppState = {
@@ -16,6 +19,8 @@ const initialState: AppState = {
   theme: 'light',
   firstVisit: true,
   daemonUrl: 'http://localhost:7777',
+  connectionStatus: 'disconnected',
+  wsUrl: import.meta.env.VITE_WS_URL || 'ws://localhost:7777/ws',
 }
 
 const appSlice = createSlice({
@@ -37,10 +42,16 @@ const appSlice = createSlice({
     setDaemonUrl: (state, action: PayloadAction<string>) => {
       state.daemonUrl = action.payload
     },
+    setConnectionStatus: (state, action: PayloadAction<ConnectionStatus>) => {
+      state.connectionStatus = action.payload
+    },
+    setWsUrl: (state, action: PayloadAction<string>) => {
+      state.wsUrl = action.payload
+    },
   },
 })
 
-export const { setNavigation, setTheme, toggleTheme, setFirstVisit, setDaemonUrl } = appSlice.actions
+export const { setNavigation, setTheme, toggleTheme, setFirstVisit, setDaemonUrl, setConnectionStatus, setWsUrl } = appSlice.actions
 export default appSlice.reducer
 
 // Selectors
@@ -49,3 +60,5 @@ export const selectTheme = (state: RootState) => state.app.theme
 export const selectIsDarkMode = (state: RootState) => state.app.theme === 'dark'
 export const selectFirstVisit = (state: RootState) => state.app.firstVisit
 export const selectDaemonUrl = (state: RootState) => state.app.daemonUrl
+export const selectConnectionStatus = (state: RootState) => state.app.connectionStatus
+export const selectWsUrl = (state: RootState) => state.app.wsUrl
