@@ -55,3 +55,12 @@ export {
   testPlatform,
   fetchVersion,
 } from './slices/configSlice'
+
+// Audit Slice exports
+export {
+  clearError as clearAuditError,
+  fetchAuditLog,
+  fetchApprovals,
+  approveOperation,
+  rejectOperation,
+} from './slices/auditSlice'

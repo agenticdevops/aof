@@ -1,6 +1,7 @@
 import client from './client'
 import type { Agent, Tool, Platform } from '@/types'
 import type { BotTemplate, SquadConfig, SquadAgent } from '@/types/agents'
+import type { ApprovalRequest, AuditEvent } from '@/types/audit'
 import { BOT_TEMPLATES } from '@/data/botTemplates'
 
 export type { Tool }
@@ -158,6 +159,56 @@ export const configAPI = {
       await client.delete(`/api/config/squads/${squadId}`)
     } catch (error) {
       throw new Error('Failed to delete squad')
+    }
+  },
+
+  // Approvals
+  getApprovals: async (): Promise<ApprovalRequest[]> => {
+    try {
+      const response = await client.get<ApprovalRequest[]>('/api/approvals')
+      return response.data
+    } catch (error) {
+      throw new Error('Failed to fetch approvals')
+    }
+  },
+
+  approveOperation: async (
+    id: string,
+    action: { decided_by: string; reason?: string }
+  ): Promise<ApprovalRequest> => {
+    try {
+      const response = await client.post<ApprovalRequest>(
+        `/api/approvals/${id}/approve`,
+        action
+      )
+      return response.data
+    } catch (error) {
+      throw new Error('Failed to approve operation')
+    }
+  },
+
+  rejectOperation: async (
+    id: string,
+    action: { decided_by: string; reason?: string }
+  ): Promise<ApprovalRequest> => {
+    try {
+      const response = await client.post<ApprovalRequest>(
+        `/api/approvals/${id}/reject`,
+        action
+      )
+      return response.data
+    } catch (error) {
+      throw new Error('Failed to reject operation')
+    }
+  },
+
+  // Audit Log
+  getAuditLog: async (): Promise<AuditEvent[]> => {
+    try {
+      const response = await client.get<AuditEvent[]>('/api/audit')
+      return response.data
+    } catch (error) {
+      throw new Error('Failed to fetch audit log')
     }
   }
 }

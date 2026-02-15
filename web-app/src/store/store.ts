@@ -4,6 +4,7 @@ import storage from 'redux-persist/lib/storage'
 import appReducer from './slices/appSlice'
 import onboardingReducer from './slices/onboardingSlice'
 import configReducer from './slices/configSlice'
+import auditReducer from './slices/auditSlice'
 
 const persistConfig = {
   key: 'aof-root',
@@ -19,6 +20,7 @@ export const store = configureStore({
     app: persistedAppReducer,
     onboarding: onboardingReducer,
     config: configReducer,
+    audit: auditReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
