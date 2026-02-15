@@ -7,6 +7,7 @@ import configReducer from './slices/configSlice'
 import auditReducer from './slices/auditSlice'
 import dashboardReducer from './slices/dashboardSlice'
 import chatReducer from './slices/chatSlice'
+import personaReducer from './slices/personaSlice'
 
 const persistConfig = {
   key: 'aof-root',
@@ -25,6 +26,7 @@ export const store = configureStore({
     audit: auditReducer,
     dashboard: dashboardReducer,
     chat: chatReducer,
+    persona: personaReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
