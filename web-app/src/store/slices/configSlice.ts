@@ -1,6 +1,7 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit'
 import { configAPI } from '@/api/config'
 import type { Agent, Tool, Platform } from '@/types'
+import type { BotTemplate, SquadConfig } from '@/types/agents'
 
 export const fetchAgents = createAsyncThunk(
   'config/fetchAgents',
@@ -98,28 +99,88 @@ export const fetchVersion = createAsyncThunk(
   }
 )
 
+// Squad-related thunks
+export const listSquads = createAsyncThunk(
+  'config/listSquads',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await configAPI.listSquads()
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const createSquadFromTemplate = createAsyncThunk(
+  'config/createSquadFromTemplate',
+  async (template: BotTemplate, { rejectWithValue }) => {
+    try {
+      const agents = await configAPI.createAgentFromTemplate(template)
+      const squad: SquadConfig = {
+        id: `squad-${Date.now()}`,
+        name: template.name,
+        templateId: template.id,
+        agents: agents,
+        createdAt: new Date(),
+        lastModified: new Date()
+      }
+      return squad
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const deleteAgentFromSquad = createAsyncThunk(
+  'config/deleteAgentFromSquad',
+  async ({ squadId, agentId }: { squadId: string; agentId: string }, { rejectWithValue }) => {
+    try {
+      await configAPI.deleteAgentFromSquad(squadId, agentId)
+      return { squadId, agentId }
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
+export const deleteSquad = createAsyncThunk(
+  'config/deleteSquad',
+  async (squadId: string, { rejectWithValue }) => {
+    try {
+      await configAPI.deleteSquad(squadId)
+      return squadId
+    } catch (error: any) {
+      return rejectWithValue(error.message)
+    }
+  }
+)
+
 interface ConfigState {
   agents: Agent[]
   tools: Tool[]
   platforms: Platform[]
+  squads: SquadConfig[]
   version: string | null
   isLoading: boolean
   error: string | null
   searchQuery: string
   selectedAgentId: string | null
   selectedPlatformId: string | null
+  selectedSquadId: string | null
 }
 
 const initialState: ConfigState = {
   agents: [],
   tools: [],
   platforms: [],
+  squads: [],
   version: null,
   isLoading: false,
   error: null,
   searchQuery: '',
   selectedAgentId: null,
   selectedPlatformId: null,
+  selectedSquadId: null,
 }
 
 const configSlice = createSlice({
@@ -194,6 +255,27 @@ const configSlice = createSlice({
     },
     setSelectedPlatform: (state, action: PayloadAction<string | null>) => {
       state.selectedPlatformId = action.payload
+    },
+    setSquads: (state, action: PayloadAction<SquadConfig[]>) => {
+      state.squads = action.payload
+    },
+    addSquad: (state, action: PayloadAction<SquadConfig>) => {
+      state.squads.push(action.payload)
+    },
+    updateSquad: (state, action: PayloadAction<SquadConfig>) => {
+      const index = state.squads.findIndex((s) => s.id === action.payload.id)
+      if (index >= 0) {
+        state.squads[index] = action.payload
+      }
+    },
+    removeSquad: (state, action: PayloadAction<string>) => {
+      state.squads = state.squads.filter((s) => s.id !== action.payload)
+      if (state.selectedSquadId === action.payload) {
+        state.selectedSquadId = null
+      }
+    },
+    setSelectedSquad: (state, action: PayloadAction<string | null>) => {
+      state.selectedSquadId = action.payload
     },
   },
   extraReducers: (builder) => {
@@ -318,6 +400,69 @@ const configSlice = createSlice({
         state.error = action.payload as string
         state.isLoading = false
       })
+
+    // List Squads
+    builder
+      .addCase(listSquads.pending, (state) => {
+        state.isLoading = true
+        state.error = null
+      })
+      .addCase(listSquads.fulfilled, (state, action) => {
+        state.squads = action.payload
+        state.isLoading = false
+      })
+      .addCase(listSquads.rejected, (state, action) => {
+        state.error = action.payload as string
+        state.isLoading = false
+      })
+
+    // Create Squad from Template
+    builder
+      .addCase(createSquadFromTemplate.pending, (state) => {
+        state.isLoading = true
+        state.error = null
+      })
+      .addCase(createSquadFromTemplate.fulfilled, (state, action) => {
+        state.squads.push(action.payload)
+        state.isLoading = false
+      })
+      .addCase(createSquadFromTemplate.rejected, (state, action) => {
+        state.error = action.payload as string
+        state.isLoading = false
+      })
+
+    // Delete Agent from Squad
+    builder
+      .addCase(deleteAgentFromSquad.pending, (state) => {
+        state.isLoading = true
+        state.error = null
+      })
+      .addCase(deleteAgentFromSquad.fulfilled, (state, action) => {
+        const squad = state.squads.find((s) => s.id === action.payload.squadId)
+        if (squad) {
+          squad.agents = squad.agents.filter((a) => a.id !== action.payload.agentId)
+        }
+        state.isLoading = false
+      })
+      .addCase(deleteAgentFromSquad.rejected, (state, action) => {
+        state.error = action.payload as string
+        state.isLoading = false
+      })
+
+    // Delete Squad
+    builder
+      .addCase(deleteSquad.pending, (state) => {
+        state.isLoading = true
+        state.error = null
+      })
+      .addCase(deleteSquad.fulfilled, (state, action) => {
+        state.squads = state.squads.filter((s) => s.id !== action.payload)
+        state.isLoading = false
+      })
+      .addCase(deleteSquad.rejected, (state, action) => {
+        state.error = action.payload as string
+        state.isLoading = false
+      })
   },
 })
 
@@ -340,6 +485,11 @@ export const {
   setError,
   setSelectedAgent,
   setSelectedPlatform,
+  setSquads,
+  addSquad,
+  updateSquad,
+  removeSquad,
+  setSelectedSquad,
 } = configSlice.actions
 
 export default configSlice.reducer
