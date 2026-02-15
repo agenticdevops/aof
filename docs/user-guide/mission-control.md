@@ -1,6 +1,145 @@
 # Mission Control
 
-Mission Control is AOF's real-time dashboard for monitoring and communicating with your agent squad. It provides a live view of agent status, metrics, and a built-in Squad Chat for team communication.
+Mission Control is AOF's real-time dashboard for monitoring and communicating with your agent squad. It provides a live view of agent status, metrics, a Kanban board for task management, and a built-in Squad Chat for team communication.
+
+## Task Management (Kanban Board)
+
+The Kanban board lets you organize and track tasks across five lanes:
+
+| Lane | Description |
+|------|-------------|
+| **Backlog** | Tasks waiting to be picked up |
+| **Assigned** | Tasks assigned to an agent but not yet started |
+| **In Progress** | Tasks actively being worked on |
+| **Review** | Tasks under review |
+| **Done** | Completed tasks |
+
+### How It Works
+
+Tasks flow through lanes from left to right. You can drag and drop tasks between lanes in the UI. Each move is synchronized with the backend using optimistic concurrency control -- the UI updates immediately while the server processes the change in the background.
+
+### API Endpoints
+
+#### List All Tasks
+
+```bash
+curl http://localhost:8080/api/tasks
+```
+
+Returns a JSON array of all tasks. On first startup, 5 sample tasks are seeded across different lanes so the board shows content immediately.
+
+#### Create a Task
+
+```bash
+curl -X POST http://localhost:8080/api/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Deploy staging environment",
+    "description": "Set up staging cluster with latest images",
+    "lane": "backlog",
+    "assignedTo": "deployer",
+    "priority": "high",
+    "tags": ["deployment", "staging"]
+  }'
+```
+
+- `title` is required (non-empty string)
+- `lane` defaults to `"backlog"` if omitted; must be one of: backlog, assigned, in-progress, review, done
+- All other fields are optional
+- Returns the created task with a generated UUID and `version: 1`
+- HTTP status: `201 Created`
+
+#### Move a Task
+
+```bash
+curl -X POST http://localhost:8080/api/tasks/move \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "taskId": "task-001",
+    "newLane": "review",
+    "version": 1
+  }'
+```
+
+Response (200 OK):
+
+```json
+{
+  "task": {
+    "id": "task-001",
+    "title": "Monitor k8s cluster health",
+    "lane": "review",
+    "version": 2,
+    "status": "active",
+    "updatedAt": "2025-01-15T12:30:00Z"
+  },
+  "success": true
+}
+```
+
+### Optimistic Concurrency Control
+
+Every task has a `version` field that increments each time the task is modified. When you move a task, you must include the current version in your request.
+
+When a version conflict occurs (another client moved the task first), the server returns HTTP 409 with the current server-side task state:
+
+```json
+{
+  "task": { "...current server state..." },
+  "success": false,
+  "error": "Version conflict: task was modified by another client"
+}
+```
+
+The UI automatically rolls back the optimistic update and shows an error message.
+
+### Drag-and-Drop Flow
+
+When you drag a task to a different lane in the Kanban board:
+
+1. The UI immediately moves the card (optimistic update)
+2. A `POST /api/tasks/move` request is sent to the server
+3. On success: the optimistic state is committed with the new version
+4. On 409 conflict: the card snaps back to its original position
+5. On server error (5xx): the request is retried up to 3 times with exponential backoff
+
+### Multi-Client Sync (WebSocket)
+
+When a task is moved, the server broadcasts a `TASK_MOVED` event via WebSocket to all connected clients. Open two browser tabs to Mission Control -- drag a task in one tab, and it automatically moves in the other.
+
+### Status Transitions
+
+| Move | Status Change |
+|------|---------------|
+| Any lane to **Done** | Status becomes `completed` |
+| **Backlog** to any other lane | Status becomes `active` |
+| Other moves | Status unchanged |
+
+### Task Lifecycle Example
+
+```
+1. Create task      -> status: pending,   lane: backlog,     version: 1
+2. Move to assigned -> status: active,    lane: assigned,    version: 2
+3. Move to progress -> status: active,    lane: in-progress, version: 3
+4. Move to review   -> status: active,    lane: review,      version: 4
+5. Move to done     -> status: completed, lane: done,        version: 5
+```
+
+### Error Handling
+
+| HTTP Status | Meaning | When |
+|-------------|---------|------|
+| `200 OK` | Task moved successfully | Move request with valid version |
+| `201 Created` | Task created | Create request with valid title |
+| `400 Bad Request` | Invalid input | Empty title, invalid lane name |
+| `404 Not Found` | Task does not exist | Move request for unknown taskId |
+| `409 Conflict` | Version mismatch | Another client modified the task |
+
+### Persistence
+
+Tasks are stored in-memory on the server. They persist across page refreshes within the same daemon session but reset when the daemon restarts. Five sample tasks are seeded on each startup for demonstration.
+
+---
 
 ## Squad Chat
 
