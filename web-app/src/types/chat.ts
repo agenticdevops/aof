@@ -63,6 +63,8 @@ export interface ChatState {
   isLoading: boolean
   /** Error message (if any) */
   error: string | null
+  /** ID of agent currently typing (null if none) */
+  typingAgentId: string | null
 }
 
 /**

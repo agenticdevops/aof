@@ -12,6 +12,7 @@ const initialState: ChatState = {
   searchQuery: '',
   isLoading: false,
   error: null,
+  typingAgentId: null,
 }
 
 /**
@@ -100,6 +101,30 @@ export const chatSlice = createSlice({
       state.error = null
       state.isLoading = false
     },
+
+    /**
+     * Add a squad member (for WebSocket events)
+     */
+    addSquadMember: (state, action: PayloadAction<SquadMember>) => {
+      const exists = state.squadMembers.some(m => m.id === action.payload.id)
+      if (!exists) {
+        state.squadMembers.push(action.payload)
+      }
+    },
+
+    /**
+     * Remove a squad member by ID (for WebSocket events)
+     */
+    removeSquadMember: (state, action: PayloadAction<string>) => {
+      state.squadMembers = state.squadMembers.filter(m => m.id !== action.payload)
+    },
+
+    /**
+     * Set the typing agent ID (for typing indicator)
+     */
+    setTypingAgent: (state, action: PayloadAction<string | null>) => {
+      state.typingAgentId = action.payload
+    },
   },
 })
 
@@ -114,6 +139,9 @@ export const {
   updateMemberStatus,
   markAllAsRead,
   clearChat,
+  addSquadMember,
+  removeSquadMember,
+  setTypingAgent,
 } = chatSlice.actions
 
 // Export reducer
