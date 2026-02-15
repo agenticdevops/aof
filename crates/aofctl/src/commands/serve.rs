@@ -1468,6 +1468,13 @@ pub async fn execute(
         .route("/config/version", get(get_config_version))
         .with_state(config_state.clone());
 
+    // Build tools discovery router
+    use crate::api::tools::{discover_tools, ToolsState};
+    let tools_state = ToolsState::new();
+    let tools_router = Router::new()
+        .route("/config/tools/discover", get(discover_tools))
+        .with_state(tools_state);
+
     // Build metrics router
     let metrics_state = MetricsState::new(Arc::clone(&metrics_cache));
     let metrics_router = Router::new()
@@ -1675,7 +1682,11 @@ pub async fn execute(
     };
 
     // Merge all API sub-routers
-    let api_router = config_router.merge(metrics_router).merge(conversation_router).merge(coordination_router);
+    let api_router = config_router
+        .merge(tools_router)
+        .merge(metrics_router)
+        .merge(conversation_router)
+        .merge(coordination_router);
 
     // Import handlers from aof-triggers server (inline to avoid duplicating logic)
     use axum::extract::State;
