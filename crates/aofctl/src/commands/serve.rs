@@ -110,6 +110,8 @@ use tokio::sync::RwLock;
 use crate::api::config::{ConfigState, get_agents_config, get_tools_config, get_config_version};
 // Metrics API
 use crate::api::metrics::{MetricsState, get_agent_metrics};
+// Tasks API
+use crate::api::tasks::{TasksState, get_tasks, create_task, move_task};
 
 // Additional imports for inline handlers
 use bytes::Bytes;
@@ -1481,6 +1483,13 @@ pub async fn execute(
         .route("/agents/:id/metrics", get(get_agent_metrics))
         .with_state(metrics_state);
 
+    // Build tasks router (Kanban board task management)
+    let tasks_state = TasksState::new(Some(event_bus.clone()));
+    let tasks_router = Router::new()
+        .route("/tasks", get(get_tasks).post(create_task))
+        .route("/tasks/move", post(move_task))
+        .with_state(tasks_state);
+
     // Build conversation router (conversational agent creation)
     // Initialize Orchestrator with specialists
     use aof_conversational::{Orchestrator, ConversationSessionStore, WorkspacePersistence};
@@ -1692,6 +1701,7 @@ pub async fn execute(
     let api_router = config_router
         .merge(tools_router)
         .merge(metrics_router)
+        .merge(tasks_router)
         .merge(conversation_router)
         .merge(coordination_router)
         .merge(chat_router);
@@ -1883,6 +1893,7 @@ pub async fn execute(
     println!("  Config API: http://{}/api/config/version", bind_addr);
     println!("  Metrics API: http://{}/api/agents/{{id}}/metrics", bind_addr);
     println!("  Coordination API: http://{}/api/coordination/health", bind_addr);
+    println!("  Tasks API: http://{}/api/tasks", bind_addr);
     println!("  Chat API: http://{}/api/chat/messages", bind_addr);
     if static_dir.is_some() {
         println!("  Web UI: http://{}/", bind_addr);
