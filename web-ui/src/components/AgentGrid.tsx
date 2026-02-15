@@ -200,16 +200,22 @@ export function AgentGrid({ onAgentClick, className = '' }: AgentGridProps): Rea
       // Get most recent event
       const latest = events[events.length - 1];
 
-      switch (latest.activity.type) {
-        case 'agent_started':
-        case 'thinking':
-        case 'tool_executing':
+      // Map Rust ActivityType (PascalCase) to agent status
+      // Wire format: activity.activity_type = "Started" | "Thinking" | etc.
+      switch (latest.activity.activity_type) {
+        case 'Started':
+        case 'Thinking':
+        case 'Analyzing':
+        case 'ToolExecuting':
+        case 'LlmCall':
+        case 'LlmWaiting':
           return 'working';
-        case 'error':
-        case 'tool_failed':
+        case 'Error':
+        case 'ToolFailed':
           return 'error';
-        case 'agent_completed':
-        case 'tool_completed':
+        case 'Completed':
+        case 'ToolComplete':
+        case 'LlmResponse':
           return 'idle';
         default:
           return 'idle';

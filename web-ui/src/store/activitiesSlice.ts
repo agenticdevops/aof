@@ -36,20 +36,21 @@ const initialState: ActivitiesState = {
  * Convert CoordinationEvent to ActivityItem.
  */
 function coordinationEventToActivity(event: CoordinationEvent): ActivityItem {
-  const meta = getActivityMeta(event.activity.type);
+  const activityType = event.activity.activity_type;
+  const meta = getActivityMeta(activityType);
   const description = generateActivityDescription(
-    event.activity.type,
+    activityType,
     event.agent_id, // Use agent_id as name for now (future: lookup from config)
-    event.activity.details
+    event.activity.details ?? {}
   );
 
   return {
     eventId: event.event_id,
     agentId: event.agent_id,
     agentName: event.agent_id, // TODO: Lookup agent name from config
-    activityType: event.activity.type,
+    activityType,
     description,
-    details: event.activity.details,
+    details: event.activity.details ?? {},
     timestamp: event.timestamp,
     icon: meta.icon,
     color: meta.color,

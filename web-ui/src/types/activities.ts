@@ -38,20 +38,29 @@ export interface ActivityItem {
 
 /**
  * Map activity type to icon and color.
+ * Uses PascalCase values matching Rust ActivityType enum serialization.
  */
-export function getActivityMeta(type: ActivityType): { icon: string; color: string } {
-  const metaMap: Record<ActivityType, { icon: string; color: string }> = {
-    agent_started: { icon: '▶️', color: 'blue' },
-    agent_completed: { icon: '✅', color: 'green' },
-    tool_called: { icon: '🔧', color: 'blue' },
-    tool_executing: { icon: '⚙️', color: 'orange' },
-    tool_completed: { icon: '✔️', color: 'green' },
-    tool_failed: { icon: '❌', color: 'red' },
-    thinking: { icon: '💭', color: 'purple' },
-    error: { icon: '⚠️', color: 'red' },
-    info: { icon: 'ℹ️', color: 'blue' },
-    warning: { icon: '⚠️', color: 'yellow' },
-    debug: { icon: '🐛', color: 'gray' },
+export function getActivityMeta(type: ActivityType | string): { icon: string; color: string } {
+  const metaMap: Record<string, { icon: string; color: string }> = {
+    Started: { icon: '▶️', color: 'blue' },
+    Completed: { icon: '✅', color: 'green' },
+    Cancelled: { icon: '🚫', color: 'gray' },
+    Thinking: { icon: '💭', color: 'purple' },
+    Analyzing: { icon: '🔍', color: 'blue' },
+    LlmCall: { icon: '📤', color: 'blue' },
+    LlmWaiting: { icon: '⏳', color: 'blue' },
+    LlmResponse: { icon: '📥', color: 'green' },
+    ToolDiscovery: { icon: '🔧', color: 'blue' },
+    ToolExecuting: { icon: '⚙️', color: 'orange' },
+    ToolComplete: { icon: '✔️', color: 'green' },
+    ToolFailed: { icon: '❌', color: 'red' },
+    Memory: { icon: '💾', color: 'blue' },
+    McpCall: { icon: '🔗', color: 'blue' },
+    Validation: { icon: '✓', color: 'green' },
+    Warning: { icon: '⚠️', color: 'yellow' },
+    Error: { icon: '⚠️', color: 'red' },
+    Info: { icon: 'ℹ️', color: 'blue' },
+    Debug: { icon: '🐛', color: 'gray' },
   };
 
   return metaMap[type] || { icon: '•', color: 'gray' };
@@ -59,35 +68,46 @@ export function getActivityMeta(type: ActivityType): { icon: string; color: stri
 
 /**
  * Generate human-readable description from activity type and details.
+ * Uses PascalCase values matching Rust ActivityType enum serialization.
  */
 export function generateActivityDescription(
-  type: ActivityType,
+  type: ActivityType | string,
   agentName: string,
   details: Record<string, unknown>
 ): string {
   switch (type) {
-    case 'agent_started':
+    case 'Started':
       return `${agentName} started execution`;
-    case 'agent_completed':
+    case 'Completed':
       return `${agentName} completed successfully`;
-    case 'tool_called':
-      return `${agentName} called tool: ${details.tool_name || 'unknown'}`;
-    case 'tool_executing':
-      return `${agentName} executing tool: ${details.tool_name || 'unknown'}`;
-    case 'tool_completed':
-      return `${agentName} completed tool: ${details.tool_name || 'unknown'}`;
-    case 'tool_failed':
-      return `${agentName} tool failed: ${details.tool_name || 'unknown'}`;
-    case 'thinking':
+    case 'Cancelled':
+      return `${agentName} execution cancelled`;
+    case 'Thinking':
       return `${agentName} is thinking...`;
-    case 'error':
+    case 'Analyzing':
+      return `${agentName} is analyzing...`;
+    case 'LlmCall':
+      return `${agentName} calling LLM`;
+    case 'LlmWaiting':
+      return `${agentName} waiting for LLM response`;
+    case 'LlmResponse':
+      return `${agentName} received LLM response`;
+    case 'ToolDiscovery':
+      return `${agentName} discovering tools`;
+    case 'ToolExecuting':
+      return `${agentName} executing tool: ${details?.tool_name || 'unknown'}`;
+    case 'ToolComplete':
+      return `${agentName} completed tool: ${details?.tool_name || 'unknown'}`;
+    case 'ToolFailed':
+      return `${agentName} tool failed: ${details?.tool_name || 'unknown'}`;
+    case 'Error':
       return `${agentName} encountered an error`;
-    case 'info':
-      return `${agentName}: ${details.message || 'info'}`;
-    case 'warning':
-      return `${agentName}: ${details.message || 'warning'}`;
-    case 'debug':
-      return `${agentName}: ${details.message || 'debug'}`;
+    case 'Info':
+      return `${agentName}: ${details?.message || (details?.metadata as Record<string, string>)?.type || 'info'}`;
+    case 'Warning':
+      return `${agentName}: ${details?.message || 'warning'}`;
+    case 'Debug':
+      return `${agentName}: ${details?.message || 'debug'}`;
     default:
       return `${agentName} performed action: ${type}`;
   }

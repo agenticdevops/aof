@@ -52,31 +52,63 @@ export interface AgentIntroductionData {
 
 /**
  * Activity details within a coordination event.
- * Matches Phase 1 ActivityEvent structure.
+ * Matches Rust ActivityEvent serde serialization.
+ *
+ * Wire format from Rust: { "activity_type": "Started", "message": "...", ... }
  */
 export interface AgentActivity {
-  /** Type of activity */
-  type: ActivityType;
+  /** Type of activity (Rust: ActivityType enum, PascalCase) */
+  activity_type: ActivityType;
 
-  /** Additional context and details */
-  details: Record<string, unknown>;
+  /** Human-readable message */
+  message: string;
+
+  /** ISO 8601 timestamp */
+  timestamp: string;
+
+  /** Optional additional details */
+  details?: ActivityDetails | null;
 }
 
 /**
- * Activity type matching Phase 1 ActivityType.
+ * Activity details matching Rust ActivityDetails struct.
+ */
+export interface ActivityDetails {
+  tool_name?: string | null;
+  tool_args?: string | null;
+  duration_ms?: number | null;
+  tokens?: number | null;
+  error?: string | null;
+  metadata?: Record<string, string> | null;
+  coordination_activity?: Record<string, unknown> | null;
+}
+
+/**
+ * Activity type matching Rust ActivityType enum (PascalCase serialization).
+ *
+ * These values must match the Rust enum variant names exactly as they appear
+ * in JSON serialization (serde default = PascalCase).
  */
 export type ActivityType =
-  | "agent_started"
-  | "agent_completed"
-  | "tool_called"
-  | "tool_executing"
-  | "tool_completed"
-  | "tool_failed"
-  | "thinking"
-  | "error"
-  | "info"
-  | "warning"
-  | "debug";
+  | "Thinking"
+  | "Analyzing"
+  | "LlmCall"
+  | "LlmWaiting"
+  | "LlmResponse"
+  | "ToolDiscovery"
+  | "ToolExecuting"
+  | "ToolComplete"
+  | "ToolFailed"
+  | "Memory"
+  | "McpCall"
+  | "Validation"
+  | "Warning"
+  | "Error"
+  | "Info"
+  | "Debug"
+  | "Started"
+  | "Completed"
+  | "Cancelled";
 
 /**
  * Agent status for UI display.

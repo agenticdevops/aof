@@ -7,6 +7,7 @@ pub mod config;
 pub mod metrics;
 pub mod conversation;
 pub mod tasks;
+pub mod test_events;
 pub mod tools;
 
 pub use chat::{ChatState, get_messages, send_message};
@@ -17,4 +18,5 @@ pub use conversation::{
     conversation_confirm, conversation_cancel,
 };
 pub use tasks::{TasksState, get_tasks, create_task, move_task};
+pub use test_events::{TestEventsState, emit_test_event};
 pub use tools::{discover_tools, ToolsState};

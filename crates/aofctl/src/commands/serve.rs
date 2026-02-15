@@ -112,6 +112,8 @@ use crate::api::config::{ConfigState, get_agents_config, get_tools_config, get_c
 use crate::api::metrics::{MetricsState, get_agent_metrics};
 // Tasks API
 use crate::api::tasks::{TasksState, get_tasks, create_task, move_task};
+// Test events API (for real-time pipeline verification)
+use crate::api::test_events::{TestEventsState, emit_test_event};
 
 // Additional imports for inline handlers
 use bytes::Bytes;
@@ -1697,6 +1699,12 @@ pub async fn execute(
         .route("/chat/messages", get(get_messages).post(send_message))
         .with_state(chat_state);
 
+    // Build test events router (for real-time pipeline verification)
+    let test_events_state = TestEventsState::new(Some(event_bus.clone()));
+    let test_events_router = Router::new()
+        .route("/test/emit-event", post(emit_test_event))
+        .with_state(test_events_state);
+
     // Merge all API sub-routers
     let api_router = config_router
         .merge(tools_router)
@@ -1704,7 +1712,8 @@ pub async fn execute(
         .merge(tasks_router)
         .merge(conversation_router)
         .merge(coordination_router)
-        .merge(chat_router);
+        .merge(chat_router)
+        .merge(test_events_router);
 
     // Import handlers from aof-triggers server (inline to avoid duplicating logic)
     use axum::extract::State;
@@ -1895,6 +1904,7 @@ pub async fn execute(
     println!("  Coordination API: http://{}/api/coordination/health", bind_addr);
     println!("  Tasks API: http://{}/api/tasks", bind_addr);
     println!("  Chat API: http://{}/api/chat/messages", bind_addr);
+    println!("  Test API: http://{}/api/test/emit-event", bind_addr);
     if static_dir.is_some() {
         println!("  Web UI: http://{}/", bind_addr);
     }

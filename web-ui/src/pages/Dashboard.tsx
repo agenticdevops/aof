@@ -134,7 +134,7 @@ export function Dashboard(): React.ReactElement {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <p className="text-sm font-medium text-gray-900 dark:text-white">
-                            {event.activity.type}
+                            {event.activity.activity_type}
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                             Agent: {event.agent_id}
