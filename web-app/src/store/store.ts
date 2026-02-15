@@ -5,6 +5,7 @@ import appReducer from './slices/appSlice'
 import onboardingReducer from './slices/onboardingSlice'
 import configReducer from './slices/configSlice'
 import auditReducer from './slices/auditSlice'
+import dashboardReducer from './slices/dashboardSlice'
 
 const persistConfig = {
   key: 'aof-root',
@@ -21,6 +22,7 @@ export const store = configureStore({
     onboarding: onboardingReducer,
     config: configReducer,
     audit: auditReducer,
+    dashboard: dashboardReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

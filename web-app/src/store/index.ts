@@ -64,3 +64,16 @@ export {
   approveOperation,
   rejectOperation,
 } from './slices/auditSlice'
+
+// Dashboard Slice exports
+export {
+  setAgents as setDashboardAgents,
+  setSelectedAgent as setDashboardSelectedAgent,
+  setLoading as setDashboardLoading,
+  setError as setDashboardError,
+  updateAgent as updateDashboardAgent,
+  clearDashboard,
+  useDashboard,
+  useDashboardAgents,
+  useSelectedAgent,
+} from './slices/dashboardSlice'
