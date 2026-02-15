@@ -93,6 +93,8 @@ When a chat message is sent, the Chat API builds a CoordinationEvent with:
 
 The frontend SquadChat component identifies chat events by checking `metadata.type === "chat_message"`.
 
+**Verified:** Chat events deliver all required fields: messageId, senderId, senderName, content, timestamp. The `session_id` is "chat" to distinguish from agent execution events. Multi-tab chat sync works via WebSocket delivery of these events.
+
 ## Test Event Endpoint
 
 **Endpoint:** `POST /api/test/emit-event`
