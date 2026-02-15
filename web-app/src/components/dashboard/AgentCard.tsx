@@ -1,7 +1,12 @@
 import React from 'react'
 import Card from '@/components/common/Card'
 import Badge from '@/components/common/Badge'
+import AgentAvatar from '@/components/common/AgentAvatar'
 import type { DashboardAgent } from '@/types/dashboard'
+import { mapAgentTypeToPersonaType } from '@/types/personas'
+import { getPersonaBorderColor, getPersonaFont } from '@/utils/personaStyles'
+import { useAppSelector } from '@/store/hooks'
+import { selectIsDarkMode } from '@/store/slices/appSlice'
 
 interface AgentCardProps {
   agent: DashboardAgent
@@ -13,6 +18,15 @@ interface AgentCardProps {
  * Shows live status, metrics, and persona styling
  */
 export const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick }) => {
+  const isDarkMode = useAppSelector(selectIsDarkMode)
+
+  // Map agent role to persona type (using role as proxy for type)
+  const personaType = mapAgentTypeToPersonaType(agent.role)
+
+  // Get persona styling
+  const borderColor = getPersonaBorderColor(personaType, isDarkMode)
+  const fontClass = getPersonaFont(personaType)
+
   // Determine status badge variant and animation
   const getStatusConfig = () => {
     switch (agent.status) {
@@ -46,22 +60,27 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, onClick }) => {
       onClick={() => onClick(agent)}
       className={`status-transition scale-transition shadow-transition ${
         agent.status === 'active' ? 'animate-heartbeat' : ''
-      } hover:scale-105 hover:shadow-lg cursor-pointer`}
+      } hover:scale-105 hover:shadow-lg cursor-pointer border-l-4 transition-all duration-200`}
+      style={{ borderLeftColor: borderColor }}
     >
       <div className="space-y-4 p-6">
         {/* Header: Avatar + Name + Role + Status */}
         <div className="flex items-start gap-3">
-          {/* Avatar */}
-          <div
-            className="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-2xl"
-            style={{ backgroundColor: agent.personaColor }}
-          >
-            {agent.personaIcon}
-          </div>
+          {/* Avatar with persona styling */}
+          <AgentAvatar
+            personaType={personaType}
+            icon={agent.personaIcon}
+            size="md"
+            isOnline={agent.status === 'active'}
+            isDarkMode={isDarkMode}
+          />
 
           {/* Name + Role */}
           <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate">
+            <h3
+              className={`text-lg ${fontClass} truncate`}
+              style={{ color: borderColor }}
+            >
               {agent.name}
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
