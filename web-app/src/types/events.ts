@@ -101,6 +101,31 @@ export interface TypingIndicatorEvent {
 }
 
 /**
+ * Announcement event - broadcast message to all squad members
+ */
+export interface AnnouncementEvent {
+  type: 'announcement'
+  sender: {
+    id: string
+    name: string
+    personaColor?: string
+    personaIcon?: string
+  }
+  content: string
+  timestamp: string
+}
+
+/**
+ * Message status event - delivery/read receipt update
+ */
+export interface MessageStatusEvent {
+  type: 'message_status'
+  messageId: string
+  status: 'received' | 'read'
+  timestamp: string
+}
+
+/**
  * Discriminated union of all WebSocket event types
  *
  * TypeScript will narrow the type based on the 'type' field,
@@ -114,6 +139,8 @@ export type WSEvent =
   | AgentJoinEvent
   | AgentLeaveEvent
   | TypingIndicatorEvent
+  | AnnouncementEvent
+  | MessageStatusEvent
 
 /**
  * WebSocket message wrapper with deduplication ID
@@ -175,4 +202,18 @@ export function isAgentLeaveEvent(event: WSEvent): event is AgentLeaveEvent {
  */
 export function isTypingIndicatorEvent(event: WSEvent): event is TypingIndicatorEvent {
   return event.type === 'typing_indicator'
+}
+
+/**
+ * Type guard to check if an event is an AnnouncementEvent
+ */
+export function isAnnouncementEvent(event: WSEvent): event is AnnouncementEvent {
+  return event.type === 'announcement'
+}
+
+/**
+ * Type guard to check if an event is a MessageStatusEvent
+ */
+export function isMessageStatusEvent(event: WSEvent): event is MessageStatusEvent {
+  return event.type === 'message_status'
 }

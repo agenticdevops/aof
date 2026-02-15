@@ -16,14 +16,20 @@ import {
   isAgentJoinEvent,
   isAgentLeaveEvent,
   isTypingIndicatorEvent,
+  isAnnouncementEvent,
+  isMessageStatusEvent,
 } from '@/types/events'
-import { updateAgent } from '@/store/slices/dashboardSlice'
+import {
+  updateAgent,
+  updateAgentLastActive,
+} from '@/store/slices/dashboardSlice'
 import {
   addMessage,
   addSquadMember as addChatSquadMember,
   removeSquadMember as removeChatSquadMember,
   setTypingAgent,
   updateMemberStatus,
+  setMessageStatus,
 } from '@/store/slices/chatSlice'
 import type { Message, SquadMember } from '@/types/chat'
 
@@ -123,7 +129,9 @@ export const websocketMiddleware: Middleware<{}, RootState> = (store) => (next) 
     return next(action)
   }
 
-  // Handle different event types
+  // Handle different event types with performance monitoring
+  const startTime = performance.now()
+
   try {
     if (isHeartbeatEvent(event)) {
       handleHeartbeatEvent(event, store.dispatch)
@@ -139,8 +147,18 @@ export const websocketMiddleware: Middleware<{}, RootState> = (store) => (next) 
       handleAgentLeaveEvent(event, store.dispatch)
     } else if (isTypingIndicatorEvent(event)) {
       handleTypingIndicatorEvent(event, store.dispatch)
+    } else if (isAnnouncementEvent(event)) {
+      handleAnnouncementEvent(event, store.dispatch)
+    } else if (isMessageStatusEvent(event)) {
+      handleMessageStatusEvent(event, store.dispatch)
     } else {
       console.warn('Unknown WebSocket event type:', event)
+    }
+
+    // Performance monitoring
+    const latency = performance.now() - startTime
+    if (latency > 100) {
+      console.warn(`Slow event handling (${latency.toFixed(2)}ms):`, event.type)
     }
   } catch (err) {
     console.error('Error handling WebSocket event:', err)
@@ -153,7 +171,7 @@ export const websocketMiddleware: Middleware<{}, RootState> = (store) => (next) 
  * Handle HeartbeatEvent - update agent metrics in dashboard
  */
 function handleHeartbeatEvent(event: typeof isHeartbeatEvent extends (e: any) => e is infer T ? T : never, dispatch: any) {
-  const { agent } = event
+  const { agent, timestamp } = event
 
   // Update agent in dashboard
   dispatch(
@@ -165,7 +183,15 @@ function handleHeartbeatEvent(event: typeof isHeartbeatEvent extends (e: any) =>
       metrics: agent.metrics,
       personaColor: '#3b82f6', // Default blue
       personaIcon: '🤖',
-      updatedAt: new Date(event.timestamp),
+      updatedAt: new Date(timestamp),
+    })
+  )
+
+  // Update last active timestamp
+  dispatch(
+    updateAgentLastActive({
+      id: agent.id,
+      timestamp: new Date(timestamp),
     })
   )
 
@@ -313,4 +339,48 @@ function handleTypingIndicatorEvent(event: typeof isTypingIndicatorEvent extends
   setTimeout(() => {
     dispatch(setTypingAgent(null))
   }, 5000)
+}
+
+/**
+ * Handle AnnouncementEvent - broadcast message to all
+ */
+function handleAnnouncementEvent(event: typeof isAnnouncementEvent extends (e: any) => e is infer T ? T : never, dispatch: any) {
+  const { sender, content, timestamp } = event
+
+  const message: Message = {
+    id: `announcement-${sender.id}-${timestamp}`,
+    content,
+    type: 'announcement',
+    sender: {
+      id: sender.id,
+      name: sender.name,
+      role: 'System',
+      isOnline: true,
+      isAgent: false,
+      personaColor: sender.personaColor || '#f59e0b',
+      personaIcon: sender.personaIcon || '📢',
+    },
+    timestamp: new Date(timestamp),
+    personaColor: sender.personaColor || '#f59e0b',
+    personaIcon: sender.personaIcon || '📢',
+    isRead: false,
+    status: 'received',
+  }
+
+  dispatch(addMessage(message))
+  showToast(`Announcement from ${sender.name}`, 'info')
+}
+
+/**
+ * Handle MessageStatusEvent - update message delivery/read status
+ */
+function handleMessageStatusEvent(event: typeof isMessageStatusEvent extends (e: any) => e is infer T ? T : never, dispatch: any) {
+  const { messageId, status } = event
+
+  dispatch(
+    setMessageStatus({
+      messageId,
+      status,
+    })
+  )
 }
