@@ -1,0 +1,84 @@
+/**
+ * Mission Control Dashboard Animations
+ * GPU-accelerated animations using only transform and opacity
+ */
+
+/* Heartbeat animation for active agents */
+@keyframes heartbeat {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Status pulse animations - green for active */
+@keyframes statusPulseGreen {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2);
+  }
+}
+
+/* Status pulse animations - yellow for idle */
+@keyframes statusPulseYellow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.2);
+  }
+}
+
+/* Status pulse animations - red for error */
+@keyframes statusPulseRed {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2);
+  }
+}
+
+/* Utility classes for easy use with Tailwind */
+.animate-heartbeat {
+  animation: heartbeat 2s ease-in-out infinite;
+}
+
+.animate-status-pulse-green {
+  animation: statusPulseGreen 1.5s ease-in-out infinite;
+}
+
+.animate-status-pulse-yellow {
+  animation: statusPulseYellow 1.5s ease-in-out infinite;
+}
+
+.animate-status-pulse-red {
+  animation: statusPulseRed 1.5s ease-in-out infinite;
+}
+
+/* Status transition - smooth color changes */
+.status-transition {
+  transition: background-color 0.3s ease-in-out,
+              color 0.3s ease-in-out,
+              border-color 0.3s ease-in-out;
+}
+
+/* Smooth scale transitions for hover effects */
+.scale-transition {
+  transition: transform 0.2s ease-in-out;
+}
+
+/* Smooth shadow transitions */
+.shadow-transition {
+  transition: box-shadow 0.3s ease-in-out;
+}
