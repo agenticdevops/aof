@@ -40,9 +40,13 @@ describe('Complete Onboarding Flow', () => {
     )
 
     const state = store.getState()
+    // New wizard state structure
     expect(state.onboarding.currentStep).toBe(1)
-    expect(state.onboarding.project).toBeDefined()
-    expect(state.onboarding.agent).toBeDefined()
-    expect(state.onboarding.platforms).toBeDefined()
+    expect(state.onboarding.selectedChannels).toBeDefined()
+    expect(Array.isArray(state.onboarding.selectedChannels)).toBe(true)
+    expect(state.onboarding.selectedModel).toBe('anthropic')
+    expect(state.onboarding.selectedTools).toBeDefined()
+    expect(Array.isArray(state.onboarding.selectedTools)).toBe(true)
+    expect(state.onboarding.loading).toBe(false)
   })
 })

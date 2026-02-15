@@ -47,11 +47,13 @@
 
 pub mod registry;
 pub mod tools;
+pub mod discovery;
 
 #[cfg(feature = "benchmark")]
 pub mod benchmark;
 
 pub use registry::{ToolRegistry, BuiltinToolExecutor};
+pub use discovery::{ToolDiscovery, DiscoveredTool, ToolCategory, ToolDiscoveryError};
 
 // ============================================================================
 // Unified CLI Tools (Recommended)

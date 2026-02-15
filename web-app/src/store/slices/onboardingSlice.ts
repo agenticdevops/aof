@@ -62,7 +62,7 @@ export const submitWizard = createAsyncThunk(
 
       return {
         ...xopsConfig,
-        agentId: response.id,
+        agentId: response.data.id,
         createdAt: new Date().toISOString(),
       }
     } catch (error: any) {

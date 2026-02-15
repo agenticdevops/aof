@@ -128,7 +128,7 @@ export const StepTools: React.FC = () => {
             path: '/usr/local/bin/helm',
             available: true,
             enabled: true,
-            category: 'kubernetes',
+            category: 'kubectl',
             description: 'Kubernetes package manager',
           },
           // Shell/Bash
@@ -206,7 +206,7 @@ export const StepTools: React.FC = () => {
   )
 
   if (isDiscovering) {
-    return <LoadingSpinner message="Scanning for available tools..." />
+    return <LoadingSpinner text="Scanning for available tools..." />
   }
 
   return (

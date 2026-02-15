@@ -101,7 +101,7 @@ export const StepAIModel: React.FC = () => {
         </p>
       </div>
 
-      {loading && <LoadingSpinner message="Configuring model..." />}
+      {loading && <LoadingSpinner text="Configuring model..." />}
 
       {/* Provider Selection */}
       <div className="space-y-3">
@@ -156,7 +156,7 @@ export const StepAIModel: React.FC = () => {
             <Select
               label="Model"
               value={selectedModelVariant}
-              onChange={(value) => setSelectedModelVariant(value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedModelVariant(e.target.value)}
               options={modelOptions}
               fullWidth
             />
@@ -166,7 +166,7 @@ export const StepAIModel: React.FC = () => {
           {selectedModel !== 'ollama' && (
             <div className="mb-4">
               <Input
-                label={selectedModel === 'ollama' ? 'Base URL' : 'API Key'}
+                label="API Key"
                 type="password"
                 placeholder={
                   selectedModel === 'anthropic'

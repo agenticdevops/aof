@@ -86,7 +86,7 @@ export const StepReview: React.FC<StepReviewProps> = ({ onBack }) => {
         </Alert>
       )}
 
-      {loading && <LoadingSpinner message="Creating your Xops agent..." />}
+      {loading && <LoadingSpinner text="Creating your Xops agent..." />}
 
       {!loading && (
         <>

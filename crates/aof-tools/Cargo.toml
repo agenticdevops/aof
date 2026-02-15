@@ -32,7 +32,7 @@ all = ["file", "shell", "kubectl", "docker", "git", "terraform", "http", "observ
 
 [dependencies]
 aof-core = { workspace = true }
-tokio = { workspace = true, features = ["process", "fs", "io-util"] }
+tokio = { workspace = true, features = ["process", "fs", "io-util", "time"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
@@ -45,6 +45,8 @@ which = { workspace = true }
 base64 = { version = "0.22", optional = true }
 urlencoding = { version = "2.1", optional = true }
 rand = { version = "0.8", optional = true }
+regex = "1"
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }

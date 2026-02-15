@@ -43,7 +43,7 @@ export const StepChannels: React.FC = () => {
 
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
   const [testingChannel, setTestingChannel] = useState<Channel | null>(null)
-  const [testResults, setTestResults] = useState<Record<Channel, boolean>>({})
+  const [testResults, setTestResults] = useState<Partial<Record<Channel, boolean>>>({})
 
   const handleChannelToggle = (channel: Channel) => {
     const updated = selectedChannels.includes(channel)
@@ -223,7 +223,6 @@ export const StepChannels: React.FC = () => {
   const renderChannelConfig = (channel: 'slack' | 'telegram' | 'discord') => {
     if (!selectedChannels.includes(channel)) return null
 
-    const config = channelConfigs[channel]
     const errorPrefix = `${channel}.`
 
     return (
@@ -233,7 +232,7 @@ export const StepChannels: React.FC = () => {
             <Input
               label="Slack Bot Token"
               placeholder="xoxb-... or xoxp-..."
-              value={config.botToken}
+              value={channelConfigs.slack.botToken}
               onChange={(e) => handleConfigChange('slack', 'botToken', e.target.value)}
               error={validationErrors[`${errorPrefix}botToken`]}
               helperText="Get your bot token from Slack API dashboard"
@@ -243,7 +242,7 @@ export const StepChannels: React.FC = () => {
               <Input
                 label="Channel Name"
                 placeholder="e.g., #ops or #xops-alerts"
-                value={config.channelName}
+                value={channelConfigs.slack.channelName}
                 onChange={(e) => handleConfigChange('slack', 'channelName', e.target.value)}
                 error={validationErrors[`${errorPrefix}channelName`]}
                 fullWidth
@@ -257,7 +256,7 @@ export const StepChannels: React.FC = () => {
             <Input
               label="Telegram Bot Token"
               placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-              value={config.botToken}
+              value={channelConfigs.telegram.botToken}
               onChange={(e) => handleConfigChange('telegram', 'botToken', e.target.value)}
               error={validationErrors[`${errorPrefix}botToken`]}
               helperText="Get from BotFather on Telegram"
@@ -267,7 +266,7 @@ export const StepChannels: React.FC = () => {
               <Input
                 label="Chat ID or Channel"
                 placeholder="-123456789 or @my_channel"
-                value={config.chatId}
+                value={channelConfigs.telegram.chatId}
                 onChange={(e) => handleConfigChange('telegram', 'chatId', e.target.value)}
                 error={validationErrors[`${errorPrefix}chatId`]}
                 fullWidth
@@ -281,7 +280,7 @@ export const StepChannels: React.FC = () => {
             <Input
               label="Server ID (Guild ID)"
               placeholder="123456789012345678"
-              value={config.serverId}
+              value={channelConfigs.discord.serverId}
               onChange={(e) => handleConfigChange('discord', 'serverId', e.target.value)}
               error={validationErrors[`${errorPrefix}serverId`]}
               fullWidth
@@ -290,7 +289,7 @@ export const StepChannels: React.FC = () => {
               <Input
                 label="Bot Token"
                 placeholder="MzX...NzE"
-                value={config.botToken}
+                value={channelConfigs.discord.botToken}
                 onChange={(e) => handleConfigChange('discord', 'botToken', e.target.value)}
                 error={validationErrors[`${errorPrefix}botToken`]}
                 fullWidth
@@ -300,7 +299,7 @@ export const StepChannels: React.FC = () => {
               <Input
                 label="Channel ID"
                 placeholder="123456789012345678"
-                value={config.channelId}
+                value={channelConfigs.discord.channelId}
                 onChange={(e) => handleConfigChange('discord', 'channelId', e.target.value)}
                 error={validationErrors[`${errorPrefix}channelId`]}
                 fullWidth
@@ -336,7 +335,7 @@ export const StepChannels: React.FC = () => {
         </p>
       </div>
 
-      {loading && <LoadingSpinner message="Checking connectivity..." />}
+      {loading && <LoadingSpinner text="Checking connectivity..." />}
 
       <div className="space-y-4">
         {/* Slack */}

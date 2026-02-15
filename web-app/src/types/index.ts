@@ -3,7 +3,7 @@ export interface Agent {
   id: string
   name: string
   model: string
-  type: 'analyst' | 'coordinator' | 'specialist'
+  type: 'analyst' | 'coordinator' | 'specialist' | 'orchestrator'
   instructions: string
   capabilities: string[]
   createdAt?: string

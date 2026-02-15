@@ -10,24 +10,7 @@ export {
   setDaemonUrl,
 } from './slices/appSlice'
 
-// Onboarding Slice exports (Old interface - keeping for backward compatibility)
-export {
-  setStep,
-  updateProject,
-  updateAgent as updateOnboardingAgent,
-  addWizardPlatform,
-  removeWizardPlatform,
-  updatePlatforms,
-  setLoading as setOnboardingLoading,
-  setError as setOnboardingError,
-  markStepCompleted,
-  reset as resetOnboarding,
-  type OnboardingProject,
-  type OnboardingAgent,
-  type OnboardingPlatform,
-} from './slices/onboardingSlice'
-
-// New Onboarding Wizard Thunks
+// Onboarding Slice exports (New 3-step wizard)
 export {
   setCurrentStep,
   updateChannels,
