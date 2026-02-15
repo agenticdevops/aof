@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useAppDispatch, useAppSelector, updateAgent } from '@/store'
+import { useAppDispatch, useAppSelector, updateOnboardingAgent } from '@/store'
 import Input from '@/components/common/Input'
 import TextArea from '@/components/common/TextArea'
 import Select from '@/components/common/Select'
@@ -26,7 +26,7 @@ export const StepAgentSetup: React.FC<StepAgentSetupProps> = ({ onNext, onBack }
   const [errors, setErrors] = useState<{ name?: string; instructions?: string }>({})
 
   const handleChange = (field: string, value: any) => {
-    dispatch(updateAgent({ [field]: value } as any))
+    dispatch(updateOnboardingAgent({ [field]: value } as any))
     if (errors[field as keyof typeof errors]) {
       setErrors({ ...errors, [field]: undefined })
     }
@@ -37,7 +37,7 @@ export const StepAgentSetup: React.FC<StepAgentSetupProps> = ({ onNext, onBack }
     const updated = currentCapabilities.includes(capability)
       ? currentCapabilities.filter((c) => c !== capability)
       : [...currentCapabilities, capability]
-    dispatch(updateAgent({ capabilities: updated }))
+    dispatch(updateOnboardingAgent({ capabilities: updated }))
   }
 
   const handleNext = () => {

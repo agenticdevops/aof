@@ -2,7 +2,7 @@ import React from 'react'
 import { Search } from 'lucide-react'
 import Input from './Input'
 
-interface SearchBarProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> {
+interface SearchBarProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange'> {
   fullWidth?: boolean
   value?: string
   onChange?: (value: string) => void
@@ -20,7 +20,7 @@ export const SearchBar = React.forwardRef<HTMLInputElement, SearchBarProps>(
         fullWidth={fullWidth}
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
-        {...props}
+        {...(props as any)}
       />
     )
   }
