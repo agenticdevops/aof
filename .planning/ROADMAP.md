@@ -195,10 +195,10 @@ Phase 4 (Humanized Polish & Integration)
 
 ### Plans: 4 plans
 
-- [ ] 03-01-PLAN.md — Fleet Control dashboard layout and squad overview
-- [ ] 03-02-PLAN.md — Kanban board and task management
-- [ ] 03-03-PLAN.md — Workflow builder (visual DAG)
-- [ ] 03-04-PLAN.md — Performance analytics and reporting
+- [ ] 03-01-PLAN.md — Fleet Control page, squad overview, agent grouping (FLCT-01, FLCT-04)
+- [ ] 03-02-PLAN.md — Kanban board with dnd-kit drag-and-drop and task detail modal (FLCT-02, FLCT-05)
+- [ ] 03-03-PLAN.md — Workflow builder with React Flow visual DAG editor (FLCT-03)
+- [ ] 03-04-PLAN.md — Performance analytics with Recharts charts and metrics (FLCT-06)
 
 ---
 
