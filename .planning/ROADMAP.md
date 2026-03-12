@@ -49,7 +49,7 @@ Plans:
 - [ ] 13-03-PLAN.md — Agent types and directory loader in agentix-core (TDD: AgentManifest, AgentDefinition, DirectoryLoader)
 - [ ] 13-04-PLAN.md — ReAct loop engine in agentix-runtime (TDD: plan-act-observe-reflect, tool dispatch)
 - [ ] 13-05-PLAN.md — Streaming output (TDD: SSE encoder, text formatter, JSON formatter)
-- [ ] 13-06-PLAN.md — Gateway HTTP service (axum, agent directory loading, run management)
+- [x] 13-06-PLAN.md — Gateway HTTP service (axum, agent directory loading, run management)
 - [ ] 13-07-PLAN.md — CLI commands: gateway, agents, runs, logs, stop, apply, validate, version
 - [ ] 13-08-PLAN.md — CLI commands: init (agent directory scaffolder), onboard (workspace setup)
 - [ ] 13-09-PLAN.md — LLM provider wiring, full workspace compilation, documentation update
