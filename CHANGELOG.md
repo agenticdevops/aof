@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.1] - 2026-03-13
+
+### BREAKING CHANGES
+- All crates renamed from `aof-*` to `agentix-*`
+- CLI binary renamed from `aofctl` to `agentix`
+- Agent format changed to GitAgent-compatible directories (agent.yaml + SOUL.md)
+- Workspace config changed to `agentix.yaml` with `kind: Workspace`
+
+### Added
+- GitAgent-compatible agent directory format (agent.yaml + SOUL.md + RULES.md + skills/)
+- ReAct (Reason + Act) loop engine: plan -> act -> observe -> reflect
+- Streaming output: SSE for HTTP clients, text with [Plan]/[Act]/[Observe]/[Reflect] labels, NDJSON
+- Gateway service with REST API for agent lifecycle management
+- `agentix onboard` — interactive workspace setup
+- `agentix init` — scaffold new agent directories
+- `agentix gateway start/status` — gateway lifecycle
+- `agentix agents` — list agents
+- `agentix runs` — run history
+- `agentix logs` — execution output
+- `agentix stop` — cancel running agents
+- `agentix apply -f` — register agents via gateway API
+- `agentix validate` — validates both directories and flat YAML files
+- Workspace defaults (max_iterations, timeout, mode) applied to all agents
+- DirectoryLoader: assembles system prompt from SOUL.md + RULES.md + skills/
+- Multi-agent via agents/ subdirectory (hierarchical)
+- LLM provider factory: resolves "provider/model" strings to concrete provider instances
+- AgentManager: DashMap-based concurrent agent state management
+- ShellToolExecutor: executes shell/cli tools with template variable substitution
+
+### Removed
+- All v1.0 code: React web-app, agent personas, fleet coordination, workflows, agentflows
+- 12 v1.0 crates deleted
+- Monolithic agent YAML as primary format (now backward-compat only)
+
+---
+
 ## [Unreleased]
 
 ### Enhanced
