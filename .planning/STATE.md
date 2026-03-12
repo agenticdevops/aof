@@ -20,7 +20,7 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 Phase: 13 of 22 (Rebrand + Core Runtime + CLI Foundation)
 Plan: 4 of 9 in current phase
 Status: Executing
-Last activity: 2026-03-12 — Completed 13-02: Agent directory structure spec, minimal agent.yaml rewrite, workspace-config.md update
+Last activity: 2026-03-12 — Completed 13-03: AgentManifest, AgentDefinition, DirectoryLoader, WorkspaceConfig with 21 TDD tests
 
 Progress: [████░░░░░░] 44%
 
@@ -50,6 +50,10 @@ Progress: [████░░░░░░] 44%
 - Runtime behavior fields (max_iterations, timeout, mode) moved to workspace defaults only (13-02)
 - agents_dir scanning: directory with agent.yaml = GitAgent format; flat *.yaml = backward compat (13-02)
 - Sub-agents (agents/ subdirectory) are lazy-loaded on first delegation from parent (13-02)
+- AgentManifest (thin manifest) and AgentDefinition (assembled runtime type) are distinct — manifest is from agent.yaml only (13-03)
+- DirectoryToolType named to avoid collision with existing ToolType in tool.rs (13-03)
+- WorkspaceConfig uses Kubernetes-style apiVersion/kind/metadata/spec structure per spec (13-03)
+- Legacy AgentConfig and new AgentManifest/AgentDefinition coexist in agent.rs — agentix-runtime imports depend on AgentConfig (13-03)
 
 ### Open Questions
 
@@ -64,7 +68,7 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 13-02-PLAN.md — Agent directory spec, minimal agent.yaml rewrite, workspace-config.md update
+Stopped at: Completed 13-03-PLAN.md — AgentManifest, AgentDefinition, DirectoryLoader, WorkspaceConfig with 21 TDD tests
 Resume file: None
 
 ---
