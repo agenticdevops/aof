@@ -9,8 +9,10 @@ pub mod health;
 pub mod metrics;
 pub mod shutdown;
 pub mod streaming;
+pub mod tools;
 
 pub use executor::{ReActConfig, ReActEngine, ReActEvent, ReActStep, RunResult, ToolAction};
+pub use tools::CliToolExecutor;
 pub use streaming::{EventReceiver, EventSender, JsonFormatter, SseEncoder, TextFormatter};
 pub use health::{
     check_readiness, DependencyState, DependencyStatus, HealthResponse, ReadinessResponse,

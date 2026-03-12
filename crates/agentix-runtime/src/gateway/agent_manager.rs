@@ -17,13 +17,14 @@ use tokio::sync::{broadcast, oneshot};
 use uuid::Uuid;
 
 use agentix_core::{
-    AgentDefinition, AgentixError, AgentLoader, DirectoryToolType, FlatYamlLoader, ModelConfig,
-    ModelProvider, ToolEntry, WorkspaceConfig,
+    AgentDefinition, AgentixError, AgentLoader, FlatYamlLoader, ModelConfig,
+    ModelProvider, WorkspaceConfig,
 };
 use agentix_llm::ProviderFactory;
 
 use crate::executor::react_loop::{ReActConfig, ReActEngine, ReActEvent, RunResult, ToolExecutor};
 use crate::streaming::EventReceiver;
+use crate::tools::CliToolExecutor;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -118,97 +119,6 @@ pub struct RunSummary {
     pub input: String,
     pub output: Option<String>,
     pub iterations: u32,
-}
-
-// ---------------------------------------------------------------------------
-// ShellToolExecutor — executes shell/cli tools
-// ---------------------------------------------------------------------------
-
-/// Executes `shell` and `cli` tools using `std::process::Command`.
-///
-/// Template variable substitution: replaces `{{var_name}}` in command/args
-/// with values from the JSON input map.
-///
-/// MCP tools are stubbed with an error message until Phase 14.
-pub struct ShellToolExecutor;
-
-#[async_trait::async_trait]
-impl ToolExecutor for ShellToolExecutor {
-    async fn execute(
-        &self,
-        tool: &ToolEntry,
-        input: serde_json::Value,
-    ) -> Result<String, String> {
-        match tool.tool_type {
-            DirectoryToolType::Mcp => {
-                Err("MCP tool execution not yet implemented. Phase 14 will add MCP support.".to_string())
-            }
-            DirectoryToolType::Shell | DirectoryToolType::Cli => {
-                let command = tool
-                    .command
-                    .as_deref()
-                    .ok_or_else(|| format!("Tool '{}' has no command defined", tool.name))?;
-
-                // Substitute {{var}} templates from the JSON input map
-                let substituted_cmd = substitute_templates(command, &input);
-
-                // Build args with template substitution
-                let substituted_args: Vec<String> = tool
-                    .args
-                    .iter()
-                    .map(|a| substitute_templates(a, &input))
-                    .collect();
-
-                // Execute via shell to support pipes, env vars, etc.
-                let mut cmd = std::process::Command::new("sh");
-                cmd.arg("-c");
-
-                let full_cmd = if substituted_args.is_empty() {
-                    substituted_cmd
-                } else {
-                    format!("{} {}", substituted_cmd, substituted_args.join(" "))
-                };
-
-                cmd.arg(&full_cmd);
-
-                match cmd.output() {
-                    Ok(output) => {
-                        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-                        if output.status.success() {
-                            Ok(if stdout.is_empty() { stderr } else { stdout })
-                        } else {
-                            Err(format!(
-                                "Command exited with code {}: {}",
-                                output.status.code().unwrap_or(-1),
-                                if stderr.is_empty() { stdout } else { stderr }
-                            ))
-                        }
-                    }
-                    Err(e) => Err(format!("Failed to execute command '{}': {}", full_cmd, e)),
-                }
-            }
-        }
-    }
-}
-
-/// Replace `{{var_name}}` patterns in a string with values from a JSON object.
-fn substitute_templates(template: &str, input: &serde_json::Value) -> String {
-    let mut result = template.to_string();
-
-    if let Some(obj) = input.as_object() {
-        for (key, value) in obj {
-            let placeholder = format!("{{{{{}}}}}", key);
-            let replacement = match value {
-                serde_json::Value::String(s) => s.clone(),
-                v => v.to_string(),
-            };
-            result = result.replace(&placeholder, &replacement);
-        }
-    }
-
-    result
 }
 
 // ---------------------------------------------------------------------------
@@ -475,7 +385,7 @@ impl AgentManager {
         let model = create_provider_from_definition(definition, &self.workspace_config)?;
 
         let config = ReActConfig::from_definition(definition);
-        let tool_executor = Arc::new(ShellToolExecutor) as Arc<dyn ToolExecutor>;
+        let tool_executor = Arc::new(CliToolExecutor::new()) as Arc<dyn ToolExecutor>;
 
         let engine = ReActEngine::new(model, tool_executor, config)
             .with_event_stream(event_tx.clone());
