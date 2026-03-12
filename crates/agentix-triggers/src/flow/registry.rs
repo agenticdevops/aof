@@ -11,7 +11,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use agentix_core::{AgentFlow, AofError, AofResult};
+use agentix_core::{AofError, AofResult};
+use crate::flow::AgentFlow;
 use dashmap::DashMap;
 use tracing::{info, warn};
 

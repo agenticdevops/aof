@@ -16,7 +16,131 @@ use crate::flow::{FlowRegistry, FlowRouter, FlowMatch};
 use crate::platforms::{TriggerMessage, TriggerPlatform, TriggerUser};
 use crate::response::{Action, ActionStyle, TriggerResponse, TriggerResponseBuilder};
 use agentix_core::{AgentContext, AofError, AofResult};
-use agentix_runtime::{Runtime, RuntimeOrchestrator, Task, TaskStatus, AgentFlowExecutor};
+
+// ---------------------------------------------------------------------------
+// v1.0 Runtime stubs — full re-implementation deferred to Phase 15
+// ---------------------------------------------------------------------------
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct Runtime;
+#[allow(dead_code)]
+impl Runtime {
+    pub fn new() -> Self { Self }
+    pub fn list_agents(&self) -> Vec<String> { vec![] }
+    pub fn get_agent(&self, _name: &str) -> Option<RuntimeAgentHandle> { None }
+    pub fn has_agent(&self, _name: &str) -> bool { false }
+    pub async fn execute(&self, _agent: &str, _input: &str) -> AofResult<String> {
+        Err(AofError::Config("Runtime.execute() not implemented in Phase 13. Implement in Phase 15.".to_string()))
+    }
+    pub async fn load_agent_from_file(&self, _path: &str) -> AofResult<String> {
+        Err(AofError::Config("Runtime.load_agent_from_file() not implemented in Phase 13.".to_string()))
+    }
+}
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct RuntimeAgentHandle;
+#[allow(dead_code)]
+impl RuntimeAgentHandle {
+    pub fn config(&self) -> RuntimeAgentConfig { RuntimeAgentConfig { routing: None } }
+}
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct RuntimeAgentConfig { pub routing: Option<RoutingConfig> }
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct RoutingConfig { pub keywords: Vec<String>, pub priority: f32 }
+#[allow(dead_code)]
+pub struct RuntimeOrchestrator;
+#[allow(dead_code)]
+impl RuntimeOrchestrator {
+    pub fn new() -> Self { Self }
+    pub fn get_task(&self, _task_id: &str) -> Option<TaskHandle> { None }
+    pub async fn cancel_task(&self, _task_id: &str) -> AofResult<()> {
+        Err(AofError::Config("RuntimeOrchestrator.cancel_task() not implemented in Phase 13.".to_string()))
+    }
+    pub fn list_tasks(&self) -> Vec<String> { vec![] }
+    pub async fn stats(&self) -> OrchestratorStats { OrchestratorStats::default() }
+}
+#[allow(dead_code)]
+pub struct TaskHandle;
+#[allow(dead_code)]
+impl TaskHandle {
+    pub async fn task(&self) -> StubTask { StubTask { id: String::new(), name: String::new(), agent_name: String::new(), priority: 0, input: String::new(), metadata: std::collections::HashMap::new() } }
+    pub async fn status(&self) -> TaskStatus { TaskStatus::Cancelled }
+}
+#[allow(dead_code)]
+pub struct StubTask {
+    pub id: String,
+    pub name: String,
+    pub agent_name: String,
+    pub priority: i32,
+    pub input: String,
+    pub metadata: std::collections::HashMap<String, String>,
+}
+#[allow(dead_code)]
+#[derive(Debug)]
+pub enum TaskStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+#[allow(dead_code)]
+#[derive(Debug, Default)]
+pub struct OrchestratorStats {
+    pub total_tasks: usize,
+    pub running_tasks: usize,
+    pub completed_tasks: usize,
+    pub failed_tasks: usize,
+    // Legacy fields used by v1.0 code
+    pub pending: usize,
+    pub running: usize,
+    pub completed: usize,
+    pub failed: usize,
+    pub cancelled: usize,
+    pub max_concurrent: usize,
+    pub available_permits: usize,
+}
+#[allow(dead_code)]
+pub struct Task;
+#[allow(dead_code)]
+pub struct NodeResult {
+    pub output: Option<serde_json::Value>,
+}
+#[allow(dead_code)]
+pub struct FlowExecutionState {
+    pub node_results: std::collections::HashMap<String, NodeResult>,
+}
+#[allow(dead_code)]
+pub struct AgentFlowExecutor {
+    _flow: crate::flow::AgentFlow,
+    _agents_dir: Option<std::path::PathBuf>,
+}
+#[allow(dead_code)]
+impl AgentFlowExecutor {
+    pub fn new(flow: crate::flow::AgentFlow, _runtime: std::sync::Arc<tokio::sync::RwLock<Runtime>>) -> Self {
+        Self { _flow: flow, _agents_dir: None }
+    }
+    pub fn with_agents_dir(mut self, dir: &std::path::Path) -> Self {
+        self._agents_dir = Some(dir.to_path_buf()); self
+    }
+    pub async fn execute_flow(&self, _flow_name: &str, _input: &str) -> AofResult<String> {
+        Err(AofError::Config("AgentFlowExecutor not implemented in Phase 13.".to_string()))
+    }
+    pub async fn execute(&self, _trigger_data: serde_json::Value) -> AofResult<FlowExecutionState> {
+        Err(AofError::Config("AgentFlowExecutor.execute() not implemented in Phase 13.".to_string()))
+    }
+}
+#[allow(dead_code)]
+pub struct AgentExecutor;
+#[allow(dead_code)]
+impl AgentExecutor {
+    pub fn new(_config: agentix_core::AgentConfig, _model: Box<dyn agentix_core::Model>, _tool_executor: Option<()>, _memory: Option<std::sync::Arc<agentix_memory::SimpleMemory>>) -> Self { Self }
+    pub async fn execute(&self, _context: &mut AgentContext) -> AofResult<String> {
+        Err(AofError::Config("AgentExecutor not implemented in Phase 13.".to_string()))
+    }
+}
 
 /// Pending approval request for human-in-the-loop workflow
 #[derive(Debug, Clone)]
@@ -494,7 +618,7 @@ fn frame_task(input: &str, intent: &MessageIntent) -> String {
     }
 }
 
-fn route_message(input: &str, runtime: &agentix_runtime::Runtime) -> Option<RouteDecision> {
+fn route_message(input: &str, runtime: &Runtime) -> Option<RouteDecision> {
     let lower = input.to_lowercase();
     let words: Vec<&str> = lower.split_whitespace().collect();
     let intent = classify_intent(input);
@@ -1730,7 +1854,7 @@ impl TriggerHandler {
     ) -> AofResult<()> {
         use agentix_core::{AgentConfig, ModelConfig, ModelProvider};
         use agentix_llm::ProviderFactory;
-        use agentix_runtime::AgentExecutor;
+        // AgentExecutor stub (Phase 15 will implement this fully)
         use agentix_memory::{InMemoryBackend, SimpleMemory};
 
         // Clean up the message text (remove @mentions for Slack)

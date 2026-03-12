@@ -11,7 +11,22 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use agentix_coordination::EventBroadcaster;
+/// Stub EventBroadcaster — agentix-coordination crate deferred to Phase 15.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct EventBroadcaster {
+    tx: tokio::sync::broadcast::Sender<serde_json::Value>,
+}
+#[allow(dead_code)]
+impl EventBroadcaster {
+    pub fn new() -> Self {
+        let (tx, _) = tokio::sync::broadcast::channel(64);
+        Self { tx }
+    }
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<serde_json::Value> {
+        self.tx.subscribe()
+    }
+}
 use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -420,7 +435,7 @@ async fn websocket_handler(socket: WebSocket, event_bus: Option<Arc<EventBroadca
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agentix_runtime::RuntimeOrchestrator;
+    use crate::handler::RuntimeOrchestrator;
 
     #[test]
     fn test_server_builder() {

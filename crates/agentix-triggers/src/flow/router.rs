@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use agentix_core::AgentFlow;
+use crate::flow::AgentFlow;
 
 use super::registry::FlowRegistry;
 
@@ -100,7 +100,7 @@ impl FlowRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agentix_core::AgentFlow;
+    use crate::flow::AgentFlow;
 
     #[test]
     fn test_router_new() {
