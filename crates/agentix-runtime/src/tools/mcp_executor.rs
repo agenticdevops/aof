@@ -199,6 +199,13 @@ where
             DirectoryToolType::Mcp => {
                 self.mcp_executor.execute(tool, input).await
             }
+            DirectoryToolType::Wasm => {
+                // WASM tools handled by WasmToolExecutor (plan 14-04)
+                Err(format!(
+                    "WASM tool '{}' requires WasmToolExecutor — use the full CompositeToolExecutor with wasm support.",
+                    tool.name
+                ))
+            }
         }
     }
 }

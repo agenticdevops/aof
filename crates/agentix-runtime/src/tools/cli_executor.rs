@@ -64,6 +64,13 @@ impl ToolExecutor for CliToolExecutor {
                 ))
             }
 
+            DirectoryToolType::Wasm => {
+                Err(format!(
+                    "WASM tool '{}' cannot be executed by CliToolExecutor — use WasmToolExecutor.",
+                    tool.name
+                ))
+            }
+
             DirectoryToolType::Cli | DirectoryToolType::Shell => {
                 let command_str = tool
                     .command

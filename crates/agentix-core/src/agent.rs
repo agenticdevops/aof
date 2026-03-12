@@ -1719,6 +1719,8 @@ pub enum DirectoryToolType {
     Mcp,
     /// Execute an arbitrary shell command.
     Shell,
+    /// Execute a WASM module in the sandboxed executor.
+    Wasm,
 }
 
 /// A tool definition loaded from `tools/<name>.yaml`.

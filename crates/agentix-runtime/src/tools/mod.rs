@@ -7,6 +7,8 @@
 
 pub mod cli_executor;
 pub mod mcp_executor;
+pub mod wasm_executor;
 
 pub use cli_executor::CliToolExecutor;
 pub use mcp_executor::{CompositeToolExecutor, McpToolExecutor};
+pub use wasm_executor::{CapabilityManifest, WasmCapability, WasmSandbox, WasmToolExecutor, WasmViolation};

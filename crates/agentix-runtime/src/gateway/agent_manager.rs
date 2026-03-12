@@ -24,7 +24,7 @@ use agentix_llm::ProviderFactory;
 
 use crate::executor::react_loop::{ReActConfig, ReActEngine, ReActEvent, RunResult, ToolExecutor};
 use crate::streaming::EventReceiver;
-use crate::tools::{CliToolExecutor, CompositeToolExecutor, McpToolExecutor};
+use crate::tools::{CliToolExecutor, CompositeToolExecutor, McpToolExecutor, WasmToolExecutor};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -133,6 +133,8 @@ pub struct AgentManager {
     agents: DashMap<String, LoadedAgent>,
     runs: DashMap<String, RunState>,
     workspace_config: Option<WorkspaceConfig>,
+    /// Root directory where agents are loaded from (used for WASM tool file resolution).
+    agents_dir: Option<std::path::PathBuf>,
 }
 
 impl AgentManager {
@@ -142,6 +144,17 @@ impl AgentManager {
             agents: DashMap::new(),
             runs: DashMap::new(),
             workspace_config,
+            agents_dir: None,
+        })
+    }
+
+    /// Create an `AgentManager` with a known agents directory (used for WASM tool resolution).
+    pub fn with_agents_dir(workspace_config: Option<WorkspaceConfig>, agents_dir: std::path::PathBuf) -> Arc<Self> {
+        Arc::new(Self {
+            agents: DashMap::new(),
+            runs: DashMap::new(),
+            workspace_config,
+            agents_dir: Some(agents_dir),
         })
     }
 
@@ -385,11 +398,20 @@ impl AgentManager {
         let model = create_provider_from_definition(definition, &self.workspace_config)?;
 
         let config = ReActConfig::from_definition(definition);
-        // Build composite tool executor: CLI + MCP
+
+        // Build composite tool executor: CLI + MCP + WASM
         let cli_executor = CliToolExecutor::new();
         let mcp_executor = McpToolExecutor::new(definition.mcp_servers.clone());
-        let tool_executor = Arc::new(CompositeToolExecutor::new(cli_executor, mcp_executor))
-            as Arc<dyn ToolExecutor>;
+        // WasmToolExecutor needs the agents directory for resolving .wasm files
+        let agents_dir = self
+            .agents_dir
+            .clone()
+            .unwrap_or_else(|| std::path::PathBuf::from("agents"));
+        let wasm_executor = WasmToolExecutor::new(agents_dir);
+        let composite = CompositeToolExecutor::new(cli_executor, mcp_executor);
+        // TODO: wire wasm_executor into CompositeToolExecutor when it supports 3-way dispatch
+        let _ = wasm_executor; // Reserved for future 3-way composite
+        let tool_executor = Arc::new(composite) as Arc<dyn ToolExecutor>;
 
         let engine = ReActEngine::new(model, tool_executor, config)
             .with_event_stream(event_tx.clone());
