@@ -112,8 +112,8 @@
 
 ### CLI (`agentix`)
 
-- [ ] **CLI-01**: `agentix run <file>` runs an agent from a YAML definition (one-shot)
-- [ ] **CLI-02**: `agentix start <file>` starts an agent as a background daemon/scheduled process
+- [x] **CLI-01**: `agentix run <file>` runs an agent from a YAML definition (one-shot)
+- [x] **CLI-02**: `agentix start <file>` starts an agent as a background daemon/scheduled process
 - [x] **CLI-03**: `agentix agents` lists all running/registered agents with status
 - [x] **CLI-04**: `agentix runs` shows run history with timestamps, duration, cost, status
 - [x] **CLI-05**: `agentix logs <agent>` shows agent output logs
@@ -122,7 +122,7 @@
 - [ ] **CLI-08**: `agentix skills list` shows available skill packs
 - [ ] **CLI-09**: `agentix costs` shows cost summary across all agents
 - [x] **CLI-10**: `agentix serve` starts the server (API + gateway + scheduler)
-- [ ] **CLI-11**: `agentix init` scaffolds a new agent YAML with interactive prompts
+- [x] **CLI-11**: `agentix init` scaffolds a new agent YAML with interactive prompts
 - [x] **CLI-12**: `agentix validate <file>` validates agent YAML without running
 
 ### Command Center (Svelte)
@@ -278,8 +278,8 @@
 | GW-04 | Phase 21 | Pending |
 | GW-05 | Phase 21 | Pending |
 | GW-06 | Phase 21 | Pending |
-| CLI-01 | Phase 13 | Pending |
-| CLI-02 | Phase 13 | Pending |
+| CLI-01 | Phase 13 | Complete |
+| CLI-02 | Phase 13 | Complete |
 | CLI-03 | Phase 13 | Complete |
 | CLI-04 | Phase 13 | Complete |
 | CLI-05 | Phase 13 | Complete |
@@ -288,7 +288,7 @@
 | CLI-08 | Phase 14 | Pending |
 | CLI-09 | Phase 17 | Pending |
 | CLI-10 | Phase 13 | Complete |
-| CLI-11 | Phase 13 | Pending |
+| CLI-11 | Phase 13 | Complete |
 | CLI-12 | Phase 13 | Complete |
 | CMD-01 | Phase 22 | Pending |
 | CMD-02 | Phase 22 | Pending |
