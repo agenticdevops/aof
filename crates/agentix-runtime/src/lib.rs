@@ -1,0 +1,27 @@
+//! OpenAgentiX Runtime - Agent execution runtime
+//!
+//! This crate provides the core execution engine for OpenAgentiX agents, handling:
+//! - Agent lifecycle management
+//! - Tool call execution loops
+//! - Context management
+//! - Error handling and recovery
+
+pub mod executor;
+pub mod health;
+pub mod metrics;
+pub mod shutdown;
+
+pub use executor::{
+    AgentExecutor, AgentFlowEvent, AgentFlowExecutor, ApprovalDecision, HumanInput, Runtime,
+    StreamEvent, WorkflowEvent, WorkflowExecutor,
+};
+pub use health::{
+    check_readiness, DependencyState, DependencyStatus, HealthResponse, ReadinessResponse,
+};
+pub use metrics::AofMetrics;
+pub use shutdown::{GracefulShutdown, ShutdownHandler};
+
+// Re-export core types
+pub use agentix_core::{AgentixError, AgentixResult};
+// Backward-compatible aliases
+pub use agentix_core::{AofError, AofResult};

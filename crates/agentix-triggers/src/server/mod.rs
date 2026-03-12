@@ -1,0 +1,445 @@
+//! Webhook server using axum
+//!
+//! This module provides the HTTP server for receiving webhooks
+//! from various messaging platforms.
+
+use axum::{
+    extract::{Path, State, WebSocketUpgrade},
+    extract::ws::{Message, WebSocket},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use agentix_coordination::EventBroadcaster;
+use futures_util::{SinkExt, StreamExt};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tower_http::trace::TraceLayer;
+use tracing::{debug, error, info, warn};
+
+use crate::handler::TriggerHandler;
+
+/// Server configuration
+#[derive(Debug, Clone)]
+pub struct TriggerServerConfig {
+    /// Bind address
+    pub bind_addr: SocketAddr,
+
+    /// Enable CORS
+    pub enable_cors: bool,
+
+    /// Request timeout seconds
+    pub timeout_secs: u64,
+
+    /// Maximum request body size
+    pub max_body_size: usize,
+
+    /// Optional event bus for WebSocket event streaming
+    pub event_bus: Option<Arc<EventBroadcaster>>,
+}
+
+impl Default for TriggerServerConfig {
+    fn default() -> Self {
+        Self {
+            bind_addr: "0.0.0.0:8080".parse().unwrap(),
+            enable_cors: true,
+            timeout_secs: 30,
+            max_body_size: 10 * 1024 * 1024, // 10MB
+            event_bus: None,
+        }
+    }
+}
+
+/// Server state
+#[derive(Clone)]
+struct AppState {
+    handler: Arc<TriggerHandler>,
+    event_bus: Option<Arc<EventBroadcaster>>,
+}
+
+/// Webhook server
+pub struct TriggerServer {
+    config: TriggerServerConfig,
+    handler: Arc<TriggerHandler>,
+}
+
+impl TriggerServer {
+    /// Create a new trigger server
+    pub fn new(handler: Arc<TriggerHandler>) -> Self {
+        Self {
+            config: TriggerServerConfig::default(),
+            handler,
+        }
+    }
+
+    /// Create server with custom configuration
+    pub fn with_config(handler: Arc<TriggerHandler>, config: TriggerServerConfig) -> Self {
+        Self { config, handler }
+    }
+
+    /// Create a builder for fluent configuration
+    pub fn builder() -> TriggerServerBuilder {
+        TriggerServerBuilder::new()
+    }
+
+    /// Start the server
+    pub async fn serve(self) -> Result<(), ServerError> {
+        let state = AppState {
+            handler: self.handler,
+            event_bus: self.config.event_bus.clone(),
+        };
+
+        let mut app = Router::new()
+            .route("/", get(root_handler))
+            .route("/health", get(health_handler))
+            .route("/webhook/:platform", post(webhook_handler))
+            .route("/platforms", get(platforms_handler));
+
+        // Add WebSocket route if event bus is configured
+        if state.event_bus.is_some() {
+            app = app.route("/ws", get(handle_websocket_upgrade));
+        }
+
+        let app = app
+            .layer(TraceLayer::new_for_http())
+            .with_state(state);
+
+        info!("Starting webhook server on {}", self.config.bind_addr);
+
+        let listener = tokio::net::TcpListener::bind(&self.config.bind_addr)
+            .await
+            .map_err(|e| ServerError::BindError(e.to_string()))?;
+
+        axum::serve(listener, app)
+            .await
+            .map_err(|e| ServerError::ServerError(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+/// Server builder
+pub struct TriggerServerBuilder {
+    config: TriggerServerConfig,
+    handler: Option<Arc<TriggerHandler>>,
+}
+
+impl TriggerServerBuilder {
+    /// Create a new builder
+    pub fn new() -> Self {
+        Self {
+            config: TriggerServerConfig::default(),
+            handler: None,
+        }
+    }
+
+    /// Set the handler
+    pub fn handler(mut self, handler: Arc<TriggerHandler>) -> Self {
+        self.handler = Some(handler);
+        self
+    }
+
+    /// Set bind address
+    pub fn bind(mut self, addr: impl Into<SocketAddr>) -> Self {
+        self.config.bind_addr = addr.into();
+        self
+    }
+
+    /// Enable or disable CORS
+    pub fn cors(mut self, enable: bool) -> Self {
+        self.config.enable_cors = enable;
+        self
+    }
+
+    /// Set request timeout
+    pub fn timeout(mut self, secs: u64) -> Self {
+        self.config.timeout_secs = secs;
+        self
+    }
+
+    /// Build the server
+    pub fn build(self) -> Result<TriggerServer, ServerError> {
+        let handler = self
+            .handler
+            .ok_or_else(|| ServerError::ConfigError("Handler not set".to_string()))?;
+
+        Ok(TriggerServer {
+            config: self.config,
+            handler,
+        })
+    }
+}
+
+impl Default for TriggerServerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Server errors
+#[derive(Debug, thiserror::Error)]
+pub enum ServerError {
+    #[error("Bind error: {0}")]
+    BindError(String),
+
+    #[error("Server error: {0}")]
+    ServerError(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+}
+
+// ============================================================================
+// HTTP Handlers
+// ============================================================================
+
+/// Root handler
+async fn root_handler() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "service": "agentix-triggers",
+        "version": crate::VERSION,
+        "status": "running"
+    }))
+}
+
+/// Health check handler
+async fn health_handler() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "status": "healthy",
+        "timestamp": chrono::Utc::now().to_rfc3339()
+    }))
+}
+
+/// Webhook handler
+async fn webhook_handler(
+    State(state): State<AppState>,
+    Path(platform): Path<String>,
+    headers: axum::http::HeaderMap,
+    body: bytes::Bytes,
+) -> Result<Response, WebhookError> {
+    // Get content-type for logging and routing
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+
+    // Log incoming webhook with content-type
+    if content_type.contains("application/x-www-form-urlencoded") {
+        // Slack slash command - log the command
+        if let Ok(body_str) = std::str::from_utf8(&body) {
+            let params: std::collections::HashMap<String, String> =
+                url::form_urlencoded::parse(body_str.as_bytes())
+                    .into_owned()
+                    .collect();
+            let command = params.get("command").map(|s| s.as_str()).unwrap_or("unknown");
+            let text = params.get("text").map(|s| s.as_str()).unwrap_or("");
+            info!("Received slash command for platform: {} (command: {}, text: '{}')", platform, command, text);
+        }
+    } else if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body) {
+        let event_type = payload.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+        let inner_event_type = payload.get("event")
+            .and_then(|e| e.get("type"))
+            .and_then(|t| t.as_str())
+            .unwrap_or("none");
+        info!("Received webhook for platform: {} (type: {}, event: {})", platform, event_type, inner_event_type);
+    } else {
+        debug!("Received webhook for platform: {} (content-type: {})", platform, content_type);
+    }
+
+    // Extract headers (lowercase for consistent access)
+    let mut header_map = HashMap::new();
+    for (key, value) in headers.iter() {
+        if let Ok(value_str) = value.to_str() {
+            header_map.insert(key.as_str().to_lowercase(), value_str.to_string());
+        }
+    }
+
+    // Handle Slack URL verification challenge specially
+    if platform == "slack" {
+        if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&body) {
+            if payload.get("type").and_then(|t| t.as_str()) == Some("url_verification") {
+                if let Some(challenge) = payload.get("challenge").and_then(|c| c.as_str()) {
+                    debug!("Handling Slack URL verification challenge");
+                    // For URL verification, Slack expects just the challenge string back
+                    return Ok((
+                        StatusCode::OK,
+                        [("content-type", "text/plain")],
+                        challenge.to_string(),
+                    )
+                        .into_response());
+                }
+            }
+        }
+    }
+
+    // Get platform implementation
+    let platform_impl = state
+        .handler
+        .get_platform(&platform)
+        .ok_or_else(|| WebhookError::UnknownPlatform(platform.clone()))?;
+
+    // Parse message
+    let message = platform_impl
+        .parse_message(&body, &header_map)
+        .await
+        .map_err(|e| WebhookError::ParseError(e.to_string()))?;
+
+    // Check if this is a slash command (form-urlencoded content type)
+    let is_slash_command = content_type.contains("application/x-www-form-urlencoded");
+
+    // Handle message asynchronously (fire and forget)
+    let handler = Arc::clone(&state.handler);
+    let platform_name = platform.clone();
+    tokio::spawn(async move {
+        if let Err(e) = handler.handle_message(&platform_name, message).await {
+            error!("Failed to handle message: {}", e);
+        }
+    });
+
+    // Return immediate acknowledgment
+    // For Slack slash commands, return empty 200 (we'll respond via response_url or chat.postMessage)
+    // For events API, return JSON acknowledgment
+    if is_slash_command {
+        Ok((StatusCode::OK, "").into_response())
+    } else {
+        Ok(Json(serde_json::json!({
+            "status": "accepted"
+        }))
+        .into_response())
+    }
+}
+
+/// List registered platforms
+async fn platforms_handler(State(state): State<AppState>) -> impl IntoResponse {
+    // Note: This requires adding a method to TriggerHandler to list platforms
+    // For now, return a simple response
+    Json(serde_json::json!({
+        "platforms": []
+    }))
+}
+
+/// Webhook error type
+#[derive(Debug)]
+enum WebhookError {
+    UnknownPlatform(String),
+    ParseError(String),
+}
+
+impl IntoResponse for WebhookError {
+    fn into_response(self) -> Response {
+        let (status, message) = match &self {
+            WebhookError::UnknownPlatform(platform) => {
+                error!("Unknown platform in webhook: {}", platform);
+                (StatusCode::NOT_FOUND, format!("Unknown platform: {}", platform))
+            }
+            WebhookError::ParseError(msg) => {
+                error!("Parse error in webhook: {}", msg);
+                (StatusCode::BAD_REQUEST, format!("Parse error: {}", msg))
+            }
+        };
+
+        // For Slack slash commands, we need to return 200 even on errors
+        // otherwise Slack shows "dispatch_failed"
+        // We log the error but return 200 to acknowledge receipt
+        (
+            status,
+            Json(serde_json::json!({
+                "error": message
+            })),
+        )
+            .into_response()
+    }
+}
+
+// ============================================================================
+// WebSocket Handlers
+// ============================================================================
+
+/// WebSocket upgrade handler
+async fn handle_websocket_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let event_bus = state.event_bus.clone();
+    ws.on_upgrade(move |socket| websocket_handler(socket, event_bus))
+}
+
+/// WebSocket connection handler
+async fn websocket_handler(socket: WebSocket, event_bus: Option<Arc<EventBroadcaster>>) {
+    let Some(bus) = event_bus else {
+        return;
+    };
+
+    let (mut sender, mut receiver) = socket.split();
+    let mut event_rx = bus.subscribe();
+
+    // Spawn task to forward coordination events to WebSocket client
+    let send_task = tokio::spawn(async move {
+        loop {
+            match event_rx.recv().await {
+                Ok(event) => {
+                    match serde_json::to_string(&event) {
+                        Ok(json) => {
+                            if sender.send(Message::Text(json)).await.is_err() {
+                                info!("WebSocket client disconnected");
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to serialize event: {}", e);
+                        }
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    warn!("WebSocket client lagged, dropped {} events", n);
+                    // Continue — client will catch up
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break; // Channel closed, daemon shutting down
+                }
+            }
+        }
+    });
+
+    // Listen for client messages (close frames, pings)
+    while let Some(Ok(msg)) = receiver.next().await {
+        match msg {
+            Message::Close(_) => break,
+            Message::Ping(_) => {
+                // Pong is handled automatically by axum
+            }
+            _ => {} // Ignore other messages for now
+        }
+    }
+
+    send_task.abort(); // Clean up sender task on disconnect
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agentix_runtime::RuntimeOrchestrator;
+
+    #[test]
+    fn test_server_builder() {
+        let orchestrator = Arc::new(RuntimeOrchestrator::new());
+        let handler = Arc::new(TriggerHandler::new(orchestrator));
+
+        let result = TriggerServer::builder()
+            .handler(handler)
+            .bind("127.0.0.1:8080".parse::<SocketAddr>().unwrap())
+            .build();
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_default_config() {
+        let config = TriggerServerConfig::default();
+        assert_eq!(config.bind_addr.port(), 8080);
+        assert!(config.enable_cors);
+        assert_eq!(config.timeout_secs, 30);
+    }
+}

@@ -1,0 +1,1405 @@
+//! Runtime - Top-level runtime coordinator
+//!
+//! The Runtime loads agent configurations, creates models, tools, and memory,
+//! and executes agents with proper lifecycle management.
+
+use super::{AgentExecutor, agent_executor::StreamEvent};
+use agentix_core::{
+    AgentConfig, AgentContext, AofError, AofResult, McpServerConfig, McpTransport,
+    ModelConfig, ModelProvider, Tool, ToolDefinition, ToolExecutor, ToolInput, ToolSpec,
+};
+use agentix_llm::create_model;
+use agentix_mcp::McpClientBuilder;
+use agentix_memory::{FileBackend, InMemoryBackend, SimpleMemory};
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tracing::{debug, info, warn};
+
+/// Top-level runtime for agent execution
+///
+/// The Runtime coordinates all aspects of agent execution:
+/// - Loading agent configurations
+/// - Creating and managing models
+/// - Setting up tool executors
+/// - Managing memory backends
+/// - Executing agents with proper lifecycle management
+pub struct Runtime {
+    /// Loaded agents
+    agents: HashMap<String, Arc<AgentExecutor>>,
+}
+
+impl Runtime {
+    /// Create a new runtime instance
+    pub fn new() -> Self {
+        Self {
+            agents: HashMap::new(),
+        }
+    }
+
+    /// Load an agent from YAML configuration file
+    ///
+    /// Supports both flat and Kubernetes-style YAML formats:
+    /// - Flat: `name:, model:, system_prompt:, tools:, ...`
+    /// - K8s: `apiVersion:, kind: Agent, metadata:, spec:, ...`
+    ///
+    /// # Arguments
+    /// * `config_path` - Path to the YAML configuration file
+    ///
+    /// # Returns
+    /// The agent name for later execution
+    pub async fn load_agent_from_file(&mut self, config_path: &str) -> AofResult<String> {
+        info!("Loading agent from config file: {}", config_path);
+
+        // Read and parse YAML config
+        let config_content = tokio::fs::read_to_string(config_path).await.map_err(|e| {
+            AofError::config(format!("Failed to read config file {}: {}", config_path, e))
+        })?;
+
+        // AgentConfig has #[serde(from = "AgentConfigInput")] which handles both K8s and flat formats
+        let config: AgentConfig = serde_yaml::from_str(&config_content).map_err(|e| {
+            AofError::config(format!("Failed to parse YAML config: {}", e))
+        })?;
+
+        info!("Parsed agent config: name={}, model={}, system_prompt={:?}, tools={:?}",
+            config.name, config.model,
+            config.system_prompt.as_ref().map(|s| format!("{}...", s.chars().take(50).collect::<String>())),
+            config.tool_names());
+
+        self.load_agent_from_config(config).await
+    }
+
+    /// Load an agent from configuration struct
+    ///
+    /// # Arguments
+    /// * `config` - Agent configuration
+    ///
+    /// # Returns
+    /// The agent name for later execution
+    pub async fn load_agent_from_config(&mut self, config: AgentConfig) -> AofResult<String> {
+        let agent_name = config.name.clone();
+        info!("Loading agent: {}", agent_name);
+
+        // Create model from config
+        let model_config = self.create_model_config(&config)?;
+        let model = create_model(model_config).await?;
+        debug!("Model created for agent: {}", agent_name);
+
+        // Create tool executor
+        // Priority: type-based tools > mcp_servers > simple tools
+        info!("Creating tool executor for agent '{}': mcp_servers={}, tools={:?}, has_type_based={}",
+            agent_name, config.mcp_servers.len(), config.tool_names(), config.has_type_based_tools());
+
+        let tool_executor: Option<Arc<dyn ToolExecutor>> = if config.has_type_based_tools() {
+            // Handle type-based tools (Shell, MCP, HTTP)
+            info!("Processing type-based tools");
+
+            // Collect builtin tools from type-based Shell tools
+            let mut builtin_tool_names: Vec<String> = Vec::new();
+
+            // Add shell tool if type-based Shell is present
+            if !config.type_based_shell_tools().is_empty() {
+                info!("Found type-based Shell tool");
+                builtin_tool_names.push("shell".to_string());
+
+                // If allowed_commands are specified, add them as tools too
+                if let Some(shell_config) = config.shell_tool_config() {
+                    for cmd in &shell_config.allowed_commands {
+                        if !builtin_tool_names.contains(cmd) {
+                            builtin_tool_names.push(cmd.clone());
+                        }
+                    }
+                    info!("Shell allowed commands: {:?}", shell_config.allowed_commands);
+                }
+            }
+
+            // Add http tool if type-based HTTP is present
+            if !config.type_based_http_tools().is_empty() {
+                info!("Found type-based HTTP tool");
+                builtin_tool_names.push("http".to_string());
+            }
+
+            // Convert type-based MCP tools to MCP server configs
+            let type_based_mcp_servers = config.type_based_mcp_to_server_configs();
+            let has_type_based_mcp = !type_based_mcp_servers.is_empty();
+
+            if has_type_based_mcp {
+                info!("Found {} type-based MCP tools, converting to MCP servers", type_based_mcp_servers.len());
+                // Combine with any explicit mcp_servers
+                let mut all_mcp_servers = config.mcp_servers.clone();
+                all_mcp_servers.extend(type_based_mcp_servers);
+
+                // Try to create MCP executor, but fall back to builtin tools if MCP fails
+                let mcp_executor = self.create_mcp_executor_from_config(&all_mcp_servers).await?;
+
+                if let Some(mcp_exec) = mcp_executor {
+                    if !builtin_tool_names.is_empty() {
+                        // Create combined executor with both builtin and MCP tools
+                        info!("Creating combined executor: builtin={:?}, mcp available", builtin_tool_names);
+                        let builtin_exec = self.create_system_executor(&builtin_tool_names)?;
+                        Some(Arc::new(CombinedToolExecutor {
+                            primary: builtin_exec,
+                            secondary: Some(mcp_exec),
+                        }))
+                    } else {
+                        Some(mcp_exec)
+                    }
+                } else if !builtin_tool_names.is_empty() {
+                    // MCP failed, but we have builtin tools - use those
+                    info!("MCP initialization failed, using builtin tools only: {:?}", builtin_tool_names);
+                    Some(self.create_system_executor(&builtin_tool_names)?)
+                } else {
+                    // No MCP and no builtin tools
+                    warn!("No tools available: MCP initialization failed and no builtin tools configured");
+                    None
+                }
+            } else if !builtin_tool_names.is_empty() {
+                info!("Creating system executor for type-based tools: {:?}", builtin_tool_names);
+                Some(self.create_system_executor(&builtin_tool_names)?)
+            } else {
+                None
+            }
+        } else if !config.mcp_servers.is_empty() {
+            // Use the new flexible MCP configuration
+            info!("Using MCP servers for tools");
+            match self.create_mcp_executor_from_config(&config.mcp_servers).await? {
+                Some(executor) => Some(executor),
+                None => {
+                    warn!("MCP servers configured but none could be initialized");
+                    None
+                }
+            }
+        } else if !config.tools.is_empty() {
+            // Separate built-in tools from MCP tools
+            let builtin_tools: Vec<&str> = config.tools.iter()
+                .filter(|t| t.is_builtin())
+                .map(|t| t.name())
+                .collect();
+            let mcp_tools: Vec<&str> = config.tools.iter()
+                .filter(|t| t.is_mcp())
+                .map(|t| t.name())
+                .collect();
+            info!("Tool separation: builtin={:?}, mcp={:?}", builtin_tools, mcp_tools);
+
+            // Known system/builtin tools
+            // Unified CLI tools (recommended - simple 'command' argument approach)
+            // Legacy per-operation tools (backward compatibility)
+            let system_tools = [
+                // Core tools
+                "shell", "bash", "sh",
+                // File tools
+                "read_file", "write_file", "list_directory", "search_files",
+                // Unified CLI tools (RECOMMENDED)
+                "kubectl", "git", "docker", "terraform", "aws", "helm",
+                // Legacy kubectl tools
+                "kubectl_get", "kubectl_apply", "kubectl_delete", "kubectl_logs",
+                "kubectl_exec", "kubectl_describe",
+                // Legacy docker tools
+                "docker_ps", "docker_stats", "docker_logs", "docker_build", "docker_run",
+                "docker_exec", "docker_images",
+                // Legacy git tools
+                "git_status", "git_diff", "git_log", "git_commit", "git_branch",
+                "git_checkout", "git_pull", "git_push",
+                // Legacy terraform tools
+                "terraform_init", "terraform_plan", "terraform_apply",
+                "terraform_destroy", "terraform_output",
+                // Observability tools
+                "prometheus_query", "loki_query", "elasticsearch_query",
+                "victoriametrics_query",
+                // HTTP tool
+                "http", "http_request",
+            ];
+
+            let has_system_tools = builtin_tools.iter().any(|t| system_tools.contains(t));
+            let has_mcp_tools = !mcp_tools.is_empty();
+            info!("Tool detection: has_system_tools={}, has_mcp_tools={}", has_system_tools, has_mcp_tools);
+
+            if has_system_tools && !has_mcp_tools {
+                info!("Creating system tool executor for builtin tools: {:?}", builtin_tools);
+                let tool_names: Vec<String> = builtin_tools.iter().map(|s| s.to_string()).collect();
+                Some(self.create_system_executor(&tool_names)?)
+            } else if has_mcp_tools {
+                let tool_names: Vec<String> = config.tool_names().iter().map(|s| s.to_string()).collect();
+                Some(self.create_tool_executor(&tool_names).await?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Create memory backend (using async version to support all backends)
+        let memory = self.create_memory_async(&config).await?;
+        debug!("Memory backend created for agent: {}", agent_name);
+
+        // Create agent executor
+        let executor = AgentExecutor::new(config, model, tool_executor, Some(memory));
+
+        self.agents.insert(agent_name.clone(), Arc::new(executor));
+        info!("Agent loaded successfully: {}", agent_name);
+
+        Ok(agent_name)
+    }
+
+    /// Execute an agent with the given input
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the loaded agent
+    /// * `input` - User input/query
+    ///
+    /// # Returns
+    /// The agent's final response
+    pub async fn execute(&self, agent_name: &str, input: &str) -> AofResult<String> {
+        let executor = self
+            .agents
+            .get(agent_name)
+            .ok_or_else(|| AofError::agent(format!("Agent not found: {}", agent_name)))?;
+
+        let mut context = AgentContext::new(input);
+        executor.execute(&mut context).await
+    }
+
+    /// Execute an agent with a pre-built context
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the loaded agent
+    /// * `context` - Pre-configured agent context
+    ///
+    /// # Returns
+    /// The agent's final response
+    pub async fn execute_with_context(
+        &self,
+        agent_name: &str,
+        context: &mut AgentContext,
+    ) -> AofResult<String> {
+        let executor = self
+            .agents
+            .get(agent_name)
+            .ok_or_else(|| AofError::agent(format!("Agent not found: {}", agent_name)))?;
+
+        executor.execute(context).await
+    }
+
+    /// Execute an agent and return both the response and token usage
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the loaded agent
+    /// * `input` - User input/query
+    ///
+    /// # Returns
+    /// Tuple of (response string, input_tokens, output_tokens)
+    pub async fn execute_with_usage(
+        &self,
+        agent_name: &str,
+        input: &str,
+    ) -> AofResult<(String, usize, usize)> {
+        let executor = self
+            .agents
+            .get(agent_name)
+            .ok_or_else(|| AofError::agent(format!("Agent not found: {}", agent_name)))?;
+
+        let mut context = AgentContext::new(input);
+        let response = executor.execute(&mut context).await?;
+
+        Ok((
+            response,
+            context.metadata.input_tokens,
+            context.metadata.output_tokens,
+        ))
+    }
+
+    /// Execute an agent with streaming support for real-time updates
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the loaded agent
+    /// * `input` - User input/query
+    /// * `stream_tx` - Channel sender for streaming events
+    ///
+    /// # Returns
+    /// The agent's final response
+    ///
+    /// # Example
+    /// ```no_run
+    /// use tokio::sync::mpsc;
+    /// # use agentix_runtime::Runtime;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut runtime = Runtime::new();
+    /// runtime.load_agent_from_file("config.yaml").await?;
+    ///
+    /// let (tx, mut rx) = mpsc::channel(100);
+    ///
+    /// // Spawn task to handle stream events
+    /// tokio::spawn(async move {
+    ///     while let Some(event) = rx.recv().await {
+    ///         println!("Event: {:?}", event);
+    ///     }
+    /// });
+    ///
+    /// let result = runtime.execute_streaming("my-agent", "Hello", tx).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn execute_streaming(
+        &self,
+        agent_name: &str,
+        input: &str,
+        stream_tx: mpsc::Sender<StreamEvent>,
+    ) -> AofResult<String> {
+        let executor = self
+            .agents
+            .get(agent_name)
+            .ok_or_else(|| AofError::agent(format!("Agent not found: {}", agent_name)))?;
+
+        let mut context = AgentContext::new(input);
+        executor.execute_streaming(&mut context, stream_tx).await
+    }
+
+    /// Execute an agent with streaming and a pre-built context
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the loaded agent
+    /// * `context` - Pre-configured agent context
+    /// * `stream_tx` - Channel sender for streaming events
+    ///
+    /// # Returns
+    /// The agent's final response
+    pub async fn execute_streaming_with_context(
+        &self,
+        agent_name: &str,
+        context: &mut AgentContext,
+        stream_tx: mpsc::Sender<StreamEvent>,
+    ) -> AofResult<String> {
+        let executor = self
+            .agents
+            .get(agent_name)
+            .ok_or_else(|| AofError::agent(format!("Agent not found: {}", agent_name)))?;
+
+        executor.execute_streaming(context, stream_tx).await
+    }
+
+    /// Execute an agent with streaming and cancellation support
+    ///
+    /// # Arguments
+    /// * `agent_name` - Name of the loaded agent
+    /// * `input` - User input/query
+    /// * `stream_tx` - Channel sender for streaming events
+    /// * `cancel_rx` - Channel receiver for cancellation signal
+    ///
+    /// # Returns
+    /// The agent's final response or cancellation error
+    ///
+    /// # Example
+    /// ```no_run
+    /// use tokio::sync::{mpsc, oneshot};
+    /// # use agentix_runtime::Runtime;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut runtime = Runtime::new();
+    /// runtime.load_agent_from_file("config.yaml").await?;
+    ///
+    /// let (stream_tx, mut stream_rx) = mpsc::channel(100);
+    /// let (cancel_tx, cancel_rx) = oneshot::channel();
+    ///
+    /// // Spawn task to handle cancellation
+    /// tokio::spawn(async move {
+    ///     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    ///     let _ = cancel_tx.send(());
+    /// });
+    ///
+    /// let result = runtime.execute_streaming_cancellable(
+    ///     "my-agent",
+    ///     "Long running task",
+    ///     stream_tx,
+    ///     cancel_rx
+    /// ).await;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn execute_streaming_cancellable(
+        &self,
+        agent_name: &str,
+        input: &str,
+        stream_tx: mpsc::Sender<StreamEvent>,
+        mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
+    ) -> AofResult<String> {
+        let executor = self
+            .agents
+            .get(agent_name)
+            .ok_or_else(|| AofError::agent(format!("Agent not found: {}", agent_name)))?;
+
+        let mut context = AgentContext::new(input);
+
+        tokio::select! {
+            result = executor.execute_streaming(&mut context, stream_tx.clone()) => {
+                result
+            }
+            _ = &mut cancel_rx => {
+                let _ = stream_tx.send(StreamEvent::Error {
+                    message: "Execution cancelled by user".to_string(),
+                }).await;
+                Err(AofError::agent("Execution cancelled".to_string()))
+            }
+        }
+    }
+
+    /// List all loaded agents
+    pub fn list_agents(&self) -> Vec<String> {
+        self.agents.keys().cloned().collect()
+    }
+
+    /// Check if an agent is loaded
+    pub fn has_agent(&self, name: &str) -> bool {
+        self.agents.contains_key(name)
+    }
+
+    /// Get agent executor by name
+    pub fn get_agent(&self, name: &str) -> Option<Arc<AgentExecutor>> {
+        self.agents.get(name).cloned()
+    }
+
+    // Helper: Create model config from agent config
+    fn create_model_config(&self, config: &AgentConfig) -> AofResult<ModelConfig> {
+        // Parse provider from model string (format: "provider:model") or separate provider field
+        let (provider, model) = if config.model.contains(':') {
+            // Format: "google:gemini-2.0-flash" or "openai:gpt-4"
+            let parts: Vec<&str> = config.model.splitn(2, ':').collect();
+            let provider = Self::parse_provider(parts[0]);
+            (provider, parts[1].to_string())
+        } else if let Some(ref provider_str) = config.provider {
+            // Separate provider field: provider: google, model: gemini-2.0-flash
+            let provider = Self::parse_provider(provider_str);
+            (provider, config.model.clone())
+        } else {
+            // Default to Anthropic if no provider specified
+            (ModelProvider::Anthropic, config.model.clone())
+        };
+
+        Ok(ModelConfig {
+            model,
+            provider,
+            api_key: None, // Will use environment variables
+            endpoint: None,
+            temperature: config.temperature,
+            max_tokens: config.max_tokens,
+            timeout_secs: 60,
+            headers: HashMap::new(),
+            extra: HashMap::new(),
+        })
+    }
+
+    // Helper: Parse provider string to ModelProvider enum
+    fn parse_provider(provider_str: &str) -> ModelProvider {
+        match provider_str.to_lowercase().as_str() {
+            "anthropic" | "claude" => ModelProvider::Anthropic,
+            "openai" | "gpt" => ModelProvider::OpenAI,
+            "google" | "gemini" => ModelProvider::Google,
+            "bedrock" | "aws" => ModelProvider::Bedrock,
+            "azure" => ModelProvider::Azure,
+            "ollama" => ModelProvider::Ollama,
+            "groq" => ModelProvider::Groq,
+            _ => ModelProvider::Custom,
+        }
+    }
+
+    // Helper: Create tool executor from tool list (legacy)
+    async fn create_tool_executor(
+        &self,
+        tool_names: &[String],
+    ) -> AofResult<Arc<dyn ToolExecutor>> {
+        info!("Creating tool executor with {} tools (legacy mode)", tool_names.len());
+
+        // Find smoke-test-mcp binary in standard locations
+        let mcp_path = if std::path::Path::new("/usr/local/bin/smoke-test-mcp").exists() {
+            "/usr/local/bin/smoke-test-mcp".to_string()
+        } else if std::path::Path::new("/usr/bin/smoke-test-mcp").exists() {
+            "/usr/bin/smoke-test-mcp".to_string()
+        } else {
+            // Fallback to relative path for development
+            "./target/release/smoke-test-mcp".to_string()
+        };
+
+        let mcp_client = McpClientBuilder::new()
+            .stdio(
+                mcp_path,
+                vec![],
+            )
+            .build()
+            .map_err(|e| AofError::tool(format!("Failed to create MCP client: {}", e)))?;
+
+        // Initialize the MCP client
+        mcp_client.initialize()
+            .await
+            .map_err(|e| AofError::tool(format!("Failed to initialize MCP client: {}", e)))?;
+
+        info!("MCP client initialized successfully with tools: {:?}", tool_names);
+
+        Ok(Arc::new(McpToolExecutor {
+            client: Arc::new(mcp_client),
+            tool_names: tool_names.to_vec(),
+        }))
+    }
+
+    // Helper: Create MCP executor from flexible config
+    // Returns None if no MCP servers could be initialized (graceful degradation)
+    async fn create_mcp_executor_from_config(
+        &self,
+        mcp_servers: &[McpServerConfig],
+    ) -> AofResult<Option<Arc<dyn ToolExecutor>>> {
+        info!("Creating MCP executor from {} server configs", mcp_servers.len());
+
+        let mut clients: Vec<Arc<agentix_mcp::McpClient>> = Vec::new();
+        let mut all_tool_names: Vec<String> = Vec::new();
+        let mut initialization_errors: Vec<String> = Vec::new();
+
+        for server_config in mcp_servers {
+            // Validate the config
+            if let Err(e) = server_config.validate() {
+                warn!("Invalid MCP server config '{}': {}", server_config.name, e);
+                initialization_errors.push(format!("{}: {}", server_config.name, e));
+                continue;
+            }
+
+            info!("Initializing MCP server: {} ({:?})", server_config.name, server_config.transport);
+
+            let mcp_client = match server_config.transport {
+                McpTransport::Stdio => {
+                    let command = match server_config.command.as_ref() {
+                        Some(cmd) => cmd,
+                        None => {
+                            warn!("MCP server '{}': Stdio transport requires command", server_config.name);
+                            initialization_errors.push(format!("{}: Stdio transport requires command", server_config.name));
+                            continue;
+                        }
+                    };
+
+                    let mut builder = McpClientBuilder::new()
+                        .stdio(command.clone(), server_config.args.clone());
+
+                    // Add environment variables
+                    for (key, value) in &server_config.env {
+                        builder = builder.with_env(key.clone(), value.clone());
+                    }
+
+                    match builder.build() {
+                        Ok(client) => client,
+                        Err(e) => {
+                            warn!("Failed to create MCP client for '{}': {}", server_config.name, e);
+                            initialization_errors.push(format!("{}: {}", server_config.name, e));
+                            continue;
+                        }
+                    }
+                }
+                #[cfg(feature = "sse")]
+                McpTransport::Sse => {
+                    let endpoint = match server_config.endpoint.as_ref() {
+                        Some(ep) => ep,
+                        None => {
+                            warn!("MCP server '{}': SSE transport requires endpoint", server_config.name);
+                            initialization_errors.push(format!("{}: SSE transport requires endpoint", server_config.name));
+                            continue;
+                        }
+                    };
+
+                    match McpClientBuilder::new().sse(endpoint.clone()).build() {
+                        Ok(client) => client,
+                        Err(e) => {
+                            warn!("Failed to create SSE MCP client for '{}': {}", server_config.name, e);
+                            initialization_errors.push(format!("{}: {}", server_config.name, e));
+                            continue;
+                        }
+                    }
+                }
+                #[cfg(feature = "http")]
+                McpTransport::Http => {
+                    let endpoint = match server_config.endpoint.as_ref() {
+                        Some(ep) => ep,
+                        None => {
+                            warn!("MCP server '{}': HTTP transport requires endpoint", server_config.name);
+                            initialization_errors.push(format!("{}: HTTP transport requires endpoint", server_config.name));
+                            continue;
+                        }
+                    };
+
+                    match McpClientBuilder::new().http(endpoint.clone()).build() {
+                        Ok(client) => client,
+                        Err(e) => {
+                            warn!("Failed to create HTTP MCP client for '{}': {}", server_config.name, e);
+                            initialization_errors.push(format!("{}: {}", server_config.name, e));
+                            continue;
+                        }
+                    }
+                }
+                #[cfg(not(feature = "sse"))]
+                McpTransport::Sse => {
+                    warn!("MCP server '{}': SSE transport not enabled", server_config.name);
+                    initialization_errors.push(format!("{}: SSE transport not enabled", server_config.name));
+                    continue;
+                }
+                #[cfg(not(feature = "http"))]
+                McpTransport::Http => {
+                    warn!("MCP server '{}': HTTP transport not enabled", server_config.name);
+                    initialization_errors.push(format!("{}: HTTP transport not enabled", server_config.name));
+                    continue;
+                }
+            };
+
+            // Initialize the client with optional init_options
+            match mcp_client.initialize_with_options(server_config.init_options.clone()).await {
+                Ok(_) => {
+                    info!("MCP server '{}' initialized successfully", server_config.name);
+
+                    // Get tool list from the server
+                    if let Ok(tools) = mcp_client.list_tools().await {
+                        for tool in tools {
+                            // Apply tool filter if specified
+                            if server_config.tools.is_empty() || server_config.tools.contains(&tool.name) {
+                                all_tool_names.push(tool.name);
+                            }
+                        }
+                    }
+
+                    clients.push(Arc::new(mcp_client));
+                }
+                Err(e) => {
+                    warn!("Failed to initialize MCP server '{}': {}", server_config.name, e);
+                    initialization_errors.push(format!("{}: {}", server_config.name, e));
+                    // Continue to next server instead of failing entirely
+                }
+            }
+        }
+
+        if clients.is_empty() {
+            // Log all errors but return None for graceful degradation
+            warn!(
+                "No MCP servers could be initialized. Errors: {:?}. Agent will continue without MCP tools.",
+                initialization_errors
+            );
+            return Ok(None);
+        }
+
+        info!("MCP executor created with {} servers and {} tools", clients.len(), all_tool_names.len());
+
+        Ok(Some(Arc::new(MultiMcpToolExecutor {
+            clients,
+            tool_names: all_tool_names,
+        })))
+    }
+
+    // Helper: Create system tool executor for shell/kubectl commands
+    fn create_system_executor(
+        &self,
+        tool_names: &[String],
+    ) -> AofResult<Arc<dyn ToolExecutor>> {
+        info!("Creating system tool executor with {} tools", tool_names.len());
+        // Use the new aof-tools based executor
+        Ok(create_builtin_executor_for_tools(tool_names))
+    }
+
+    // Helper: Create memory backend from config
+    //
+    // Supported formats:
+    // Simple string formats:
+    // - "InMemory" or "" (default): In-memory backend, cleared on restart
+    // - "File:./path.json": File-based JSON backend, persists across restarts
+    // - "File:./path.json:100": File backend with max 100 entries (oldest removed first)
+    // - "file:./path.json": Same as above (case-insensitive type)
+    //
+    // Structured format:
+    // - memory:
+    //     type: File
+    //     config:
+    //       path: ./memory.json
+    //       max_messages: 50
+    async fn create_memory_async(&self, config: &AgentConfig) -> AofResult<Arc<SimpleMemory>> {
+        let memory_spec = match &config.memory {
+            None => {
+                debug!("No memory config, using InMemory backend");
+                let backend = InMemoryBackend::new();
+                return Ok(Arc::new(SimpleMemory::new(Arc::new(backend))));
+            }
+            Some(spec) => spec,
+        };
+
+        // Check if this is an in-memory backend
+        if memory_spec.is_in_memory() {
+            debug!("Creating InMemory backend");
+            let backend = InMemoryBackend::new();
+            return Ok(Arc::new(SimpleMemory::new(Arc::new(backend))));
+        }
+
+        // Check if this is a file-based backend
+        if memory_spec.is_file() {
+            let path = memory_spec.path().ok_or_else(|| {
+                AofError::config(
+                    "File memory backend requires a path. \
+                    Use 'File:./path.json' or structured config with 'config.path'"
+                )
+            })?;
+            let max_entries = memory_spec.max_messages();
+
+            debug!("Creating File backend at: {}, max_entries: {:?}", path, max_entries);
+            let backend = FileBackend::with_max_entries(&path, max_entries).await?;
+            return Ok(Arc::new(SimpleMemory::new(Arc::new(backend))));
+        }
+
+        // Handle legacy string formats for backward compatibility
+        let memory_type = memory_spec.memory_type();
+
+        if memory_type.starts_with("SQLite") {
+            return Err(AofError::config(
+                "SQLite memory backend is not yet implemented. \
+                Use 'InMemory' or 'File:./path.json' instead. \
+                SQLite support is planned for a future release."
+            ));
+        }
+
+        if memory_type.starts_with("PostgreSQL") {
+            return Err(AofError::config(
+                "PostgreSQL memory backend is not yet implemented. \
+                Use 'InMemory' or 'File:./path.json' instead. \
+                PostgreSQL support is planned for a future release."
+            ));
+        }
+
+        Err(AofError::config(format!(
+            "Unknown memory backend: '{}'. \
+            Supported: 'InMemory', 'File:./path.json', or structured config with type: File/InMemory",
+            memory_type
+        )))
+    }
+
+    // Sync wrapper for create_memory (for backward compatibility)
+    fn create_memory(&self, _config: &AgentConfig) -> AofResult<Arc<SimpleMemory>> {
+        // For backward compatibility, default to InMemory
+        // The async version should be used for full config support
+        let backend = InMemoryBackend::new();
+        Ok(Arc::new(SimpleMemory::new(Arc::new(backend))))
+    }
+}
+
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// MCP-based tool executor implementation
+struct McpToolExecutor {
+    client: Arc<agentix_mcp::McpClient>,
+    tool_names: Vec<String>,
+}
+
+#[async_trait]
+impl ToolExecutor for McpToolExecutor {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        input: ToolInput,
+    ) -> AofResult<agentix_core::ToolResult> {
+        debug!("Executing MCP tool: {}", name);
+        let start = std::time::Instant::now();
+
+        // Call MCP tool
+        let result = self
+            .client
+            .call_tool(name, input.arguments)
+            .await
+            .map_err(|e| AofError::tool(format!("MCP tool call failed: {}", e)))?;
+
+        let execution_time_ms = start.elapsed().as_millis() as u64;
+
+        Ok(agentix_core::ToolResult {
+            success: true,
+            data: result,
+            error: None,
+            execution_time_ms,
+        })
+    }
+
+    fn list_tools(&self) -> Vec<ToolDefinition> {
+        // In a real implementation, this would query MCP for tool definitions
+        // For now, return basic definitions
+        self.tool_names
+            .iter()
+            .map(|name| ToolDefinition {
+                name: name.clone(),
+                description: format!("MCP tool: {}", name),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+            })
+            .collect()
+    }
+
+    fn get_tool(&self, _name: &str) -> Option<Arc<dyn Tool>> {
+        // MCP tools are dynamically resolved, not stored as objects
+        None
+    }
+}
+
+/// Multi-server MCP tool executor
+/// Supports multiple MCP servers with different transports
+struct MultiMcpToolExecutor {
+    clients: Vec<Arc<agentix_mcp::McpClient>>,
+    tool_names: Vec<String>,
+}
+
+#[async_trait]
+impl ToolExecutor for MultiMcpToolExecutor {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        input: ToolInput,
+    ) -> AofResult<agentix_core::ToolResult> {
+        debug!("Executing MCP tool (multi-server): {}", name);
+        let start = std::time::Instant::now();
+
+        // Try each client until one succeeds
+        let mut last_error = None;
+        for client in &self.clients {
+            match client.call_tool(name, input.arguments.clone()).await {
+                Ok(result) => {
+                    let execution_time_ms = start.elapsed().as_millis() as u64;
+                    return Ok(agentix_core::ToolResult {
+                        success: true,
+                        data: result,
+                        error: None,
+                        execution_time_ms,
+                    });
+                }
+                Err(e) => {
+                    debug!("Tool '{}' not found on server, trying next: {}", name, e);
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        // All clients failed
+        let execution_time_ms = start.elapsed().as_millis() as u64;
+        let error_msg = last_error
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| format!("Tool '{}' not found on any MCP server", name));
+
+        Ok(agentix_core::ToolResult {
+            success: false,
+            data: serde_json::json!({}),
+            error: Some(error_msg),
+            execution_time_ms,
+        })
+    }
+
+    fn list_tools(&self) -> Vec<ToolDefinition> {
+        self.tool_names
+            .iter()
+            .map(|name| ToolDefinition {
+                name: name.clone(),
+                description: format!("MCP tool: {}", name),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+            })
+            .collect()
+    }
+
+    fn get_tool(&self, _name: &str) -> Option<Arc<dyn Tool>> {
+        // MCP tools are dynamically resolved, not stored as objects
+        None
+    }
+}
+
+/// Combined tool executor that wraps multiple executors
+/// Tries primary executor first, then secondary if tool not found
+struct CombinedToolExecutor {
+    primary: Arc<dyn ToolExecutor>,
+    secondary: Option<Arc<dyn ToolExecutor>>,
+}
+
+#[async_trait]
+impl ToolExecutor for CombinedToolExecutor {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        input: ToolInput,
+    ) -> AofResult<agentix_core::ToolResult> {
+        debug!("Executing tool '{}' via combined executor", name);
+
+        // Check if primary executor has this tool
+        let primary_tools: std::collections::HashSet<_> = self.primary.list_tools()
+            .iter()
+            .map(|t| t.name.clone())
+            .collect();
+
+        if primary_tools.contains(name) {
+            return self.primary.execute_tool(name, input).await;
+        }
+
+        // Try secondary executor if available
+        if let Some(ref secondary) = self.secondary {
+            return secondary.execute_tool(name, input).await;
+        }
+
+        // Tool not found in any executor
+        Ok(agentix_core::ToolResult {
+            success: false,
+            data: serde_json::json!({}),
+            error: Some(format!("Tool '{}' not found in any executor", name)),
+            execution_time_ms: 0,
+        })
+    }
+
+    fn list_tools(&self) -> Vec<ToolDefinition> {
+        let mut tools = self.primary.list_tools();
+        if let Some(ref secondary) = self.secondary {
+            tools.extend(secondary.list_tools());
+        }
+        tools
+    }
+
+    fn get_tool(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        self.primary.get_tool(name).or_else(|| {
+            self.secondary.as_ref().and_then(|s| s.get_tool(name))
+        })
+    }
+}
+
+/// Helper function to create a BuiltinToolExecutor from aof-tools
+fn create_builtin_executor_for_tools(tool_names: &[String]) -> Arc<dyn ToolExecutor> {
+    use agentix_tools::ToolRegistry;
+
+    let mut registry = ToolRegistry::new();
+
+    // Register only the requested tools
+    // Note: aof-tools is compiled with features = ["all"] so all tools are available
+    for name in tool_names {
+        match name.as_str() {
+            // File tools
+            "read_file" => {
+                registry.register(agentix_tools::ReadFileTool::new());
+            }
+            "write_file" => {
+                registry.register(agentix_tools::WriteFileTool::new());
+            }
+            "list_directory" => {
+                registry.register(agentix_tools::ListDirTool::new());
+            }
+            "search_files" => {
+                registry.register(agentix_tools::SearchFilesTool::new());
+            }
+
+            // Shell tool
+            "shell" | "bash" | "sh" => {
+                registry.register(agentix_tools::ShellTool::new());
+            }
+
+            // Kubectl tools
+            "kubectl_get" => {
+                registry.register(agentix_tools::KubectlGetTool::new());
+            }
+            "kubectl_apply" => {
+                registry.register(agentix_tools::KubectlApplyTool::new());
+            }
+            "kubectl_delete" => {
+                registry.register(agentix_tools::KubectlDeleteTool::new());
+            }
+            "kubectl_logs" => {
+                registry.register(agentix_tools::KubectlLogsTool::new());
+            }
+            "kubectl_exec" => {
+                registry.register(agentix_tools::KubectlExecTool::new());
+            }
+            "kubectl_describe" => {
+                registry.register(agentix_tools::KubectlDescribeTool::new());
+            }
+
+            // Docker tools
+            "docker_ps" => {
+                registry.register(agentix_tools::DockerPsTool::new());
+            }
+            "docker_stats" => {
+                registry.register(agentix_tools::DockerStatsTool::new());
+            }
+            "docker_build" => {
+                registry.register(agentix_tools::DockerBuildTool::new());
+            }
+            "docker_run" => {
+                registry.register(agentix_tools::DockerRunTool::new());
+            }
+            "docker_logs" => {
+                registry.register(agentix_tools::DockerLogsTool::new());
+            }
+            "docker_exec" => {
+                registry.register(agentix_tools::DockerExecTool::new());
+            }
+            "docker_images" => {
+                registry.register(agentix_tools::DockerImagesTool::new());
+            }
+
+            // Git tools
+            "git_status" => {
+                registry.register(agentix_tools::GitStatusTool::new());
+            }
+            "git_diff" => {
+                registry.register(agentix_tools::GitDiffTool::new());
+            }
+            "git_log" => {
+                registry.register(agentix_tools::GitLogTool::new());
+            }
+            "git_commit" => {
+                registry.register(agentix_tools::GitCommitTool::new());
+            }
+            "git_branch" => {
+                registry.register(agentix_tools::GitBranchTool::new());
+            }
+            "git_checkout" => {
+                registry.register(agentix_tools::GitCheckoutTool::new());
+            }
+            "git_pull" => {
+                registry.register(agentix_tools::GitPullTool::new());
+            }
+            "git_push" => {
+                registry.register(agentix_tools::GitPushTool::new());
+            }
+
+            // Terraform tools
+            "terraform_init" => {
+                registry.register(agentix_tools::TerraformInitTool::new());
+            }
+            "terraform_plan" => {
+                registry.register(agentix_tools::TerraformPlanTool::new());
+            }
+            "terraform_apply" => {
+                registry.register(agentix_tools::TerraformApplyTool::new());
+            }
+            "terraform_destroy" => {
+                registry.register(agentix_tools::TerraformDestroyTool::new());
+            }
+            "terraform_output" => {
+                registry.register(agentix_tools::TerraformOutputTool::new());
+            }
+
+            // HTTP tool
+            "http_request" | "http" => {
+                registry.register(agentix_tools::HttpTool::new());
+            }
+
+            // Observability tools
+            "prometheus_query" => {
+                registry.register(agentix_tools::PrometheusQueryTool::new());
+            }
+            "loki_query" => {
+                registry.register(agentix_tools::LokiQueryTool::new());
+            }
+            "elasticsearch_query" => {
+                registry.register(agentix_tools::ElasticsearchQueryTool::new());
+            }
+            "victoriametrics_query" => {
+                registry.register(agentix_tools::VictoriaMetricsQueryTool::new());
+            }
+
+            // ====================================================================
+            // Unified CLI Tools (Recommended)
+            // These take a 'command' argument and let the LLM construct the command
+            // ====================================================================
+            "kubectl" => {
+                registry.register(agentix_tools::KubectlTool::new());
+            }
+            "git" => {
+                registry.register(agentix_tools::GitTool::new());
+            }
+            "docker" => {
+                registry.register(agentix_tools::DockerTool::new());
+            }
+            "terraform" => {
+                registry.register(agentix_tools::TerraformTool::new());
+            }
+            "aws" => {
+                registry.register(agentix_tools::AwsTool::new());
+            }
+            "helm" => {
+                registry.register(agentix_tools::HelmTool::new());
+            }
+
+            _ => {
+                warn!("Unknown built-in tool: {}, skipping registration", name);
+            }
+        }
+    }
+
+    info!("Registered {} built-in tools: {:?}", registry.len(), registry.list_names());
+    Arc::new(registry.into_executor())
+}
+
+/// Legacy: System tool executor for shell, kubectl, and other local commands
+/// Only used for basic shell/kubectl commands that aren't in aof-tools
+struct SystemToolExecutor {
+    tool_names: Vec<String>,
+}
+
+#[async_trait]
+impl ToolExecutor for SystemToolExecutor {
+    async fn execute_tool(
+        &self,
+        name: &str,
+        input: ToolInput,
+    ) -> AofResult<agentix_core::ToolResult> {
+        debug!("Executing system tool: {}", name);
+        let start = std::time::Instant::now();
+
+        // Extract command from input arguments
+        let command = if let Some(serde_json::Value::String(cmd)) = input.arguments.get("command") {
+            cmd.clone()
+        } else if let Some(serde_json::Value::String(cmd)) = input.arguments.get("_") {
+            // Fallback for positional argument
+            cmd.clone()
+        } else {
+            return Err(AofError::tool(format!(
+                "Tool {} requires 'command' argument",
+                name
+            )));
+        };
+
+        // Execute the command based on tool type
+        let result = match name {
+            "kubectl" => {
+                // Execute kubectl command (legacy)
+                self.execute_kubectl_command(&command).await
+            }
+            "python" => {
+                // Execute Python code
+                self.execute_command("python3", &[&command]).await
+            }
+            "node" => {
+                // Execute Node.js code
+                self.execute_command("node", &["-e", &command]).await
+            }
+            _ => Err(AofError::tool(format!(
+                "Unknown system tool: {}",
+                name
+            ))),
+        };
+
+        let execution_time_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(data) => Ok(agentix_core::ToolResult {
+                success: true,
+                data,
+                error: None,
+                execution_time_ms,
+            }),
+            Err(e) => Ok(agentix_core::ToolResult {
+                success: false,
+                data: serde_json::json!({}),
+                error: Some(e.to_string()),
+                execution_time_ms,
+            }),
+        }
+    }
+
+    fn list_tools(&self) -> Vec<ToolDefinition> {
+        self.tool_names
+            .iter()
+            .map(|name| {
+                let (description, parameters) = match name.as_str() {
+                    "kubectl" => (
+                        "Execute kubectl commands against Kubernetes cluster".to_string(),
+                        serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "description": "kubectl command to execute (e.g., 'get pods', 'describe node')"
+                                }
+                            },
+                            "required": ["command"]
+                        }),
+                    ),
+                    "python" => (
+                        "Execute Python code".to_string(),
+                        serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "description": "Python code to execute"
+                                }
+                            },
+                            "required": ["command"]
+                        }),
+                    ),
+                    "node" => (
+                        "Execute Node.js code".to_string(),
+                        serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "description": "JavaScript code to execute"
+                                }
+                            },
+                            "required": ["command"]
+                        }),
+                    ),
+                    _ => (
+                        format!("System tool: {}", name),
+                        serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "description": "Command to execute"
+                                }
+                            }
+                        }),
+                    ),
+                };
+
+                ToolDefinition {
+                    name: name.clone(),
+                    description,
+                    parameters,
+                }
+            })
+            .collect()
+    }
+
+    fn get_tool(&self, _name: &str) -> Option<Arc<dyn Tool>> {
+        // System tools are executed directly, not stored as objects
+        None
+    }
+}
+
+impl SystemToolExecutor {
+    async fn execute_kubectl_command(&self, command: &str) -> AofResult<serde_json::Value> {
+        // Parse kubectl command
+        let args: Vec<&str> = command.split_whitespace().collect();
+        self.execute_command("kubectl", &args).await
+    }
+
+    async fn execute_command(
+        &self,
+        program: &str,
+        args: &[&str],
+    ) -> AofResult<serde_json::Value> {
+        debug!(
+            "Executing command: {} {}",
+            program,
+            args.join(" ")
+        );
+
+        let output = tokio::process::Command::new(program)
+            .args(args)
+            .output()
+            .await
+            .map_err(|e| AofError::tool(format!(
+                "Failed to execute {}: {}",
+                program, e
+            )))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let exit_code = output.status.code().unwrap_or(-1);
+
+        debug!(
+            "Command exit code: {}, stdout: {}, stderr: {}",
+            exit_code, stdout, stderr
+        );
+
+        Ok(serde_json::json!({
+            "exit_code": exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "success": output.status.success()
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_runtime_creation() {
+        let runtime = Runtime::new();
+        assert_eq!(runtime.list_agents().len(), 0);
+    }
+
+    #[test]
+    fn test_model_config_parsing() {
+        let runtime = Runtime::new();
+
+        let config = AgentConfig {
+            name: "test-agent".to_string(),
+            system_prompt: None,
+            model: "anthropic:claude-3-5-sonnet-20241022".to_string(),
+            provider: None,
+            tools: vec![],
+            mcp_servers: vec![],
+            memory: None,
+            max_context_messages: 10,
+            max_iterations: 10,
+            temperature: 0.7,
+            max_tokens: None,
+            output_schema: None,
+            routing: None,
+            extra: HashMap::new(),
+        };
+
+        let model_config = runtime.create_model_config(&config).unwrap();
+        assert_eq!(model_config.provider, ModelProvider::Anthropic);
+        assert_eq!(model_config.model, "claude-3-5-sonnet-20241022");
+        assert_eq!(model_config.temperature, 0.7);
+    }
+
+    #[test]
+    fn test_model_config_default_provider() {
+        let runtime = Runtime::new();
+
+        let config = AgentConfig {
+            name: "test-agent".to_string(),
+            system_prompt: None,
+            model: "gpt-4".to_string(),
+            provider: None,
+            tools: vec![],
+            mcp_servers: vec![],
+            memory: None,
+            max_context_messages: 10,
+            max_iterations: 10,
+            temperature: 0.7,
+            max_tokens: None,
+            output_schema: None,
+            routing: None,
+            extra: HashMap::new(),
+        };
+
+        let model_config = runtime.create_model_config(&config).unwrap();
+        assert_eq!(model_config.provider, ModelProvider::Anthropic);
+        assert_eq!(model_config.model, "gpt-4");
+    }
+
+    #[tokio::test]
+    async fn test_mcp_executor_graceful_failure() {
+        let runtime = Runtime::new();
+
+        // Create MCP config with non-existent command
+        let mcp_servers = vec![McpServerConfig {
+            name: "non-existent-mcp".to_string(),
+            transport: McpTransport::Stdio,
+            command: Some("non-existent-command-that-does-not-exist".to_string()),
+            args: vec![],
+            endpoint: None,
+            env: Default::default(),
+            tools: vec![],
+            timeout_secs: 5,
+            auto_reconnect: false,
+            init_options: None,
+        }];
+
+        // Should return None instead of error (graceful degradation)
+        let result = runtime.create_mcp_executor_from_config(&mcp_servers).await;
+        assert!(result.is_ok(), "Should not return error for failed MCP init");
+        assert!(result.unwrap().is_none(), "Should return None when no MCP servers initialize");
+    }
+}
