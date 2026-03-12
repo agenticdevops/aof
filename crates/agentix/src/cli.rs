@@ -103,6 +103,12 @@ pub enum Commands {
         #[arg(long)]
         non_interactive: bool,
     },
+
+    /// List and inspect built-in skill packs
+    Skills {
+        #[command(subcommand)]
+        command: crate::commands::skills::SkillsCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]

@@ -13,6 +13,7 @@ pub mod memory;
 pub mod model;
 pub mod registry;
 pub mod schema;
+pub mod skills;
 pub mod tool;
 pub mod trigger;
 
@@ -57,6 +58,7 @@ pub use config::{
     GatewayConfig, ProviderConfig, WorkspaceConfig, WorkspaceDefaults, WorkspaceMetadata,
     WorkspaceSpec,
 };
+pub use skills::{BuiltinSkillPack, SkillRegistry};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

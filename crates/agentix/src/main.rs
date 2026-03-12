@@ -56,6 +56,9 @@ async fn main() {
         Commands::Onboard { non_interactive } => {
             commands::onboard::execute(non_interactive).await
         }
+        Commands::Skills { command } => {
+            commands::skills::run(&command, &ctx.output).await
+        }
     };
 
     if let Err(e) = result {
