@@ -16,6 +16,7 @@ pub mod schema;
 pub mod skills;
 pub mod tool;
 pub mod trigger;
+pub mod trigger_event;
 
 // Re-export core types
 pub use agent::{
@@ -44,6 +45,7 @@ pub use context::{
 pub use registry::{
     AgentRegistry, ContextRegistry, Registry, ResourceLoadSummary, ResourceManager, TriggerRegistry,
 };
+pub use trigger_event::{TriggerEvent, TriggerRunRegistry, TriggerSource, TriggerTrait};
 pub use trigger::{
     CommandBinding, StandaloneTriggerConfig, StandaloneTriggerType, Trigger, TriggerMetadata,
     TriggerSpec,
