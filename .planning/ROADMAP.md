@@ -16,9 +16,9 @@
 
 ### 🚧 v2.0 OpenAgentiX
 
-**Milestone Goal:** Transform AOF into an enterprise agent automation platform — YAML-first agent composition, skills + tools + MCP, scheduled/event-driven execution, cost tracking, and a Svelte command center.
+**Milestone Goal:** Transform AOF into an enterprise agent automation platform — GitAgent-compatible agent directories, skills + tools + MCP, scheduled/event-driven execution, cost tracking, and a Svelte command center.
 
-- [ ] **Phase 13: Rebrand + Core Runtime + CLI Foundation** - `agentix` binary, new agent YAML spec, ReAct loop, streaming, backward compatibility
+- [ ] **Phase 13: Rebrand + Core Runtime + CLI Foundation** - `agentix` binary, GitAgent-compatible agent directories, ReAct loop, streaming, backward compatibility
 - [ ] **Phase 14: Skills Composition + Tools + WASM Sandbox** - Skill packs, composable agents, WASM-isolated tool execution
 - [ ] **Phase 15: Triggers + Scheduling** - Cron, webhook, GitHub, Jira, agent-to-agent, run persistence
 - [ ] **Phase 16: Agent Coordination + Memory** - Multi-agent delegation, vector memory, semantic recall, research phase
@@ -32,25 +32,36 @@
 ## Phase Details
 
 ### Phase 13: Rebrand + Core Runtime + CLI Foundation
-**Goal**: Users can define and run agents using the new `agentix` CLI with the OpenAgentiX YAML spec, with the ReAct loop executing and streaming output — and existing AOF configs still load.
+**Goal**: Users can define agents as GitAgent-compatible directories (agent.yaml + SOUL.md), run them via `agentix gateway start`, see streaming ReAct loop output, and manage everything with the `agentix` CLI. Existing AOF flat YAML agents still load.
 **Depends on**: v1.0 Rust core (carried over)
 **Requirements**: CORE-01, CORE-02, CORE-03, SPEC-01, SPEC-02, SPEC-03, SPEC-04, SPEC-05, CLI-01, CLI-02, CLI-03, CLI-04, CLI-05, CLI-06, CLI-07, CLI-10, CLI-11, CLI-12
 **Success Criteria** (what must be TRUE):
-  1. User runs `agentix run agent.yaml` and sees streaming ReAct loop output (plan → act → observe → reflect)
-  2. An agent defined with `apiVersion: openagentix.dev/v1` loads, validates, and executes correctly
-  3. An existing AOF agent YAML (v1.0 format) loads and runs without modification
-  4. `agentix agents`, `agentix runs`, `agentix logs`, `agentix stop`, `agentix apply`, `agentix serve`, `agentix init`, and `agentix validate` all function
-  5. `agentix init` scaffolds a valid YAML interactively and `agentix validate <file>` reports errors with field paths
-**Plans**: TBD
+  1. `agentix init --name my-agent` creates a valid agent directory (agent.yaml + SOUL.md) and `agentix validate agents/my-agent` passes
+  2. `agentix gateway start` loads agent directories, exposes REST API, and streams ReAct loop output via SSE
+  3. An existing AOF flat YAML agent (apiVersion: openagentix.dev/v1) loads and executes without modification
+  4. `agentix agents`, `agentix runs`, `agentix logs`, `agentix stop`, `agentix apply`, `agentix validate`, `agentix init`, `agentix onboard` all function
+  5. `agentix validate <path>` works on both agent directories and flat YAML files, reports errors with field paths
+**Plans**: 9 plans in 6 waves
+
+Plans:
+- [x] 13-01-PLAN.md — Rename crates aof-* to agentix-*, delete v1.0 dead code
+- [ ] 13-02-PLAN.md — GitAgent-compatible spec documentation (agent-directory-structure.md, agent-yaml-v1.md, workspace-config.md)
+- [ ] 13-03-PLAN.md — Agent types and directory loader in agentix-core (TDD: AgentManifest, AgentDefinition, DirectoryLoader)
+- [ ] 13-04-PLAN.md — ReAct loop engine in agentix-runtime (TDD: plan-act-observe-reflect, tool dispatch)
+- [ ] 13-05-PLAN.md — Streaming output (TDD: SSE encoder, text formatter, JSON formatter)
+- [ ] 13-06-PLAN.md — Gateway HTTP service (axum, agent directory loading, run management)
+- [ ] 13-07-PLAN.md — CLI commands: gateway, agents, runs, logs, stop, apply, validate, version
+- [ ] 13-08-PLAN.md — CLI commands: init (agent directory scaffolder), onboard (workspace setup)
+- [ ] 13-09-PLAN.md — LLM provider wiring, full workspace compilation, documentation update
 
 ### Phase 14: Skills Composition + Tools + WASM Sandbox
 **Goal**: Users can compose agents from skill packs and custom tools, with untrusted WASM tools running in an isolated sandbox that enforces declared capability permissions.
 **Depends on**: Phase 13
 **Requirements**: SKILL-01, SKILL-02, SKILL-03, SKILL-04, SKILL-05, TOOL-01, TOOL-02, TOOL-03, TOOL-04, TOOL-05, CLI-08
 **Success Criteria** (what must be TRUE):
-  1. User composes an agent with `skills: [aws/rds-management, database/postgres-tuning]` and both skill instruction sets are applied without an LLM routing call
+  1. User adds a `skills/postgres-tuning/SKILL.md` to their agent directory and its instructions are applied without an LLM routing call
   2. `agentix skills list` shows all built-in skill packs (aws, kubernetes, terraform, docker, git, database, security, observability)
-  3. User defines a custom skill YAML in their workspace and the agent picks it up at runtime
+  3. User defines a custom skill in their agent's `skills/` directory and the agent picks it up at runtime
   4. Agent calls CLI tools (kubectl, aws, psql, terraform, docker, git, shell) and MCP servers within a run
   5. A WASM tool without a declared capability (e.g., network access) is blocked from making that call at runtime
 **Plans**: TBD
@@ -138,7 +149,7 @@
 **Plans**: TBD
 
 ### Phase 22: Command Center (Svelte)
-**Goal**: Users have a web dashboard (Svelte) to monitor all agents, view run history and costs, inspect execution traces, manage approvals, and build/edit agent YAML — with real-time WebSocket updates.
+**Goal**: Users have a web dashboard (Svelte) to monitor all agents, view run history and costs, inspect execution traces, manage approvals, and build/edit agent definitions — with real-time WebSocket updates.
 **Depends on**: Phase 17, Phase 18, Phase 20
 **Requirements**: CMD-01, CMD-02, CMD-03, CMD-04, CMD-05, CMD-06, CMD-07, CMD-08, CMD-09
 **Success Criteria** (what must be TRUE):
@@ -155,7 +166,7 @@
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 13. Rebrand + Core Runtime + CLI Foundation | 2/9 | In Progress|  | - |
+| 13. Rebrand + Core Runtime + CLI Foundation | v2.0 | 1/9 | In Progress | - |
 | 14. Skills Composition + Tools + WASM Sandbox | v2.0 | 0/TBD | Not started | - |
 | 15. Triggers + Scheduling | v2.0 | 0/TBD | Not started | - |
 | 16. Agent Coordination + Memory | v2.0 | 0/TBD | Not started | - |
