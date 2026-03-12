@@ -7,8 +7,8 @@
 
 ### Core Runtime
 
-- [ ] **CORE-01**: Agent executes a ReAct loop (plan → act → observe → reflect) with configurable max iterations
-- [ ] **CORE-02**: Agent can call tools and receive structured results within the loop
+- [x] **CORE-01**: Agent executes a ReAct loop (plan → act → observe → reflect) with configurable max iterations
+- [x] **CORE-02**: Agent can call tools and receive structured results within the loop
 - [x] **CORE-03**: Agent supports streaming responses (SSE) for real-time output
 - [ ] **CORE-04**: Agent can use memory (recall context from previous runs)
 - [ ] **CORE-05**: Smart model routing scores message complexity (0-100) and routes to appropriate model tier (flash/standard/pro)
@@ -209,8 +209,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | Phase 13 | Pending |
-| CORE-02 | Phase 13 | Pending |
+| CORE-01 | Phase 13 | Complete |
+| CORE-02 | Phase 13 | Complete |
 | CORE-03 | Phase 13 | Complete |
 | CORE-04 | Phase 16 | Pending |
 | CORE-05 | Phase 17 | Pending |
