@@ -18,11 +18,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 13 of 22 (Rebrand + Core Runtime + CLI Foundation)
-Plan: 7 of 9 in current phase
+Plan: 9 of 9 in current phase
 Status: Executing
-Last activity: 2026-03-13 — Completed 13-06: Gateway HTTP server with AgentManager, REST API, SSE streaming, 11 tests
+Last activity: 2026-03-13 — Completed 13-08: agentix init and onboard commands with quickstart reference files
 
-Progress: [█████░░░░░] 62%
+Progress: [███████░░░] 78%
 
 ---
 
@@ -64,6 +64,13 @@ Progress: [█████░░░░░] 62%
 - AgentixError::Runtime used for gateway errors (no Other variant exists in AgentixError) (13-06)
 - FlatYamlLoader::load_from_str added to agentix-core for inline YAML parsing from API request bodies (13-06)
 - SseEncoder::encode_data and encode_event_name methods added for axum SSE integration (13-06)
+- CliContext struct introduced to hold gateway_url/output/quiet for borrow-safe CLI dispatch (13-07)
+- FlatYamlLoader::load_from_str is correct API for inline YAML parsing (not AgentLoader::load_yaml_str) (13-07)
+- validate auto-detects agent.yaml manifests inside directory format and redirects to DirectoryLoader (13-07)
+- init.rs and onboard.rs retained as valid pre-existing commands wired up in main.rs (13-07)
+- agentix init creates agent DIRECTORIES (GitAgent format) via scaffold_agent_directory; --name is a named flag (13-08)
+- scaffold_agent_directory is a public function shared between init.rs and onboard.rs — single source of truth (13-08)
+- onboard creates agentix.yaml + hello-world agent directory; validates via DirectoryLoader after write (13-08)
 
 ### Open Questions
 
@@ -78,7 +85,7 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 13-06-PLAN.md — Gateway HTTP server with AgentManager, REST API, SSE streaming, 11 integration tests
+Stopped at: Completed 13-08-PLAN.md — agentix init and onboard commands, quickstart reference files
 Resume file: None
 
 ---
