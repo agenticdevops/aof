@@ -1601,6 +1601,9 @@ pub struct AgentManifest {
     /// External sub-agent dependencies to fetch and mount.
     #[serde(default)]
     pub dependencies: Vec<AgentDependency>,
+    /// MCP server configurations for this agent.
+    #[serde(default)]
+    pub mcp_servers: Vec<crate::mcp::McpServerConfig>,
 }
 
 /// Model configuration within an `AgentManifest`.
@@ -1760,6 +1763,8 @@ pub struct AgentDefinition {
     pub tools: Vec<ToolEntry>,
     /// Loaded sub-agent definitions from `agents/*/`.
     pub sub_agents: Vec<AgentDefinition>,
+    /// MCP server configurations for this agent.
+    pub mcp_servers: Vec<crate::mcp::McpServerConfig>,
     /// Maximum ReAct loop iterations (from workspace defaults or built-in).
     pub max_iterations: u32,
     /// Wall-clock timeout in seconds.
@@ -1966,6 +1971,7 @@ impl DirectoryLoader {
             skills,
             tools,
             sub_agents,
+            mcp_servers: manifest.mcp_servers,
             max_iterations: 10,
             timeout_secs: 300,
             mode: AgentMode::Autonomous,
@@ -2082,6 +2088,7 @@ impl FlatYamlLoader {
             skills: vec![],
             tools,
             sub_agents: vec![],
+            mcp_servers: vec![],
             max_iterations: 10,
             timeout_secs: 300,
             mode: AgentMode::Autonomous,

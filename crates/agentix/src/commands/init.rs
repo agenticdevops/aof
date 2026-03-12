@@ -169,6 +169,7 @@ pub fn scaffold_agent_directory(
         model,
         extends: None,
         dependencies: vec![],
+        mcp_servers: vec![],
     };
 
     let manifest_yaml = serde_yaml::to_string(&manifest)

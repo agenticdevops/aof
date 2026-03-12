@@ -24,7 +24,7 @@ use agentix_llm::ProviderFactory;
 
 use crate::executor::react_loop::{ReActConfig, ReActEngine, ReActEvent, RunResult, ToolExecutor};
 use crate::streaming::EventReceiver;
-use crate::tools::CliToolExecutor;
+use crate::tools::{CliToolExecutor, CompositeToolExecutor, McpToolExecutor};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -385,7 +385,11 @@ impl AgentManager {
         let model = create_provider_from_definition(definition, &self.workspace_config)?;
 
         let config = ReActConfig::from_definition(definition);
-        let tool_executor = Arc::new(CliToolExecutor::new()) as Arc<dyn ToolExecutor>;
+        // Build composite tool executor: CLI + MCP
+        let cli_executor = CliToolExecutor::new();
+        let mcp_executor = McpToolExecutor::new(definition.mcp_servers.clone());
+        let tool_executor = Arc::new(CompositeToolExecutor::new(cli_executor, mcp_executor))
+            as Arc<dyn ToolExecutor>;
 
         let engine = ReActEngine::new(model, tool_executor, config)
             .with_event_stream(event_tx.clone());
