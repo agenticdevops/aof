@@ -22,6 +22,8 @@
 pub mod agent_manager;
 pub mod api;
 pub mod router;
+pub mod run_store;
 
 pub use agent_manager::{AgentManager, AgentStatus, AgentSummary, LoadedAgent, RunState, RunStatus};
 pub use router::Gateway;
+pub use run_store::{RunRecord, RunStore};

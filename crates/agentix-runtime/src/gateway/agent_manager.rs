@@ -23,6 +23,7 @@ use agentix_core::{
 use agentix_llm::ProviderFactory;
 
 use crate::executor::react_loop::{ReActConfig, ReActEngine, ReActEvent, RunResult, ToolExecutor};
+use crate::gateway::run_store::{RunRecord, RunStore};
 use crate::streaming::EventReceiver;
 use crate::tools::{CliToolExecutor, CompositeToolExecutor, McpToolExecutor, WasmToolExecutor};
 
@@ -140,12 +141,27 @@ pub struct AgentManager {
     /// Sender side of the trigger event channel.
     /// Trigger background tasks send (agent_name, TriggerEvent) here.
     trigger_event_tx: mpsc::Sender<(String, TriggerEvent)>,
+    /// Persistent SQLite run history store.
+    pub run_store: Arc<RunStore>,
 }
 
 impl AgentManager {
+    /// Open the RunStore. Uses `./agentix-runs.db` by default.
+    fn open_run_store(_workspace_config: &Option<WorkspaceConfig>) -> Arc<RunStore> {
+        let db_path = "./agentix-runs.db";
+        match RunStore::open(db_path) {
+            Ok(store) => Arc::new(store),
+            Err(e) => {
+                tracing::warn!("Failed to open run store at '{}': {} — falling back to in-memory", db_path, e);
+                Arc::new(RunStore::open(":memory:").expect("in-memory SQLite"))
+            }
+        }
+    }
+
     /// Create a new `AgentManager` wrapped in an `Arc` for sharing.
     pub fn new(workspace_config: Option<WorkspaceConfig>) -> Arc<Self> {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
+        let run_store = Self::open_run_store(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -153,6 +169,7 @@ impl AgentManager {
             agents_dir: None,
             trigger_registry: Mutex::new(TriggerRunRegistry::new()),
             trigger_event_tx,
+            run_store,
         });
         // Spawn the trigger dispatcher background task
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
@@ -162,6 +179,7 @@ impl AgentManager {
     /// Create an `AgentManager` with a known agents directory (used for WASM tool resolution).
     pub fn with_agents_dir(workspace_config: Option<WorkspaceConfig>, agents_dir: std::path::PathBuf) -> Arc<Self> {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
+        let run_store = Self::open_run_store(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -169,6 +187,7 @@ impl AgentManager {
             agents_dir: Some(agents_dir),
             trigger_registry: Mutex::new(TriggerRunRegistry::new()),
             trigger_event_tx,
+            run_store,
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
         manager
@@ -624,12 +643,71 @@ impl AgentManager {
         agent_name: &str,
         trigger_event: agentix_core::TriggerEvent,
     ) -> Result<String, AgentixError> {
+        let trigger_source = trigger_event.source.to_string();
+        let trigger_id_val = trigger_event.trigger_id.clone();
+
         // Serialize TriggerEvent as the agent's user input
         let input = serde_json::to_string(&trigger_event)
             .map_err(|e| AgentixError::Runtime(format!("Failed to serialize TriggerEvent: {}", e)))?;
 
+        // Persist a RunRecord before starting
+        let run_id_for_record = Uuid::new_v4().to_string();
+        let input_summary = if input.len() > 200 { input[..200].to_string() } else { input.clone() };
+        let record = RunRecord {
+            id: run_id_for_record.clone(),
+            agent_name: agent_name.to_string(),
+            trigger_source,
+            trigger_id: Some(trigger_id_val),
+            started_at: chrono::Utc::now(),
+            ended_at: None,
+            duration_ms: None,
+            status: "running".to_string(),
+            iterations: None,
+            input_summary: Some(input_summary),
+            output_summary: None,
+            error: None,
+        };
+        if let Err(e) = self.run_store.insert(&record) {
+            tracing::warn!("Failed to persist run record: {}", e);
+        }
+
         // Delegate to existing start_run — returns (run_id, event_receiver)
-        let (run_id, _event_rx) = self.start_run(agent_name, &input).await?;
+        let self_clone = self.clone();
+        let run_store_clone = self.run_store.clone();
+        let record_id = run_id_for_record.clone();
+        let agent_name_owned = agent_name.to_string();
+        let (run_id, mut event_rx) = self.start_run(agent_name, &input).await?;
+
+        // Spawn a task to update the RunRecord when the run completes
+        tokio::spawn(async move {
+            let mut output_buf = String::new();
+            let mut iter_count: u32 = 0;
+            loop {
+                match event_rx.recv().await {
+                    Ok(event) => {
+                        use crate::executor::react_loop::ReActEvent;
+                        match &event {
+                            ReActEvent::Complete(result) => {
+                                output_buf = result.output.clone();
+                                iter_count = result.iterations;
+                                break;
+                            }
+                            ReActEvent::Error(_) => break,
+                            _ => {}
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let ended = chrono::Utc::now();
+            let out = if output_buf.is_empty() { None } else {
+                Some(if output_buf.len() > 500 { output_buf[..500].to_string() } else { output_buf })
+            };
+            let _ = run_store_clone.update_completed(&record_id, ended, out.as_deref(), Some(iter_count as i32));
+            // Dispatch notifications if configured
+            self_clone.dispatch_notifications(&agent_name_owned, &record_id).await;
+        });
+
         Ok(run_id)
     }
 
@@ -682,6 +760,66 @@ impl AgentManager {
             .map_err(|e| AgentixError::Runtime(format!("Trigger channel closed: {}", e)))?;
 
         Ok(agent_name)
+    }
+
+    /// Dispatch notifications after a triggered run completes.
+    ///
+    /// Reads the agent's `notifications:` YAML field and dispatches a run summary
+    /// to each configured destination. Currently supports:
+    /// - `type: webhook` — HTTP POST with run summary to any URL
+    /// - Other types — logged as a warning
+    async fn dispatch_notifications(&self, agent_name: &str, run_id: &str) {
+        let notifications = {
+            match self.agents.get(agent_name) {
+                Some(entry) => entry.value().definition.notifications.clone(),
+                None => return,
+            }
+        };
+
+        if notifications.is_empty() {
+            return;
+        }
+
+        let run_record = self.run_store.get(run_id).ok().flatten();
+
+        for notif in &notifications {
+            match notif.notification_type.as_str() {
+                "webhook" => {
+                    if let Some(url) = &notif.url {
+                        let payload = serde_json::json!({
+                            "agent": agent_name,
+                            "run_id": run_id,
+                            "status": run_record.as_ref().map(|r| r.status.as_str()).unwrap_or("unknown"),
+                            "output": run_record.as_ref().and_then(|r| r.output_summary.as_deref()).unwrap_or(""),
+                            "trigger_source": run_record.as_ref().map(|r| r.trigger_source.as_str()).unwrap_or(""),
+                            "duration_ms": run_record.as_ref().and_then(|r| r.duration_ms),
+                        });
+                        let client = reqwest::Client::new();
+                        match client.post(url).json(&payload).send().await {
+                            Ok(resp) if resp.status().is_success() => {
+                                tracing::info!("Notification sent to {} for run {}", url, run_id);
+                            }
+                            Ok(resp) => {
+                                tracing::warn!("Notification to {} returned status {}", url, resp.status());
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to send notification to {}: {}", url, e);
+                            }
+                        }
+                    }
+                }
+                "log" => {
+                    tracing::info!(
+                        "Run notification: agent={} run_id={} status={}",
+                        agent_name, run_id,
+                        run_record.as_ref().map(|r| r.status.as_str()).unwrap_or("unknown")
+                    );
+                }
+                other => {
+                    tracing::warn!("Notification type '{}' not yet supported in Phase 15", other);
+                }
+            }
+        }
     }
 
     /// Stop a running agent run by sending a cancel signal.

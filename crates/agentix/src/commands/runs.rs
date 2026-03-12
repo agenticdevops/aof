@@ -34,15 +34,16 @@ pub async fn run(cli: &CliContext, agent: Option<String>, limit: usize) -> Resul
 
             let col_id = 12;
             let col_agent = 20;
+            let col_trigger = 10;
             let col_status = 12;
             let col_started = 20;
-            let _col_iters = 10;
 
             println!(
-                "{:<col_id$}  {:<col_agent$}  {:<col_status$}  {:<col_started$}  {}",
-                "RUN ID", "AGENT", "STATUS", "STARTED", "ITERATIONS",
+                "{:<col_id$}  {:<col_agent$}  {:<col_trigger$}  {:<col_status$}  {:<col_started$}  {}",
+                "RUN ID", "AGENT", "TRIGGER", "STATUS", "STARTED", "ITERATIONS",
                 col_id = col_id,
                 col_agent = col_agent,
+                col_trigger = col_trigger,
                 col_status = col_status,
                 col_started = col_started,
             );
@@ -54,6 +55,10 @@ pub async fn run(cli: &CliContext, agent: Option<String>, limit: usize) -> Resul
                 let agent_name = run["agent"]
                     .as_str()
                     .or_else(|| run["agent_name"].as_str())
+                    .unwrap_or("-");
+
+                let trigger = run["trigger_source"]
+                    .as_str()
                     .unwrap_or("-");
 
                 let status = run["status"].as_str().unwrap_or("unknown");
@@ -73,10 +78,11 @@ pub async fn run(cli: &CliContext, agent: Option<String>, limit: usize) -> Resul
                     .unwrap_or_else(|| "-".to_string());
 
                 println!(
-                    "{:<col_id$}  {:<col_agent$}  {:<col_status$}  {:<col_started$}  {}",
-                    id_short, agent_name, status, started, iters,
+                    "{:<col_id$}  {:<col_agent$}  {:<col_trigger$}  {:<col_status$}  {:<col_started$}  {}",
+                    id_short, agent_name, trigger, status, started, iters,
                     col_id = col_id,
                     col_agent = col_agent,
+                    col_trigger = col_trigger,
                     col_status = col_status,
                     col_started = col_started,
                 );

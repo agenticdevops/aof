@@ -85,6 +85,9 @@ sha2 = "0.10"
 # Cron expression parsing and scheduling
 cron = "0.12"
 
+# SQLite (bundled — no external libsqlite3 dependency)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 # Performance testing
 criterion = { version = "0.5", features = ["html_reports"] }
 

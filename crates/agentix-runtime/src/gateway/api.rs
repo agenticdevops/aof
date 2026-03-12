@@ -19,6 +19,7 @@
 //! | GET | /api/v1/agents/:name/runs/:run_id | Get run details |
 //! | GET | /api/v1/agents/:name/runs/:run_id/logs | Get run logs |
 //! | DELETE | /api/v1/agents/:name/runs/:run_id | Stop a running agent |
+//! | GET | /api/v1/runs | List all runs (optionally filtered by ?agent=name) |
 //! | POST | /api/v1/agents/:name/trigger | Fire an agent via the agent-to-agent or CLI trigger API |
 //! | POST | /webhooks/:trigger_id | Receive a webhook payload and fire a trigger |
 
@@ -56,6 +57,7 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/agents/:name/runs", get(list_runs))
         .route("/api/v1/agents/:name/runs/:run_id", get(get_run).delete(stop_run))
         .route("/api/v1/agents/:name/runs/:run_id/logs", get(get_run_logs))
+        .route("/api/v1/runs", get(list_all_runs))
         .route("/api/v1/agents/:name/trigger", post(trigger_agent))
         .route("/webhooks/:trigger_id", post(receive_webhook))
         .layer(CorsLayer::permissive())
@@ -79,6 +81,15 @@ pub struct ErrorResponse {
 pub struct RunQuery {
     /// Output format: "sse" (default) or "json" (NDJSON).
     pub format: Option<String>,
+}
+
+/// Query params for the global runs listing endpoint.
+#[derive(Debug, Deserialize)]
+pub struct RunsQuery {
+    /// Filter by agent name.
+    pub agent: Option<String>,
+    /// Maximum number of runs to return (default: 20).
+    pub limit: Option<usize>,
 }
 
 /// Body for POST/PUT agent endpoints.
@@ -319,6 +330,41 @@ async fn stop_run(
                 error_response(StatusCode::INTERNAL_SERVER_ERROR, msg)
             }
         }
+    }
+}
+
+/// GET /api/v1/runs
+///
+/// List all runs across all agents, optionally filtered by agent name.
+/// Returns most recent runs first (up to `limit`, default 20).
+async fn list_all_runs(
+    State(manager): State<Arc<AgentManager>>,
+    Query(query): Query<RunsQuery>,
+) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(20);
+    let agent_filter = query.agent.as_deref();
+
+    match manager.run_store.list(agent_filter, limit) {
+        Ok(records) => {
+            let json_records: Vec<serde_json::Value> = records
+                .into_iter()
+                .map(|r| serde_json::json!({
+                    "id": r.id,
+                    "agent": r.agent_name,
+                    "status": r.status,
+                    "started_at": r.started_at.to_rfc3339(),
+                    "ended_at": r.ended_at.map(|d| d.to_rfc3339()),
+                    "duration_ms": r.duration_ms,
+                    "trigger_source": r.trigger_source,
+                    "trigger_id": r.trigger_id,
+                    "iterations": r.iterations,
+                    "input_summary": r.input_summary,
+                    "output_summary": r.output_summary,
+                }))
+                .collect();
+            Json(json_records).into_response()
+        }
+        Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
     }
 }
 

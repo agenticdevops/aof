@@ -66,46 +66,26 @@ impl GatewayClient {
         check_status(resp).await?.json().await.map_err(Into::into)
     }
 
-    /// `GET /api/v1/agents/:name/runs` (or all agents via separate calls) — run history.
+    /// `GET /api/v1/runs` — run history across all agents (or filtered by agent name).
     ///
-    /// If `agent` is `None`, returns runs for all agents combined.
+    /// Uses the global runs endpoint backed by SQLite for persistent history.
     pub async fn list_runs(
         &self,
         agent: Option<&str>,
         limit: usize,
     ) -> Result<Vec<serde_json::Value>> {
+        let mut query = vec![("limit", limit.to_string())];
         if let Some(name) = agent {
-            let resp = self
-                .client
-                .get(self.url(&format!("/api/v1/agents/{}/runs", name)))
-                .query(&[("limit", limit.to_string())])
-                .send()
-                .await
-                .map_err(|e| gateway_err(&self.base_url, e))?;
-            check_status(resp).await?.json().await.map_err(Into::into)
-        } else {
-            // Fetch agents list, then gather runs for each
-            let agents = self.list_agents().await?;
-            let mut all_runs: Vec<serde_json::Value> = Vec::new();
-            for agent_val in &agents {
-                if let Some(name) = agent_val["name"].as_str() {
-                    if let Ok(resp) = self
-                        .client
-                        .get(self.url(&format!("/api/v1/agents/{}/runs", name)))
-                        .query(&[("limit", limit.to_string())])
-                        .send()
-                        .await
-                    {
-                        if let Ok(runs) = resp.json::<Vec<serde_json::Value>>().await {
-                            all_runs.extend(runs);
-                        }
-                    }
-                }
-            }
-            // Sort by started_at descending and take limit
-            all_runs.truncate(limit);
-            Ok(all_runs)
+            query.push(("agent", name.to_string()));
         }
+        let resp = self
+            .client
+            .get(self.url("/api/v1/runs"))
+            .query(&query)
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
     }
 
     /// `GET /api/v1/agents/:name/runs/:run_id/logs` — get stored run events.

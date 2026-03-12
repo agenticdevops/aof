@@ -45,6 +45,8 @@ tokio-stream = { workspace = true }
 http-body-util = { workspace = true }
 anyhow = { workspace = true }
 cron = { workspace = true }
+rusqlite = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "full", "macros"] }
