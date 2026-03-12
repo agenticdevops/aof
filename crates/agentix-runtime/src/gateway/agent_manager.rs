@@ -13,12 +13,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
 use agentix_core::{
     AgentDefinition, AgentixError, AgentLoader, FlatYamlLoader, ModelConfig,
-    ModelProvider, WorkspaceConfig,
+    ModelProvider, TriggerEvent, TriggerRunRegistry, WorkspaceConfig,
 };
 use agentix_llm::ProviderFactory;
 
@@ -135,27 +135,79 @@ pub struct AgentManager {
     workspace_config: Option<WorkspaceConfig>,
     /// Root directory where agents are loaded from (used for WASM tool file resolution).
     agents_dir: Option<std::path::PathBuf>,
+    /// Registry of active trigger instances (CronTrigger, WebhookTrigger, etc.).
+    pub trigger_registry: Mutex<TriggerRunRegistry>,
+    /// Sender side of the trigger event channel.
+    /// Trigger background tasks send (agent_name, TriggerEvent) here.
+    trigger_event_tx: mpsc::Sender<(String, TriggerEvent)>,
 }
 
 impl AgentManager {
     /// Create a new `AgentManager` wrapped in an `Arc` for sharing.
     pub fn new(workspace_config: Option<WorkspaceConfig>) -> Arc<Self> {
-        Arc::new(Self {
+        let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
+        let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
             workspace_config,
             agents_dir: None,
-        })
+            trigger_registry: Mutex::new(TriggerRunRegistry::new()),
+            trigger_event_tx,
+        });
+        // Spawn the trigger dispatcher background task
+        manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
+        manager
     }
 
     /// Create an `AgentManager` with a known agents directory (used for WASM tool resolution).
     pub fn with_agents_dir(workspace_config: Option<WorkspaceConfig>, agents_dir: std::path::PathBuf) -> Arc<Self> {
-        Arc::new(Self {
+        let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
+        let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
             workspace_config,
             agents_dir: Some(agents_dir),
-        })
+            trigger_registry: Mutex::new(TriggerRunRegistry::new()),
+            trigger_event_tx,
+        });
+        manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
+        manager
+    }
+
+    /// Spawn the background task that reads from the trigger event channel
+    /// and calls `run_agent_with_trigger()` for each event.
+    fn spawn_trigger_dispatcher(
+        self: Arc<Self>,
+        mut rx: mpsc::Receiver<(String, TriggerEvent)>,
+    ) {
+        tokio::spawn(async move {
+            while let Some((agent_name, event)) = rx.recv().await {
+                let manager = self.clone();
+                tokio::spawn(async move {
+                    match manager.run_agent_with_trigger(&agent_name, event).await {
+                        Ok(run_id) => {
+                            tracing::info!(
+                                "Trigger fired agent '{}' → run_id '{}'",
+                                agent_name,
+                                run_id
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Trigger failed to run agent '{}': {}",
+                                agent_name,
+                                e
+                            );
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /// Get a clone of the trigger event sender (for use in gateway HTTP handlers).
+    pub fn trigger_event_tx(&self) -> mpsc::Sender<(String, TriggerEvent)> {
+        self.trigger_event_tx.clone()
     }
 
     // -------------------------------------------------------------------------
@@ -201,6 +253,8 @@ impl AgentManager {
                         def.apply_workspace_defaults(ws);
                     }
                     let name = def.name.clone();
+                    // Register triggers from agent YAML before inserting into agents map
+                    self.register_agent_triggers_sync(&def);
                     self.agents.insert(
                         name.clone(),
                         LoadedAgent {
@@ -220,6 +274,83 @@ impl AgentManager {
         }
 
         loaded_names
+    }
+
+    /// Register triggers from agent YAML `triggers:` field into `TriggerRunRegistry`.
+    ///
+    /// Called synchronously during `load_from_dir`. Actual trigger `start()` calls
+    /// happen asynchronously at server startup time via `start_all_triggers()`.
+    fn register_agent_triggers_sync(&self, def: &AgentDefinition) {
+        use cron::Schedule;
+        use std::str::FromStr;
+
+        for (i, trigger_cfg) in def.triggers.iter().enumerate() {
+            let trigger_id = format!("{}-{}-{}", def.name, trigger_cfg.trigger_type, i);
+            match trigger_cfg.trigger_type.as_str() {
+                "cron" | "schedule" => {
+                    if let Some(expr) = &trigger_cfg.expression {
+                        // Normalize 5-field to 7-field
+                        let normalized = normalize_cron_expr(expr);
+                        match Schedule::from_str(&normalized) {
+                            Ok(_) => {
+                                let trigger = CronTriggerImpl {
+                                    id: trigger_id.clone(),
+                                    expression: expr.clone(),
+                                    agent_name: def.name.clone(),
+                                    stop_tx: tokio::sync::Mutex::new(None),
+                                };
+                                // We can't call async here, so store in a sync way
+                                // The actual start() is called from start_all_triggers()
+                                if let Ok(mut registry) = self.trigger_registry.try_lock() {
+                                    registry.register(Arc::new(trigger));
+                                    tracing::info!(
+                                        "Registered cron trigger '{}' for agent '{}'",
+                                        trigger_id,
+                                        def.name
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Agent '{}' has invalid cron expression '{}': {}",
+                                    def.name, expr, e
+                                );
+                            }
+                        }
+                    } else {
+                        tracing::warn!(
+                            "Agent '{}' has cron trigger without expression field",
+                            def.name
+                        );
+                    }
+                }
+                other => {
+                    tracing::debug!(
+                        "Trigger type '{}' for agent '{}' will be registered by the webhook handler",
+                        other, def.name
+                    );
+                }
+            }
+        }
+    }
+
+    /// Start all registered triggers. Call this after all agents are loaded,
+    /// during gateway server startup.
+    pub async fn start_all_triggers(self: &Arc<Self>) {
+        let triggers = {
+            let registry = self.trigger_registry.lock().await;
+            registry.all()
+        };
+
+        let sender = self.trigger_event_tx.clone();
+        for trigger in triggers {
+            let sender_clone = sender.clone();
+            if let Err(e) = trigger.start(sender_clone).await {
+                tracing::warn!("Failed to start trigger '{}': {}", trigger.trigger_id(), e);
+            } else {
+                tracing::info!("Started trigger '{}'", trigger.trigger_id());
+            }
+        }
     }
 
     /// Register a new agent from raw YAML content.
@@ -426,6 +557,27 @@ impl AgentManager {
         }
     }
 
+    /// Run an agent triggered by a `TriggerEvent`.
+    ///
+    /// Serializes the event as the user input (JSON) and starts a new agent run.
+    /// Returns the run ID for tracking purposes.
+    ///
+    /// This method is called by the trigger dispatcher background task and by the
+    /// `/api/v1/agents/:name/trigger` HTTP endpoint.
+    pub async fn run_agent_with_trigger(
+        self: &Arc<Self>,
+        agent_name: &str,
+        trigger_event: agentix_core::TriggerEvent,
+    ) -> Result<String, AgentixError> {
+        // Serialize TriggerEvent as the agent's user input
+        let input = serde_json::to_string(&trigger_event)
+            .map_err(|e| AgentixError::Runtime(format!("Failed to serialize TriggerEvent: {}", e)))?;
+
+        // Delegate to existing start_run — returns (run_id, event_receiver)
+        let (run_id, _event_rx) = self.start_run(agent_name, &input).await?;
+        Ok(run_id)
+    }
+
     /// Stop a running agent run by sending a cancel signal.
     pub fn stop_run(&self, run_id: &str) -> Result<(), AgentixError> {
         let mut run = self.runs.get_mut(run_id).ok_or_else(|| {
@@ -621,4 +773,92 @@ fn get_default_api_key_from_env(provider_name: &str) -> Option<String> {
         _ => return None,
     };
     std::env::var(var_name).ok()
+}
+
+// ---------------------------------------------------------------------------
+// CronTriggerImpl — minimal cron trigger for gateway-level scheduling
+// ---------------------------------------------------------------------------
+
+/// Normalize a 5-field cron expression to 7-field format required by the `cron` crate.
+fn normalize_cron_expr(expr: &str) -> String {
+    let parts: Vec<&str> = expr.split_whitespace().collect();
+    match parts.len() {
+        5 => format!("0 {} *", expr),
+        6 => format!("{} *", expr),
+        _ => expr.to_string(),
+    }
+}
+
+/// Minimal cron trigger implementation for use within agentix-runtime.
+///
+/// This avoids a circular dependency: agentix-runtime cannot import agentix-triggers
+/// (which depends on agentix-runtime). This struct duplicates just enough logic
+/// from `agentix_triggers::CronTrigger` for the gateway to schedule agents.
+struct CronTriggerImpl {
+    id: String,
+    expression: String,
+    agent_name: String,
+    stop_tx: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+}
+
+#[async_trait::async_trait]
+impl agentix_core::TriggerTrait for CronTriggerImpl {
+    fn trigger_id(&self) -> &str {
+        &self.id
+    }
+
+    fn source(&self) -> agentix_core::TriggerSource {
+        agentix_core::TriggerSource::Cron
+    }
+
+    async fn start(
+        &self,
+        sender: tokio::sync::mpsc::Sender<(String, TriggerEvent)>,
+    ) -> Result<(), AgentixError> {
+        use cron::Schedule;
+        use std::str::FromStr;
+
+        let normalized = normalize_cron_expr(&self.expression);
+        let schedule = Schedule::from_str(&normalized)
+            .map_err(|e| AgentixError::Config(format!("Cron parse error: {}", e)))?;
+
+        let agent_name = self.agent_name.clone();
+        let trigger_id = self.id.clone();
+        let expression = self.expression.clone();
+        let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
+        *self.stop_tx.lock().await = Some(stop_tx);
+
+        tokio::spawn(async move {
+            for next in schedule.upcoming(chrono::Utc) {
+                let now = chrono::Utc::now();
+                let duration = (next - now).to_std().unwrap_or_default();
+
+                tokio::select! {
+                    _ = tokio::time::sleep(duration) => {
+                        let event = TriggerEvent::new(
+                            agentix_core::TriggerSource::Cron,
+                            serde_json::json!({
+                                "expression": expression,
+                                "scheduled_at": next.to_rfc3339(),
+                            }),
+                            &trigger_id,
+                        );
+                        if sender.send((agent_name.clone(), event)).await.is_err() {
+                            break;
+                        }
+                    }
+                    _ = &mut stop_rx => break,
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    async fn stop(&self) -> Result<(), AgentixError> {
+        if let Some(tx) = self.stop_tx.lock().await.take() {
+            let _ = tx.send(());
+        }
+        Ok(())
+    }
 }

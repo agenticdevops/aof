@@ -82,6 +82,9 @@ regex = "1.10"
 # Cryptography
 sha2 = "0.10"
 
+# Cron expression parsing and scheduling
+cron = "0.12"
+
 # Performance testing
 criterion = { version = "0.5", features = ["html_reports"] }
 

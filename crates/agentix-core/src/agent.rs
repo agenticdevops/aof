@@ -1604,6 +1604,12 @@ pub struct AgentManifest {
     /// MCP server configurations for this agent.
     #[serde(default)]
     pub mcp_servers: Vec<crate::mcp::McpServerConfig>,
+    /// Trigger configurations — what events fire this agent.
+    #[serde(default)]
+    pub triggers: Vec<AgentTriggerConfig>,
+    /// Notification routing — where to send run results.
+    #[serde(default)]
+    pub notifications: Vec<AgentNotificationConfig>,
 }
 
 /// Model configuration within an `AgentManifest`.
@@ -1742,6 +1748,58 @@ pub struct ToolEntry {
     pub args: Vec<String>,
 }
 
+/// Trigger configuration entry from agent YAML `triggers:` field.
+///
+/// Each entry in the `triggers:` list specifies a trigger type and its options.
+/// The gateway reads these at agent load time and registers the appropriate
+/// `TriggerTrait` implementations in `TriggerRunRegistry`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTriggerConfig {
+    /// Trigger type: "cron", "webhook", "github", "jira", "slack", "discord", "telegram", "agent"
+    #[serde(rename = "type")]
+    pub trigger_type: String,
+
+    /// Cron expression (for type=cron). Standard 5-field format: `min hour dom month dow`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
+
+    /// Webhook/GitHub/Jira secret for HMAC signature verification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_secret: Option<String>,
+
+    /// GitHub/Jira event types to filter on (e.g., ["pull_request", "push"]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<String>,
+
+    /// Bot token for Slack/Discord/Telegram triggers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_token: Option<String>,
+
+    /// Signing secret for Slack request verification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_secret: Option<String>,
+
+    /// Discord application ID (for Discord triggers).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_id: Option<String>,
+
+    /// URL path for webhook triggers (defaults to /webhooks/<trigger_id>).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Notification destination configuration entry from `notifications:` field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentNotificationConfig {
+    /// Notification type: "webhook", "log"
+    #[serde(rename = "type")]
+    pub notification_type: String,
+
+    /// URL for webhook notifications.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
 /// The assembled runtime agent type, built from a directory or flat YAML.
 ///
 /// This is the primary type consumed by the ReAct loop and gateway.
@@ -1773,6 +1831,10 @@ pub struct AgentDefinition {
     pub timeout_secs: u64,
     /// Execution mode.
     pub mode: AgentMode,
+    /// Trigger configurations from agent YAML `triggers:` field.
+    pub triggers: Vec<AgentTriggerConfig>,
+    /// Notification routing configurations from `notifications:` field.
+    pub notifications: Vec<AgentNotificationConfig>,
 }
 
 impl AgentDefinition {
@@ -1977,6 +2039,8 @@ impl DirectoryLoader {
             max_iterations: 10,
             timeout_secs: 300,
             mode: AgentMode::Autonomous,
+            triggers: manifest.triggers,
+            notifications: manifest.notifications,
         })
     }
 }
@@ -2009,6 +2073,10 @@ struct FlatAgentSpecBody {
     instructions: Option<String>,
     #[serde(default)]
     tools: Vec<serde_yaml::Value>,
+    #[serde(default)]
+    triggers: Vec<AgentTriggerConfig>,
+    #[serde(default)]
+    notifications: Vec<AgentNotificationConfig>,
 }
 
 /// Loads flat YAML agents (`apiVersion: openagentix.dev/v1 / kind: Agent`) into `AgentDefinition`.
@@ -2039,6 +2107,8 @@ impl FlatYamlLoader {
             system_prompt: None,
             instructions: None,
             tools: vec![],
+            triggers: vec![],
+            notifications: vec![],
         });
 
         // system_prompt and instructions are aliases
@@ -2094,6 +2164,8 @@ impl FlatYamlLoader {
             max_iterations: 10,
             timeout_secs: 300,
             mode: AgentMode::Autonomous,
+            triggers: spec.triggers,
+            notifications: spec.notifications,
         })
     }
 }
