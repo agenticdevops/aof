@@ -19,6 +19,7 @@
 //! | GET | /api/v1/agents/:name/runs/:run_id | Get run details |
 //! | GET | /api/v1/agents/:name/runs/:run_id/logs | Get run logs |
 //! | DELETE | /api/v1/agents/:name/runs/:run_id | Stop a running agent |
+//! | POST | /webhooks/:trigger_id | Receive a webhook payload and fire a trigger |
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -26,11 +27,13 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Path as AxumPath, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response, sse::Event, sse::KeepAlive, Sse},
     routing::{get, post},
 };
+use agentix_core::TriggerSource;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tower_http::cors::CorsLayer;
@@ -52,6 +55,7 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/agents/:name/runs", get(list_runs))
         .route("/api/v1/agents/:name/runs/:run_id", get(get_run).delete(stop_run))
         .route("/api/v1/agents/:name/runs/:run_id/logs", get(get_run_logs))
+        .route("/webhooks/:trigger_id", post(receive_webhook))
         .layer(CorsLayer::permissive())
         .with_state(manager)
 }
@@ -299,6 +303,71 @@ async fn stop_run(
         Err(err) => {
             let msg = err.to_string();
             if msg.contains("not found") {
+                error_response(StatusCode::NOT_FOUND, msg)
+            } else {
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
+        }
+    }
+}
+
+/// POST /webhooks/:trigger_id
+///
+/// Receives a webhook payload and dispatches it to the agent that registered
+/// the trigger with this `trigger_id`.
+///
+/// The `trigger_id` is auto-generated at agent load time as `{agent_name}-{type}-{index}`.
+/// Example: `POST /webhooks/my-agent-webhook-0`
+///
+/// Determines the trigger source from the incoming headers:
+/// - `x-github-event` present → `TriggerSource::GitHub`
+/// - `x-jira-event` or body has `webhookEvent` field → `TriggerSource::Jira`
+/// - otherwise → `TriggerSource::Webhook`
+///
+/// Returns 202 Accepted if the event is queued, 404 if no agent owns the trigger_id.
+async fn receive_webhook(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(trigger_id): AxumPath<String>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    // Determine trigger source from headers
+    let source = if headers.contains_key("x-github-event") {
+        TriggerSource::GitHub
+    } else if headers.contains_key("x-jira-event")
+        || body.get("webhookEvent").is_some()
+    {
+        TriggerSource::Jira
+    } else {
+        TriggerSource::Webhook
+    };
+
+    // Collect headers into context map
+    let context: HashMap<String, String> = headers
+        .iter()
+        .filter_map(|(k, v)| {
+            let key = k.as_str().to_lowercase();
+            let val = v.to_str().ok().map(|s| s.to_string());
+            val.map(|v| (key, v))
+        })
+        .collect();
+
+    match manager
+        .dispatch_webhook_payload(&trigger_id, body, source, context)
+        .await
+    {
+        Ok(agent_name) => (
+            StatusCode::ACCEPTED,
+            Json(serde_json::json!({
+                "status": "queued",
+                "trigger_id": trigger_id,
+                "agent": agent_name,
+            })),
+        )
+            .into_response(),
+        Err(err) => {
+            let msg = err.to_string();
+            if msg.contains("No agent registered") {
                 error_response(StatusCode::NOT_FOUND, msg)
             } else {
                 error_response(StatusCode::INTERNAL_SERVER_ERROR, msg)

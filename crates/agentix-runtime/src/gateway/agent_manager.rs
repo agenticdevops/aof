@@ -578,6 +578,57 @@ impl AgentManager {
         Ok(run_id)
     }
 
+    /// Dispatch an incoming webhook HTTP payload to the agent subscribed to `trigger_id`.
+    ///
+    /// Looks up which agent has a `webhook` trigger whose auto-generated id matches
+    /// `trigger_id` (format: `{agent_name}-webhook-{index}`), then fires a
+    /// `TriggerEvent` by sending it through the trigger dispatcher channel.
+    ///
+    /// Returns the agent name on success.
+    /// Returns `Err` if no agent is registered for `trigger_id` or the channel is closed.
+    pub async fn dispatch_webhook_payload(
+        &self,
+        trigger_id: &str,
+        payload: serde_json::Value,
+        source: agentix_core::TriggerSource,
+        context: std::collections::HashMap<String, String>,
+    ) -> Result<String, AgentixError> {
+        // Find the agent that owns this trigger_id by examining agent trigger configs.
+        // trigger_id format: "{agent_name}-{type}-{index}"
+        let agent_name = self
+            .agents
+            .iter()
+            .find(|entry| {
+                let def = &entry.value().definition;
+                def.triggers.iter().enumerate().any(|(i, t)| {
+                    let id = format!("{}-{}-{}", def.name, t.trigger_type, i);
+                    id == trigger_id
+                })
+            })
+            .map(|entry| entry.value().definition.name.clone())
+            .ok_or_else(|| {
+                AgentixError::Runtime(format!(
+                    "No agent registered for trigger_id '{}'",
+                    trigger_id
+                ))
+            })?;
+
+        let event = agentix_core::TriggerEvent {
+            source,
+            payload,
+            context,
+            fired_at: chrono::Utc::now(),
+            trigger_id: trigger_id.to_string(),
+        };
+
+        self.trigger_event_tx
+            .send((agent_name.clone(), event))
+            .await
+            .map_err(|e| AgentixError::Runtime(format!("Trigger channel closed: {}", e)))?;
+
+        Ok(agent_name)
+    }
+
     /// Stop a running agent run by sending a cancel signal.
     pub fn stop_run(&self, run_id: &str) -> Result<(), AgentixError> {
         let mut run = self.runs.get_mut(run_id).ok_or_else(|| {
