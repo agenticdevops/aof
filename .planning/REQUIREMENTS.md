@@ -16,11 +16,11 @@
 
 ### Agent Specification
 
-- [ ] **SPEC-01**: User can define an agent in YAML with `apiVersion: openagentix.dev/v1`, `kind: Agent`, `metadata`, `spec`
-- [ ] **SPEC-02**: Agent spec supports `model`, `mode` (manual/semi-autonomous/autonomous), `skills`, `tools`, `mcp_servers`, `triggers`, `notifications`, `approval`, `budget`, `telemetry`
+- [x] **SPEC-01**: User can define an agent in YAML with `apiVersion: openagentix.dev/v1`, `kind: Agent`, `metadata`, `spec`
+- [x] **SPEC-02**: Agent spec supports `model`, `mode` (manual/semi-autonomous/autonomous), `skills`, `tools`, `mcp_servers`, `triggers`, `notifications`, `approval`, `budget`, `telemetry`
 - [ ] **SPEC-03**: Existing AOF agent YAML configs load with backward compatibility
-- [ ] **SPEC-04**: Agent spec supports `namespace` for team-scoped isolation
-- [ ] **SPEC-05**: Agent spec supports `version` for configuration versioning
+- [x] **SPEC-04**: Agent spec supports `namespace` for team-scoped isolation
+- [x] **SPEC-05**: Agent spec supports `version` for configuration versioning
 
 ### Skills Composition
 
@@ -215,11 +215,11 @@
 | CORE-04 | Phase 16 | Pending |
 | CORE-05 | Phase 17 | Pending |
 | CORE-06 | Phase 16 | Pending |
-| SPEC-01 | Phase 13 | Pending |
-| SPEC-02 | Phase 13 | Pending |
+| SPEC-01 | Phase 13 | Complete |
+| SPEC-02 | Phase 13 | Complete |
 | SPEC-03 | Phase 13 | Pending |
-| SPEC-04 | Phase 13 | Pending |
-| SPEC-05 | Phase 13 | Pending |
+| SPEC-04 | Phase 13 | Complete |
+| SPEC-05 | Phase 13 | Complete |
 | SKILL-01 | Phase 14 | Pending |
 | SKILL-02 | Phase 14 | Pending |
 | SKILL-03 | Phase 14 | Pending |

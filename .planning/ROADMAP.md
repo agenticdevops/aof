@@ -155,7 +155,7 @@
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 13. Rebrand + Core Runtime + CLI Foundation | v2.0 | 0/TBD | Not started | - |
+| 13. Rebrand + Core Runtime + CLI Foundation | 1/9 | In Progress|  | - |
 | 14. Skills Composition + Tools + WASM Sandbox | v2.0 | 0/TBD | Not started | - |
 | 15. Triggers + Scheduling | v2.0 | 0/TBD | Not started | - |
 | 16. Agent Coordination + Memory | v2.0 | 0/TBD | Not started | - |
