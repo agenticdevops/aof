@@ -394,9 +394,9 @@ impl Context {
                     || allowed == &format!("telegram:{}", user_id)
                     || allowed == &format!("discord:{}", user_id)
                     // Whitelist entry has prefix, strip and compare
-                    || (allowed.strip_prefix("slack:") == Some(user_id))
-                    || (allowed.strip_prefix("telegram:") == Some(user_id))
-                    || (allowed.strip_prefix("discord:") == Some(user_id))
+                    || allowed.strip_prefix("slack:").map_or(false, |id| id == user_id)
+                    || allowed.strip_prefix("telegram:").map_or(false, |id| id == user_id)
+                    || allowed.strip_prefix("discord:").map_or(false, |id| id == user_id)
             })
         } else {
             true // No approval config = anyone can approve

@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-03-12
 **Milestone:** v2.0 OpenAgentiX
-**Status:** Executing Phase 13 (Plan 4 of 9)
+**Status:** Executing Phase 13
 
 ---
 
@@ -18,11 +18,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 13 of 22 (Rebrand + Core Runtime + CLI Foundation)
-Plan: 4 of 9 in current phase
+Plan: 3 of 9 in current phase
 Status: Executing
-Last activity: 2026-03-12 — Completed 13-03: AgentSpec + WorkspaceConfig types with 18 TDD tests
+Last activity: 2026-03-12 — Completed 13-01: Renamed all crates from aof-* to agentix-*, deleted v1.0 dead code
 
-Progress: [████░░░░░░] 44%
+Progress: [███░░░░░░░] 33%
 
 ---
 
@@ -44,9 +44,6 @@ Progress: [████░░░░░░] 44%
 - `system_prompt` and `system_prompt_file` are mutually exclusive (13-02)
 - Three-tier resolution order: agent YAML > workspace defaults > built-in defaults (13-02)
 - Provider credentials are workspace-only (`agentix.yaml`) — cannot be set per-agent (13-02)
-- Legacy AgentMetadata renamed to LegacyAgentMetadata to avoid conflict with new v1 spec AgentMetadata (13-03)
-- TDD: 18 tests for AgentSpec + WorkspaceConfig covering deserialization, validation, defaults merge, env var expansion (13-03)
-- serde_path_to_error used in AgentSpec::from_yaml and WorkspaceConfig::from_yaml for field-path error reporting (13-03)
 
 ### Open Questions
 
@@ -61,7 +58,7 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 13-03-PLAN.md — AgentSpec + WorkspaceConfig types with 18 TDD tests
+Stopped at: Completed 13-01-PLAN.md — Renamed all crates aof-* to agentix-*, deleted v1.0 dead code
 Resume file: None
 
 ---

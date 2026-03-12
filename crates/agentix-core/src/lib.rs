@@ -16,25 +16,17 @@ pub mod schema;
 pub mod tool;
 pub mod trigger;
 
-// Re-export v1 spec types
+// Re-export core types
 pub use agent::{
-    AgentSpec, AgentMetadata, AgentSpecInner, AgentMode, ToolEntry, SpecToolType,
-    McpServerEntry, McpTransportType, NotificationEntry, NotificationChannel,
-};
-// Re-export legacy v1.0 types (still used by agentix-runtime)
-pub use agent::{
-    Agent, AgentConfig, AgentContext, ExecutionMetadata, HttpToolConfig,
-    LegacyAgentMetadata, MemorySpec, Message, MessageRole, OutputSchemaSpec, QualifiedToolSpec,
-    RoutingConfig, ShellToolConfig, StructuredMemoryConfig, ToolResult as AgentToolResult,
-    ToolSource, ToolSpec, TypeBasedToolSpec, TypeBasedToolType,
+    Agent, AgentConfig, AgentContext, AgentMetadata, ExecutionMetadata, HttpToolConfig,
+    MemorySpec, Message, MessageRole, OutputSchemaSpec, QualifiedToolSpec, RoutingConfig,
+    ShellToolConfig, StructuredMemoryConfig, ToolResult as AgentToolResult, ToolSource, ToolSpec,
+    TypeBasedToolSpec, TypeBasedToolType,
 };
 pub use error::{AgentixError, AgentixResult};
 // Backward-compatible aliases
 pub use error::{AofError, AofResult};
 pub use error_tracker::{ErrorKnowledgeBase, ErrorRecord, ErrorStats};
-pub use config::{
-    WorkspaceConfig, WorkspaceMetadata, WorkspaceSpec, WorkspaceDefaults, ProviderConfig, GatewayConfig,
-};
 pub use mcp::{McpServerConfig, McpTransport};
 pub use memory::{Memory, MemoryBackend, MemoryEntry, MemoryQuery};
 pub use model::{

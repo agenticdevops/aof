@@ -45,15 +45,6 @@ pub enum AgentixError {
     #[error("Validation error: {0}")]
     Validation(String),
 
-    #[error("Spec validation error: {0}")]
-    SpecValidation(String),
-
-    #[error("YAML parse error at {path}: {message}")]
-    YamlParse { path: String, message: String },
-
-    #[error("Config not found: {0}")]
-    ConfigNotFound(String),
-
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
@@ -104,21 +95,6 @@ impl AgentixError {
     /// Create a validation error
     pub fn validation(msg: impl Into<String>) -> Self {
         Self::Validation(msg.into())
-    }
-
-    /// Create a spec validation error
-    pub fn spec_validation(msg: impl Into<String>) -> Self {
-        Self::SpecValidation(msg.into())
-    }
-
-    /// Create a YAML parse error with field path
-    pub fn yaml_parse(path: impl Into<String>, message: impl Into<String>) -> Self {
-        Self::YamlParse { path: path.into(), message: message.into() }
-    }
-
-    /// Create a config not found error
-    pub fn config_not_found(msg: impl Into<String>) -> Self {
-        Self::ConfigNotFound(msg.into())
     }
 }
 

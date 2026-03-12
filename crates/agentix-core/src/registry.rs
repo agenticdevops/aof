@@ -69,7 +69,7 @@ impl Registry<AgentConfig> for AgentRegistry {
             let entry = entry?;
             let file_path = entry.path();
 
-            if file_path.extension().is_some_and(|e| e == "yaml" || e == "yml") {
+            if file_path.extension().map_or(false, |e| e == "yaml" || e == "yml") {
                 // Skip non-Agent YAML files (Trigger, etc.)
                 if !yaml_file_has_kind(&file_path, "Agent") {
                     tracing::debug!("Skipping non-Agent file: {:?}", file_path);
@@ -156,7 +156,7 @@ impl Registry<Context> for ContextRegistry {
             let entry = entry?;
             let file_path = entry.path();
 
-            if file_path.extension().is_some_and(|e| e == "yaml" || e == "yml") {
+            if file_path.extension().map_or(false, |e| e == "yaml" || e == "yml") {
                 match load_yaml_file::<Context>(&file_path) {
                     Ok(mut context) => {
                         context.expand_env_vars();
@@ -246,7 +246,7 @@ impl Registry<Trigger> for TriggerRegistry {
             let entry = entry?;
             let file_path = entry.path();
 
-            if file_path.extension().is_some_and(|e| e == "yaml" || e == "yml") {
+            if file_path.extension().map_or(false, |e| e == "yaml" || e == "yml") {
                 match load_yaml_file::<Trigger>(&file_path) {
                     Ok(mut trigger) => {
                         trigger.expand_env_vars();
