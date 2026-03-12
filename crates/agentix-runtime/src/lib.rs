@@ -1,20 +1,16 @@
-//! OpenAgentiX Runtime - Agent execution runtime
+//! OpenAgentiX Runtime — Agent execution runtime
 //!
-//! This crate provides the core execution engine for OpenAgentiX agents, handling:
-//! - Agent lifecycle management
-//! - Tool call execution loops
-//! - Context management
-//! - Error handling and recovery
+//! This crate provides the ReAct (Reason + Act) loop execution engine for
+//! OpenAgentiX agents, handling plan-act-observe-reflect cycles.
 
 pub mod executor;
 pub mod health;
 pub mod metrics;
 pub mod shutdown;
+pub mod streaming;
 
-pub use executor::{
-    AgentExecutor, AgentFlowEvent, AgentFlowExecutor, ApprovalDecision, HumanInput, Runtime,
-    StreamEvent, WorkflowEvent, WorkflowExecutor,
-};
+pub use executor::{ReActConfig, ReActEngine, ReActEvent, ReActStep, RunResult, ToolAction};
+pub use streaming::{EventReceiver, EventSender, JsonFormatter, SseEncoder, TextFormatter};
 pub use health::{
     check_readiness, DependencyState, DependencyStatus, HealthResponse, ReadinessResponse,
 };
