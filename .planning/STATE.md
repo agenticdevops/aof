@@ -18,11 +18,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 13 of 22 (Rebrand + Core Runtime + CLI Foundation)
-Plan: 3 of 9 in current phase
+Plan: 4 of 9 in current phase
 Status: Executing
-Last activity: 2026-03-12 — Completed 13-01: Renamed all crates from aof-* to agentix-*, deleted v1.0 dead code
+Last activity: 2026-03-12 — Completed 13-02: Agent directory structure spec, minimal agent.yaml rewrite, workspace-config.md update
 
-Progress: [███░░░░░░░] 33%
+Progress: [████░░░░░░] 44%
 
 ---
 
@@ -38,12 +38,18 @@ Progress: [███░░░░░░░] 33%
 - See PROJECT.md Key Decisions table for full list
 - All crates renamed from aof-* to agentix-*, AofError/AofResult aliased to AgentixError/AgentixResult (13-01)
 - schema.rs kept in agentix-core (agent.rs depends on it) — not deleted despite being in v1.0 list (13-01)
-- Agent YAML uses `apiVersion: openagentix.dev/v1` / `kind: Agent` full Kubernetes style (13-02)
+- Agent YAML uses `apiVersion: openagentix.dev/v1` / `kind: Agent` full Kubernetes style (13-02 old spec, now superseded)
 - Unified `spec.tools` list with `type` discriminator (`cli`/`mcp`/`shell`) — no separate tool sections (13-02)
 - `provider/model` explicit notation enforced in `spec.model` (exactly one `/` required) (13-02)
 - `system_prompt` and `system_prompt_file` are mutually exclusive (13-02)
 - Three-tier resolution order: agent YAML > workspace defaults > built-in defaults (13-02)
 - Provider credentials are workspace-only (`agentix.yaml`) — cannot be set per-agent (13-02)
+- Agent definitions are directories (GitAgent-compatible): agent.yaml = minimal manifest only (13-02)
+- agent.yaml carries only spec_version, name, version, description, model.preferred, extends, dependencies (13-02)
+- Behavior lives in SOUL.md + RULES.md + skills/ — NOT in agent.yaml (13-02)
+- Runtime behavior fields (max_iterations, timeout, mode) moved to workspace defaults only (13-02)
+- agents_dir scanning: directory with agent.yaml = GitAgent format; flat *.yaml = backward compat (13-02)
+- Sub-agents (agents/ subdirectory) are lazy-loaded on first delegation from parent (13-02)
 
 ### Open Questions
 
@@ -58,7 +64,7 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 13-01-PLAN.md — Renamed all crates aof-* to agentix-*, deleted v1.0 dead code
+Stopped at: Completed 13-02-PLAN.md — Agent directory spec, minimal agent.yaml rewrite, workspace-config.md update
 Resume file: None
 
 ---

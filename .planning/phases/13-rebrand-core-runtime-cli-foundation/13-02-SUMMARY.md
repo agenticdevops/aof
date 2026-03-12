@@ -1,97 +1,111 @@
 ---
-phase: 13
+phase: 13-rebrand-core-runtime-cli-foundation
 plan: 02
-subsystem: docs/spec
-tags: [spec, agent-yaml, workspace-config, openagentix, contracts-first]
-dependency_graph:
-  requires: []
-  provides: [SPEC-01, SPEC-02, SPEC-04, SPEC-05]
-  affects: [13-03, 13-04, 13-05, 13-06, 13-07, 13-08, 13-09]
-tech_stack:
+subsystem: docs
+tags: [spec, agent-directory, gitagent, documentation]
+
+requires:
+  - 13-01 (agentix-* crate namespace, clean workspace)
+provides:
+  - docs/spec/agent-directory-structure.md — primary GitAgent-compatible agent format reference
+  - docs/spec/agent-yaml-v1.md — rewritten: minimal agent.yaml manifest (spec_version, name, model.preferred only)
+  - docs/spec/workspace-config.md — updated with Agent Discovery section (directories + flat YAML)
+affects: [13-03, 13-04, 13-05, 13-06, 13-07, 13-08, 13-09]
+
+tech-stack:
   added: []
-  patterns: [contracts-first, kubernetes-style-yaml, env-var-expansion]
-key_files:
+  patterns:
+    - "Agent-as-directory: agent.yaml is minimal manifest, behavior in SOUL.md + RULES.md + skills/"
+    - "System prompt assembly order: SOUL.md + RULES.md + skills/ + knowledge/ + hooks/bootstrap.md"
+    - "agents/ subdirectory enables recursive multi-agent hierarchies (lazy loaded)"
+    - "AgentManifestFormat enum: Directory (preferred) vs FlatYaml (backward compat)"
+    - "spec_version field gates format evolution without breaking existing agents"
+
+key-files:
   created:
+    - docs/spec/agent-directory-structure.md
+  modified:
     - docs/spec/agent-yaml-v1.md
     - docs/spec/workspace-config.md
-  modified: []
-decisions:
-  - "Agent YAML uses apiVersion: openagentix.dev/v1 / kind: Agent — full Kubernetes style"
-  - "Unified spec.tools list with type discriminator (cli/mcp/shell) — no separate tool sections"
-  - "provider/model explicit notation enforced — exactly one slash required"
-  - "system_prompt and system_prompt_file are mutually exclusive"
-  - "Three-tier resolution: agent YAML > workspace defaults > built-in defaults"
-  - "Provider credentials are workspace-only — cannot be set per-agent"
-  - "metadata.version is semver for config versioning, separate from spec changes"
-  - "Triggers and notifications fields defined now, implemented in Phases 15-16"
-  - "Approval/budget/telemetry fields defined now, implemented in Phases 17-20"
-metrics:
-  duration: "3m 30s"
-  completed: "2026-03-12"
-  tasks_completed: 2
-  files_created: 2
-  files_modified: 0
+
+key-decisions:
+  - "agent.yaml carries only metadata + model preference — all behavior in markdown files (SOUL.md, RULES.md, skills/)"
+  - "Runtime behavior fields (max_iterations, timeout, mode) live in workspace defaults, not per-agent agent.yaml"
+  - "Both directory and flat YAML formats supported in agents_dir scan (backward compat preserved)"
+  - "Sub-agents loaded lazily — only when parent first delegates to them"
+  - "extends field enables base agent inheritance via git URL overlay"
+
+requirements-completed: [SPEC-01, SPEC-02, SPEC-04, SPEC-05]
+
+duration: 4min
+completed: 2026-03-12
 ---
 
-# Phase 13 Plan 02: Agent YAML v1 Specification and Workspace Config Summary
+# Phase 13 Plan 02: Agent Directory Structure Specification Summary
 
-**One-liner:** Canonical `openagentix.dev/v1` Agent YAML and `agentix.yaml` workspace configuration specifications with full field definitions, validation rules, and working examples.
+**GitAgent-compatible directory-based agent format fully documented; agent.yaml rewritten to minimal manifest; workspace-config.md updated with directory-first agent discovery**
 
----
+## Performance
 
-## What Was Built
+- **Duration:** 4 min
+- **Started:** 2026-03-12T17:53:18Z
+- **Completed:** 2026-03-12T17:57:00Z
+- **Tasks:** 2
+- **Files modified:** 3 (1 created, 2 rewritten/updated)
 
-Two specification documents establishing the contracts-first foundation for all Phase 13+ implementation:
+## Accomplishments
 
-1. **`docs/spec/agent-yaml-v1.md`** — The canonical Agent YAML v1 specification. Covers the full Kubernetes-style structure (`apiVersion`, `kind`, `metadata`, `spec`), all 20+ spec fields, validation rules with regex patterns and error messages, and three complete working examples (minimal, full-featured, external prompt file).
+- Created `docs/spec/agent-directory-structure.md` as the primary GitAgent format reference: full
+  directory layout, required files, system prompt assembly algorithm (5-step, deterministic),
+  skills/ composability, tools/ YAML schemas, agents/ recursive multi-agent, hooks/, knowledge/,
+  memory/runtime/, validation rules, forward/backward compatibility, 3 concrete examples
+- Rewrote `docs/spec/agent-yaml-v1.md` from monolithic YAML spec to minimal manifest spec:
+  documents only 6 fields (spec_version, name, version, description, model.preferred, extends,
+  dependencies) and explicitly documents what does NOT belong in agent.yaml
+- Updated `docs/spec/workspace-config.md`: added Agent Discovery section documenting directory-first
+  scanning with flat YAML backward compat; updated spec.defaults docs to explain these are now the
+  sole location for runtime behavior fields
 
-2. **`docs/spec/workspace-config.md`** — The workspace configuration specification for `agentix.yaml`. Covers defaults, provider credentials (with `${ENV_VAR}` expansion), gateway settings, agent discovery, the three-tier resolution order, and two complete examples (minimal, full production).
+## Task Commits
 
----
+1. **Task 1: Write the agent directory structure specification** - `e059549`
+2. **Task 2: Rewrite agent-yaml-v1.md and update workspace-config.md** - `1989ee6`
 
-## Tasks Completed
+## Files Created/Modified
 
-| Task | Name | Commit | Files |
-|------|------|--------|-------|
-| 1 | Write Agent YAML v1 specification | ab52a0b | docs/spec/agent-yaml-v1.md |
-| 2 | Write workspace configuration specification | 5179fc4 | docs/spec/workspace-config.md |
+- `docs/spec/agent-directory-structure.md` - Created: primary GitAgent format specification (484 lines)
+- `docs/spec/agent-yaml-v1.md` - Rewritten: minimal manifest spec (was monolithic YAML, 633 → 306 lines)
+- `docs/spec/workspace-config.md` - Updated: Agent Discovery section + updated defaults explanation
 
----
+## Decisions Made
 
-## Key Decisions Made
-
-**Unified tools list:** All tool types (CLI, MCP, shell) live under a single `spec.tools` list with a `type` discriminator field. This avoids the complexity of separate `cli_tools`, `mcp_tools`, `shell_tools` keys and makes the schema simpler to validate.
-
-**provider/model format enforced:** The `spec.model` field requires exactly one `/` separator (e.g., `anthropic/claude-sonnet-4-6`). This enables unambiguous provider routing without separate `provider` and `model` fields.
-
-**Workspace-only provider credentials:** API keys and provider endpoints live in `agentix.yaml` only — not in individual agent files. This keeps secrets out of agent definitions that may be checked into version control.
-
-**Phase-aware field documentation:** Fields like `spec.triggers`, `spec.approval`, `spec.budget`, and `spec.telemetry` are defined in the spec now but clearly annotated with the phase where their enforcement logic ships. This prevents breaking changes when those phases implement the runtime behavior.
-
-**`metadata.version` for config versioning:** The `metadata.version` field (semver) tracks changes to the agent's configuration definition — not the OpenAgentiX spec version (which is `apiVersion`). Useful for auditing what config was active during an incident.
-
----
+- `agent.yaml` is strictly minimal: only `spec_version`, `name`, `version`, `description`,
+  `model.preferred`, `extends`, `dependencies`. Behavior fields removed.
+- `max_iterations`, `timeout`, `mode` now live only in workspace `spec.defaults` (since they're
+  no longer in `agent.yaml`, the workspace is the only place to configure them per-workspace).
+- Both directory format and flat YAML format are auto-detected from `agents_dir` scanning — no
+  explicit config needed.
+- `sub-agents` under `agents/` are lazy-loaded — runtime doesn't load them at startup.
 
 ## Deviations from Plan
 
-None — plan executed exactly as written. Both spec documents were created with all required fields, examples, and validation rules.
-
----
-
-## Requirements Fulfilled
-
-- **SPEC-01:** Agent YAML uses `apiVersion: openagentix.dev/v1` — documented and validated
-- **SPEC-02:** Full spec fields documented — model, mode, tools, mcp_servers, triggers, notifications, approval, budget, telemetry, system_prompt, system_prompt_file, env
-- **SPEC-04:** Namespace field documented in metadata with default `"default"` and DNS-compatible validation
-- **SPEC-05:** Version field documented in metadata with semver format validation
+None — plan executed exactly as written.
 
 ---
 
 ## Self-Check
 
-- [x] `docs/spec/agent-yaml-v1.md` exists and contains `apiVersion: openagentix.dev/v1`
-- [x] `docs/spec/workspace-config.md` exists and contains `agentix.yaml` and `defaults:`
-- [x] Commit ab52a0b exists (Task 1)
-- [x] Commit 5179fc4 exists (Task 2)
+**Files exist:**
+- docs/spec/agent-directory-structure.md: FOUND
+- docs/spec/agent-yaml-v1.md: FOUND
+- docs/spec/workspace-config.md: FOUND
+
+**Commits exist:**
+- e059549: FOUND
+- 1989ee6: FOUND
 
 ## Self-Check: PASSED
+
+---
+*Phase: 13-rebrand-core-runtime-cli-foundation*
+*Completed: 2026-03-12*
