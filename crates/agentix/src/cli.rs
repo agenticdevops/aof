@@ -1,21 +1,28 @@
-use clap::{Parser, Subcommand};
-use std::path::Path;
+use clap::{Parser, Subcommand, ValueEnum};
 
-use agentix_core::Context;
-use crate::commands;
-
-/// OpenAgentiX CLI - kubectl-style agent orchestration
+/// OpenAgentiX — Enterprise Agent Automation Platform
+///
+/// Define AI agents as directories. Run them on demand. Track everything.
+/// https://openagentix.org
 #[derive(Parser, Debug)]
-#[command(name = "agentix")]
-#[command(version, about, long_about = None)]
+#[command(
+    name = "agentix",
+    version,
+    about = "OpenAgentiX — Enterprise Agent Automation Platform",
+    long_about = "Define AI agents as directories. Run them on demand. Track everything.\nhttps://openagentix.org"
+)]
 pub struct Cli {
-    /// Context to use (overrides AGENTIX_CONTEXT env var)
-    #[arg(long, short = 'C', global = true, env = "AGENTIX_CONTEXT")]
-    pub context: Option<String>,
+    /// Gateway URL
+    #[arg(long, global = true, env = "AGENTIX_GATEWAY_URL", default_value = "http://127.0.0.1:7777")]
+    pub gateway_url: String,
 
-    /// Directory containing context definitions
-    #[arg(long, global = true, env = "AGENTIX_CONTEXTS_DIR", default_value = "contexts")]
-    pub contexts_dir: String,
+    /// Output format: text or json
+    #[arg(long, global = true, default_value = "text", value_enum)]
+    pub output: OutputFormat,
+
+    /// Suppress ReAct loop details, show final result only
+    #[arg(long, short = 'q', global = true)]
+    pub quiet: bool,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -23,264 +30,109 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Run an agent (verb-first: run agent <name>)
-    Run {
-        /// Resource type (agent)
-        resource_type: String,
-
-        /// Resource name or configuration file
-        name_or_config: String,
-
-        /// Input/query for the agent
-        #[arg(short, long, visible_alias = "prompt")]
-        input: Option<String>,
-
-        /// Output format (json, yaml, text)
-        #[arg(short, long, default_value = "text")]
-        output: String,
-
-        /// Output schema for structured responses
-        #[arg(long)]
-        output_schema: Option<String>,
-
-        /// Path to JSON schema file for output validation
-        #[arg(long, conflicts_with = "output_schema")]
-        output_schema_file: Option<String>,
-
-        /// Resume the latest session for this agent (interactive mode only)
-        #[arg(long)]
-        resume: bool,
-
-        /// Resume a specific session by ID (interactive mode only)
-        #[arg(long, conflicts_with = "resume")]
-        session: Option<String>,
+    /// Manage the gateway server
+    Gateway {
+        #[command(subcommand)]
+        command: GatewayCommands,
     },
-
-    /// Get resources (verb-first: get agents, get agent <name>)
-    Get {
-        /// Resource type (agent, trigger, etc.)
-        resource_type: String,
-
-        /// Resource name (optional - lists all if omitted)
-        name: Option<String>,
-
-        /// Output format (json, yaml, wide, name)
-        #[arg(short, long, default_value = "wide")]
-        output: String,
-
-        /// Show all namespaces
-        #[arg(long)]
-        all_namespaces: bool,
-    },
-
-    /// Apply configuration from file (verb-first: apply -f config.yaml)
-    Apply {
-        /// Configuration file (YAML)
-        #[arg(short, long)]
-        file: String,
-
-        /// Namespace for the resources
-        #[arg(short, long)]
+    /// List agents registered in the gateway
+    Agents {
+        /// Filter by namespace
+        #[arg(long, short = 'n')]
         namespace: Option<String>,
     },
-
-    /// Get logs from a resource (verb-first: logs agent <name>)
-    Logs {
-        /// Resource type (agent, job)
-        resource_type: String,
-
-        /// Resource name
-        name: String,
-
-        /// Follow log output
-        #[arg(short, long)]
-        follow: bool,
-
-        /// Number of lines to show from the end
-        #[arg(long)]
-        tail: Option<usize>,
+    /// Show agent run history
+    Runs {
+        /// Agent name (all agents if omitted)
+        agent: Option<String>,
+        /// Maximum number of runs to show
+        #[arg(long, default_value = "20")]
+        limit: usize,
     },
-
-    /// Validate agent configuration
-    Validate {
-        /// Configuration file
-        #[arg(short, long)]
+    /// Show agent execution logs
+    Logs {
+        /// Agent name
+        agent: String,
+        /// Run ID (latest if omitted)
+        #[arg(long)]
+        run: Option<String>,
+        /// Follow log output
+        #[arg(long, short = 'f')]
+        follow: bool,
+    },
+    /// Stop a running agent
+    Stop {
+        /// Agent name
+        agent: String,
+        /// Run ID (latest active run if omitted)
+        #[arg(long)]
+        run: Option<String>,
+    },
+    /// Apply agent configuration to the gateway
+    Apply {
+        /// Path to agent YAML file
+        #[arg(short = 'f', long)]
         file: String,
     },
-
-    /// Show version information
+    /// Validate agent YAML or agent directory (no gateway needed)
+    Validate {
+        /// Path to agent.yaml file, flat YAML file, or agent directory
+        path: String,
+    },
+    /// Print version information
     Version,
 
-    /// Start the trigger webhook server (daemon mode)
-    Serve {
-        /// Configuration file (YAML)
-        #[arg(short, long)]
-        config: Option<String>,
+    /// Scaffold a new agent directory (GitAgent-compatible)
+    Init {
+        /// Agent name (e.g., my-agent)
+        #[arg(long)]
+        name: Option<String>,
 
-        /// Port to listen on (overrides config)
-        #[arg(short, long)]
-        port: Option<u16>,
+        /// Parent directory for the new agent directory
+        #[arg(long, short, default_value = "./agents")]
+        output_dir: String,
 
-        /// Host to bind to (overrides config)
-        #[arg(long, default_value = "0.0.0.0")]
-        host: Option<String>,
+        /// Non-interactive mode (requires --name)
+        #[arg(long)]
+        non_interactive: bool,
+    },
 
-        /// Directory containing agent YAML files
+    /// Set up a new OpenAgentiX workspace interactively
+    Onboard {
+        /// Skip interactive prompts, use all defaults
+        #[arg(long)]
+        non_interactive: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum GatewayCommands {
+    /// Start the gateway server
+    Start {
+        /// Path to workspace config (agentix.yaml)
+        #[arg(long, short = 'c', default_value = "./agentix.yaml")]
+        config: String,
+        /// Override agents directory from config
         #[arg(long)]
         agents_dir: Option<String>,
-
-        /// Directory containing Trigger YAML files
-        #[arg(long)]
-        triggers_dir: Option<String>,
+        /// Override port from config
+        #[arg(long, short = 'p')]
+        port: Option<u16>,
     },
-
-    /// Generate shell completion scripts
-    Completion {
-        /// Shell to generate completion for
-        #[arg(value_enum)]
-        shell: commands::completion::Shell,
-    },
+    /// Show gateway status
+    Status,
 }
 
-impl Cli {
-    pub async fn execute(self) -> anyhow::Result<()> {
-        // Load context if specified
-        let context = if let Some(ref ctx_name) = self.context {
-            load_context(ctx_name, &self.contexts_dir)?
-        } else {
-            None
-        };
-
-        match self.command {
-            Commands::Run {
-                resource_type,
-                name_or_config,
-                input,
-                output,
-                output_schema,
-                output_schema_file,
-                resume,
-                session,
-            } => {
-                commands::run::execute(
-                    &resource_type,
-                    &name_or_config,
-                    input.as_deref(),
-                    &output,
-                    output_schema.as_deref(),
-                    output_schema_file.as_deref(),
-                    context.as_ref(),
-                    resume,
-                    session.as_deref(),
-                )
-                .await
-            }
-            Commands::Get {
-                resource_type,
-                name,
-                output,
-                all_namespaces,
-            } => {
-                commands::get::execute(&resource_type, name.as_deref(), &output, all_namespaces, false)
-                    .await
-            }
-            Commands::Apply { file, namespace } => {
-                commands::apply::execute(&file, namespace.as_deref()).await
-            }
-            Commands::Logs {
-                resource_type,
-                name,
-                follow,
-                tail,
-            } => commands::logs::execute(&resource_type, &name, follow, tail).await,
-            Commands::Validate { file } => commands::validate::execute(&file).await,
-            Commands::Version => commands::version::execute().await,
-            Commands::Serve {
-                config,
-                port,
-                host,
-                agents_dir,
-                triggers_dir,
-            } => {
-                commands::serve::execute(
-                    config.as_deref(),
-                    port,
-                    host.as_deref(),
-                    agents_dir.as_deref(),
-                    None,
-                    triggers_dir.as_deref(),
-                    None,
-                    false,
-                    false,
-                    None,
-                    None,
-                )
-                .await
-            }
-            Commands::Completion { shell } => commands::completion::execute(shell),
-        }
-    }
+#[derive(Clone, Debug, ValueEnum)]
+pub enum OutputFormat {
+    Text,
+    Json,
 }
 
-/// Load a Context resource from the contexts directory
-fn load_context(name: &str, contexts_dir: &str) -> anyhow::Result<Option<Context>> {
-    let contexts_path = Path::new(contexts_dir);
-
-    // Try loading from file: <name>.yaml or <name>.yml
-    for ext in &["yaml", "yml"] {
-        let file_path = contexts_path.join(format!("{}.{}", name, ext));
-        if file_path.exists() {
-            let content = std::fs::read_to_string(&file_path)
-                .map_err(|e| anyhow::anyhow!("Failed to read context file {:?}: {}", file_path, e))?;
-
-            let mut context: Context = serde_yaml::from_str(&content)
-                .map_err(|e| anyhow::anyhow!("Failed to parse context file {:?}: {}", file_path, e))?;
-
-            // Expand environment variables
-            context.expand_env_vars();
-
-            // Validate
-            context.validate()
-                .map_err(|e| anyhow::anyhow!("Invalid context '{}': {}", name, e))?;
-
-            tracing::info!("Loaded context '{}' from {:?}", name, file_path);
-            return Ok(Some(context));
-        }
-    }
-
-    // Context file not found - check if contexts dir exists
-    if !contexts_path.exists() {
-        tracing::warn!(
-            "Contexts directory '{}' not found. Create it with context YAML files.",
-            contexts_dir
-        );
-    } else {
-        tracing::warn!(
-            "Context '{}' not found in '{}'. Available contexts: {:?}",
-            name,
-            contexts_dir,
-            list_available_contexts(contexts_path)
-        );
-    }
-
-    Err(anyhow::anyhow!(
-        "Context '{}' not found. Create {}/{}.yaml with your context definition.",
-        name, contexts_dir, name
-    ))
-}
-
-/// List available context names in a directory
-fn list_available_contexts(dir: &Path) -> Vec<String> {
-    let mut contexts = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "yaml" || e == "yml") {
-                if let Some(stem) = path.file_stem() {
-                    contexts.push(stem.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-    contexts
+/// Thin context object passed to command handlers (avoids borrow issues from
+/// destructuring `Cli` while also borrowing `&Cli`).
+pub struct CliContext {
+    pub gateway_url: String,
+    pub output: OutputFormat,
+    pub quiet: bool,
 }

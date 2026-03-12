@@ -1,0 +1,6 @@
+spec_version: "0.1.0"
+name: hello-world
+version: 0.1.0
+description: A helpful assistant that demonstrates the OpenAgentiX agent directory format
+model:
+  preferred: anthropic/claude-sonnet-4-6

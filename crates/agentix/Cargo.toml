@@ -23,18 +23,13 @@ tokio-console = ["dep:console-subscriber"]
 [dependencies]
 console-subscriber = { version = "0.4", optional = true }
 agentix-core = { workspace = true }
-agentix-mcp = { workspace = true, features = ["all-transports"] }
-agentix-llm = { workspace = true, features = ["all-providers"] }
 agentix-runtime = { workspace = true }
-agentix-memory = { workspace = true, features = ["all-backends"] }
-agentix-triggers = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 serde_path_to_error = { workspace = true }
 clap = { workspace = true }
-clap_complete = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
@@ -42,16 +37,9 @@ tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
 colored = "2.1"
 uuid = { version = "1.6", features = ["v4"] }
-dirs = "5.0"
-tokio-util = { version = "0.7", features = ["rt"] }
-axum = { version = "0.7", features = ["ws"] }
-tower-http = { workspace = true }
-bytes = { workspace = true }
+reqwest = { workspace = true }
 futures-util = "0.3"
-reqwest = { version = "0.11", features = ["json"] }
-async-trait = { workspace = true }
-futures = { workspace = true }
-prometheus = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

@@ -1,8 +1,10 @@
-pub mod run;
-pub mod get;
-pub mod apply;
+pub mod gateway;
+pub mod agents;
+pub mod runs;
 pub mod logs;
+pub mod stop;
+pub mod apply;
 pub mod validate;
 pub mod version;
-pub mod serve;
-pub mod completion;
+pub mod init;
+pub mod onboard;
