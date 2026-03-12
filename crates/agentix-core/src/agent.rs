@@ -7,6 +7,313 @@ use std::sync::Arc;
 use crate::mcp::McpServerConfig;
 use crate::AofResult;
 
+// ============================================================================
+// OpenAgentiX v1 Agent Spec Types (apiVersion: openagentix.dev/v1, kind: Agent)
+// ============================================================================
+
+/// Top-level agent document (openagentix.dev/v1 Agent)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSpec {
+    /// Must be "openagentix.dev/v1"
+    pub api_version: String,
+    /// Must be "Agent"
+    pub kind: String,
+    /// Agent identity metadata
+    pub metadata: AgentMetadata,
+    /// Agent runtime configuration
+    pub spec: AgentSpecInner,
+}
+
+/// Metadata block for agent identity and organization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentMetadata {
+    /// Unique agent name — lowercase alphanumeric with hyphens, max 63 chars
+    pub name: String,
+    /// Logical grouping namespace; default: "default"
+    #[serde(default)]
+    pub namespace: Option<String>,
+    /// Semver config version
+    pub version: Option<String>,
+    /// Arbitrary key-value labels
+    #[serde(default)]
+    pub labels: HashMap<String, String>,
+    /// Non-identifying metadata annotations
+    #[serde(default)]
+    pub annotations: HashMap<String, String>,
+}
+
+/// Agent mode — controls approval requirements
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentMode {
+    /// Agent executes all tools without human approval
+    Autonomous,
+    /// Read-only tools free, write/destructive require approval
+    SemiAutonomous,
+    /// Every tool call requires human approval
+    Manual,
+}
+
+impl Default for AgentMode {
+    fn default() -> Self {
+        AgentMode::Autonomous
+    }
+}
+
+/// Tool type discriminator
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SpecToolType {
+    /// Execute a specific CLI binary
+    Cli,
+    /// Expose tools from an MCP server
+    Mcp,
+    /// Execute an arbitrary shell command
+    Shell,
+}
+
+/// A tool entry in the unified tools list
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolEntry {
+    /// Unique name within the agent
+    pub name: String,
+    /// Tool type discriminator
+    #[serde(rename = "type")]
+    pub tool_type: SpecToolType,
+    /// Human-readable description shown to the LLM
+    pub description: Option<String>,
+    /// Binary name or full path (for cli/shell)
+    pub command: Option<String>,
+    /// Argument list (for cli)
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// MCP server name reference (for mcp type)
+    pub server: Option<String>,
+}
+
+/// MCP transport type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTransportType {
+    /// Communicate over standard I/O
+    Stdio,
+    /// Server-Sent Events
+    Sse,
+    /// HTTP transport
+    Http,
+}
+
+/// MCP server configuration entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerEntry {
+    /// Unique name within the agent
+    pub name: String,
+    /// Transport type
+    pub transport: McpTransportType,
+    /// Executable to launch (for stdio)
+    pub command: Option<String>,
+    /// Arguments for stdio command
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Remote server URL (for sse/http)
+    pub url: Option<String>,
+    /// Environment variables for the server process
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+}
+
+/// Notification channel type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum NotificationChannel {
+    Slack,
+    Telegram,
+    Discord,
+    Email,
+    Webhook,
+}
+
+/// Notification destination entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationEntry {
+    /// Notification channel type
+    pub channel: NotificationChannel,
+    /// Channel ID, chat ID, email address, or URL
+    pub target: String,
+}
+
+fn default_mode() -> AgentMode {
+    AgentMode::Autonomous
+}
+
+fn default_max_iterations() -> u32 {
+    10
+}
+
+fn default_timeout() -> String {
+    "5m".to_string()
+}
+
+/// Inner spec block containing all runtime configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentSpecInner {
+    /// LLM model — "provider/model" format, optional if workspace provides default
+    pub model: Option<String>,
+    /// Execution mode (default: autonomous)
+    #[serde(default = "default_mode")]
+    pub mode: AgentMode,
+    /// Inline system prompt (mutually exclusive with system_prompt_file)
+    pub system_prompt: Option<String>,
+    /// Path to system prompt file (mutually exclusive with system_prompt)
+    pub system_prompt_file: Option<String>,
+    /// Max ReAct loop iterations (default: 10, range: 1-100)
+    #[serde(default = "default_max_iterations")]
+    pub max_iterations: u32,
+    /// Wall-clock timeout (default: "5m")
+    #[serde(default = "default_timeout")]
+    pub timeout: String,
+    /// Unified tools list
+    #[serde(default)]
+    pub tools: Vec<ToolEntry>,
+    /// MCP server configurations
+    #[serde(default)]
+    pub mcp_servers: Vec<McpServerEntry>,
+    /// Triggers — placeholder until Phase 15
+    #[serde(default)]
+    pub triggers: Vec<serde_json::Value>,
+    /// Notifications — placeholder until Phase 16
+    #[serde(default)]
+    pub notifications: Vec<NotificationEntry>,
+    /// Approval config — placeholder until Phase 20
+    pub approval: Option<serde_json::Value>,
+    /// Budget config — placeholder until Phase 17
+    pub budget: Option<serde_json::Value>,
+    /// Telemetry config — placeholder until Phase 18
+    pub telemetry: Option<serde_json::Value>,
+    /// Environment variables for all tools
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+}
+
+impl AgentSpec {
+    /// Parse an agent YAML string into an AgentSpec using serde_path_to_error
+    pub fn from_yaml(content: &str) -> crate::AgentixResult<Self> {
+        let deserializer = serde_yaml::Deserializer::from_str(content);
+        serde_path_to_error::deserialize(deserializer)
+            .map_err(|e| crate::AgentixError::yaml_parse(e.path().to_string(), e.inner().to_string()))
+    }
+
+    /// Validate the agent spec fields
+    pub fn validate(&self) -> crate::AgentixResult<()> {
+        // Validate api_version
+        if self.api_version != "openagentix.dev/v1" {
+            return Err(crate::AgentixError::spec_validation(format!(
+                "apiVersion: expected \"openagentix.dev/v1\", got \"{}\"",
+                self.api_version
+            )));
+        }
+
+        // Validate kind
+        if self.kind != "Agent" {
+            return Err(crate::AgentixError::spec_validation(format!(
+                "kind: expected \"Agent\", got \"{}\"",
+                self.kind
+            )));
+        }
+
+        // Validate metadata.name
+        Self::validate_dns_label("metadata.name", &self.metadata.name)?;
+
+        // Validate metadata.namespace if present
+        if let Some(ns) = &self.metadata.namespace {
+            Self::validate_dns_label("metadata.namespace", ns)?;
+        }
+
+        // Validate model format if present
+        if let Some(model) = &self.spec.model {
+            let slash_count = model.chars().filter(|&c| c == '/').count();
+            if slash_count != 1 {
+                return Err(crate::AgentixError::spec_validation(
+                    "spec.model: must be \"provider/model\" format (e.g., \"anthropic/claude-sonnet-4-6\")".to_string()
+                ));
+            }
+        }
+
+        // Validate system_prompt and system_prompt_file are mutually exclusive
+        if self.spec.system_prompt.is_some() && self.spec.system_prompt_file.is_some() {
+            return Err(crate::AgentixError::spec_validation(
+                "spec: system_prompt and system_prompt_file are mutually exclusive".to_string()
+            ));
+        }
+
+        // Validate max_iterations
+        if self.spec.max_iterations < 1 || self.spec.max_iterations > 100 {
+            return Err(crate::AgentixError::spec_validation(
+                "spec.max_iterations: must be between 1 and 100".to_string()
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Extract (provider, model_name) from the model string
+    pub fn parse_model(&self) -> Option<(&str, &str)> {
+        self.spec.model.as_deref().and_then(|m| {
+            let mut parts = m.splitn(2, '/');
+            let provider = parts.next()?;
+            let model_name = parts.next()?;
+            Some((provider, model_name))
+        })
+    }
+
+    /// Merge workspace defaults into this agent spec (agent values take priority)
+    pub fn merge_workspace_defaults(&mut self, workspace: &crate::config::WorkspaceConfig) {
+        let defaults = &workspace.spec.defaults;
+
+        if self.spec.model.is_none() {
+            self.spec.model = defaults.model.clone();
+        }
+        // Only override max_iterations if it's still the built-in default
+        if self.spec.max_iterations == 10 {
+            if let Some(wi) = defaults.max_iterations {
+                self.spec.max_iterations = wi;
+            }
+        }
+        if self.spec.timeout == "5m" {
+            if let Some(wt) = &defaults.timeout {
+                self.spec.timeout = wt.clone();
+            }
+        }
+        if self.spec.mode == AgentMode::Autonomous {
+            if let Some(wm) = &defaults.mode {
+                self.spec.mode = wm.clone();
+            }
+        }
+    }
+
+    fn validate_dns_label(field: &str, value: &str) -> crate::AgentixResult<()> {
+        if value.len() > 63 {
+            return Err(crate::AgentixError::spec_validation(format!(
+                "{}: name too long — maximum 63 characters",
+                field
+            )));
+        }
+        let re = regex::Regex::new(r"^[a-z][a-z0-9-]*[a-z0-9]$").unwrap();
+        if !re.is_match(value) {
+            return Err(crate::AgentixError::spec_validation(format!(
+                "{}: invalid format — must be lowercase alphanumeric with hyphens (^[a-z][a-z0-9-]*[a-z0-9]$)",
+                field
+            )));
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
+// (End of v1 Agent Spec Types — legacy types follow)
+// ============================================================================
+
 /// Output schema specification using JSON Schema format
 /// Enables structured, validated agent responses
 ///
@@ -445,7 +752,7 @@ pub trait Agent: Send + Sync {
     async fn execute(&self, ctx: &mut AgentContext) -> AofResult<String>;
 
     /// Agent metadata
-    fn metadata(&self) -> &AgentMetadata;
+    fn metadata(&self) -> &LegacyAgentMetadata;
 
     /// Initialize agent (setup resources, validate config)
     async fn init(&mut self) -> AofResult<()> {
@@ -586,9 +893,9 @@ impl AgentContext {
     }
 }
 
-/// Agent metadata
+/// Legacy agent metadata (v1.0 runtime trait — use AgentSpec for v2 YAML)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentMetadata {
+pub struct LegacyAgentMetadata {
     /// Agent name
     pub name: String,
 
@@ -650,7 +957,7 @@ pub struct AgentConfig {
     pub max_context_messages: usize,
 
     /// Max iterations
-    #[serde(default = "default_max_iterations")]
+    #[serde(default = "legacy_default_max_iterations")]
     pub max_iterations: usize,
 
     /// Temperature (0.0-1.0)
@@ -882,7 +1189,7 @@ struct KubernetesConfig {
     api_version: String,  // Required for K8s format
     kind: String,         // Required for K8s format
     metadata: KubernetesMetadata,
-    spec: AgentSpec,
+    spec: LegacyKubeSpec,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -895,7 +1202,7 @@ struct KubernetesMetadata {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct AgentSpec {
+struct LegacyKubeSpec {
     model: String,
     provider: Option<String>,
     #[serde(alias = "system_prompt")]
@@ -907,7 +1214,7 @@ struct AgentSpec {
     memory: Option<MemorySpec>,
     #[serde(default = "default_max_context_messages")]
     max_context_messages: usize,
-    #[serde(default = "default_max_iterations")]
+    #[serde(default = "legacy_default_max_iterations")]
     max_iterations: usize,
     #[serde(default = "default_temperature")]
     temperature: f32,
@@ -932,7 +1239,7 @@ struct FlatAgentConfig {
     memory: Option<MemorySpec>,
     #[serde(default = "default_max_context_messages")]
     max_context_messages: usize,
-    #[serde(default = "default_max_iterations")]
+    #[serde(default = "legacy_default_max_iterations")]
     max_iterations: usize,
     #[serde(default = "default_temperature")]
     temperature: f32,
@@ -984,7 +1291,7 @@ impl From<AgentConfigInput> for AgentConfig {
     }
 }
 
-fn default_max_iterations() -> usize {
+fn legacy_default_max_iterations() -> usize {
     10
 }
 
@@ -1364,7 +1671,7 @@ mod tests {
 
     #[test]
     fn test_agent_metadata_serialization() {
-        let meta = AgentMetadata {
+        let meta = LegacyAgentMetadata {
             name: "test".to_string(),
             description: "A test agent".to_string(),
             version: "1.0.0".to_string(),
@@ -1373,7 +1680,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&meta).unwrap();
-        let deserialized: AgentMetadata = serde_json::from_str(&json).unwrap();
+        let deserialized: LegacyAgentMetadata = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized.name, "test");
         assert_eq!(deserialized.capabilities.len(), 2);

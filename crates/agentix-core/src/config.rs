@@ -1,11 +1,157 @@
 //! Configuration API types and parsers
 //!
-//! This module provides types and functions for loading and parsing
-//! workspace configuration files (AGENTS.md, TOOLS.md) into JSON
-//! for the Mission Control UI.
+//! This module provides:
+//! - WorkspaceConfig: OpenAgentiX workspace configuration (agentix.yaml)
+//! - Legacy AGENTS.md/TOOLS.md parsers (for Mission Control UI)
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
+
+use crate::agent::AgentMode;
+
+// ============================================================================
+// OpenAgentiX v1 Workspace Config Types (apiVersion: openagentix.dev/v1, kind: Workspace)
+// ============================================================================
+
+/// Top-level workspace configuration document (agentix.yaml)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceConfig {
+    /// Must be "openagentix.dev/v1"
+    pub api_version: String,
+    /// Must be "Workspace"
+    pub kind: String,
+    /// Workspace identity metadata
+    pub metadata: WorkspaceMetadata,
+    /// Workspace runtime configuration
+    pub spec: WorkspaceSpec,
+}
+
+/// Workspace metadata block
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceMetadata {
+    /// Workspace name
+    pub name: String,
+    /// Optional key-value labels
+    #[serde(default)]
+    pub labels: HashMap<String, String>,
+    /// Optional annotations
+    #[serde(default)]
+    pub annotations: HashMap<String, String>,
+}
+
+/// Workspace spec — defaults, providers, gateway, discovery
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceSpec {
+    /// Default values inherited by all agents
+    #[serde(default)]
+    pub defaults: WorkspaceDefaults,
+    /// Provider credentials and endpoint configuration
+    #[serde(default)]
+    pub providers: HashMap<String, ProviderConfig>,
+    /// Gateway service configuration
+    #[serde(default)]
+    pub gateway: GatewayConfig,
+    /// Directory to scan for agent YAML files
+    #[serde(default = "default_agents_dir")]
+    pub agents_dir: String,
+}
+
+fn default_agents_dir() -> String {
+    "./agents".to_string()
+}
+
+/// Workspace-level defaults applied to all agents unless overridden
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkspaceDefaults {
+    /// Default model in "provider/model" format
+    pub model: Option<String>,
+    /// Default max_iterations (1-100)
+    pub max_iterations: Option<u32>,
+    /// Default timeout (e.g. "5m", "1h")
+    pub timeout: Option<String>,
+    /// Default execution mode
+    pub mode: Option<AgentMode>,
+}
+
+/// LLM provider credentials and endpoint configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    /// API key (use ${ENV_VAR} syntax)
+    pub api_key: Option<String>,
+    /// Base URL override (for compatible APIs or Ollama)
+    pub base_url: Option<String>,
+}
+
+fn default_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_port() -> u16 {
+    7777
+}
+
+/// Gateway service configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GatewayConfig {
+    /// Interface to bind (default: "127.0.0.1")
+    #[serde(default = "default_host")]
+    pub host: String,
+    /// TCP port (default: 7777)
+    #[serde(default = "default_port")]
+    pub port: u16,
+}
+
+impl Default for GatewayConfig {
+    fn default() -> Self {
+        GatewayConfig {
+            host: default_host(),
+            port: default_port(),
+        }
+    }
+}
+
+impl WorkspaceConfig {
+    /// Parse a workspace YAML string using serde_path_to_error
+    pub fn from_yaml(content: &str) -> crate::AgentixResult<Self> {
+        let deserializer = serde_yaml::Deserializer::from_str(content);
+        serde_path_to_error::deserialize(deserializer)
+            .map_err(|e| crate::AgentixError::yaml_parse(e.path().to_string(), e.inner().to_string()))
+    }
+
+    /// Expand ${VAR} patterns in provider config fields from environment
+    pub fn expand_env_vars(&mut self) {
+        for provider in self.spec.providers.values_mut() {
+            if let Some(key) = &provider.api_key {
+                provider.api_key = Some(expand_env_var(key));
+            }
+            if let Some(url) = &provider.base_url {
+                provider.base_url = Some(expand_env_var(url));
+            }
+        }
+    }
+}
+
+/// Expand ${VAR_NAME} syntax from environment variables
+fn expand_env_var(value: &str) -> String {
+    // Simple ${VAR} expansion
+    let mut result = value.to_string();
+    while let Some(start) = result.find("${") {
+        if let Some(end) = result[start..].find('}') {
+            let var_name = &result[start + 2..start + end];
+            let replacement = std::env::var(var_name).unwrap_or_default();
+            result = format!("{}{}{}", &result[..start], replacement, &result[start + end + 1..]);
+        } else {
+            break;
+        }
+    }
+    result
+}
+
+// ============================================================================
+// (End of WorkspaceConfig — legacy config types follow)
+// ============================================================================
 
 /// Agent configuration from AGENTS.md
 #[derive(Debug, Clone, Serialize, Deserialize)]
