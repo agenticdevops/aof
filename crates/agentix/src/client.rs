@@ -169,6 +169,29 @@ impl GatewayClient {
         check_status(resp).await?.json().await.map_err(Into::into)
     }
 
+    /// `POST /api/v1/agents/:name/trigger` — fire an agent via CLI or agent-to-agent trigger.
+    ///
+    /// Returns the accepted run_id.
+    pub async fn trigger_agent(
+        &self,
+        agent: &str,
+        input: &str,
+        caller: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let body = serde_json::json!({
+            "payload": { "input": input },
+            "caller": caller.unwrap_or("cli"),
+        });
+        let resp = self
+            .client
+            .post(self.url(&format!("/api/v1/agents/{}/trigger", agent)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
     /// `POST /api/v1/agents/:name/run?format=json` — run an agent and stream NDJSON.
     pub async fn stream_run(
         &self,

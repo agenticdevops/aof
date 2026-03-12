@@ -109,6 +109,18 @@ pub enum Commands {
         #[command(subcommand)]
         command: crate::commands::skills::SkillsCommands,
     },
+
+    /// Run an agent once with the given input (CLI trigger)
+    Run {
+        /// Agent name (must be registered in the gateway)
+        agent: String,
+        /// Input text to pass to the agent
+        #[arg(long, short)]
+        input: String,
+        /// Output format: text (streaming, default) or json
+        #[arg(long, default_value = "text")]
+        format: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

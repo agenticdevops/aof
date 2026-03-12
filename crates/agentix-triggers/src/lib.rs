@@ -17,13 +17,18 @@ pub mod response;
 pub mod safety;
 pub mod server;
 
+pub mod agent_trigger;
 pub mod channel_mention;
+pub mod cli_trigger;
 pub mod github_trigger;
 pub mod jira_trigger;
 pub mod webhook;
 
 // Re-export cron trigger
 pub use cron::CronTrigger;
+// Re-export agent/cli triggers
+pub use agent_trigger::AgentTrigger;
+pub use cli_trigger::CliTrigger;
 // Re-export channel mention trigger
 pub use channel_mention::{ChannelMentionTrigger, ChannelPlatform};
 // Re-export webhook / event-source triggers

@@ -19,6 +19,7 @@
 //! | GET | /api/v1/agents/:name/runs/:run_id | Get run details |
 //! | GET | /api/v1/agents/:name/runs/:run_id/logs | Get run logs |
 //! | DELETE | /api/v1/agents/:name/runs/:run_id | Stop a running agent |
+//! | POST | /api/v1/agents/:name/trigger | Fire an agent via the agent-to-agent or CLI trigger API |
 //! | POST | /webhooks/:trigger_id | Receive a webhook payload and fire a trigger |
 
 use std::convert::Infallible;
@@ -55,6 +56,7 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/agents/:name/runs", get(list_runs))
         .route("/api/v1/agents/:name/runs/:run_id", get(get_run).delete(stop_run))
         .route("/api/v1/agents/:name/runs/:run_id/logs", get(get_run_logs))
+        .route("/api/v1/agents/:name/trigger", post(trigger_agent))
         .route("/webhooks/:trigger_id", post(receive_webhook))
         .layer(CorsLayer::permissive())
         .with_state(manager)
@@ -89,6 +91,15 @@ pub struct AgentYamlBody {
 #[derive(Debug, Deserialize)]
 pub struct RunBody {
     pub input: String,
+}
+
+/// Body for POST /api/v1/agents/:name/trigger
+#[derive(Debug, Deserialize)]
+pub struct TriggerBody {
+    /// The task payload to pass to the target agent.
+    pub payload: serde_json::Value,
+    /// Name of the agent (or system) that is firing this trigger.
+    pub caller: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -300,6 +311,53 @@ async fn stop_run(
 ) -> Response {
     match manager.stop_run(&run_id) {
         Ok(()) => Json(serde_json::json!({ "message": "Run stopped" })).into_response(),
+        Err(err) => {
+            let msg = err.to_string();
+            if msg.contains("not found") {
+                error_response(StatusCode::NOT_FOUND, msg)
+            } else {
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
+        }
+    }
+}
+
+/// POST /api/v1/agents/:name/trigger
+///
+/// Fire an agent programmatically — from another agent, from the CLI, or from
+/// external orchestration systems.
+///
+/// This endpoint accepts a `TriggerBody` with a `payload` and an optional `caller`
+/// name, creates a `TriggerEvent{source: Agent}`, and fires the target agent
+/// asynchronously.
+///
+/// Returns 202 Accepted with the generated run_id.
+async fn trigger_agent(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(name): AxumPath<String>,
+    Json(body): Json<TriggerBody>,
+) -> Response {
+    let caller = body.caller.as_deref().unwrap_or("api");
+    let trigger_id = format!("{}-agent-trigger", name);
+
+    let event = agentix_core::TriggerEvent::new(
+        TriggerSource::Agent,
+        body.payload,
+        &trigger_id,
+    )
+    .with_context("caller_agent", caller);
+
+    match manager.run_agent_with_trigger(&name, event).await {
+        Ok(run_id) => (
+            StatusCode::ACCEPTED,
+            Json(serde_json::json!({
+                "accepted": true,
+                "run_id": run_id,
+                "agent": name,
+                "trigger_id": trigger_id,
+            })),
+        )
+            .into_response(),
         Err(err) => {
             let msg = err.to_string();
             if msg.contains("not found") {

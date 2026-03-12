@@ -59,6 +59,9 @@ async fn main() {
         Commands::Skills { command } => {
             commands::skills::run(&command, &ctx.output).await
         }
+        Commands::Run { agent, input, format } => {
+            commands::run::run(&ctx, agent, input, format).await
+        }
     };
 
     if let Err(e) = result {
