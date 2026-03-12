@@ -1,0 +1,29 @@
+apiVersion: openagentix.dev/v1
+kind: Workspace
+metadata:
+  name: quickstart
+  annotations:
+    description: "OpenAgentiX quickstart workspace — edit providers section with your API keys"
+
+spec:
+  defaults:
+    model: anthropic/claude-sonnet-4-6
+    max_iterations: 10
+    timeout: "5m"
+    mode: autonomous
+
+  providers:
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+    # openai:
+    #   api_key: "${OPENAI_API_KEY}"
+    # google:
+    #   api_key: "${GOOGLE_API_KEY}"
+    # ollama:
+    #   base_url: "http://localhost:11434"
+
+  gateway:
+    host: "127.0.0.1"
+    port: 7777
+
+  agents_dir: "./agents"
