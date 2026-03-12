@@ -2091,5 +2091,73 @@ AOF_WEBHOOK_PORT        # Webhook server port
 
 ---
 
-**Last Updated:** 2024-12-10
-**Version:** 1.0.0
+## 9. Web Application Performance
+
+### Building for Production
+
+```bash
+cd web-app && pnpm build
+```
+
+Output: `web-app/dist/` directory with optimized static files including vendor chunks.
+
+### Serving Options
+
+**Option A: aofctl serve (recommended)**
+```bash
+aofctl serve --config quickstart/serve-config.yaml
+```
+Serves both API and frontend from a single binary on port 7777.
+
+**Option B: Nginx + aofctl**
+Separate static file server with API proxy for high-traffic deployments.
+
+**Option C: Docker**
+Build a container that includes the Rust binary and pre-built web-app.
+
+### Performance Targets
+
+| Metric | Target | How to Measure |
+|--------|--------|----------------|
+| Page Load | < 2s | Lighthouse Performance score |
+| WebSocket Latency | < 100ms | Chrome DevTools Network tab |
+| Lighthouse Performance | > 90 | Chrome DevTools Lighthouse |
+| Lighthouse Accessibility | > 90 | Chrome DevTools Lighthouse |
+| Initial Bundle (gzipped) | < 200KB | `pnpm build` output |
+| Total Bundle (all chunks) | < 600KB | `pnpm build:analyze` |
+
+### Performance Checklist
+
+- [ ] `pnpm build` produces separate vendor chunks (react-vendor, redux-vendor, chart-vendor, flow-vendor, dnd-vendor)
+- [ ] Lazy-loaded routes (WorkflowBuilder, Analytics, FleetControl, SquadChat) not in initial bundle
+- [ ] Gzip/Brotli compression enabled on server
+- [ ] Cache-Control headers set for static assets (1 year)
+- [ ] HTML has no-cache (for SPA routing)
+- [ ] Lighthouse CI configured for performance regression detection
+
+### Bundle Analysis
+
+```bash
+cd web-app && pnpm build:analyze
+```
+
+Opens a treemap visualization showing bundle composition and identifying optimization opportunities.
+
+### Environment Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VITE_API_URL` | Backend API URL | `http://localhost:7777` |
+| `VITE_WS_URL` | WebSocket URL | `ws://localhost:7777/ws` |
+
+### Built-in Monitoring
+
+- **WebSocket connection status**: Displayed in header (green/yellow/red dot)
+- **OfflineBanner**: Appears below header when connection is lost, with reconnect button
+- **Console warnings**: Slow event handling (>100ms) logged to browser console
+- **Error boundaries**: Page-level and root-level catch rendering errors with retry UI
+
+---
+
+**Last Updated:** 2026-02-18
+**Version:** 2.0.0

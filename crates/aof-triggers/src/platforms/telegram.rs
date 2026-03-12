@@ -7,8 +7,10 @@
 //! - Webhook secret token verification
 
 use async_trait::async_trait;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use tracing::{debug, error, info, warn};
 
 use super::{PlatformError, TriggerMessage, TriggerPlatform, TriggerUser};
@@ -240,7 +242,7 @@ impl TelegramPlatform {
         let mut params = serde_json::json!({
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": "MarkdownV2"
+            "parse_mode": "HTML"
         });
 
         if let Some(reply_to_id) = reply_to {
@@ -323,16 +325,184 @@ impl TelegramPlatform {
         }
     }
 
-    /// Escape text for MarkdownV2
-    fn escape_markdown(text: &str) -> String {
-        let special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'];
-        let mut result = String::with_capacity(text.len() * 2);
-        for c in text.chars() {
-            if special_chars.contains(&c) {
-                result.push('\\');
+    /// Escape text for HTML (only &, <, >)
+    fn html_escape(text: &str) -> String {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    }
+
+    /// Convert standard markdown (from LLM output) to Telegram-compatible HTML.
+    ///
+    /// Handles: **bold**, *italic*, `inline code`, ```code blocks```,
+    /// [links](url), and # headers → <b>bold</b>.
+    fn markdown_to_html(text: &str) -> String {
+        static RE_BOLD: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\*\*(.+?)\*\*").unwrap());
+        static RE_INLINE_CODE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"`([^`\n]+?)`").unwrap());
+        static RE_LINK: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").unwrap());
+        // Auto-link bare URLs (applied after markdown links are converted)
+        static RE_BARE_URL: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#"https?://[^\s<>")\]]+"#).unwrap());
+
+        let mut result = String::with_capacity(text.len());
+        let mut in_code_block = false;
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+
+            // Toggle code blocks
+            if trimmed.starts_with("```") {
+                if in_code_block {
+                    result.push_str("</pre>\n");
+                    in_code_block = false;
+                } else {
+                    result.push_str("<pre>");
+                    in_code_block = true;
+                }
+                continue;
             }
-            result.push(c);
+
+            if in_code_block {
+                result.push_str(&Self::html_escape(line));
+                result.push('\n');
+                continue;
+            }
+
+            // Strip header markers → bold
+            let line = if trimmed.starts_with("### ") {
+                let content = &trimmed[4..];
+                let escaped = Self::html_escape(content);
+                let converted = Self::convert_inline(&escaped, &RE_BOLD, &RE_INLINE_CODE, &RE_LINK, &RE_BARE_URL);
+                result.push_str(&format!("<b>{}</b>\n", converted));
+                continue;
+            } else if trimmed.starts_with("## ") {
+                let content = &trimmed[3..];
+                let escaped = Self::html_escape(content);
+                let converted = Self::convert_inline(&escaped, &RE_BOLD, &RE_INLINE_CODE, &RE_LINK, &RE_BARE_URL);
+                result.push_str(&format!("<b>{}</b>\n", converted));
+                continue;
+            } else if trimmed.starts_with("# ") {
+                let content = &trimmed[2..];
+                let escaped = Self::html_escape(content);
+                let converted = Self::convert_inline(&escaped, &RE_BOLD, &RE_INLINE_CODE, &RE_LINK, &RE_BARE_URL);
+                result.push_str(&format!("<b>{}</b>\n", converted));
+                continue;
+            } else {
+                line
+            };
+
+            // First escape HTML entities, then apply markdown→HTML conversions
+            // We need to handle inline code and links BEFORE escaping because
+            // they contain special chars. So: escape first, then convert markdown.
+            let escaped = Self::html_escape(line);
+            let converted = Self::convert_inline(&escaped, &RE_BOLD, &RE_INLINE_CODE, &RE_LINK, &RE_BARE_URL);
+            result.push_str(&converted);
+            result.push('\n');
         }
+
+        if in_code_block {
+            result.push_str("</pre>\n");
+        }
+
+        // Trim trailing newline
+        while result.ends_with('\n') {
+            result.pop();
+        }
+
+        result
+    }
+
+    /// Convert inline markdown elements to HTML tags
+    fn convert_inline(
+        text: &str,
+        re_bold: &Regex,
+        re_code: &Regex,
+        re_link: &Regex,
+        re_bare_url: &Regex,
+    ) -> String {
+        // Order: code first (protect from other conversions), then bold, then italic, then links
+        let result = re_code.replace_all(text, "\x00CODE_S\x00$1\x00CODE_E\x00");
+        let result = re_bold.replace_all(&result, "<b>$1</b>");
+        let result = Self::convert_italic(&result);
+        // Convert [text](url) markdown links first
+        let result = re_link.replace_all(&result, r#"<a href="$2">$1</a>"#);
+        // Auto-link bare URLs that aren't already inside <a> tags
+        let result = Self::auto_link_urls(&result, re_bare_url);
+        // Restore code tags
+        result
+            .replace("\x00CODE_S\x00", "<code>")
+            .replace("\x00CODE_E\x00", "</code>")
+    }
+
+    /// Auto-link bare URLs that aren't already inside <a href="..."> tags
+    fn auto_link_urls(text: &str, re_url: &Regex) -> String {
+        // Skip if no URLs at all
+        if !text.contains("http") {
+            return text.to_string();
+        }
+
+        let mut result = String::with_capacity(text.len());
+        let mut last_end = 0;
+
+        for mat in re_url.find_iter(text) {
+            let start = mat.start();
+            let url = mat.as_str();
+
+            // Check if this URL is already inside an <a href="..."> tag
+            let before = &text[..start];
+            let in_href = before.ends_with("href=\"") || before.ends_with("href='");
+            let in_a_tag = before.rfind("<a ").map_or(false, |a_pos| {
+                // Check there's no </a> between the <a> and this position
+                !before[a_pos..].contains("</a>")
+            });
+
+            result.push_str(&text[last_end..start]);
+
+            if in_href || in_a_tag {
+                // Already inside a link tag, don't wrap
+                result.push_str(url);
+            } else {
+                result.push_str(&format!(r#"<a href="{}">{}</a>"#, url, url));
+            }
+
+            last_end = mat.end();
+        }
+
+        result.push_str(&text[last_end..]);
+        result
+    }
+
+    /// Convert remaining single *text* to <i>text</i> after bold is already handled
+    fn convert_italic(text: &str) -> String {
+        let mut result = String::with_capacity(text.len());
+        let chars: Vec<char> = text.chars().collect();
+        let len = chars.len();
+        let mut i = 0;
+
+        while i < len {
+            if chars[i] == '*' && (i + 1 >= len || chars[i + 1] != '*') {
+                // Found a single *, look for closing *
+                if let Some(end) = chars[i + 1..].iter().position(|&c| c == '*') {
+                    let end = i + 1 + end;
+                    // Make sure closing * is also single
+                    if end + 1 >= len || chars[end + 1] != '*' {
+                        result.push_str("<i>");
+                        for c in &chars[i + 1..end] {
+                            result.push(*c);
+                        }
+                        result.push_str("</i>");
+                        i = end + 1;
+                        continue;
+                    }
+                }
+            }
+            result.push(chars[i]);
+            i += 1;
+        }
+
         result
     }
 
@@ -363,44 +533,35 @@ impl TelegramPlatform {
         })
     }
 
-    /// Format response text for Telegram
+    /// Format response text for Telegram (converts markdown → HTML)
     fn format_response_text(response: &TriggerResponse) -> String {
-        let status_emoji = match response.status {
-            crate::response::ResponseStatus::Success => "✅",
-            crate::response::ResponseStatus::Error => "❌",
-            crate::response::ResponseStatus::Warning => "⚠️",
-            crate::response::ResponseStatus::Info => "ℹ️",
-        };
-
-        let escaped_text = Self::escape_markdown(&response.text);
-        format!("{} {}", status_emoji, escaped_text)
+        Self::markdown_to_html(&response.text)
     }
 
     /// Generate help text
     pub fn create_help_text() -> String {
-        r#"*AOF Bot Commands*
+        r#"<b>Xops - Your Ops/SRE Agent</b>
 
-*Quick Start:*
-• `/agent` \- Switch agent \(interactive\)
-• `/help` \- Show this help
+Just type naturally. I'll handle it or call in a specialist.
 
-*Agent Commands:*
-• `/agent` \- List agents with inline buttons
-• `/agent <name>` \- Switch to agent directly
-• `/agent info` \- Show current agent details
+<b>The Squad:</b>
+• kubo - Kubernetes operator
+• ergo - Monitoring &amp; observability
+• ir-triage - Incident response
+• sentinel - Safe change executor
+• nux, doku, zure, rafo, zibl, wos
 
-*Other Commands:*
-• `/run agent <name> <input>` \- Run agent directly
-• `/status task <id>` \- Check task status
+<b>Examples:</b>
+• "show me pods in production"
+• "why is the API slow?"
+• "deploy v2.1 to staging"
+• "check cluster health"
 
-*Chat Mode:*
-Select an agent with `/agent`, then chat naturally\!
+<b>Commands:</b>
+• /help - This menu
+• /run agent &lt;name&gt; &lt;task&gt; - Talk to a specific agent
 
-*Examples:*
-• `/agent` → tap "Kubernetes" → "show pods"
-• `/agent k8s` → "list deployments"
-
-*Support:* [GitHub](https://github\.com/agenticdevops/aof)"#.to_string()
+<b>More:</b> <a href="https://github.com/agenticdevops/aof">GitHub</a>"#.to_string()
     }
 }
 
@@ -655,15 +816,53 @@ mod tests {
     }
 
     #[test]
-    fn test_escape_markdown() {
+    fn test_html_escape() {
         assert_eq!(
-            TelegramPlatform::escape_markdown("Hello *world*!"),
-            "Hello \\*world\\*\\!"
+            TelegramPlatform::html_escape("Hello <world> & \"test\""),
+            "Hello &lt;world&gt; &amp; \"test\""
         );
-        assert_eq!(
-            TelegramPlatform::escape_markdown("test_underscore"),
-            "test\\_underscore"
-        );
+    }
+
+    #[test]
+    fn test_markdown_to_html_bold() {
+        let result = TelegramPlatform::markdown_to_html("**Status: Healthy**");
+        assert_eq!(result, "<b>Status: Healthy</b>");
+    }
+
+    #[test]
+    fn test_markdown_to_html_italic() {
+        let result = TelegramPlatform::markdown_to_html("this is *important*");
+        assert_eq!(result, "this is <i>important</i>");
+    }
+
+    #[test]
+    fn test_markdown_to_html_code() {
+        let result = TelegramPlatform::markdown_to_html("run `kubectl get pods`");
+        assert_eq!(result, "run <code>kubectl get pods</code>");
+    }
+
+    #[test]
+    fn test_markdown_to_html_header() {
+        let result = TelegramPlatform::markdown_to_html("## Cluster Health");
+        assert_eq!(result, "<b>Cluster Health</b>");
+    }
+
+    #[test]
+    fn test_markdown_to_html_code_block() {
+        let input = "text\n```\ncode here\n```\nmore text";
+        let result = TelegramPlatform::markdown_to_html(input);
+        assert!(result.contains("<pre>"));
+        assert!(result.contains("code here"));
+        assert!(result.contains("</pre>"));
+    }
+
+    #[test]
+    fn test_markdown_to_html_mixed() {
+        let input = "**Components:**\n- ✅ API: healthy\n- ❌ DB: *down*";
+        let result = TelegramPlatform::markdown_to_html(input);
+        assert!(result.contains("<b>Components:</b>"));
+        assert!(result.contains("<i>down</i>"));
+        assert!(result.contains("✅"));
     }
 
     #[test]
@@ -681,7 +880,7 @@ mod tests {
     #[test]
     fn test_help_text() {
         let help = TelegramPlatform::create_help_text();
-        assert!(help.contains("AOF Bot Commands"));
+        assert!(help.contains("Xops"));
         assert!(help.contains("/run agent"));
     }
 

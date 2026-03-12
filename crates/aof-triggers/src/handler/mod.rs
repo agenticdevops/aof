@@ -64,6 +64,63 @@ fn parse_approval_output(output: &str) -> (bool, Option<String>, String) {
     (requires_approval, command, clean_output)
 }
 
+/// Parse delegation commands from orchestrator LLM output.
+/// Detects `/run agent <name> <task>` patterns that Xops emits to delegate work.
+/// Returns (delegate_agent_name, task_for_delegate, context_text_before_delegation).
+fn parse_delegation(output: &str) -> Option<(String, String, String)> {
+    // Match /run agent <name> <task> anywhere in the output
+    let re = regex::Regex::new(r"(?m)/run\s+agent\s+(\S+)\s+(.+)").ok()?;
+
+    if let Some(caps) = re.captures(output) {
+        let agent_name = caps.get(1)?.as_str().to_string();
+        let task = caps.get(2)?.as_str().trim().to_string();
+
+        // Everything before the /run command is context from the orchestrator
+        let match_start = caps.get(0)?.start();
+        let context = output[..match_start].trim().to_string();
+
+        return Some((agent_name, task, context));
+    }
+
+    None
+}
+
+/// Auto-detect when the orchestrator gave CLI instructions instead of delegating.
+/// If the response contains tool commands (kubectl, helm, docker, etc.),
+/// pick the right specialist agent and construct a delegation.
+/// `original_input` is the user's original message to use as the delegate task.
+fn auto_detect_delegation(output: &str, original_input: &str) -> Option<(String, String, String)> {
+    let lower = output.to_lowercase();
+
+    // Check for CLI commands in code blocks or inline
+    let agent = if lower.contains("kubectl ") || lower.contains("kubectl\n") {
+        Some("kubo")
+    } else if lower.contains("helm ") || lower.contains("helm\n") {
+        Some("kubo")
+    } else if lower.contains("docker ") || lower.contains("docker\n") {
+        Some("doku")
+    } else if lower.contains("terraform ") || lower.contains("terraform\n") {
+        Some("rafo")
+    } else if lower.contains("az ") || lower.contains("azure") && lower.contains("```") {
+        Some("zure")
+    } else if lower.contains("prometheus") || lower.contains("grafana") || lower.contains("promql") {
+        Some("ergo")
+    } else if lower.contains("git ") && lower.contains("```") {
+        Some("zibl")
+    } else {
+        None
+    };
+
+    agent.map(|name| {
+        info!("Auto-detected delegation to '{}' (orchestrator gave CLI instructions)", name);
+        (
+            name.to_string(),
+            original_input.to_string(),
+            String::new(), // No context - the original response was instructions, not useful
+        )
+    })
+}
+
 /// Helper trait to convert CommandError to AofError
 trait CommandErrorExt<T> {
     fn map_cmd_err(self) -> AofResult<T>;
@@ -345,6 +402,147 @@ fn is_write_operation(input: &str) -> bool {
     false
 }
 
+// --- Config-driven intent routing ---
+// Routes user messages directly to specialist agents based on keyword matching
+// against agent YAML routing config, skipping the orchestrator LLM call.
+
+#[derive(Debug, Clone)]
+enum MessageIntent {
+    StatusCheck,
+    Diagnosis,
+    Action,
+    Concept,
+    Conversational,
+}
+
+#[derive(Debug)]
+struct RouteDecision {
+    agent: String,
+    task: String,
+    confidence: f32,
+    #[allow(dead_code)]
+    intent: MessageIntent,
+}
+
+fn classify_intent(input: &str) -> MessageIntent {
+    let lower = input.to_lowercase();
+    let trimmed = lower.trim();
+
+    // StatusCheck: starts with status-seeking words
+    if trimmed.starts_with("how")
+        || trimmed.starts_with("show")
+        || trimmed.starts_with("check")
+        || trimmed.starts_with("list")
+        || trimmed.starts_with("get")
+        || trimmed.starts_with("status")
+        || trimmed.starts_with("describe")
+    {
+        return MessageIntent::StatusCheck;
+    }
+
+    // Concept: definitional, meta, or "about the system" questions
+    if trimmed.starts_with("what is")
+        || trimmed.starts_with("what are")
+        || trimmed.starts_with("who is")
+        || trimmed.starts_with("who are")
+        || trimmed.starts_with("explain")
+        || trimmed.starts_with("tell me about")
+        || trimmed.starts_with("define")
+        || trimmed.starts_with("introduce")
+        || lower.contains("introduce")
+        || lower.contains("who are you")
+        || lower.contains("the squad")
+        || lower.contains("your team")
+        || lower.contains("your agents")
+        || lower.contains("your squad")
+    {
+        return MessageIntent::Concept;
+    }
+
+    // Diagnosis: contains problem/investigation words
+    let diagnosis_words = [
+        "why", "slow", "failing", "error", "broken", "wrong", "issue",
+        "down", "not working", "timeout", "crash", "oom",
+    ];
+    if diagnosis_words.iter().any(|w| lower.contains(w)) {
+        return MessageIntent::Diagnosis;
+    }
+
+    // Action: contains imperative/change words
+    let action_words = [
+        "deploy", "scale", "rollback", "restart", "delete", "create",
+        "apply", "upgrade", "migrate", "install", "remove", "patch",
+    ];
+    if action_words.iter().any(|w| lower.contains(w)) {
+        return MessageIntent::Action;
+    }
+
+    MessageIntent::Conversational
+}
+
+fn frame_task(input: &str, intent: &MessageIntent) -> String {
+    match intent {
+        MessageIntent::StatusCheck => {
+            format!("Check status: {} - report what's running, any issues, key metrics. Be concise.", input)
+        }
+        MessageIntent::Diagnosis => {
+            format!("Investigate: {} - gather evidence, check logs/metrics, diagnose root cause.", input)
+        }
+        MessageIntent::Action | MessageIntent::Concept | MessageIntent::Conversational => {
+            input.to_string()
+        }
+    }
+}
+
+fn route_message(input: &str, runtime: &aof_runtime::Runtime) -> Option<RouteDecision> {
+    let lower = input.to_lowercase();
+    let words: Vec<&str> = lower.split_whitespace().collect();
+    let intent = classify_intent(input);
+
+    // Concept/Conversational → always fall through to orchestrator
+    if matches!(intent, MessageIntent::Concept | MessageIntent::Conversational) {
+        return None;
+    }
+
+    // Score each agent by keyword match count * priority
+    let mut best: Option<RouteDecision> = None;
+    for agent_name in runtime.list_agents() {
+        let agent = match runtime.get_agent(&agent_name) {
+            Some(a) => a,
+            None => continue,
+        };
+        let config = agent.config();
+        let routing = match config.routing.as_ref() {
+            Some(r) => r,
+            None => continue, // skip agents without routing config
+        };
+
+        let match_count = routing
+            .keywords
+            .iter()
+            .filter(|kw| {
+                let kw_lower = kw.to_lowercase();
+                // Match whole words or multi-word keywords as substrings
+                words.iter().any(|w| w.contains(&kw_lower.as_str())) || lower.contains(&kw_lower.as_str())
+            })
+            .count();
+
+        if match_count > 0 {
+            let confidence = (match_count as f32 * 0.3).min(1.0) * routing.priority;
+            if confidence >= 0.25 && best.as_ref().map_or(true, |b| confidence > b.confidence) {
+                best = Some(RouteDecision {
+                    agent: agent_name.clone(),
+                    task: frame_task(input, &intent),
+                    confidence,
+                    intent: intent.clone(),
+                });
+            }
+        }
+    }
+
+    best
+}
+
 impl TriggerHandler {
     /// Create a new trigger handler
     pub fn new(orchestrator: Arc<RuntimeOrchestrator>) -> Self {
@@ -390,231 +588,22 @@ impl TriggerHandler {
         handler
     }
 
-    /// Initialize default agents
-    /// These reference real agents in examples/agents/
+    /// Initialize default contexts
+    /// No hardcoded contexts - agents are loaded from the agents directory
     fn init_default_contexts(&self) {
-        // K8s Agent - DEFAULT
-        // Uses k8s-ops.yaml: kubectl, helm
-        self.available_contexts.insert("k8s".to_string(), ContextConfig {
-            display_name: "Kubernetes".to_string(),
-            emoji: "☸️".to_string(),
-            description: "Kubernetes cluster operations".to_string(),
-            kubeconfig: Some("~/.kube/config".to_string()),
-            kubecontext: None,
-            namespace: Some("default".to_string()),
-            aws_profile: None,
-            aws_region: None,
-            agent_ref: Some("k8s-ops".to_string()),  // examples/agents/k8s-ops.yaml
-            tools: vec!["kubectl".to_string(), "helm".to_string()],
-            env: std::collections::HashMap::new(),
-            read_only: true,
-        });
-
-        // AWS Agent
-        // Uses aws-agent.yaml: aws cli
-        self.available_contexts.insert("aws".to_string(), ContextConfig {
-            display_name: "AWS".to_string(),
-            emoji: "☁️".to_string(),
-            description: "AWS cloud operations".to_string(),
-            kubeconfig: None,
-            kubecontext: None,
-            namespace: None,
-            aws_profile: None,
-            aws_region: None,
-            agent_ref: Some("aws-agent".to_string()),  // examples/agents/aws-agent.yaml
-            tools: vec!["aws".to_string()],
-            env: std::collections::HashMap::new(),
-            read_only: true,
-        });
-
-        // Docker Agent
-        // Uses docker-ops.yaml: docker, shell
-        self.available_contexts.insert("docker".to_string(), ContextConfig {
-            display_name: "Docker".to_string(),
-            emoji: "🐳".to_string(),
-            description: "Container management".to_string(),
-            kubeconfig: None,
-            kubecontext: None,
-            namespace: None,
-            aws_profile: None,
-            aws_region: None,
-            agent_ref: Some("docker-ops".to_string()),  // examples/agents/docker-ops.yaml
-            tools: vec!["docker".to_string(), "shell".to_string()],
-            env: std::collections::HashMap::new(),
-            read_only: true,
-        });
-
-        // DevOps Agent (full stack)
-        // Uses devops.yaml: kubectl, docker, helm, terraform, git, shell
-        self.available_contexts.insert("devops".to_string(), ContextConfig {
-            display_name: "DevOps".to_string(),
-            emoji: "🚀".to_string(),
-            description: "Full-stack DevOps (K8s, Docker, Terraform, Git)".to_string(),
-            kubeconfig: None,
-            kubecontext: None,
-            namespace: None,
-            aws_profile: None,
-            aws_region: None,
-            agent_ref: Some("devops".to_string()),  // examples/agents/devops.yaml
-            tools: vec![
-                "kubectl".to_string(),
-                "docker".to_string(),
-                "helm".to_string(),
-                "terraform".to_string(),
-                "git".to_string(),
-                "shell".to_string(),
-            ],
-            env: std::collections::HashMap::new(),
-            read_only: true,
-        });
+        // No legacy hardcoded contexts.
+        // Agents are loaded dynamically via load_agents_from_directory().
+        // The default agent (Xops orchestrator) handles all messages
+        // and delegates to specialist agents as needed.
     }
 
     /// Initialize default fleets
-    /// Fleets are teams of single-purpose agents with LLM-based routing
+    /// No hardcoded fleets - squads are configured via the wizard or config files
     fn init_default_fleets(&self) {
-        // DevOps Fleet - DEFAULT
-        // Composes k8s, docker, git, prometheus specialists
-        self.available_fleets.insert("devops".to_string(), FleetConfig {
-            display_name: "DevOps".to_string(),
-            emoji: "🚀".to_string(),
-            description: "Full-stack DevOps operations".to_string(),
-            agents: vec![
-                FleetAgentRef {
-                    ref_path: "library/k8s-agent.yaml".to_string(),
-                    name: "k8s-agent".to_string(),
-                    description: "Kubernetes cluster operations".to_string(),
-                    keywords: vec!["pod".to_string(), "deployment".to_string(), "service".to_string(), "namespace".to_string(), "kubectl".to_string(), "helm".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/docker-agent.yaml".to_string(),
-                    name: "docker-agent".to_string(),
-                    description: "Container management".to_string(),
-                    keywords: vec!["container".to_string(), "image".to_string(), "docker".to_string(), "build".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/git-agent.yaml".to_string(),
-                    name: "git-agent".to_string(),
-                    description: "Git operations".to_string(),
-                    keywords: vec!["git".to_string(), "commit".to_string(), "branch".to_string(), "merge".to_string(), "pr".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/prometheus-agent.yaml".to_string(),
-                    name: "prometheus-agent".to_string(),
-                    description: "Metrics and monitoring".to_string(),
-                    keywords: vec!["metric".to_string(), "alert".to_string(), "prometheus".to_string(), "grafana".to_string()],
-                },
-            ],
-            router_model: "google:gemini-2.0-flash-lite".to_string(),
-            read_only: true,
-        });
-
-        // Kubernetes Fleet
-        // Focused K8s operations with observability
-        self.available_fleets.insert("k8s".to_string(), FleetConfig {
-            display_name: "Kubernetes".to_string(),
-            emoji: "☸️".to_string(),
-            description: "Kubernetes cluster operations".to_string(),
-            agents: vec![
-                FleetAgentRef {
-                    ref_path: "library/k8s-agent.yaml".to_string(),
-                    name: "k8s-agent".to_string(),
-                    description: "Kubernetes cluster operations".to_string(),
-                    keywords: vec!["pod".to_string(), "deployment".to_string(), "service".to_string(), "namespace".to_string(), "kubectl".to_string(), "helm".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/prometheus-agent.yaml".to_string(),
-                    name: "prometheus-agent".to_string(),
-                    description: "Metrics and monitoring".to_string(),
-                    keywords: vec!["metric".to_string(), "alert".to_string(), "cpu".to_string(), "memory".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/loki-agent.yaml".to_string(),
-                    name: "loki-agent".to_string(),
-                    description: "Log aggregation and search".to_string(),
-                    keywords: vec!["log".to_string(), "error".to_string(), "warning".to_string(), "trace".to_string()],
-                },
-            ],
-            router_model: "google:gemini-2.0-flash-lite".to_string(),
-            read_only: true,
-        });
-
-        // AWS Fleet
-        // AWS cloud operations
-        self.available_fleets.insert("aws".to_string(), FleetConfig {
-            display_name: "AWS".to_string(),
-            emoji: "☁️".to_string(),
-            description: "AWS cloud infrastructure".to_string(),
-            agents: vec![
-                FleetAgentRef {
-                    ref_path: "library/aws-agent.yaml".to_string(),
-                    name: "aws-agent".to_string(),
-                    description: "AWS cloud operations".to_string(),
-                    keywords: vec!["ec2".to_string(), "s3".to_string(), "rds".to_string(), "lambda".to_string(), "ecs".to_string(), "aws".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/terraform-agent.yaml".to_string(),
-                    name: "terraform-agent".to_string(),
-                    description: "Infrastructure as code".to_string(),
-                    keywords: vec!["terraform".to_string(), "plan".to_string(), "apply".to_string(), "state".to_string()],
-                },
-            ],
-            router_model: "google:gemini-2.0-flash-lite".to_string(),
-            read_only: true,
-        });
-
-        // Database Fleet
-        // Database operations
-        self.available_fleets.insert("database".to_string(), FleetConfig {
-            display_name: "Database".to_string(),
-            emoji: "🗄️".to_string(),
-            description: "Database operations".to_string(),
-            agents: vec![
-                FleetAgentRef {
-                    ref_path: "library/postgres-agent.yaml".to_string(),
-                    name: "postgres-agent".to_string(),
-                    description: "PostgreSQL operations".to_string(),
-                    keywords: vec!["postgres".to_string(), "psql".to_string(), "query".to_string(), "table".to_string(), "database".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/redis-agent.yaml".to_string(),
-                    name: "redis-agent".to_string(),
-                    description: "Redis cache operations".to_string(),
-                    keywords: vec!["redis".to_string(), "cache".to_string(), "key".to_string(), "ttl".to_string()],
-                },
-            ],
-            router_model: "google:gemini-2.0-flash-lite".to_string(),
-            read_only: true,
-        });
-
-        // RCA Fleet
-        // Root cause analysis with multi-model consensus
-        self.available_fleets.insert("rca".to_string(), FleetConfig {
-            display_name: "RCA".to_string(),
-            emoji: "🔍".to_string(),
-            description: "Root Cause Analysis with multi-agent investigation".to_string(),
-            agents: vec![
-                FleetAgentRef {
-                    ref_path: "library/k8s-agent.yaml".to_string(),
-                    name: "k8s-agent".to_string(),
-                    description: "Kubernetes state collector".to_string(),
-                    keywords: vec!["pod".to_string(), "event".to_string(), "restart".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/prometheus-agent.yaml".to_string(),
-                    name: "prometheus-agent".to_string(),
-                    description: "Metrics collector".to_string(),
-                    keywords: vec!["metric".to_string(), "cpu".to_string(), "memory".to_string()],
-                },
-                FleetAgentRef {
-                    ref_path: "library/loki-agent.yaml".to_string(),
-                    name: "loki-agent".to_string(),
-                    description: "Log collector".to_string(),
-                    keywords: vec!["log".to_string(), "error".to_string()],
-                },
-            ],
-            router_model: "anthropic:claude-sonnet-4-20250514".to_string(),  // Smarter model for RCA orchestration
-            read_only: true,
-        });
+        // No legacy hardcoded fleets.
+        // Xops (the Chief of Staff) routes messages to specialist agents
+        // loaded from the agents directory. Squads can be configured via
+        // the Mission Control UI or serve-config.yaml.
     }
 
     /// Get current fleet for a user (defaults to "devops")
@@ -726,6 +715,11 @@ impl TriggerHandler {
     /// Set runtime for agent execution
     pub fn set_runtime(&mut self, runtime: Arc<RwLock<Runtime>>) {
         self.runtime = runtime;
+    }
+
+    /// Get a reference to the shared runtime (for API endpoints)
+    pub fn runtime(&self) -> &Arc<RwLock<Runtime>> {
+        &self.runtime
     }
 
     /// Load flows from a directory and set up the router
@@ -1266,58 +1260,39 @@ impl TriggerHandler {
         }
     }
 
-    /// Handle help command with agent selection buttons
-    async fn handle_help_command(&self, cmd: TriggerCommand) -> TriggerResponse {
-        // Get current agent for this user
-        let current_context = self.get_user_context(&cmd.context.user_id);
-        let current_display = self.available_contexts
-            .get(&current_context)
-            .map(|c| format!("{} {}", c.emoji, c.display_name))
-            .unwrap_or_else(|| current_context.clone());
+    /// Handle help command - shows Xops info
+    async fn handle_help_command(&self, _cmd: TriggerCommand) -> TriggerResponse {
+        let agent_name = self.config.default_agent.as_deref().unwrap_or("xops");
 
-        // Get current fleet info
-        let current_fleet = self.get_user_fleet(&cmd.context.user_id);
-        let fleet_display = self.available_fleets
-            .get(&current_fleet)
-            .map(|f| format!("{} {}", f.emoji, f.display_name))
-            .unwrap_or_else(|| current_fleet.clone());
+        // List loaded agents from runtime
+        let runtime = self.runtime.read().await;
+        let loaded_agents = runtime.list_agents();
+        drop(runtime);
+
+        let squad_info = if loaded_agents.is_empty() {
+            "No specialist agents loaded yet.".to_string()
+        } else {
+            let names: Vec<&str> = loaded_agents.iter().map(|s| s.as_str()).collect();
+            format!("Squad: {}", names.join(", "))
+        };
 
         let help_text = format!(
-            "AOF Bot - DevOps from mobile\n\n\
-            Current fleet: {}\n\n\
+            "Xops - Your Ops/SRE Agent\n\n\
+            {}\n\n\
+            Just type naturally. I'll handle it or call in a specialist.\n\n\
+            Examples:\n\
+            - \"show me pods in production\"\n\
+            - \"why is the API slow?\"\n\
+            - \"deploy v2.1 to staging\"\n\n\
             Commands:\n\
-            /fleet - Switch fleet (recommended)\n\
-            /agent - Switch agent (legacy)\n\
-            /help - Show this help\n\n\
-            Just type naturally after selecting a fleet.\n\n\
-            Select fleet:",
-            fleet_display
+            /help - This menu\n\
+            /run agent <name> <task> - Talk to a specific agent",
+            squad_info
         );
 
-        let mut builder = TriggerResponseBuilder::new()
-            .text(help_text);
-
-        // Add fleet buttons (preferred over legacy agent buttons)
-        for entry in self.available_fleets.iter() {
-            let fleet_name = entry.key();
-            let fleet_config = entry.value();
-            let is_current = fleet_name == &current_fleet;
-
-            let label = if is_current {
-                format!("{} {} ✓", fleet_config.emoji, fleet_config.display_name)
-            } else {
-                format!("{} {}", fleet_config.emoji, fleet_config.display_name)
-            };
-
-            builder = builder.action(Action {
-                id: format!("fleet_{}", fleet_name),
-                label,
-                value: format!("callback:fleet:{}", fleet_name),
-                style: if is_current { ActionStyle::Primary } else { ActionStyle::Secondary },
-            });
-        }
-
-        builder.build()
+        TriggerResponseBuilder::new()
+            .text(help_text)
+            .build()
     }
 
     /// Handle info command
@@ -1356,242 +1331,14 @@ impl TriggerHandler {
             .build()
     }
 
-    /// Handle /agent command - show or switch agents
-    ///
-    /// Usage:
-    /// - `/agent` - List available agents with inline selection
-    /// - `/agent <name>` - Switch to the specified agent
-    /// - `/agent info` - Show detailed current agent info
+    /// Handle /agent command - deprecated, redirects to /help
     async fn handle_agent_command(&self, cmd: TriggerCommand) -> TriggerResponse {
-        // Check if user wants to switch or just list
-        let context_arg = cmd.args.first().map(|s| s.as_str());
-
-        // Get current context for this user
-        let current_context = self.get_user_context(&cmd.context.user_id);
-
-        match context_arg {
-            None => {
-                // List all agents with inline keyboard
-                let mut builder = TriggerResponseBuilder::new();
-
-                let current_display = self.available_contexts
-                    .get(&current_context)
-                    .map(|c| format!("{} {}", c.emoji, c.display_name))
-                    .unwrap_or_else(|| current_context.clone());
-
-                builder = builder.text(format!(
-                    "Select Agent\n\nCurrent: {}\n\nTap to switch:",
-                    current_display
-                ));
-
-                // Add agent buttons
-                for entry in self.available_contexts.iter() {
-                    let ctx_name = entry.key();
-                    let ctx_config = entry.value();
-                    let is_current = ctx_name == &current_context;
-
-                    let label = if is_current {
-                        format!("{} {} ✓", ctx_config.emoji, ctx_config.display_name)
-                    } else {
-                        format!("{} {}", ctx_config.emoji, ctx_config.display_name)
-                    };
-
-                    builder = builder.action(Action {
-                        id: format!("ctx_{}", ctx_name),
-                        label,
-                        value: format!("callback:context:{}", ctx_name),
-                        style: if is_current { ActionStyle::Primary } else { ActionStyle::Secondary },
-                    });
-                }
-
-                builder.build()
-            }
-            Some("info") => {
-                // Show detailed info about current agent
-                if let Some(ctx_config) = self.available_contexts.get(&current_context) {
-                    let tools_display = if ctx_config.tools.is_empty() {
-                        "none".to_string()
-                    } else {
-                        ctx_config.tools.join(", ")
-                    };
-
-                    let info_text = format!(
-                        "Current: {} {}\n\nTools: {}\n\n{}\n\nUse /agent to switch.",
-                        ctx_config.emoji,
-                        ctx_config.display_name,
-                        tools_display,
-                        ctx_config.description
-                    );
-                    TriggerResponseBuilder::new()
-                        .text(info_text)
-                        .build()
-                } else {
-                    TriggerResponseBuilder::new()
-                        .text(format!("Agent '{}' not found.", current_context))
-                        .error()
-                        .build()
-                }
-            }
-            Some(agent_name) => {
-                // Switch to the specified agent
-                if self.available_contexts.contains_key(agent_name) {
-                    self.set_user_context(&cmd.context.user_id, agent_name);
-
-                    let ctx_config = self.available_contexts.get(agent_name).unwrap();
-                    let tools_display = if ctx_config.tools.is_empty() {
-                        "standard".to_string()
-                    } else {
-                        ctx_config.tools.join(", ")
-                    };
-
-                    let response_text = format!(
-                        "Switched to {} {}\n\nTools: {}\n\n{}",
-                        ctx_config.emoji,
-                        ctx_config.display_name,
-                        tools_display,
-                        ctx_config.description
-                    );
-
-                    TriggerResponseBuilder::new()
-                        .text(response_text)
-                        .success()
-                        .build()
-                } else {
-                    // Unknown agent
-                    let available: Vec<String> = self.available_contexts
-                        .iter()
-                        .map(|e| e.key().clone())
-                        .collect();
-
-                    TriggerResponseBuilder::new()
-                        .text(format!(
-                            "Unknown agent: '{}'\n\nAvailable: {}",
-                            agent_name,
-                            available.join(", ")
-                        ))
-                        .error()
-                        .build()
-                }
-            }
-        }
+        self.handle_help_command(cmd).await
     }
 
-    /// Handle /fleet command - show or switch fleets
-    ///
-    /// Usage:
-    /// - `/fleet` - List available fleets with inline selection
-    /// - `/fleet <name>` - Switch to the specified fleet
-    /// - `/fleet info` - Show detailed current fleet info
-    ///
-    /// Fleets are teams of single-purpose agents with LLM-based routing.
+    /// Handle /fleet command - deprecated, redirects to /help
     async fn handle_fleet_command(&self, cmd: TriggerCommand) -> TriggerResponse {
-        let fleet_arg = cmd.args.first().map(|s| s.as_str());
-        let current_fleet = self.get_user_fleet(&cmd.context.user_id);
-
-        match fleet_arg {
-            None => {
-                // List all fleets with inline keyboard
-                let mut builder = TriggerResponseBuilder::new();
-
-                let current_display = self.available_fleets
-                    .get(&current_fleet)
-                    .map(|f| format!("{} {}", f.emoji, f.display_name))
-                    .unwrap_or_else(|| current_fleet.clone());
-
-                builder = builder.text(format!(
-                    "Select Fleet\n\nCurrent: {}\n\nTap to switch:",
-                    current_display
-                ));
-
-                // Add fleet buttons
-                for entry in self.available_fleets.iter() {
-                    let fleet_name = entry.key();
-                    let fleet_config = entry.value();
-                    let is_current = fleet_name == &current_fleet;
-
-                    let label = if is_current {
-                        format!("{} {} ✓", fleet_config.emoji, fleet_config.display_name)
-                    } else {
-                        format!("{} {}", fleet_config.emoji, fleet_config.display_name)
-                    };
-
-                    builder = builder.action(Action {
-                        id: format!("fleet_{}", fleet_name),
-                        label,
-                        value: format!("callback:fleet:{}", fleet_name),
-                        style: if is_current { ActionStyle::Primary } else { ActionStyle::Secondary },
-                    });
-                }
-
-                builder.build()
-            }
-            Some("info") => {
-                // Show detailed info about current fleet
-                if let Some(fleet_config) = self.available_fleets.get(&current_fleet) {
-                    let agents_display: Vec<String> = fleet_config.agents
-                        .iter()
-                        .map(|a| format!("• {}: {}", a.name, a.description))
-                        .collect();
-
-                    let info_text = format!(
-                        "{} {}\n\n{}\n\nAgents:\n{}\n\nRouter: {}\n\nUse /fleet to switch.",
-                        fleet_config.emoji,
-                        fleet_config.display_name,
-                        fleet_config.description,
-                        agents_display.join("\n"),
-                        fleet_config.router_model
-                    );
-                    TriggerResponseBuilder::new()
-                        .text(info_text)
-                        .build()
-                } else {
-                    TriggerResponseBuilder::new()
-                        .text(format!("Fleet '{}' not found.", current_fleet))
-                        .error()
-                        .build()
-                }
-            }
-            Some(fleet_name) => {
-                // Switch to the specified fleet
-                if self.available_fleets.contains_key(fleet_name) {
-                    self.set_user_fleet(&cmd.context.user_id, fleet_name);
-
-                    let fleet_config = self.available_fleets.get(fleet_name).unwrap();
-                    let agents_list: Vec<String> = fleet_config.agents
-                        .iter()
-                        .map(|a| a.name.clone())
-                        .collect();
-
-                    let response_text = format!(
-                        "Switched to {} {}\n\nAgents: {}\n\n{}",
-                        fleet_config.emoji,
-                        fleet_config.display_name,
-                        agents_list.join(", "),
-                        fleet_config.description
-                    );
-
-                    TriggerResponseBuilder::new()
-                        .text(response_text)
-                        .success()
-                        .build()
-                } else {
-                    // Unknown fleet
-                    let available: Vec<String> = self.available_fleets
-                        .iter()
-                        .map(|e| e.key().clone())
-                        .collect();
-
-                    TriggerResponseBuilder::new()
-                        .text(format!(
-                            "Unknown fleet: '{}'\n\nAvailable: {}",
-                            fleet_name,
-                            available.join(", ")
-                        ))
-                        .error()
-                        .build()
-                }
-            }
-        }
+        self.handle_help_command(cmd).await
     }
 
     /// Handle /flows command - show available flows with inline keyboard
@@ -1669,14 +1416,12 @@ impl TriggerHandler {
             })
     }
 
-    /// Get the agent for the user's current context
-    /// Used by handle_natural_language to determine which agent to use
-    pub fn get_user_agent(&self, user_id: &str) -> Option<String> {
-        let ctx_name = self.get_user_context(user_id);
-        self.available_contexts
-            .get(&ctx_name)
-            .and_then(|ctx| ctx.agent_ref.clone())
-            .or_else(|| self.config.default_agent.clone())
+    /// Get the agent for the user's current session
+    /// Returns the configured default agent (Xops orchestrator)
+    pub fn get_user_agent(&self, _user_id: &str) -> Option<String> {
+        // Xops is the single entry point - the "Chief of Staff"
+        // It delegates to specialist agents as needed via its system prompt
+        self.config.default_agent.clone()
     }
 
     /// Check if user's current context is read-only
@@ -1730,72 +1475,12 @@ impl TriggerHandler {
         info!("Parsed callback - type: '{}', value: '{}'", callback_type, callback_value);
 
         match callback_type {
-            "context" => {
-                // Switch to the selected agent
-                if self.available_contexts.contains_key(callback_value) {
-                    self.set_user_context(&message.user.id, callback_value);
-
-                    let ctx_config = self.available_contexts.get(callback_value).unwrap();
-                    let tools_display = if ctx_config.tools.is_empty() {
-                        "standard".to_string()
-                    } else {
-                        ctx_config.tools.join(", ")
-                    };
-
-                    // Simple, clean response - text only, no markdown for mobile
-                    let response_text = format!(
-                        "Switched to {} {}\n\nTools: {}\n\n{}",
-                        ctx_config.emoji,
-                        ctx_config.display_name,
-                        tools_display,
-                        ctx_config.description
-                    );
-
-                    let response = TriggerResponseBuilder::new()
-                        .text(response_text)
-                        .success()
-                        .build();
-                    let _ = platform_impl.send_response(&message.channel_id, response).await;
-                } else {
-                    let response = TriggerResponseBuilder::new()
-                        .text(format!("Context not found: {}", callback_value))
-                        .error()
-                        .build();
-                    let _ = platform_impl.send_response(&message.channel_id, response).await;
-                }
-            }
-            "fleet" => {
-                // Switch to the selected fleet
-                if self.available_fleets.contains_key(callback_value) {
-                    self.set_user_fleet(&message.user.id, callback_value);
-
-                    let fleet_config = self.available_fleets.get(callback_value).unwrap();
-                    let agents_list: Vec<String> = fleet_config.agents
-                        .iter()
-                        .map(|a| a.name.clone())
-                        .collect();
-
-                    // Simple, clean response - text only for mobile
-                    let response_text = format!(
-                        "Switched to {} {}\n\nAgents: {}\n\n{}",
-                        fleet_config.emoji,
-                        fleet_config.display_name,
-                        agents_list.join(", "),
-                        fleet_config.description
-                    );
-
-                    let response = TriggerResponseBuilder::new()
-                        .text(response_text)
-                        .success()
-                        .build();
-                    let _ = platform_impl.send_response(&message.channel_id, response).await;
-                } else {
-                    let response = TriggerResponseBuilder::new()
-                        .text(format!("Fleet not found: {}", callback_value))
-                        .error()
-                        .build();
-                    let _ = platform_impl.send_response(&message.channel_id, response).await;
-                }
+            "context" | "fleet" => {
+                // Legacy callbacks - just acknowledge
+                let response = TriggerResponseBuilder::new()
+                    .text("Just type your question naturally. Xops will handle it.")
+                    .build();
+                let _ = platform_impl.send_response(&message.channel_id, response).await;
             }
             "flow" => {
                 // Trigger the selected flow
@@ -2033,6 +1718,10 @@ impl TriggerHandler {
     }
 
     /// Handle natural language message by routing to default agent
+    ///
+    /// If the message targets the orchestrator (default agent), try config-driven
+    /// intent routing first. If a specialist agent matches with high confidence,
+    /// route directly to it, skipping the orchestrator LLM call.
     async fn handle_natural_language(
         &self,
         message: &TriggerMessage,
@@ -2064,25 +1753,11 @@ impl TriggerHandler {
                 .any(|g| input.to_lowercase() == *g);
 
         if is_greeting {
-            // Get current agent info
-            let ctx_name = self.get_user_context(&message.user.id);
-            let (agent_display, tools_display) = self.available_contexts
-                .get(&ctx_name)
-                .map(|c| {
-                    let tools = if c.tools.is_empty() { "standard".to_string() } else { c.tools.join(", ") };
-                    (format!("{} {}", c.emoji, c.display_name), tools)
-                })
-                .unwrap_or_else(|| (ctx_name.clone(), "standard".to_string()));
-
-            let greeting_text = format!(
-                "Hi! I'm your DevOps assistant.\n\n\
-                Current agent: {}\n\
-                Tools: {}\n\n\
-                Just type your question naturally.\n\n\
-                Use /help to switch agents.",
-                agent_display,
-                tools_display
-            );
+            let greeting_text = "Hey! Xops here, your ops buddy.\n\n\
+                Ask me anything about your infrastructure - \
+                I'll handle it or call in a specialist from the squad.\n\n\
+                Just type naturally. I'm all ears.\n\n\
+                /help for the full menu.";
 
             let response = TriggerResponseBuilder::new()
                 .text(greeting_text)
@@ -2126,20 +1801,6 @@ impl TriggerHandler {
         // Now store the user message in conversation memory for future context
         self.add_to_conversation(&message.channel_id, thread_id, "user", &input);
 
-        // Send typing indicator / acknowledgment
-        // Skip for GitHub/GitLab/Bitbucket - they create new comments instead of updating existing ones
-        // This prevents noisy "Thinking..." comments in PR threads
-        let is_git_platform = matches!(
-            platform_impl.platform_name(),
-            "github" | "gitlab" | "bitbucket"
-        );
-        if !is_git_platform {
-            let ack = TriggerResponseBuilder::new()
-                .text("🤔 Thinking...")
-                .build();
-            let _ = platform_impl.send_response(&message.channel_id, ack).await;
-        }
-
         // Build the full input with conversation context
         let input_with_context = if conversation_context.is_empty() {
             input.clone()
@@ -2150,6 +1811,38 @@ impl TriggerHandler {
         // Check if agent is pre-loaded in the runtime (indexed by metadata.name)
         let runtime = self.runtime.read().await;
         let agent_exists = runtime.has_agent(agent_name);
+
+        // Config-driven intent routing: try to route directly to a specialist
+        // Only when the target is the orchestrator/default agent
+        let is_orchestrator = self.config.default_agent.as_deref() == Some(agent_name);
+        if is_orchestrator {
+            if let Some(route) = route_message(&input, &*runtime) {
+                info!(
+                    "Intent router: '{}' → {} (confidence: {:.2})",
+                    input, route.agent, route.confidence
+                );
+
+                match runtime.execute(&route.agent, &route.task).await {
+                    Ok(output) => {
+                        drop(runtime);
+                        self.add_to_conversation(&message.channel_id, thread_id, "assistant", &output);
+                        let response = TriggerResponseBuilder::new()
+                            .text(output)
+                            .success()
+                            .build();
+                        let _ = platform_impl.send_response(&message.channel_id, response).await;
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Intent-routed agent '{}' failed, falling through to orchestrator: {}",
+                            route.agent, e
+                        );
+                        // Fall through to orchestrator
+                    }
+                }
+            }
+        }
         drop(runtime);
 
         if agent_exists {
@@ -2161,8 +1854,122 @@ impl TriggerHandler {
                 Ok(output) => {
                     info!("Agent '{}' executed successfully", agent_name);
 
+                    // Check if the orchestrator wants to delegate to another agent
+                    // Parse /run agent <name> <task> patterns from the LLM output
+                    if let Some((delegate_name, delegate_task, context_text)) = parse_delegation(&output) {
+                        if runtime.has_agent(&delegate_name) {
+                            info!("Delegating to agent '{}': {}", delegate_name, delegate_task);
+
+                            // Send Xops's context immediately so the user isn't blocked
+                            let notice = TriggerResponseBuilder::new()
+                                .text(format!("{}\n\n⏳ Delegating to {}...", context_text, delegate_name))
+                                .build();
+                            let _ = platform_impl.send_response(&message.channel_id, notice).await;
+
+                            // Store Xops's context in conversation memory
+                            self.add_to_conversation(&message.channel_id, thread_id, "assistant", &context_text);
+
+                            // Spawn delegate execution as a background task
+                            // Xops is free to handle more messages immediately
+                            let runtime_clone = self.runtime.clone();
+                            let platform_clone = platform_impl.clone();
+                            let channel_id = message.channel_id.clone();
+                            let delegate_name_clone = delegate_name.clone();
+                            let delegate_task_clone = delegate_task.clone();
+
+                            tokio::spawn(async move {
+                                let rt = runtime_clone.read().await;
+                                let result = match rt.execute(&delegate_name_clone, &delegate_task_clone).await {
+                                    Ok(delegate_output) => {
+                                        info!("Delegate agent '{}' completed", delegate_name_clone);
+                                        TriggerResponseBuilder::new()
+                                            .text(delegate_output)
+                                            .success()
+                                            .build()
+                                    }
+                                    Err(e) => {
+                                        error!("Delegate agent '{}' failed: {}", delegate_name_clone, e);
+                                        TriggerResponseBuilder::new()
+                                            .text(format!("❌ {} encountered an error: {}", delegate_name_clone, e))
+                                            .error()
+                                            .build()
+                                    }
+                                };
+                                let _ = platform_clone.send_response(&channel_id, result).await;
+                            });
+
+                            // Return immediately - Xops is available for more work
+                            drop(runtime);
+                            return Ok(());
+                        } else {
+                            warn!("Delegation target '{}' not found in runtime", delegate_name);
+                            let final_output = format!("{}\n\n⚠️ Agent '{}' is not loaded. Available agents: {}",
+                                context_text, delegate_name,
+                                runtime.list_agents().join(", "));
+                            drop(runtime);
+
+                            self.add_to_conversation(&message.channel_id, thread_id, "assistant", &final_output);
+                            let response = TriggerResponseBuilder::new()
+                                .text(final_output)
+                                .error()
+                                .build();
+                            let _ = platform_impl.send_response(&message.channel_id, response).await;
+                            return Ok(());
+                        }
+                    }
+
+                    // Fallback: if the orchestrator agent gave CLI instructions instead of
+                    // delegating, auto-detect and route to the right specialist.
+                    // Only applies to the default/orchestrator agent (e.g., xops).
+                    let is_orchestrator = self.config.default_agent.as_deref() == Some(agent_name);
+                    if is_orchestrator {
+                        if let Some((delegate_name, delegate_task, _)) = auto_detect_delegation(&output, &input) {
+                            if runtime.has_agent(&delegate_name) {
+                                info!("Auto-delegating to '{}' (orchestrator gave CLI instructions)", delegate_name);
+
+                                let notice = TriggerResponseBuilder::new()
+                                    .text(format!("⏳ Routing to {}...", delegate_name))
+                                    .build();
+                                let _ = platform_impl.send_response(&message.channel_id, notice).await;
+
+                                let runtime_clone = self.runtime.clone();
+                                let platform_clone = platform_impl.clone();
+                                let channel_id = message.channel_id.clone();
+                                let delegate_name_clone = delegate_name.clone();
+                                let delegate_task_clone = delegate_task.clone();
+
+                                tokio::spawn(async move {
+                                    let rt = runtime_clone.read().await;
+                                    let result = match rt.execute(&delegate_name_clone, &delegate_task_clone).await {
+                                        Ok(delegate_output) => {
+                                            info!("Auto-delegate agent '{}' completed", delegate_name_clone);
+                                            TriggerResponseBuilder::new()
+                                                .text(delegate_output)
+                                                .success()
+                                                .build()
+                                        }
+                                        Err(e) => {
+                                            error!("Auto-delegate agent '{}' failed: {}", delegate_name_clone, e);
+                                            TriggerResponseBuilder::new()
+                                                .text(format!("❌ {} encountered an error: {}", delegate_name_clone, e))
+                                                .error()
+                                                .build()
+                                        }
+                                    };
+                                    let _ = platform_clone.send_response(&channel_id, result).await;
+                                });
+
+                                drop(runtime);
+                                return Ok(());
+                            }
+                        }
+                    }
+
+                    let final_output = output;
+                    drop(runtime);
+
                     // Parse output for approval requirements
-                    let (requires_approval, command, clean_output) = parse_approval_output(&output);
+                    let (requires_approval, command, clean_output) = parse_approval_output(&final_output);
 
                     if requires_approval {
                         if let Some(cmd) = command {
@@ -2224,10 +2031,10 @@ impl TriggerHandler {
                     } else {
                         // Normal response without approval
                         // Store assistant response in conversation memory
-                        self.add_to_conversation(&message.channel_id, thread_id, "assistant", &output);
+                        self.add_to_conversation(&message.channel_id, thread_id, "assistant", &final_output);
 
                         let response = TriggerResponseBuilder::new()
-                            .text(output)
+                            .text(final_output)
                             .success()
                             .build();
                         let _ = platform_impl.send_response(&message.channel_id, response).await;
@@ -2274,10 +2081,11 @@ impl TriggerHandler {
         let config = AgentConfig {
             name: agent_name.to_string(),
             system_prompt: Some(format!(
-                "You are a helpful AI assistant responding in a Slack channel. \
-                Keep responses concise and use Slack markdown formatting. \
-                Use code blocks with ``` for code. \
-                Be friendly and helpful. User: {}",
+                "You are Xops, an energetic and geeky Ops/SRE AI agent. \
+                You help with all things infrastructure, DevOps, and SRE. \
+                Keep responses concise, fun, and actionable. \
+                Use code blocks with ``` for commands. \
+                Be direct and helpful. User: {}",
                 message.user.username.as_deref().unwrap_or("unknown")
             )),
             model: model_name.clone(),
@@ -2290,6 +2098,7 @@ impl TriggerHandler {
             temperature: 0.7,
             max_tokens: Some(2000),
             output_schema: None,
+            routing: None,
             extra: std::collections::HashMap::new(),
         };
 

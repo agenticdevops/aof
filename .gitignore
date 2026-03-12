@@ -7,6 +7,9 @@ Cargo.lock
 # Cargo.lock should be committed for binaries but not libraries
 # !Cargo.lock
 
+# Content drafts (blog posts, social media)
+contents/
+
 # Build artifacts
 *.o
 *.so

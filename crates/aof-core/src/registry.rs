@@ -712,6 +712,7 @@ mod tests {
             temperature: 0.7,
             max_tokens: None,
             output_schema: None,
+            routing: None,
             extra: HashMap::new(),
         };
 

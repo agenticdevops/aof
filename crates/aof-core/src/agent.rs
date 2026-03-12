@@ -666,6 +666,10 @@ pub struct AgentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_schema: Option<OutputSchemaSpec>,
 
+    /// Routing configuration for config-driven intent routing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing: Option<RoutingConfig>,
+
     /// Custom configuration
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -909,6 +913,7 @@ struct AgentSpec {
     temperature: f32,
     max_tokens: Option<usize>,
     output_schema: Option<OutputSchemaSpec>,
+    routing: Option<RoutingConfig>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
 }
@@ -933,6 +938,7 @@ struct FlatAgentConfig {
     temperature: f32,
     max_tokens: Option<usize>,
     output_schema: Option<OutputSchemaSpec>,
+    routing: Option<RoutingConfig>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
 }
@@ -953,6 +959,7 @@ impl From<AgentConfigInput> for AgentConfig {
                 temperature: flat.temperature,
                 max_tokens: flat.max_tokens,
                 output_schema: flat.output_schema,
+                routing: flat.routing,
                 extra: flat.extra,
             },
             AgentConfigInput::Kubernetes(k8s) => {
@@ -969,6 +976,7 @@ impl From<AgentConfigInput> for AgentConfig {
                     temperature: k8s.spec.temperature,
                     max_tokens: k8s.spec.max_tokens,
                     output_schema: k8s.spec.output_schema,
+                    routing: k8s.spec.routing,
                     extra: k8s.spec.extra,
                 }
             }
@@ -986,6 +994,26 @@ fn default_max_context_messages() -> usize {
 
 fn default_temperature() -> f32 {
     0.7
+}
+
+fn default_routing_priority() -> f32 {
+    0.8
+}
+
+/// Routing configuration for config-driven intent routing.
+/// Agents declare keywords and domains so the router can match
+/// user messages directly to specialists without an LLM call.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RoutingConfig {
+    /// Keywords that trigger routing to this agent
+    #[serde(default)]
+    pub keywords: Vec<String>,
+    /// Domain categories (for future squad/channel mapping)
+    #[serde(default)]
+    pub domains: Vec<String>,
+    /// Routing priority (0.0-1.0). Higher = stronger match. Default 0.8
+    #[serde(default = "default_routing_priority")]
+    pub priority: f32,
 }
 
 /// Reference-counted agent

@@ -278,6 +278,7 @@ impl FleetCoordinator {
                 temperature: spec.temperature.unwrap_or(0.7),
                 max_tokens: None,
                 output_schema: None,
+                routing: None,
                 extra: std::collections::HashMap::new(),
             })
         } else {

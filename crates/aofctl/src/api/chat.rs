@@ -252,7 +252,7 @@ pub async fn send_message(
 /// Creates an Info-type activity event with chat message metadata so that
 /// WebSocket subscribers can process it as a CHAT_MESSAGE event. The frontend
 /// SquadChat component distinguishes chat events using the metadata field.
-fn build_chat_message_event(message: &ChatMessage) -> aof_core::CoordinationEvent {
+pub fn build_chat_message_event(message: &ChatMessage) -> aof_core::CoordinationEvent {
     use std::collections::HashMap;
 
     let mut metadata = HashMap::new();

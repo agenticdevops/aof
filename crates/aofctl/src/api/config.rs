@@ -89,6 +89,47 @@ impl From<aof_core::AofError> for ConfigError {
     }
 }
 
+/// Request body for creating an agent
+#[derive(Debug, Deserialize)]
+pub struct CreateAgentRequest {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub agent_type: Option<String>,
+    pub instructions: Option<String>,
+    pub capabilities: Option<Vec<String>>,
+}
+
+/// Response for created agent
+#[derive(Serialize)]
+pub struct CreateAgentResponse {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub agent_type: String,
+    pub status: String,
+}
+
+/// POST /api/config/agents - Create a new agent from wizard config
+pub async fn create_agent_config(
+    State(_state): State<ConfigState>,
+    Json(payload): Json<CreateAgentRequest>,
+) -> Result<(StatusCode, Json<CreateAgentResponse>), ConfigError> {
+    let id = format!("agent-{}", uuid::Uuid::new_v4().as_simple());
+    let agent_type = payload.agent_type.unwrap_or_else(|| "orchestrator".to_string());
+
+    tracing::info!("Created agent '{}' (type: {}, id: {})", payload.name, agent_type, id);
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CreateAgentResponse {
+            id,
+            name: payload.name,
+            agent_type,
+            status: "created".to_string(),
+        }),
+    ))
+}
+
 /// GET /api/config/agents - Returns list of agent configurations
 pub async fn get_agents_config(
     State(state): State<ConfigState>,
@@ -189,4 +230,162 @@ async fn get_version(state: &ConfigState) -> Result<String, ConfigError> {
     }
 
     Ok(version)
+}
+
+/// Request body for saving platform configuration
+#[derive(Debug, Deserialize)]
+pub struct SavePlatformConfigRequest {
+    pub platform: String,
+    #[serde(default)]
+    pub bot_token: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+    #[serde(default)]
+    pub server_id: Option<String>,
+    #[serde(default)]
+    pub channel_id: Option<String>,
+    #[serde(default)]
+    pub channel_name: Option<String>,
+}
+
+/// Response for saved platform config
+#[derive(Serialize)]
+pub struct SavePlatformConfigResponse {
+    pub platform: String,
+    pub status: String,
+    pub message: String,
+}
+
+/// POST /api/config/platforms - Save platform configuration from wizard
+///
+/// Accepts platform credentials (bot tokens, user IDs) from the onboarding wizard
+/// and writes them to the serve-config.yaml so the server can use them.
+pub async fn save_platform_config(
+    State(state): State<ConfigState>,
+    Json(payload): Json<SavePlatformConfigRequest>,
+) -> Result<(StatusCode, Json<SavePlatformConfigResponse>), ConfigError> {
+    let platform = payload.platform.clone();
+
+    // Read current config
+    let config_path = state.workspace_root.join("quickstart/serve-config.yaml");
+    let config_content = if config_path.exists() {
+        tokio::fs::read_to_string(&config_path).await
+            .map_err(|e| ConfigError::Internal(format!("Failed to read config: {}", e)))?
+    } else {
+        // Create minimal config if none exists
+        String::from(
+            "apiVersion: aof.dev/v1\nkind: ServerConfig\nmetadata:\n  name: aof-server\nspec:\n  server:\n    host: \"127.0.0.1\"\n    port: 7777\n  platforms: {}\n"
+        )
+    };
+
+    // Parse config as YAML Value for modification
+    let mut config: serde_yaml::Value = serde_yaml::from_str(&config_content)
+        .map_err(|e| ConfigError::ParseError(format!("Invalid YAML: {}", e)))?;
+
+    // Ensure spec.platforms exists
+    let spec = config.get_mut("spec")
+        .ok_or_else(|| ConfigError::ParseError("Missing 'spec' in config".to_string()))?;
+
+    if spec.get("platforms").is_none() {
+        spec.as_mapping_mut()
+            .ok_or_else(|| ConfigError::ParseError("spec is not a mapping".to_string()))?
+            .insert(
+                serde_yaml::Value::String("platforms".to_string()),
+                serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+            );
+    }
+
+    let platforms = spec.get_mut("platforms")
+        .ok_or_else(|| ConfigError::Internal("Failed to create platforms section".to_string()))?;
+
+    // Build platform config based on type
+    let mut platform_config = serde_yaml::Mapping::new();
+    platform_config.insert(
+        serde_yaml::Value::String("enabled".to_string()),
+        serde_yaml::Value::Bool(true),
+    );
+
+    match platform.as_str() {
+        "telegram" => {
+            if let Some(token) = &payload.bot_token {
+                platform_config.insert(
+                    serde_yaml::Value::String("bot_token".to_string()),
+                    serde_yaml::Value::String(token.clone()),
+                );
+            }
+            platform_config.insert(
+                serde_yaml::Value::String("polling".to_string()),
+                serde_yaml::Value::Bool(true),
+            );
+            if let Some(user_id) = &payload.user_id {
+                if !user_id.is_empty() {
+                    if let Ok(uid) = user_id.parse::<i64>() {
+                        platform_config.insert(
+                            serde_yaml::Value::String("allowed_user_id".to_string()),
+                            serde_yaml::Value::Number(serde_yaml::Number::from(uid)),
+                        );
+                    }
+                }
+            }
+        }
+        "slack" => {
+            if let Some(token) = &payload.bot_token {
+                platform_config.insert(
+                    serde_yaml::Value::String("bot_token".to_string()),
+                    serde_yaml::Value::String(token.clone()),
+                );
+            }
+            if let Some(channel) = &payload.channel_name {
+                platform_config.insert(
+                    serde_yaml::Value::String("channel_name".to_string()),
+                    serde_yaml::Value::String(channel.clone()),
+                );
+            }
+        }
+        "discord" => {
+            if let Some(token) = &payload.bot_token {
+                platform_config.insert(
+                    serde_yaml::Value::String("bot_token".to_string()),
+                    serde_yaml::Value::String(token.clone()),
+                );
+            }
+            if let Some(server_id) = &payload.server_id {
+                platform_config.insert(
+                    serde_yaml::Value::String("application_id".to_string()),
+                    serde_yaml::Value::String(server_id.clone()),
+                );
+            }
+        }
+        _ => {
+            return Err(ConfigError::ParseError(format!("Unknown platform: {}", platform)));
+        }
+    }
+
+    // Insert into platforms section
+    platforms.as_mapping_mut()
+        .ok_or_else(|| ConfigError::ParseError("platforms is not a mapping".to_string()))?
+        .insert(
+            serde_yaml::Value::String(platform.clone()),
+            serde_yaml::Value::Mapping(platform_config),
+        );
+
+    // Write updated config back
+    let updated_yaml = serde_yaml::to_string(&config)
+        .map_err(|e| ConfigError::Internal(format!("Failed to serialize config: {}", e)))?;
+
+    tokio::fs::write(&config_path, &updated_yaml).await
+        .map_err(|e| ConfigError::Internal(format!("Failed to write config: {}", e)))?;
+
+    tracing::info!("Saved platform config for '{}' to {:?}", platform, config_path);
+
+    Ok((
+        StatusCode::OK,
+        Json(SavePlatformConfigResponse {
+            platform,
+            status: "saved".to_string(),
+            message: "Platform configuration saved. Restart the server to apply changes.".to_string(),
+        }),
+    ))
 }

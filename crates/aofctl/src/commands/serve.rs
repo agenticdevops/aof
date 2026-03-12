@@ -107,7 +107,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 // Config API
-use crate::api::config::{ConfigState, get_agents_config, get_tools_config, get_config_version};
+use crate::api::config::{ConfigState, get_agents_config, create_agent_config, get_tools_config, get_config_version, save_platform_config};
 // Metrics API
 use crate::api::metrics::{MetricsState, get_agent_metrics};
 // Tasks API
@@ -396,6 +396,16 @@ pub struct TelegramPlatformConfig {
     pub bot_token_env: Option<String>,
 
     pub webhook_secret: Option<String>,
+
+    /// Optional user ID whitelist (numeric Telegram user IDs)
+    #[serde(default)]
+    pub allowed_user_id: Option<i64>,
+
+    /// Use long polling instead of webhooks (default: true)
+    /// When true, the server polls Telegram's getUpdates API automatically.
+    /// No public URL or ngrok required.
+    #[serde(default = "default_true")]
+    pub polling: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1089,6 +1099,8 @@ pub async fn execute(
     }
 
     // Telegram
+    let mut telegram_polling_token: Option<String> = None;
+    let mut telegram_polling_handle: Option<tokio::task::JoinHandle<()>> = None;
     if let Some(telegram_config) = &config.spec.platforms.telegram {
         if telegram_config.enabled {
             let bot_token = resolve_env_value(
@@ -1097,19 +1109,26 @@ pub async fn execute(
             );
 
             if let Some(token) = bot_token {
+                let allowed_users = telegram_config.allowed_user_id.map(|id| vec![id]);
                 let platform_config = TelegramConfig {
-                    bot_token: token,
+                    bot_token: token.clone(),
                     webhook_url: None,
                     webhook_secret: telegram_config.webhook_secret.clone(),
                     bot_name: "aofbot".to_string(),
-                    allowed_users: None,
+                    allowed_users,
                     allowed_groups: None,
                 };
                 match TelegramPlatform::new(platform_config) {
                     Ok(platform) => {
-                        handler.register_platform(Arc::new(platform));
+                        let platform = Arc::new(platform);
+                        handler.register_platform(platform.clone());
                         println!("  Registered platform: telegram");
                         platforms_registered += 1;
+
+                        // Store token for polling start after handler is wrapped in Arc
+                        if telegram_config.polling {
+                            telegram_polling_token = Some(token.clone());
+                        }
                     }
                     Err(e) => {
                         eprintln!("  Failed to create Telegram platform: {}", e);
@@ -1458,18 +1477,36 @@ pub async fn execute(
     struct AppState {
         handler: Arc<TriggerHandler>,
         event_bus: Option<Arc<EventBroadcaster>>,
+        chat_state: crate::api::chat::ChatState,
+    }
+
+    // Build chat state early so it can be shared with both API and webhook handler
+    use crate::api::chat::{ChatState, get_messages, send_message};
+    let chat_state = ChatState::new(Some(event_bus.clone()));
+
+    let handler = Arc::new(handler);
+
+    // Start Telegram long polling if configured (like OpenClaw - no webhooks needed)
+    if let Some(polling_token) = telegram_polling_token {
+        let handler_for_polling = Arc::clone(&handler);
+        telegram_polling_handle = Some(tokio::spawn(async move {
+            telegram_polling_loop(polling_token, handler_for_polling).await;
+        }));
+        println!("  Telegram polling started (getUpdates mode - no webhook required)");
     }
 
     let app_state = AppState {
-        handler: Arc::new(handler),
+        handler,
         event_bus: Some(event_bus.clone()),
+        chat_state: chat_state.clone(),
     };
 
     // Build API router (config endpoints)
     let config_router = Router::new()
-        .route("/config/agents", get(get_agents_config))
+        .route("/config/agents", get(get_agents_config).post(create_agent_config))
         .route("/config/tools", get(get_tools_config))
         .route("/config/version", get(get_config_version))
+        .route("/config/platforms", post(save_platform_config))
         .with_state(config_state.clone());
 
     // Build tools discovery router
@@ -1692,9 +1729,7 @@ pub async fn execute(
             .route("/coordination/mode", post(get_coordination_disabled))
     };
 
-    // Build chat router
-    use crate::api::chat::{ChatState, get_messages, send_message};
-    let chat_state = ChatState::new(Some(event_bus.clone()));
+    // Build chat router (uses chat_state created above for AppState sharing)
     let chat_router = Router::new()
         .route("/chat/messages", get(get_messages).post(send_message))
         .with_state(chat_state);
@@ -1705,6 +1740,71 @@ pub async fn execute(
         .route("/test/emit-event", post(emit_test_event))
         .with_state(test_events_state);
 
+    // Build agents router (live loaded agents from runtime)
+    #[derive(Clone)]
+    struct AgentsApiState {
+        runtime: Arc<tokio::sync::RwLock<aof_runtime::Runtime>>,
+        metrics_cache: Arc<aof_personas::ReliabilityCache>,
+    }
+
+    async fn get_loaded_agents(
+        axum::extract::State(state): axum::extract::State<AgentsApiState>,
+    ) -> axum::response::Json<serde_json::Value> {
+        use serde_json::json;
+
+        let runtime = state.runtime.read().await;
+        let agent_names = runtime.list_agents();
+
+        let mut agents = Vec::new();
+        for name in &agent_names {
+            if let Some(executor) = runtime.get_agent(name) {
+                let config = executor.config();
+                let role = config.routing.as_ref()
+                    .and_then(|r| r.domains.first().cloned())
+                    .unwrap_or_else(|| "agent".to_string());
+
+                // Get real metrics if available
+                let metrics = state.metrics_cache.get_metrics(name).await;
+                let (uptime, success_rate, status) = match &metrics {
+                    Some(m) => {
+                        let up = m.uptime_percent.unwrap_or(100.0);
+                        let sr = m.success_rate.unwrap_or(100.0);
+                        let st = if up < 50.0 { "error" } else if m.event_count == 0 { "idle" } else { "active" };
+                        (up, sr, st)
+                    }
+                    None => (100.0, 100.0, "idle"),
+                };
+
+                agents.push(json!({
+                    "id": name,
+                    "name": name,
+                    "role": role,
+                    "status": status,
+                    "model": config.model,
+                    "hasRouting": config.routing.is_some(),
+                    "keywords": config.routing.as_ref().map(|r| &r.keywords),
+                    "domains": config.routing.as_ref().map(|r| &r.domains),
+                    "tools": config.tools.iter().map(|t| t.name()).collect::<Vec<_>>(),
+                    "metrics": {
+                        "uptime": uptime,
+                        "successRate": success_rate,
+                        "eventCount": metrics.as_ref().map(|m| m.event_count).unwrap_or(0),
+                    }
+                }));
+            }
+        }
+
+        json!(agents).into()
+    }
+
+    let agents_api_state = AgentsApiState {
+        runtime: Arc::clone(app_state.handler.runtime()),
+        metrics_cache: Arc::clone(&metrics_cache),
+    };
+    let agents_router = Router::new()
+        .route("/agents", get(get_loaded_agents))
+        .with_state(agents_api_state);
+
     // Merge all API sub-routers
     let api_router = config_router
         .merge(tools_router)
@@ -1713,7 +1813,8 @@ pub async fn execute(
         .merge(conversation_router)
         .merge(coordination_router)
         .merge(chat_router)
-        .merge(test_events_router);
+        .merge(test_events_router)
+        .merge(agents_router);
 
     // Import handlers from aof-triggers server (inline to avoid duplicating logic)
     use axum::extract::State;
@@ -1784,7 +1885,38 @@ pub async fn execute(
             }
         };
 
-        // Handle message asynchronously
+        // Store incoming message in ChatStore and broadcast via WebSocket
+        {
+            let sender_name = message.user.display_name.clone()
+                .or_else(|| message.user.username.clone())
+                .unwrap_or_else(|| format!("{}:{}", platform, message.user.id));
+            let sender_id = format!("{}:{}", platform, message.user.id);
+            let content = message.text.clone();
+
+            let chat_req = crate::api::chat::SendMessageRequest {
+                content,
+                sender_id: sender_id.clone(),
+                sender_name: sender_name.clone(),
+                sender_avatar: Some(format!("📱")), // Platform message indicator
+            };
+
+            let chat_state = state.chat_state.clone();
+            let event_bus = state.event_bus.clone();
+            tokio::spawn(async move {
+                let mut store = chat_state.store.write().await;
+                let msg = store.add_message(chat_req);
+                drop(store);
+
+                // Emit chat message event via event bus for WebSocket broadcast
+                if let Some(ref bus) = event_bus {
+                    let event = crate::api::chat::build_chat_message_event(&msg);
+                    bus.emit(event);
+                    tracing::info!("Broadcast platform message from {} to WebSocket clients", sender_name);
+                }
+            });
+        }
+
+        // Handle message asynchronously (for agent routing, responses, etc.)
         let handler = Arc::clone(&state.handler);
         let platform_name = platform.clone();
         tokio::spawn(async move {
@@ -1810,9 +1942,12 @@ pub async fn execute(
 
     async fn websocket_handler(socket: WebSocket, event_bus: Option<Arc<EventBroadcaster>>) {
         let Some(bus) = event_bus else {
+            eprintln!("❌ WebSocket client connected but EventBroadcaster is NONE!");
             return;
         };
+        eprintln!("✓ WebSocket client connected with EventBroadcaster");
 
+        tracing::info!("WebSocket client connected");
         let (mut sender, mut receiver) = socket.split();
         let mut event_rx = bus.subscribe();
 
@@ -1824,7 +1959,7 @@ pub async fn execute(
                         match serde_json::to_string(&event) {
                             Ok(json) => {
                                 if sender.send(WsMessage::Text(json)).await.is_err() {
-                                    tracing::info!("WebSocket client disconnected");
+                                    tracing::info!("WebSocket send error - client may have disconnected");
                                     break;
                                 }
                             }
@@ -1837,21 +1972,42 @@ pub async fn execute(
                         tracing::warn!("WebSocket client lagged, dropped {} events", n);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        tracing::info!("Event bus closed");
                         break;
                     }
                 }
             }
         });
 
-        // Listen for client messages (close frames, pings)
-        while let Some(Ok(msg)) = receiver.next().await {
-            match msg {
-                WsMessage::Close(_) => break,
-                WsMessage::Ping(_) => {},
-                _ => {}
+        // Listen for client messages (close frames)
+        loop {
+            match receiver.next().await {
+                Some(Ok(msg)) => {
+                    match msg {
+                        WsMessage::Close(_) => {
+                            eprintln!("❌ WebSocket client sent close frame");
+                            break;
+                        }
+                        WsMessage::Ping(_) => {
+                            eprintln!("  ping from client");
+                        },
+                        _ => {
+                            eprintln!("  msg from client: {:?}", msg);
+                        }
+                    }
+                }
+                Some(Err(e)) => {
+                    eprintln!("❌ WebSocket message error: {}", e);
+                    break;
+                }
+                None => {
+                    eprintln!("❌ WebSocket receiver returned None - connection closed");
+                    break;
+                }
             }
         }
 
+        eprintln!("❌ WebSocket connection CLOSED");
         send_task.abort();
     }
 
@@ -1957,6 +2113,13 @@ pub async fn execute(
                 }
             }
 
+            // Stop Telegram polling
+            if let Some(handle) = telegram_polling_handle {
+                println!("  Stopping Telegram polling...");
+                handle.abort();
+                println!("  Telegram polling stopped");
+            }
+
             // Save session state on shutdown
             let final_state = SessionState {
                 session_id: session_id.clone(),
@@ -2045,6 +2208,120 @@ async fn load_squad_overrides(
                 "Failed to read squads.yaml, ignoring overrides"
             );
             None
+        }
+    }
+}
+
+/// Telegram long polling loop (like OpenClaw's grammY runner approach)
+///
+/// Continuously calls Telegram's getUpdates API with long polling.
+/// No webhook URL or ngrok required - just a bot token.
+///
+/// Features:
+/// - Long polling with 30s timeout per request
+/// - Exponential backoff on errors (1s, 2s, 4s, 8s... max 30s)
+/// - Automatic offset tracking to avoid re-processing messages
+/// - Deletes any existing webhook on startup (ensures clean polling mode)
+async fn telegram_polling_loop(bot_token: String, handler: Arc<TriggerHandler>) {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60)) // Longer than polling timeout
+        .build()
+        .unwrap_or_default();
+
+    let api_base = format!("https://api.telegram.org/bot{}", bot_token);
+
+    // Delete any existing webhook to switch to polling mode
+    match client
+        .post(format!("{}/deleteWebhook", api_base))
+        .send()
+        .await
+    {
+        Ok(_) => tracing::info!("Telegram: cleared existing webhook, using polling mode"),
+        Err(e) => tracing::warn!("Telegram: failed to clear webhook: {}", e),
+    }
+
+    let mut offset: Option<i64> = None;
+    let mut consecutive_errors: u32 = 0;
+
+    loop {
+        // Build getUpdates request
+        let mut params = serde_json::json!({
+            "timeout": 30,
+            "allowed_updates": ["message", "callback_query"]
+        });
+        if let Some(off) = offset {
+            params["offset"] = serde_json::json!(off);
+        }
+
+        match client
+            .post(format!("{}/getUpdates", api_base))
+            .json(&params)
+            .send()
+            .await
+        {
+            Ok(response) => {
+                match response.json::<serde_json::Value>().await {
+                    Ok(body) => {
+                        if body["ok"].as_bool() == Some(true) {
+                            consecutive_errors = 0;
+
+                            if let Some(updates) = body["result"].as_array() {
+                                for update in updates {
+                                    // Track offset (next poll starts after this update)
+                                    if let Some(update_id) = update["update_id"].as_i64() {
+                                        offset = Some(update_id + 1);
+                                    }
+
+                                    // Parse update through the platform adapter, then handle
+                                    let raw = serde_json::to_vec(update).unwrap_or_default();
+                                    let headers = std::collections::HashMap::new();
+
+                                    if let Some(platform) = handler.get_platform("telegram") {
+                                        match platform.parse_message(&raw, &headers).await {
+                                            Ok(message) => {
+                                                if let Err(e) = handler.handle_message("telegram", message).await {
+                                                    tracing::warn!("Telegram: failed to handle message: {}", e);
+                                                } else {
+                                                    tracing::debug!("Telegram: processed update");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::debug!("Telegram: skipped update: {}", e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            let desc = body["description"].as_str().unwrap_or("unknown error");
+                            tracing::error!("Telegram API error: {}", desc);
+                            consecutive_errors += 1;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Telegram: failed to parse response: {}", e);
+                        consecutive_errors += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Telegram: polling request failed: {}", e);
+                consecutive_errors += 1;
+            }
+        }
+
+        // Exponential backoff on errors (1s, 2s, 4s, 8s... max 30s)
+        if consecutive_errors > 0 {
+            let delay = std::cmp::min(
+                1000 * 2u64.pow(consecutive_errors - 1),
+                30_000,
+            );
+            tracing::warn!(
+                "Telegram: backing off {}s after {} consecutive errors",
+                delay / 1000,
+                consecutive_errors
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
         }
     }
 }

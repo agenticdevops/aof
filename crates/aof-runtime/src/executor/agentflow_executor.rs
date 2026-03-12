@@ -431,6 +431,7 @@ impl AgentFlowExecutor {
             temperature: inline.temperature.unwrap_or(0.7),
             max_tokens: inline.max_tokens,
             output_schema: None,
+            routing: None,
             extra: std::collections::HashMap::new(),
         };
 

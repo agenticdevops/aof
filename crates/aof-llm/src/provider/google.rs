@@ -77,7 +77,30 @@ impl GoogleModel {
             );
         }
 
+        // Build a tool_call_id → tool_name map from all assistant messages
+        // so Tool responses can look up their name correctly
+        let mut tool_id_to_name: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for m in request.messages.iter() {
+            if let Some(tool_calls) = &m.tool_calls {
+                for tc in tool_calls {
+                    tool_id_to_name.insert(tc.id.clone(), tc.name.clone());
+                }
+            }
+        }
+
+        // Track pending FunctionResponse parts to merge consecutive Tool messages
+        // into a single "user" Content (Gemini requires this)
+        let mut pending_function_responses: Vec<GeminiPart> = Vec::new();
+
         for (i, m) in request.messages.iter().enumerate() {
+            // Before processing a non-Tool message, flush any pending function responses
+            if m.role != MessageRole::Tool && !pending_function_responses.is_empty() {
+                contents.push(GeminiContent {
+                    role: "user".to_string(),
+                    parts: std::mem::take(&mut pending_function_responses),
+                });
+            }
+
             match m.role {
                 MessageRole::User => {
                     contents.push(GeminiContent {
@@ -115,33 +138,50 @@ impl GoogleModel {
                     // Gemini doesn't have system role in contents, skip (handled via system_instruction)
                 }
                 MessageRole::Tool => {
-                    // Tool responses need functionResponse format
-                    // Try to get the tool name from the previous assistant message's tool calls
-                    let tool_name = if i > 0 {
-                        request.messages.get(i - 1)
-                            .and_then(|prev| prev.tool_calls.as_ref())
-                            .and_then(|tcs| tcs.first())
-                            .map(|tc| tc.name.clone())
-                            .unwrap_or_else(|| "unknown".to_string())
-                    } else {
-                        "unknown".to_string()
-                    };
+                    // Resolve tool name from tool_call_id map, fall back to positional lookup
+                    let tool_name = m.tool_call_id.as_ref()
+                        .and_then(|id| tool_id_to_name.get(id))
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            // Fallback: scan backwards for the nearest assistant message with tool_calls
+                            for j in (0..i).rev() {
+                                if let Some(tcs) = &request.messages[j].tool_calls {
+                                    // Count how many Tool messages are between messages[j] and messages[i]
+                                    let tool_index = (j + 1..=i)
+                                        .filter(|&k| request.messages[k].role == MessageRole::Tool)
+                                        .count() - 1;
+                                    if let Some(tc) = tcs.get(tool_index) {
+                                        return tc.name.clone();
+                                    }
+                                    if let Some(tc) = tcs.first() {
+                                        return tc.name.clone();
+                                    }
+                                }
+                            }
+                            "unknown".to_string()
+                        });
 
                     // Parse content as JSON or wrap as string
                     let response_data = serde_json::from_str::<serde_json::Value>(&m.content)
                         .unwrap_or_else(|_| serde_json::json!({"result": m.content}));
 
-                    contents.push(GeminiContent {
-                        role: "user".to_string(),
-                        parts: vec![GeminiPart::FunctionResponse {
-                            function_response: GeminiFunctionResponse {
-                                name: tool_name,
-                                response: response_data,
-                            },
-                        }],
+                    // Accumulate into pending batch (will be flushed as single Content)
+                    pending_function_responses.push(GeminiPart::FunctionResponse {
+                        function_response: GeminiFunctionResponse {
+                            name: tool_name,
+                            response: response_data,
+                        },
                     });
                 }
             }
+        }
+
+        // Flush any remaining function responses at end of messages
+        if !pending_function_responses.is_empty() {
+            contents.push(GeminiContent {
+                role: "user".to_string(),
+                parts: pending_function_responses,
+            });
         }
 
         // Add system instruction if present

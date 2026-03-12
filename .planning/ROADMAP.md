@@ -1,494 +1,167 @@
-# Roadmap: Milestone 2 (v1.0) — Humanized Interfaces
-
-**Created:** 2026-02-14
-**Version:** 1.0
-**Total Phases:** 4
-**Duration:** 4-6 weeks
-**Status:** Planning
-**Theme:** Comprehensive UI Revamp + Squad Communication + Fleet Control
-
----
-
-## Overview
-
-Transform AOF from backend-focused coordination system into a beautiful, humanized web application where users see their agent squads as team members with visible personality, real-time communication, and intelligent orchestration.
-
-**Key Focus:** Beautiful UI that makes agents feel like team members, not executables.
-
----
-
-## Phase Dependencies
-
-```
-Phase 1 (Onboarding & Config UI)
-    ↓
-Phase 2 (Mission Control & Squad Chat)
-    ↓
-Phase 3 (Fleet Control Dashboard)
-    ↓
-Phase 4 (Humanized Polish & Integration)
-```
-
----
-
-## Phase 1: Onboarding & Configuration UI
-
-**Goal:** Users can set up AOF in 5 minutes with no YAML editing.
-
-**Duration:** 1 week
-**Dependencies:** Phase 7 & 8 complete (API ready)
-
-### Requirements
-
-- **ONBD-01:** Welcome page with setup flow
-- **ONBD-02:** 4-step onboarding wizard (account, agent, platforms, review)
-- **ONBD-03:** Conversational agent creation UI
-- **CONF-01:** Agent management dashboard (CRUD agents)
-- **CONF-02:** Platform configuration (connect Slack, Discord, etc.)
-- **CONF-03:** Tool discovery and management
-
-### Success Criteria
-
-1. First-time user can complete onboarding in <5 minutes
-2. All form inputs validate with clear error messages
-3. Configuration persists and survives daemon restart
-4. Users can modify configuration after initial setup
-5. Platform connections test successfully
-
-### Key Deliverables
-
-- **Pages:**
-  - Welcome page
-  - 4-step onboarding wizard
-  - Configuration dashboard (Agents, Tools, Platforms tabs)
-
-- **Components:**
-  - OnboardingWizard (multi-step form)
-  - AgentCard (list + detail view)
-  - PlatformConfigModal
-  - ToolsList
-  - FormValidation (shared)
-
-- **Integration:**
-  - Connect to `/api/config/*` endpoints
-  - Connect to `/api/conversation/*` for agent creation
-  - WebSocket connection health indicator
-
-### Plans: 4 plans
-
-- [ ] 01-01-PLAN.md — Welcome page + wizard structure
-- [ ] 01-02-PLAN.md — Configuration dashboard (agents, tools, platforms)
-- [ ] 01-03-PLAN.md — Form validation + error handling
-- [ ] 01-04-PLAN.md — Integration testing + end-to-end flow
-
----
-
-## Phase 2: Mission Control & Squad Chat
-
-**Goal:** Real-time monitoring with visible agent communication and coordination.
-
-**Duration:** 2 weeks
-**Dependencies:** Phase 1 complete
-
-### Requirements
-
-- **MSCT-01:** Mission Control dashboard (agent grid, standups, metrics)
-- **MSCT-02:** Real-time health indicators (pulsing animations, status badges)
-- **MSCT-03:** Standup feed with expandable responses
-- **COMM-01:** Squad chat interface (agent-to-agent + human-to-agent messaging)
-- **COMM-02:** Agent message styling with personas (different colors, icons, fonts)
-- **COMM-03:** Announcement system (broadcast to squads)
-- **COMM-04:** Message threading and search
-
-### Success Criteria
-
-1. Mission Control displays all agents with real-time status
-2. WebSocket events update UI within 100ms
-3. Squad chat shows agent personalities through styling
-4. Humans can send messages and agents respond in real-time
-5. Standup summaries auto-generate from responses
-6. Message search works across 1000+ messages
-
-### Key Deliverables
-
-- **Pages:**
-  - Mission Control dashboard (redesigned with better visuals)
-  - Squad chat panel
-
-- **Components:**
-  - CoordinationStatusCard (enhanced with more metrics)
-  - HeartbeatDashboard (agent grid with animations)
-  - StandupFeed (enhanced with audio/visual notifications)
-  - SquadChat (message feed, input, user list)
-  - AgentAvatar (persona-based styling)
-  - MessageCard (agent message with persona styling)
-
-- **Styling:**
-  - Persona-based colors and fonts
-  - Animated status indicators
-  - Responsive message feed
-  - Dark mode support
-
-### Plans: 5 plans
-
-- [ ] 02-01-PLAN.md — Mission Control dashboard redesign
-- [ ] 02-02-PLAN.md — Squad chat component and messaging
-- [ ] 02-03-PLAN.md — Real-time event handling and animations
-- [ ] 02-04-PLAN.md — Persona-based styling and customization
-- [ ] 02-05-PLAN.md — Integration with WebSocket events
-
----
-
-## Phase 3: Fleet Control Dashboard
-
-**Goal:** Multi-agent orchestration with visual workflow management.
-
-**Duration:** 2 weeks
-**Dependencies:** Phase 2 complete
-
-### Requirements
-
-- **FLCT-01:** Squad overview (agents, relationships, health)
-- **FLCT-02:** Task Kanban board (backlog/assigned/in-progress/review/done)
-- **FLCT-03:** Workflow builder (visual DAG for multi-agent tasks)
-- **FLCT-04:** Agent grouping (squads, teams, role-based filtering)
-- **FLCT-05:** Task detail view (description, assignee, timeline, attachments)
-- **FLCT-06:** Performance analytics (task completion rates, agent utilization)
-
-### Design Inspiration
-
-**Leverage FleetControl dashboards:**
-- Evaluate existing Fleet Control UI patterns (from FleetControl repos)
-- Adapt design system and component patterns
-- Reuse proven layouts for similar domains
-- Extract aesthetic principles (colors, typography, interactions)
-
-### Success Criteria
-
-1. Users can create multi-agent workflows visually
-2. Tasks flow through Kanban board with drag-and-drop
-3. Agents are grouped by squad/team with easy filtering
-4. Performance metrics show agent utilization and task success
-5. Workflow execution visible in real-time with progress indicators
-6. Can view historical completed tasks and extract patterns
-
-### Key Deliverables
-
-- **Pages:**
-  - Fleet Control dashboard
-  - Workflow builder (modal or sidebar)
-  - Squad overview
-  - Performance analytics
-
-- **Components:**
-  - SquadCard (agent group overview)
-  - TaskCard (Kanban board)
-  - TaskDetailModal
-  - WorkflowBuilder (visual DAG editor)
-  - AgentUtilizationChart
-  - PerformanceMetrics
-
-- **Integration:**
-  - Connect to task orchestration API (future)
-  - Real-time task status updates
-  - Historical analytics from metrics API
-
-### Plans: 4 plans
-
-- [ ] 03-01-PLAN.md — Fleet Control page, squad overview, agent grouping (FLCT-01, FLCT-04)
-- [ ] 03-02-PLAN.md — Kanban board with dnd-kit drag-and-drop and task detail modal (FLCT-02, FLCT-05)
-- [ ] 03-03-PLAN.md — Workflow builder with React Flow visual DAG editor (FLCT-03)
-- [ ] 03-04-PLAN.md — Performance analytics with Recharts charts and metrics (FLCT-06)
-
----
-
-## Phase 4: Humanized Polish & Integration
-
-**Goal:** Production-grade web application with beautiful UX and complete integration.
-
-**Duration:** 1 week
-**Dependencies:** Phases 1-3 complete
-
-### Requirements
-
-- **SLSH-01:** Smooth animations and transitions throughout UI
-- **SLSH-02:** Accessibility compliance (WCAG AA)
-- **SLSH-03:** Mobile responsiveness (all pages work on mobile)
-- **SLSH-04:** Error handling and recovery (user-friendly error messages)
-- **SLSH-05:** Performance optimization (load <2s, WebSocket <100ms updates)
-- **SLSH-06:** Builder.io export and documentation
-
-### Success Criteria
-
-1. Lighthouse score >90 (performance, accessibility)
-2. WCAG AA compliance verified by automated tools
-3. Mobile device testing passes (iOS/Android)
-4. Error recovery is intuitive (clear next steps for users)
-5. WebSocket latency <100ms measured from DevTools
-6. Can export complete UI to builder.io format
-
-### Key Deliverables
-
-- **Polish:**
-  - Micro-animations (status transitions, message arrivals)
-  - Loading states and skeletons
-  - Error boundaries and recovery flows
-  - Empty states and placeholder content
-
-- **Accessibility:**
-  - ARIA labels on all interactive elements
-  - Keyboard navigation (Tab, Enter, Escape)
-  - Color contrast audit (4.5:1+ ratio)
-  - Screen reader testing
-
-- **Performance:**
-  - Code splitting by route
-  - Component lazy loading
-  - Redux selector memoization
-  - WebSocket connection pooling
-
-- **Documentation:**
-  - Component Storybook with all variants
-  - Deployment guide (Docker, cloud platforms)
-  - Builder.io integration guide
-  - User handbook (getting started, best practices)
-
-### Plans: 3 plans
-
-- [ ] 04-01-PLAN.md — Animations, transitions, and micro-interactions
-- [ ] 04-02-PLAN.md — Accessibility and mobile responsiveness
-- [ ] 04-03-PLAN.md — Performance optimization and builder.io export
-
----
-
-## Fleet Control Dashboard Deep Dive
-
-### Phase 3 Detailed Scope
-
-This section addresses the user's request to evaluate existing Fleet Control UI dashboards.
-
-#### Research & Design Phase (0.5 weeks)
-
-**Tasks:**
-1. Analyze FleetControl dashboards from existing repos
-   - Extract design patterns, component structure
-   - Identify what works well, what needs improvement
-   - Document aesthetic principles (colors, spacing, typography)
-
-2. Evaluate existing components
-   - Kanban boards (task management)
-   - Squad/team visualization
-   - Real-time status indicators
-   - Performance charts and metrics
-
-3. Decide: Adapt vs. Build New
-   - Can we reuse FleetControl components? (licensing, tech stack compatibility)
-   - Which patterns should we borrow?
-   - Where do we need custom designs for AOF?
-
-#### Design Decisions
-
-**Option A: Adapt FleetControl Patterns**
-- Pros: Proven design, faster implementation, consistent aesthetic
-- Cons: May not perfectly fit AOF's unique needs
-- Decision: ✅ Use as inspiration and design foundation
-
-**Option B: Build Custom from Scratch**
-- Pros: Perfectly tailored to AOF, unique identity
-- Cons: More work, less proven patterns
-- Decision: Combine with Option A
-
-**Recommendation:** Use FleetControl as design inspiration + build custom AOF-specific components
-
-#### Fleet Control Dashboard Layout
-
-```
-┌────────────────────────────────────────────────────────┐
-│ Fleet Control | Teams | Analytics                      │
-├────────────────────────────────────────────────────────┤
-│                                                        │
-│ ┌──────────────────────┐ ┌──────────────────────────┐  │
-│ │ Squad Overview       │ │ Quick Stats              │  │
-│ │                      │ │ • Total agents: 8        │  │
-│ │ [Squad A] ●          │ │ • Tasks in progress: 12  │  │
-│ │ [Squad B] ●          │ │ • Avg response: 2.3s    │  │
-│ │ [Squad C] ●          │ │ • Success rate: 98%      │  │
-│ └──────────────────────┘ └──────────────────────────┘  │
-│                                                        │
-│ ┌────────────────────────────────────────────────────┐ │
-│ │ Task Kanban Board                                  │ │
-│ │                                                    │ │
-│ │ Backlog    Assigned    In Progress    Done        │ │
-│ │ ┌────┐    ┌────┐      ┌────────┐    ┌────┐       │ │
-│ │ │ T5 │    │ T1 │      │ T2 ●   │    │ T8 │       │ │
-│ │ ├────┤    ├────┤      │ Agent1 │    ├────┤       │ │
-│ │ │ T6 │    │ T3 │      └────────┘    │ T9 │       │ │
-│ │ └────┘    └────┘      ┌────────┐    └────┘       │ │
-│ │            ┌────┐      │ T4 ●   │                 │ │
-│ │            │ T7 │      │ Agent2 │                 │ │
-│ │            └────┘      └────────┘                 │ │
-│ └────────────────────────────────────────────────────┘ │
-│                                                        │
-│ ┌────────────────────────────────────────────────────┐ │
-│ │ Agent Performance (Last 7 days)                    │ │
-│ │                                                    │ │
-│ │ Agent    Success  Avg Time  Tasks  Score          │ │
-│ │ kubo     98%      2.1s      24     ⭐⭐⭐⭐⭐     │ │
-│ │ doku     95%      3.2s      18     ⭐⭐⭐⭐       │ │
-│ │ rafo     92%      5.1s      16     ⭐⭐⭐⭐       │ │
-│ └────────────────────────────────────────────────────┘ │
-│                                                        │
-└────────────────────────────────────────────────────────┘
-```
-
-#### Components to Build/Adapt
-
-**From FleetControl (Adapt):**
-- Task card design and interactions
-- Kanban board layout and drag-drop
-- Performance chart styling
-- Team/squad grouping UI
-
-**Custom for AOF (Build New):**
-- Agent avatar with persona styling
-- Agent health indicators (heartbeat status)
-- Workflow builder for multi-agent DAGs
-- Real-time standup integration
-
----
-
-## Resource Allocation
-
-### Total Effort
-- **Phases:** 4
-- **Plans:** 16 total
-- **Duration:** 4-6 weeks
-- **Team:** 1-2 frontend developers + 1 backend for API support
-
-### Phase Breakdown
-| Phase | Plans | Duration | Effort | Focus |
-|-------|-------|----------|--------|-------|
-| 1 | 4 | 1 week | 160 hours | Onboarding + Config |
-| 2 | 5 | 2 weeks | 240 hours | Mission Control + Chat |
-| 3 | 4 | 2 weeks | 240 hours | Fleet Control |
-| 4 | 3 | 1 week | 120 hours | Polish + Integration |
-| **Total** | **16** | **6 weeks** | **760 hours** | **Complete UI** |
-
----
-
-## Technology Stack
-
-**Same as Phase 7:**
-- React 18+ with TypeScript
-- Redux Toolkit + Redux Persist
-- Tailwind CSS + Design System
-- Axios + WebSocket native
-- React Router v6
-- Vite build system
-
-**New Additions:**
-- Framer Motion (animations)
-- React DnD (drag-and-drop for Kanban)
-- Recharts (performance analytics)
-- React Hot Toast (notifications)
-- Playwright (E2E testing)
-
----
-
-## Success Metrics
-
-### Functional
-✅ 100% of pages implemented from specs
-✅ All API endpoints integrated
-✅ WebSocket real-time updates <100ms
-✅ All forms validate with clear errors
-
-### UX
-✅ Lighthouse score >90
-✅ WCAG AA compliance
-✅ Mobile responsive (tested on iOS/Android)
-✅ Zero console errors in production
-
-### Performance
-✅ Page load <2 seconds
-✅ WebSocket latency <100ms
-✅ Redux render time <16ms
-✅ Memory stable over time
-
-### Polish
-✅ Micro-interactions on all state changes
-✅ Loading states visible
-✅ Error recovery intuitive
-✅ Empty states thoughtful
-
----
-
-## Transition to Production
-
-### Go-Live Checklist
-- [ ] All 16 plans executed and verified
-- [ ] 100+ E2E tests passing
-- [ ] Performance benchmarks met
-- [ ] Security audit complete
-- [ ] Documentation complete
-- [ ] Beta testing with internal team
-- [ ] Builder.io export verified
-
-### After Launch
-1. **Feedback Collection** - Real user feedback on UI/UX
-2. **Iteration** - Rapid refinement based on feedback
-3. **Performance Tuning** - Production monitoring and optimization
-4. **Community** - Open source launch with user guides
-
----
-
-## Risk Mitigation
-
-| Risk | Impact | Mitigation |
-|------|--------|-----------|
-| WebSocket scaling | High | Use connection pooling, test with 100+ concurrent users |
-| Mobile performance | Medium | Use React Profiler, lazy load components |
-| Accessibility blocker | High | Test with real screen readers early and often |
-| Builder.io integration | Medium | Create detailed export documentation, test frequently |
-| Animation frame drops | Medium | Profile with DevTools, optimize motion with GPU acceleration |
-
----
-
-## Deliverables
-
-### Code
-- Complete React web application (4 pages + 40+ components)
-- Component library with Storybook
-- TypeScript types for all API interactions
-- E2E test suite (100+ tests)
-
-### Documentation
-- User handbook (getting started, features, troubleshooting)
-- Component Storybook (interactive component explorer)
-- Builder.io integration guide
-- Deployment guide (Docker, Kubernetes, cloud platforms)
-- Performance audit report
-
-### Design
-- Figma design system (optional, for hand-off)
-- Accessibility audit report
-- Mobile testing report
-
----
-
-## Success Definition
-
-**Milestone 2 Complete When:**
-
-1. ✅ All 4 phases executed (0 remaining plans)
-2. ✅ Web application is production-ready
-3. ✅ Users can onboard, configure, monitor, and orchestrate agents
-4. ✅ Beautiful UI with persona-driven aesthetic
-5. ✅ All agents feel like team members with visible communication
-6. ✅ Ready for public release as v1.0
-
----
-
-**Status:** ✅ Ready to begin Phase 1
-
-Next: Execute Phase 1-01-PLAN (Welcome page + onboarding wizard)
+# Roadmap: OpenAgentiX v2.0
+
+## Milestones
+
+- ✅ **v1.0 Humanized Interfaces** - Phases 1-12 (shipped 2026-02-22)
+- 🚧 **v2.0 OpenAgentiX** - Phases 13-22 (in progress)
+
+## Phases
+
+<details>
+<summary>✅ v1.0 Humanized Interfaces (Phases 1-12) - SHIPPED 2026-02-22</summary>
+
+12 phases, 55 plans, 164K LOC. Archives at `.planning/milestones/v1.0-ROADMAP.md`.
+
+</details>
+
+### 🚧 v2.0 OpenAgentiX
+
+**Milestone Goal:** Transform AOF into an enterprise agent automation platform — YAML-first agent composition, skills + tools + MCP, scheduled/event-driven execution, cost tracking, and a Svelte command center.
+
+- [ ] **Phase 13: Rebrand + Core Runtime + CLI Foundation** - `agentix` binary, new agent YAML spec, ReAct loop, streaming, backward compatibility
+- [ ] **Phase 14: Skills Composition + Tools + WASM Sandbox** - Skill packs, composable agents, WASM-isolated tool execution
+- [ ] **Phase 15: Triggers + Scheduling** - Cron, webhook, GitHub, Jira, agent-to-agent, run persistence
+- [ ] **Phase 16: Agent Coordination + Memory** - Multi-agent delegation, vector memory, semantic recall, research phase
+- [ ] **Phase 17: Cost Tracking + Budgets** - Per-call/run/agent cost tracking, daily budget limits, smart model routing
+- [ ] **Phase 18: Telemetry + Observability** - OTel traces + metrics, structured logs, exportable to Grafana/Datadog
+- [ ] **Phase 19: Security** - WASM capability enforcement, secret encryption, audit trail, SSRF protection
+- [ ] **Phase 20: Approval Workflows** - Human-in-the-loop pause/resume, approval queue, three autonomy modes
+- [ ] **Phase 21: Gateway (Multi-Channel)** - Slack, Telegram, Discord bi-directional, per-channel agent routing
+- [ ] **Phase 22: Command Center (Svelte)** - Web dashboard, agent builder, cost charts, trace viewer, approval queue
+
+## Phase Details
+
+### Phase 13: Rebrand + Core Runtime + CLI Foundation
+**Goal**: Users can define and run agents using the new `agentix` CLI with the OpenAgentiX YAML spec, with the ReAct loop executing and streaming output — and existing AOF configs still load.
+**Depends on**: v1.0 Rust core (carried over)
+**Requirements**: CORE-01, CORE-02, CORE-03, SPEC-01, SPEC-02, SPEC-03, SPEC-04, SPEC-05, CLI-01, CLI-02, CLI-03, CLI-04, CLI-05, CLI-06, CLI-07, CLI-10, CLI-11, CLI-12
+**Success Criteria** (what must be TRUE):
+  1. User runs `agentix run agent.yaml` and sees streaming ReAct loop output (plan → act → observe → reflect)
+  2. An agent defined with `apiVersion: openagentix.dev/v1` loads, validates, and executes correctly
+  3. An existing AOF agent YAML (v1.0 format) loads and runs without modification
+  4. `agentix agents`, `agentix runs`, `agentix logs`, `agentix stop`, `agentix apply`, `agentix serve`, `agentix init`, and `agentix validate` all function
+  5. `agentix init` scaffolds a valid YAML interactively and `agentix validate <file>` reports errors with field paths
+**Plans**: TBD
+
+### Phase 14: Skills Composition + Tools + WASM Sandbox
+**Goal**: Users can compose agents from skill packs and custom tools, with untrusted WASM tools running in an isolated sandbox that enforces declared capability permissions.
+**Depends on**: Phase 13
+**Requirements**: SKILL-01, SKILL-02, SKILL-03, SKILL-04, SKILL-05, TOOL-01, TOOL-02, TOOL-03, TOOL-04, TOOL-05, CLI-08
+**Success Criteria** (what must be TRUE):
+  1. User composes an agent with `skills: [aws/rds-management, database/postgres-tuning]` and both skill instruction sets are applied without an LLM routing call
+  2. `agentix skills list` shows all built-in skill packs (aws, kubernetes, terraform, docker, git, database, security, observability)
+  3. User defines a custom skill YAML in their workspace and the agent picks it up at runtime
+  4. Agent calls CLI tools (kubectl, aws, psql, terraform, docker, git, shell) and MCP servers within a run
+  5. A WASM tool without a declared capability (e.g., network access) is blocked from making that call at runtime
+**Plans**: TBD
+
+### Phase 15: Triggers + Scheduling
+**Goal**: Agents can be triggered by cron, webhooks, GitHub events, Jira events, channel mentions, other agents, and the CLI — with all runs persisted and viewable.
+**Depends on**: Phase 13
+**Requirements**: TRIG-01, TRIG-02, TRIG-03, TRIG-04, TRIG-05, TRIG-06, TRIG-07, TRIG-08, TRIG-09, TRIG-10, TRIG-11
+**Success Criteria** (what must be TRUE):
+  1. User sets `triggers: [{type: cron, expression: "0 9 * * 1"}]` and the agent fires automatically on schedule
+  2. A GitHub webhook fires the agent when a PR is opened, and the agent receives the PR payload via `TriggerEvent`
+  3. A Jira webhook fires the agent when an issue is updated or commented on
+  4. Mentioning `@agent-name` in Slack/Discord/Telegram triggers the agent in that channel
+  5. `agentix runs` shows all past runs with timestamps, duration, trigger source, and status
+**Plans**: TBD
+
+### Phase 16: Agent Coordination + Memory
+**Goal**: A coordinator agent can delegate to specialist agents and synthesize their results, while agents persist and recall context from previous runs via vector memory.
+**Depends on**: Phase 15
+**Requirements**: CORE-04, CORE-06, COORD-01, COORD-02, COORD-03, COORD-04, COORD-05, MEM-01, MEM-02, MEM-03, MEM-04
+**Success Criteria** (what must be TRUE):
+  1. A coordinator agent delegates a task to a specialist agent via `type: agent` trigger and receives its result
+  2. Coordinator waits for multiple specialist agents to complete before synthesizing a final response
+  3. An agent recalls relevant context from a previous run using semantic similarity search
+  4. Agent memory is stored in SQLite by default and is scoped per agent (isolated unless explicitly shared)
+  5. Agent-to-agent delegation appears in the audit trail with full parent/child context
+**Plans**: TBD
+
+### Phase 17: Cost Tracking + Budgets
+**Goal**: Every LLM call, agent run, and agent is tracked for token usage and cost — with budget enforcement that stops agents before overspending — and smart model routing minimizes costs automatically.
+**Depends on**: Phase 13
+**Requirements**: COST-01, COST-02, COST-03, COST-04, COST-05, COST-06, COST-07, CLI-09, CORE-05
+**Success Criteria** (what must be TRUE):
+  1. `agentix costs` shows per-agent and aggregate cost summary with input/output tokens and USD amounts
+  2. `agentix costs agent <name>` shows cost history for a specific agent broken down by run
+  3. An agent with `budget: daily_limit: $0.50` stops mid-run when that limit is exceeded and reports the reason
+  4. A simple message routes to the flash model tier; a complex research task routes to the pro tier — automatically
+  5. Cost figures use actual API cost from provider response when available, not estimates
+**Plans**: TBD
+
+### Phase 18: Telemetry + Observability
+**Goal**: Every agent run produces OpenTelemetry traces and metrics exportable to any OTel backend, with structured JSON logs and CLI trace access.
+**Depends on**: Phase 13
+**Requirements**: TELE-01, TELE-02, TELE-03, TELE-04, TELE-05
+**Success Criteria** (what must be TRUE):
+  1. An agent run produces OTel spans for each ReAct loop iteration, tool call, and LLM call — visible in Jaeger or Grafana Tempo
+  2. OTel metrics (run duration, token usage, tool call count, success/failure rate) export to a configured collector
+  3. `agentix logs <agent> --trace` shows structured trace output in the terminal with correlation IDs
+  4. All agent run logs are structured JSON with consistent correlation IDs linking logs to traces
+**Plans**: TBD
+
+### Phase 19: Security
+**Goal**: Untrusted tools are sandbox-enforced by WASM capabilities, secrets are encrypted at rest and never logged, every agent action is audited, and SSRF attacks are blocked at the network layer.
+**Depends on**: Phase 14
+**Requirements**: SEC-01, SEC-02, SEC-03, SEC-04, SEC-05
+**Success Criteria** (what must be TRUE):
+  1. A WASM tool attempting filesystem or network access without an explicit capability grant is blocked and the attempt is logged
+  2. Secrets defined in agent config are stored AES-256-GCM encrypted and do not appear in logs, traces, or error output
+  3. Audit trail records every tool call, LLM call, and approval decision with actor, timestamp, and outcome
+  4. An HTTP tool call targeting a private IP (RFC 1918), localhost, or cloud metadata endpoint (169.254.x.x) is rejected with a SSRF error
+**Plans**: TBD
+
+### Phase 20: Approval Workflows
+**Goal**: Agents can pause at flagged actions, notify a human approver, and resume or abort based on the approval decision — with all decisions logged.
+**Depends on**: Phase 16
+**Requirements**: APPR-01, APPR-02, APPR-03, APPR-04, APPR-05
+**Success Criteria** (what must be TRUE):
+  1. An agent in `semi-autonomous` mode pauses before a flagged action and sends a notification to the configured approver
+  2. Approver runs `agentix approve <run-id>` or responds in a messaging channel to resume the agent
+  3. Approver runs `agentix deny <run-id>` to abort the action; agent logs the denial and stops that action path
+  4. An agent in `manual` mode requests approval for every action; in `autonomous` mode it requires no approvals
+  5. All approval decisions appear in the audit trail with approver identity, timestamp, and decision
+**Plans**: TBD
+
+### Phase 21: Gateway (Multi-Channel)
+**Goal**: Agents can receive messages from and send responses to Slack, Telegram, and Discord — with per-channel routing configuration and bi-directional trigger + delivery.
+**Depends on**: Phase 15
+**Requirements**: GW-01, GW-02, GW-03, GW-04, GW-05, GW-06
+**Success Criteria** (what must be TRUE):
+  1. A message sent to a Slack channel reaches the configured agent, which processes it and replies in the same channel
+  2. A message sent on Telegram triggers the agent and the response arrives in the same Telegram chat
+  3. A message sent on Discord triggers the agent and the response arrives in the same Discord channel
+  4. Agent sends a notification (run result, alert, approval request) to configured channels without a user-initiated trigger
+  5. Per-channel config (`channels:`) routes different agents to different Slack channels or Telegram chats
+**Plans**: TBD
+
+### Phase 22: Command Center (Svelte)
+**Goal**: Users have a web dashboard (Svelte) to monitor all agents, view run history and costs, inspect execution traces, manage approvals, and build/edit agent YAML — with real-time WebSocket updates.
+**Depends on**: Phase 17, Phase 18, Phase 20
+**Requirements**: CMD-01, CMD-02, CMD-03, CMD-04, CMD-05, CMD-06, CMD-07, CMD-08, CMD-09
+**Success Criteria** (what must be TRUE):
+  1. Dashboard shows all registered agents with live status (running/idle/error/scheduled) updating in real time via WebSocket
+  2. Agent detail view shows configuration, run history, per-run cost, and logs in one place
+  3. Cost dashboard renders per-agent and aggregate cost charts filterable by date range
+  4. Trace viewer shows a waterfall of spans (tool calls, LLM calls, loop iterations) for any selected run
+  5. Approval queue shows pending approval requests; user clicks Approve or Deny and the agent resumes/aborts
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:** Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 13. Rebrand + Core Runtime + CLI Foundation | v2.0 | 0/TBD | Not started | - |
+| 14. Skills Composition + Tools + WASM Sandbox | v2.0 | 0/TBD | Not started | - |
+| 15. Triggers + Scheduling | v2.0 | 0/TBD | Not started | - |
+| 16. Agent Coordination + Memory | v2.0 | 0/TBD | Not started | - |
+| 17. Cost Tracking + Budgets | v2.0 | 0/TBD | Not started | - |
+| 18. Telemetry + Observability | v2.0 | 0/TBD | Not started | - |
+| 19. Security | v2.0 | 0/TBD | Not started | - |
+| 20. Approval Workflows | v2.0 | 0/TBD | Not started | - |
+| 21. Gateway (Multi-Channel) | v2.0 | 0/TBD | Not started | - |
+| 22. Command Center (Svelte) | v2.0 | 0/TBD | Not started | - |
