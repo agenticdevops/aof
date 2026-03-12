@@ -48,6 +48,16 @@ pub use trigger::{
     TriggerSpec,
 };
 
+// GitAgent-compatible types (v0.1.0 directory format)
+pub use agent::{
+    AgentDefinition, AgentDependency, AgentFormat, AgentLoader, AgentManifest, AgentMode,
+    AgentModelConfig, DirectoryLoader, DirectoryToolType, FlatYamlLoader, SkillEntry, ToolEntry,
+};
+pub use config::{
+    GatewayConfig, ProviderConfig, WorkspaceConfig, WorkspaceDefaults, WorkspaceMetadata,
+    WorkspaceSpec,
+};
+
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

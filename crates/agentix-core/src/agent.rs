@@ -879,7 +879,9 @@ enum AgentConfigInput {
 #[derive(Debug, Clone, Deserialize)]
 struct KubernetesConfig {
     #[serde(rename = "apiVersion")]
+    #[allow(dead_code)]
     api_version: String,  // Required for K8s format
+    #[allow(dead_code)]
     kind: String,         // Required for K8s format
     metadata: KubernetesMetadata,
     spec: AgentSpec,
@@ -889,8 +891,10 @@ struct KubernetesConfig {
 struct KubernetesMetadata {
     name: String,
     #[serde(default)]
+    #[allow(dead_code)]
     labels: HashMap<String, String>,
     #[serde(default)]
+    #[allow(dead_code)]
     annotations: HashMap<String, String>,
 }
 
@@ -1552,5 +1556,566 @@ mod tests {
         "#;
         let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.memory.is_none());
+    }
+}
+
+// =============================================================================
+// GitAgent-compatible types (v0.1.0 directory format)
+// =============================================================================
+//
+// These types implement the agent directory specification:
+//   - docs/spec/agent-yaml-v1.md       (AgentManifest)
+//   - docs/spec/agent-directory-structure.md (AgentDefinition, DirectoryLoader)
+//
+// The key conceptual split:
+//   AgentManifest   = thin manifest from agent.yaml (metadata + model only)
+//   AgentDefinition = assembled runtime type (manifest + SOUL.md + RULES.md + skills + tools)
+//   DirectoryLoader = reads a directory from filesystem and assembles AgentDefinition
+//   AgentLoader     = unified entry point supporting both directory and flat YAML formats
+
+use std::path::Path;
+
+// ---------------------------------------------------------------------------
+// AgentManifest — the minimal agent.yaml manifest
+// ---------------------------------------------------------------------------
+
+/// Minimal `agent.yaml` manifest for a GitAgent-compatible agent directory.
+///
+/// Carries only metadata and model preference. All behavior lives in markdown
+/// files (`SOUL.md`, `RULES.md`, `skills/`) that the runtime assembles into
+/// a system prompt at load time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentManifest {
+    /// OpenAgentiX agent spec version (e.g. "0.1.0").
+    pub spec_version: String,
+    /// Agent name — DNS-compatible, lowercase, hyphens only.
+    pub name: String,
+    /// Optional semver agent version.
+    pub version: Option<String>,
+    /// Human-readable description.
+    pub description: Option<String>,
+    /// Model preference for this agent.
+    pub model: Option<AgentModelConfig>,
+    /// Inherit base agent definition from a remote git URL.
+    pub extends: Option<String>,
+    /// External sub-agent dependencies to fetch and mount.
+    #[serde(default)]
+    pub dependencies: Vec<AgentDependency>,
+}
+
+/// Model configuration within an `AgentManifest`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentModelConfig {
+    /// Preferred model in `provider/model` format (e.g. `anthropic/claude-sonnet-4-6`).
+    pub preferred: Option<String>,
+}
+
+/// A declared external sub-agent dependency.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentDependency {
+    /// Local alias within `agents/`.
+    pub name: String,
+    /// Git URL or local path to the sub-agent directory.
+    pub source: String,
+    /// Semver range (e.g. `^1.0.0`).
+    pub version: Option<String>,
+    /// Mount point inside `agents/` (defaults to `agents/<name>`).
+    pub mount: Option<String>,
+}
+
+impl AgentManifest {
+    /// Parse an `agent.yaml` YAML string.
+    ///
+    /// Uses `serde_path_to_error` to provide precise field-level error messages.
+    pub fn from_yaml(content: &str) -> crate::AgentixResult<Self> {
+        let de = serde_yaml::Deserializer::from_str(content);
+        serde_path_to_error::deserialize(de).map_err(|e| {
+            crate::AgentixError::yaml_parse(e.path().to_string(), e.inner().to_string())
+        })
+    }
+
+    /// Validate the manifest fields against the spec rules.
+    ///
+    /// Returns `Err(AgentixError::SpecValidation(...))` on the first violation.
+    pub fn validate(&self) -> crate::AgentixResult<()> {
+        // name: ^[a-z][a-z0-9-]*[a-z0-9]$, max 63 chars
+        validate_agent_name(&self.name)?;
+
+        // model.preferred must contain exactly one '/' if present
+        if let Some(model) = &self.model {
+            if let Some(preferred) = &model.preferred {
+                let slash_count = preferred.chars().filter(|&c| c == '/').count();
+                if slash_count != 1 {
+                    return Err(crate::AgentixError::SpecValidation(
+                        format!(
+                            "model.preferred: must be \"provider/model\" format (e.g. \"anthropic/claude-sonnet-4-6\"), got \"{}\"",
+                            preferred
+                        )
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Validate an agent name against the spec regex `^[a-z][a-z0-9-]*[a-z0-9]$`, max 63 chars.
+fn validate_agent_name(name: &str) -> crate::AgentixResult<()> {
+    use regex::Regex;
+    // Allow single lowercase char too (min length 1)
+    let re = Regex::new(r"^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$").unwrap();
+    if name.len() > 63 {
+        return Err(crate::AgentixError::SpecValidation(format!(
+            "name: must be at most 63 characters, got {} characters",
+            name.len()
+        )));
+    }
+    if !re.is_match(name) {
+        return Err(crate::AgentixError::SpecValidation(format!(
+            "name: must match ^[a-z][a-z0-9-]*[a-z0-9]$ (lowercase alphanumeric with hyphens), got \"{}\"",
+            name
+        )));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// AgentDefinition — the assembled runtime type
+// ---------------------------------------------------------------------------
+
+/// Execution mode for the agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentMode {
+    /// The agent asks for human approval before each action.
+    Manual,
+    /// The agent executes autonomously but pauses on risky actions.
+    SemiAutonomous,
+    /// The agent executes fully autonomously without pauses.
+    #[default]
+    Autonomous,
+}
+
+/// A reusable capability module loaded from `skills/<name>/SKILL.md`.
+#[derive(Debug, Clone)]
+pub struct SkillEntry {
+    /// Skill name (directory name under `skills/`).
+    pub name: String,
+    /// Content of `SKILL.md`.
+    pub content: String,
+}
+
+/// Tool type discriminator from `tools/*.yaml`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DirectoryToolType {
+    /// Execute a specific CLI binary.
+    Cli,
+    /// Connect to an MCP server.
+    Mcp,
+    /// Execute an arbitrary shell command.
+    Shell,
+}
+
+/// A tool definition loaded from `tools/<name>.yaml`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolEntry {
+    /// Tool name.
+    pub name: String,
+    /// Tool type: cli, mcp, or shell.
+    #[serde(rename = "type")]
+    pub tool_type: DirectoryToolType,
+    /// CLI binary or shell command.
+    pub command: Option<String>,
+    /// Human-readable description.
+    pub description: Option<String>,
+    /// MCP server name (for `type: mcp`).
+    pub server: Option<String>,
+    /// Argument templates using `{{var}}` syntax.
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+/// The assembled runtime agent type, built from a directory or flat YAML.
+///
+/// This is the primary type consumed by the ReAct loop and gateway.
+#[derive(Debug, Clone)]
+pub struct AgentDefinition {
+    /// Agent name from `agent.yaml`.
+    pub name: String,
+    /// Semver version from `agent.yaml`.
+    pub version: Option<String>,
+    /// Human-readable description.
+    pub description: Option<String>,
+    /// Preferred model in `provider/model` format.
+    pub model_preferred: Option<String>,
+    /// Content of `SOUL.md` — the primary system prompt.
+    pub soul_content: String,
+    /// Content of `RULES.md` — hard constraints (optional).
+    pub rules_content: Option<String>,
+    /// Loaded skill modules from `skills/*/SKILL.md`.
+    pub skills: Vec<SkillEntry>,
+    /// Tool definitions from `tools/*.yaml`.
+    pub tools: Vec<ToolEntry>,
+    /// Loaded sub-agent definitions from `agents/*/`.
+    pub sub_agents: Vec<AgentDefinition>,
+    /// Maximum ReAct loop iterations (from workspace defaults or built-in).
+    pub max_iterations: u32,
+    /// Wall-clock timeout in seconds.
+    pub timeout_secs: u64,
+    /// Execution mode.
+    pub mode: AgentMode,
+}
+
+impl AgentDefinition {
+    /// Assemble the full system prompt from SOUL + RULES + skills.
+    ///
+    /// Assembly order (per spec):
+    /// 1. `SOUL.md` content (base)
+    /// 2. `## Constraints` + `RULES.md` (if present)
+    /// 3. `## Skill: <name>` + `SKILL.md` for each skill (alphabetical)
+    pub fn resolved_system_prompt(&self) -> String {
+        let mut parts = vec![self.soul_content.clone()];
+
+        if let Some(rules) = &self.rules_content {
+            parts.push(format!("\n\n## Constraints\n\n{}", rules));
+        }
+
+        for skill in &self.skills {
+            parts.push(format!("\n\n## Skill: {}\n\n{}", skill.name, skill.content));
+        }
+
+        parts.concat()
+    }
+
+    /// Apply workspace defaults to this definition.
+    ///
+    /// Workspace values override built-in defaults but do NOT override
+    /// values explicitly set per-agent (model_preferred is only set from
+    /// workspace when the agent has none).
+    pub fn apply_workspace_defaults(&mut self, workspace: &crate::WorkspaceConfig) {
+        let defaults = &workspace.spec.defaults;
+
+        if self.model_preferred.is_none() {
+            if let Some(model) = &defaults.model {
+                self.model_preferred = Some(model.clone());
+            }
+        }
+
+        if let Some(max_iter) = defaults.max_iterations {
+            self.max_iterations = max_iter;
+        }
+
+        if let Some(timeout) = &defaults.timeout {
+            self.timeout_secs = parse_duration_str(timeout).unwrap_or(300);
+        }
+
+        if let Some(mode) = defaults.mode {
+            self.mode = mode;
+        }
+    }
+}
+
+/// Parse a duration string like "5m", "30s", "1h" into seconds.
+fn parse_duration_str(s: &str) -> Option<u64> {
+    if let Some(s) = s.strip_suffix('s') {
+        s.parse::<u64>().ok()
+    } else if let Some(s) = s.strip_suffix('m') {
+        s.parse::<u64>().ok().map(|n| n * 60)
+    } else if let Some(s) = s.strip_suffix('h') {
+        s.parse::<u64>().ok().map(|n| n * 3600)
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DirectoryLoader — loads an agent directory from filesystem
+// ---------------------------------------------------------------------------
+
+/// Loads an agent directory from the filesystem and assembles an `AgentDefinition`.
+///
+/// Implements the assembly algorithm from `docs/spec/agent-directory-structure.md`.
+pub struct DirectoryLoader;
+
+impl DirectoryLoader {
+    /// Load and assemble an `AgentDefinition` from a directory path.
+    ///
+    /// # Required files
+    /// - `agent.yaml` — minimal manifest
+    /// - `SOUL.md` — identity and system prompt
+    ///
+    /// # Optional files
+    /// - `RULES.md`, `skills/*/SKILL.md`, `tools/*.yaml`, `agents/*/`
+    pub fn load(dir: &Path) -> crate::AgentixResult<AgentDefinition> {
+        // 1. Read and parse agent.yaml
+        let manifest_path = dir.join("agent.yaml");
+        if !manifest_path.exists() {
+            return Err(crate::AgentixError::SpecValidation(format!(
+                "agent.yaml not found in {}",
+                dir.display()
+            )));
+        }
+        let manifest_content = std::fs::read_to_string(&manifest_path)?;
+        let manifest = AgentManifest::from_yaml(&manifest_content)?;
+        manifest.validate()?;
+
+        // 2. Read SOUL.md (required)
+        let soul_path = dir.join("SOUL.md");
+        if !soul_path.exists() {
+            return Err(crate::AgentixError::SpecValidation(format!(
+                "SOUL.md not found for agent \"{}\"",
+                manifest.name
+            )));
+        }
+        let soul_content = std::fs::read_to_string(&soul_path)?;
+        if soul_content.trim().is_empty() {
+            return Err(crate::AgentixError::SpecValidation(format!(
+                "SOUL.md is empty for agent \"{}\"",
+                manifest.name
+            )));
+        }
+
+        // 3. Read RULES.md (optional)
+        let rules_path = dir.join("RULES.md");
+        let rules_content = if rules_path.exists() {
+            let content = std::fs::read_to_string(&rules_path)?;
+            if content.trim().is_empty() {
+                None
+            } else {
+                Some(content)
+            }
+        } else {
+            None
+        };
+
+        // 4. Load skills/*/SKILL.md (alphabetical)
+        let mut skills = Vec::new();
+        let skills_dir = dir.join("skills");
+        if skills_dir.is_dir() {
+            let mut skill_dirs: Vec<_> = std::fs::read_dir(&skills_dir)?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .collect();
+            skill_dirs.sort_by_key(|e| e.file_name());
+            for entry in skill_dirs {
+                let skill_name = entry.file_name().to_string_lossy().to_string();
+                let skill_md = entry.path().join("SKILL.md");
+                if skill_md.exists() {
+                    let content = std::fs::read_to_string(&skill_md)?;
+                    skills.push(SkillEntry { name: skill_name, content });
+                }
+            }
+        }
+
+        // 5. Load tools/*.yaml
+        let mut tools = Vec::new();
+        let tools_dir = dir.join("tools");
+        if tools_dir.is_dir() {
+            let mut tool_files: Vec<_> = std::fs::read_dir(&tools_dir)?
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let p = e.path();
+                    p.is_file()
+                        && p.extension()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s == "yaml" || s == "yml")
+                            .unwrap_or(false)
+                })
+                .collect();
+            tool_files.sort_by_key(|e| e.file_name());
+            for entry in tool_files {
+                let content = std::fs::read_to_string(entry.path())?;
+                let de = serde_yaml::Deserializer::from_str(&content);
+                let tool: ToolEntry = serde_path_to_error::deserialize(de).map_err(|e| {
+                    crate::AgentixError::yaml_parse(
+                        format!("tools/{}: {}", entry.file_name().to_string_lossy(), e.path()),
+                        e.inner().to_string(),
+                    )
+                })?;
+                tools.push(tool);
+            }
+        }
+
+        // 6. Recursively load agents/* sub-agents
+        let mut sub_agents = Vec::new();
+        let agents_dir = dir.join("agents");
+        if agents_dir.is_dir() {
+            let mut sub_dirs: Vec<_> = std::fs::read_dir(&agents_dir)?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .collect();
+            sub_dirs.sort_by_key(|e| e.file_name());
+            for entry in sub_dirs {
+                // Only load if it's a valid agent dir (has agent.yaml)
+                if entry.path().join("agent.yaml").exists() {
+                    let sub = DirectoryLoader::load(&entry.path())?;
+                    sub_agents.push(sub);
+                }
+            }
+        }
+
+        Ok(AgentDefinition {
+            name: manifest.name,
+            version: manifest.version,
+            description: manifest.description,
+            model_preferred: manifest.model.and_then(|m| m.preferred),
+            soul_content,
+            rules_content,
+            skills,
+            tools,
+            sub_agents,
+            max_iterations: 10,
+            timeout_secs: 300,
+            mode: AgentMode::Autonomous,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FlatYamlLoader — backward compat for apiVersion: openagentix.dev/v1
+// ---------------------------------------------------------------------------
+
+/// Internal: flat YAML agent spec (the old Kubernetes-style format).
+#[derive(Debug, Deserialize)]
+struct FlatAgentSpec {
+    #[serde(rename = "apiVersion")]
+    #[allow(dead_code)]
+    api_version: Option<String>,
+    #[allow(dead_code)]
+    kind: Option<String>,
+    metadata: Option<FlatAgentMetadata>,
+    spec: Option<FlatAgentSpecBody>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FlatAgentMetadata {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct FlatAgentSpecBody {
+    model: Option<String>,
+    system_prompt: Option<String>,
+    instructions: Option<String>,
+    #[serde(default)]
+    tools: Vec<serde_yaml::Value>,
+}
+
+/// Loads flat YAML agents (`apiVersion: openagentix.dev/v1 / kind: Agent`) into `AgentDefinition`.
+pub struct FlatYamlLoader;
+
+impl FlatYamlLoader {
+    /// Load a flat YAML file and convert it to an `AgentDefinition`.
+    pub fn load(path: &Path) -> crate::AgentixResult<AgentDefinition> {
+        let content = std::fs::read_to_string(path)?;
+        let de = serde_yaml::Deserializer::from_str(&content);
+        let flat: FlatAgentSpec = serde_path_to_error::deserialize(de).map_err(|e| {
+            crate::AgentixError::yaml_parse(e.path().to_string(), e.inner().to_string())
+        })?;
+
+        let meta = flat.metadata.ok_or_else(|| {
+            crate::AgentixError::SpecValidation("flat YAML missing metadata.name".to_string())
+        })?;
+
+        let spec = flat.spec.unwrap_or_else(|| FlatAgentSpecBody {
+            model: None,
+            system_prompt: None,
+            instructions: None,
+            tools: vec![],
+        });
+
+        // system_prompt and instructions are aliases
+        let soul_content = spec
+            .system_prompt
+            .or(spec.instructions)
+            .unwrap_or_default();
+
+        // Convert flat tool entries to ToolEntry (best-effort)
+        let mut tools = Vec::new();
+        for val in spec.tools {
+            if let Some(name) = val.get("name").and_then(|v| v.as_str()) {
+                let tool_type_str = val
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("cli");
+                let tool_type = match tool_type_str {
+                    "mcp" => DirectoryToolType::Mcp,
+                    "shell" => DirectoryToolType::Shell,
+                    _ => DirectoryToolType::Cli,
+                };
+                tools.push(ToolEntry {
+                    name: name.to_string(),
+                    tool_type,
+                    command: val
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    description: val
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    server: val
+                        .get("server")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    args: vec![],
+                });
+            }
+        }
+
+        Ok(AgentDefinition {
+            name: meta.name,
+            version: None,
+            description: None,
+            model_preferred: spec.model,
+            soul_content,
+            rules_content: None,
+            skills: vec![],
+            tools,
+            sub_agents: vec![],
+            max_iterations: 10,
+            timeout_secs: 300,
+            mode: AgentMode::Autonomous,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AgentLoader — unified entry point
+// ---------------------------------------------------------------------------
+
+/// The detected format of an agent path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentFormat {
+    /// A directory containing `agent.yaml` (GitAgent-compatible).
+    Directory,
+    /// A flat `*.yaml` file with `kind: Agent` (backward compat).
+    FlatYaml,
+}
+
+/// Unified agent loader — detects format and delegates to the appropriate loader.
+pub struct AgentLoader;
+
+impl AgentLoader {
+    /// Detect the format of an agent path.
+    ///
+    /// - Directory path → `AgentFormat::Directory`
+    /// - `*.yaml` / `*.yml` file → `AgentFormat::FlatYaml`
+    pub fn detect_format(path: &Path) -> AgentFormat {
+        if path.is_dir() {
+            AgentFormat::Directory
+        } else {
+            AgentFormat::FlatYaml
+        }
+    }
+
+    /// Load an `AgentDefinition` from a path, auto-detecting the format.
+    pub fn load(path: &Path) -> crate::AgentixResult<AgentDefinition> {
+        match Self::detect_format(path) {
+            AgentFormat::Directory => DirectoryLoader::load(path),
+            AgentFormat::FlatYaml => FlatYamlLoader::load(path),
+        }
     }
 }

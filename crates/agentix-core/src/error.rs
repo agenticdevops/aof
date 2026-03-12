@@ -47,6 +47,19 @@ pub enum AgentixError {
 
     #[error("Unknown error: {0}")]
     Unknown(String),
+
+    /// Spec validation error — agent.yaml / agentix.yaml field-level validation.
+    /// The inner string should include the field name and reason.
+    #[error("Spec validation error: {0}")]
+    SpecValidation(String),
+
+    /// YAML parse error with field path from serde_path_to_error.
+    #[error("YAML parse error in {path}: {message}")]
+    YamlParse { path: String, message: String },
+
+    /// Configuration file not found.
+    #[error("Configuration not found: {0}")]
+    ConfigNotFound(String),
 }
 
 /// Type alias for Results using AgentixError
@@ -95,6 +108,24 @@ impl AgentixError {
     /// Create a validation error
     pub fn validation(msg: impl Into<String>) -> Self {
         Self::Validation(msg.into())
+    }
+
+    /// Create a spec validation error (field-level agent/workspace config errors)
+    pub fn spec_validation(msg: impl Into<String>) -> Self {
+        Self::SpecValidation(msg.into())
+    }
+
+    /// Create a YAML parse error with field path
+    pub fn yaml_parse(path: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::YamlParse {
+            path: path.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Create a config-not-found error
+    pub fn config_not_found(msg: impl Into<String>) -> Self {
+        Self::ConfigNotFound(msg.into())
     }
 }
 
