@@ -18,11 +18,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 13 of 22 (Rebrand + Core Runtime + CLI Foundation)
-Plan: 2 of 9 in current phase
+Plan: 3 of 9 in current phase
 Status: Executing
-Last activity: 2026-03-12 — Completed 13-02: Agent YAML v1 spec and workspace config spec (docs/spec/)
+Last activity: 2026-03-12 — Completed 13-01: Renamed all crates from aof-* to agentix-*, deleted v1.0 dead code
 
-Progress: [██░░░░░░░░] 22%
+Progress: [███░░░░░░░] 33%
 
 ---
 
@@ -31,11 +31,13 @@ Progress: [██░░░░░░░░] 22%
 ### Key Decisions
 
 - Pivoted from AOF (personality-driven) → OpenAgentiX (enterprise automation)
-- CLI binary named `agentix` (instructions say `agentix`; PROJECT.md says `oax` — instructions win, confirm with user)
+- CLI binary named `agentix` (confirmed)
 - Svelte replaces React for command center; current branch React UI work discarded, build Phase 13 from main
 - WASM sandbox introduced in Phase 14 (runtime), enforced as security policy in Phase 19
 - Phase 22 (Command Center) depends on Phases 17, 18, 20 — backend must be solid first
 - See PROJECT.md Key Decisions table for full list
+- All crates renamed from aof-* to agentix-*, AofError/AofResult aliased to AgentixError/AgentixResult (13-01)
+- schema.rs kept in agentix-core (agent.rs depends on it) — not deleted despite being in v1.0 list (13-01)
 - Agent YAML uses `apiVersion: openagentix.dev/v1` / `kind: Agent` full Kubernetes style (13-02)
 - Unified `spec.tools` list with `type` discriminator (`cli`/`mcp`/`shell`) — no separate tool sections (13-02)
 - `provider/model` explicit notation enforced in `spec.model` (exactly one `/` required) (13-02)
@@ -45,21 +47,18 @@ Progress: [██░░░░░░░░] 22%
 
 ### Open Questions
 
-1. **CLI binary name:** Confirmed as `agentix`.
-2. **Crate renaming:** Rename `aof-*` crates to match new brand, or keep as internal implementation detail?
-3. **Repository rename:** github.com/agenticdevops/aof → github.com/openagentix/openagentix?
+1. **Repository rename:** github.com/agenticdevops/aof → github.com/openagentix/openagentix?
 
 ### Blockers
 
-- CLI binary name conflict between instructions (`agentix`) and PROJECT.md (`oax`) — resolve before Phase 13.
-- Current branch (`sage-mind-yoqmvfyw`) has React UI work being discarded. Phase 13 must build from main.
+None active.
 
 ---
 
 ## Session Continuity
 
 Last session: 2026-03-12
-Stopped at: Completed 13-02-PLAN.md — Agent YAML v1 spec + workspace config spec
+Stopped at: Completed 13-01-PLAN.md — Renamed all crates aof-* to agentix-*, deleted v1.0 dead code
 Resume file: None
 
 ---
