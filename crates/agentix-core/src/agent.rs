@@ -44,21 +44,16 @@ pub struct AgentMetadata {
 }
 
 /// Agent mode — controls approval requirements
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentMode {
-    /// Agent executes all tools without human approval
+    /// Agent executes all tools without human approval (default)
+    #[default]
     Autonomous,
     /// Read-only tools free, write/destructive require approval
     SemiAutonomous,
     /// Every tool call requires human approval
     Manual,
-}
-
-impl Default for AgentMode {
-    fn default() -> Self {
-        AgentMode::Autonomous
-    }
 }
 
 /// Tool type discriminator
@@ -259,12 +254,7 @@ impl AgentSpec {
 
     /// Extract (provider, model_name) from the model string
     pub fn parse_model(&self) -> Option<(&str, &str)> {
-        self.spec.model.as_deref().and_then(|m| {
-            let mut parts = m.splitn(2, '/');
-            let provider = parts.next()?;
-            let model_name = parts.next()?;
-            Some((provider, model_name))
-        })
+        self.spec.model.as_deref().and_then(|m| m.split_once('/'))
     }
 
     /// Merge workspace defaults into this agent spec (agent values take priority)
@@ -1182,7 +1172,8 @@ enum AgentConfigInput {
     Kubernetes(KubernetesConfig),
 }
 
-/// Kubernetes-style config wrapper
+/// Kubernetes-style config wrapper (legacy v1.0 AgentConfig parsing)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 struct KubernetesConfig {
     #[serde(rename = "apiVersion")]
@@ -1192,6 +1183,8 @@ struct KubernetesConfig {
     spec: LegacyKubeSpec,
 }
 
+/// Kubernetes metadata block (legacy v1.0 AgentConfig parsing)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 struct KubernetesMetadata {
     name: String,
