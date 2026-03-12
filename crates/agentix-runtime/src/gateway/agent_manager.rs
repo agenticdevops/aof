@@ -324,9 +324,64 @@ impl AgentManager {
                         );
                     }
                 }
+                "slack" => {
+                    let trigger = ChannelMentionTriggerImpl {
+                        id: trigger_id.clone(),
+                        agent_name: def.name.clone(),
+                        platform: ChannelPlatformImpl::Slack {
+                            signing_secret: trigger_cfg.signing_secret.clone(),
+                        },
+                        sender: tokio::sync::Mutex::new(None),
+                    };
+                    if let Ok(mut registry) = self.trigger_registry.try_lock() {
+                        registry.register(Arc::new(trigger));
+                        tracing::info!(
+                            "Registered slack mention trigger '{}' for agent '{}'",
+                            trigger_id, def.name
+                        );
+                    }
+                }
+                "discord" => {
+                    let trigger = ChannelMentionTriggerImpl {
+                        id: trigger_id.clone(),
+                        agent_name: def.name.clone(),
+                        platform: ChannelPlatformImpl::Discord,
+                        sender: tokio::sync::Mutex::new(None),
+                    };
+                    if let Ok(mut registry) = self.trigger_registry.try_lock() {
+                        registry.register(Arc::new(trigger));
+                        tracing::info!(
+                            "Registered discord mention trigger '{}' for agent '{}'",
+                            trigger_id, def.name
+                        );
+                    }
+                }
+                "telegram" => {
+                    let trigger = ChannelMentionTriggerImpl {
+                        id: trigger_id.clone(),
+                        agent_name: def.name.clone(),
+                        platform: ChannelPlatformImpl::Telegram,
+                        sender: tokio::sync::Mutex::new(None),
+                    };
+                    if let Ok(mut registry) = self.trigger_registry.try_lock() {
+                        registry.register(Arc::new(trigger));
+                        tracing::info!(
+                            "Registered telegram trigger '{}' for agent '{}'",
+                            trigger_id, def.name
+                        );
+                    }
+                }
+                "webhook" | "github" | "jira" => {
+                    // Passive webhook triggers — no background task needed.
+                    // The /webhooks/:trigger_id route dispatches directly.
+                    tracing::debug!(
+                        "Webhook-type trigger '{}' for agent '{}' dispatched via HTTP route",
+                        trigger_id, def.name
+                    );
+                }
                 other => {
                     tracing::debug!(
-                        "Trigger type '{}' for agent '{}' will be registered by the webhook handler",
+                        "Unknown trigger type '{}' for agent '{}' — skipped",
                         other, def.name
                     );
                 }
@@ -910,6 +965,59 @@ impl agentix_core::TriggerTrait for CronTriggerImpl {
         if let Some(tx) = self.stop_tx.lock().await.take() {
             let _ = tx.send(());
         }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ChannelMentionTriggerImpl — passive trigger for Slack/Discord/Telegram
+// ---------------------------------------------------------------------------
+
+/// Which messaging platform this trigger listens on.
+enum ChannelPlatformImpl {
+    Slack { signing_secret: Option<String> },
+    Discord,
+    Telegram,
+}
+
+/// Minimal channel mention trigger for use within agentix-runtime.
+///
+/// Passive trigger: stores the sender at start() time.
+/// The /webhooks/:trigger_id route calls dispatch_webhook_payload() which
+/// sends a pre-built TriggerEvent; this struct's start() only stores the sender
+/// for potential future direct dispatch.
+struct ChannelMentionTriggerImpl {
+    id: String,
+    agent_name: String,
+    platform: ChannelPlatformImpl,
+    sender: tokio::sync::Mutex<Option<tokio::sync::mpsc::Sender<(String, TriggerEvent)>>>,
+}
+
+#[async_trait::async_trait]
+impl agentix_core::TriggerTrait for ChannelMentionTriggerImpl {
+    fn trigger_id(&self) -> &str {
+        &self.id
+    }
+
+    fn source(&self) -> agentix_core::TriggerSource {
+        match &self.platform {
+            ChannelPlatformImpl::Slack { .. } => agentix_core::TriggerSource::Slack,
+            ChannelPlatformImpl::Discord => agentix_core::TriggerSource::Discord,
+            ChannelPlatformImpl::Telegram => agentix_core::TriggerSource::Telegram,
+        }
+    }
+
+    async fn start(
+        &self,
+        sender: tokio::sync::mpsc::Sender<(String, TriggerEvent)>,
+    ) -> Result<(), AgentixError> {
+        // Passive trigger: just store the sender for potential async dispatch
+        *self.sender.lock().await = Some(sender);
+        Ok(())
+    }
+
+    async fn stop(&self) -> Result<(), AgentixError> {
+        *self.sender.lock().await = None;
         Ok(())
     }
 }
