@@ -39,6 +39,9 @@ reqwest = { version = "0.11", features = ["json", "stream"] }
 hyper = { version = "1.0", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
+axum = { version = "0.7", features = ["macros"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+http-body-util = "0.1"
 
 # CLI
 clap = { version = "4.4", features = ["derive", "cargo", "env"] }

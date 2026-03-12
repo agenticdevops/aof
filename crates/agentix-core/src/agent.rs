@@ -2010,7 +2010,14 @@ impl FlatYamlLoader {
     /// Load a flat YAML file and convert it to an `AgentDefinition`.
     pub fn load(path: &Path) -> crate::AgentixResult<AgentDefinition> {
         let content = std::fs::read_to_string(path)?;
-        let de = serde_yaml::Deserializer::from_str(&content);
+        Self::load_from_str(&content)
+    }
+
+    /// Parse a flat YAML string directly into an `AgentDefinition`.
+    ///
+    /// Used by the gateway API where the YAML content arrives as a request body.
+    pub fn load_from_str(content: &str) -> crate::AgentixResult<AgentDefinition> {
+        let de = serde_yaml::Deserializer::from_str(content);
         let flat: FlatAgentSpec = serde_path_to_error::deserialize(de).map_err(|e| {
             crate::AgentixError::yaml_parse(e.path().to_string(), e.inner().to_string())
         })?;

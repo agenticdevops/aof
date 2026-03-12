@@ -110,6 +110,52 @@ impl SseEncoder {
         let data = serde_json::json!({ "message": msg });
         format!("event: error\ndata: {}\n\n", data)
     }
+
+    /// Return only the data payload (JSON string) for an event.
+    ///
+    /// Used by the gateway SSE handler to set the `data` field of each
+    /// `axum::response::sse::Event`.
+    pub fn encode_data(event: &ReActEvent) -> String {
+        match event {
+            ReActEvent::Step(step) => {
+                // Return a single JSON object summarising the step
+                let json = serde_json::json!({
+                    "phase": "step",
+                    "plan": step.plan,
+                    "action": step.action.as_ref().map(|a| serde_json::json!({
+                        "tool_name": a.tool_name,
+                        "input": a.input,
+                    })),
+                    "observation": step.observation,
+                });
+                serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
+            }
+            ReActEvent::Complete(result) => {
+                let json = serde_json::json!({
+                    "output": result.output,
+                    "iterations": result.iterations,
+                    "reached_max_iterations": result.reached_max_iterations,
+                });
+                serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
+            }
+            ReActEvent::Error(msg) => {
+                let json = serde_json::json!({ "message": msg });
+                serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
+            }
+        }
+    }
+
+    /// Return the SSE event name for an event type.
+    ///
+    /// Used to set the `event:` field in the SSE stream so clients can
+    /// distinguish between step, complete, and error events.
+    pub fn encode_event_name(event: &ReActEvent) -> String {
+        match event {
+            ReActEvent::Step(_) => "react_step".to_string(),
+            ReActEvent::Complete(_) => "complete".to_string(),
+            ReActEvent::Error(_) => "error".to_string(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

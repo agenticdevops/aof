@@ -4,6 +4,7 @@
 //! OpenAgentiX agents, handling plan-act-observe-reflect cycles.
 
 pub mod executor;
+pub mod gateway;
 pub mod health;
 pub mod metrics;
 pub mod shutdown;
