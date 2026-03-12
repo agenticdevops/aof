@@ -213,65 +213,115 @@ Agent directory 'agents/my-agent' is valid
 
 ## 11. Add Skills (Optional)
 
-Skills are reusable system prompt modules. Create a skills directory:
+Skills inject domain expertise into your agent's system prompt without any LLM routing call.
+
+### Browse built-in skill packs
+
+```bash
+agentix skills list
+```
+
+Output:
+```
+NAME            DESCRIPTION
+────────────────────────────────────────────────────────────────────────
+aws             AWS cloud infrastructure management (EC2, S3, IAM, CloudWatch)
+kubernetes      Kubernetes cluster management and workload operations (kubectl)
+terraform       Terraform infrastructure-as-code management (plan, apply, state)
+docker          Docker container and image management (build, run, inspect)
+git             Git version control operations (commit, branch, rebase, merge)
+database        Database operations and query optimization (PostgreSQL, MySQL)
+security        Security scanning, vulnerability assessment, and hardening
+observability   Observability, monitoring, log analysis, and distributed tracing
+```
+
+### Activate a built-in skill pack
+
+To add Kubernetes expertise to your agent:
+
+```bash
+mkdir -p agents/my-agent/skills/kubernetes
+```
+
+The gateway injects the Kubernetes skill pack's instructions into the agent's system prompt on next startup. No code changes needed.
+
+### Add custom skills
+
+For team-specific knowledge, create your own `SKILL.md`:
+
+```bash
+mkdir -p agents/my-agent/skills/my-postgres
+cat > agents/my-agent/skills/my-postgres/SKILL.md << 'EOF'
+# PostgreSQL Tuning
+
+Production cluster details:
+- Primary: db-primary.internal:5432
+- Read replicas on port 5433
+- Connection limit: 100 per service
+- Always use prepared statements for queries
+EOF
+```
+
+Your agent directory with skills:
 
 ```
 agents/my-agent/
 ├── agent.yaml
 ├── SOUL.md
 └── skills/
-    └── kubernetes.md    # Kubernetes expertise module
+    ├── kubernetes/          # Directory activates built-in kubernetes pack
+    └── my-postgres/
+        └── SKILL.md         # Custom skill — injected verbatim
 ```
 
-Example `skills/kubernetes.md`:
-
-```markdown
-## Kubernetes Expertise
-
-You have deep knowledge of Kubernetes:
-- Pod lifecycle and status conditions
-- Common kubectl commands and their output
-- Troubleshooting CrashLoopBackOff, OOMKilled, Pending states
-- Helm chart management
-- RBAC and security contexts
-```
-
-The DirectoryLoader automatically includes all `.md` files in `skills/` in the agent's system prompt.
+See: [Skills Guide](skills.md)
 
 ---
 
 ## 12. Add Tools (Optional)
 
-Tools let agents execute shell commands. Create a tools directory:
+Tools let agents execute CLI commands and MCP servers during the ReAct loop.
+
+### CLI / shell tools
+
+Create a tools directory with YAML definitions:
+
+```bash
+mkdir -p agents/my-agent/tools
+cat > agents/my-agent/tools/kubectl.yaml << 'EOF'
+name: kubectl
+type: cli
+command: kubectl
+description: Kubernetes cluster management
+args:
+  - "{{subcommand}}"
+EOF
+```
+
+During a run, the agent can call the tool:
 
 ```
-agents/my-agent/
-├── agent.yaml
-├── SOUL.md
-└── tools/
-    └── kubectl-get-pods.yaml
+[Act] Calling kubectl with {"subcommand": "get pods -n default"}
+[Observe] NAME                     READY   STATUS    RESTARTS   AGE
+          nginx-6d4b5c46-xyz12     1/1     Running   0          2d
 ```
 
-Example `tools/kubectl-get-pods.yaml`:
+### MCP server tools
+
+Connect your agent to any MCP server:
 
 ```yaml
-name: get_pods
-description: List pods in a Kubernetes namespace
-type: shell
-command: kubectl
-args:
-  - get
-  - pods
-  - -n
-  - "{{namespace}}"
-  - -o
-  - wide
-parameters:
-  namespace:
-    type: string
-    description: Kubernetes namespace
-    required: true
+# agents/my-agent/agent.yaml
+spec_version: v1
+name: my-agent
+mcp_servers:
+  - name: filesystem
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 ```
+
+See: [Tools Guide](tools.md) | [MCP Guide](mcp.md)
 
 ---
 

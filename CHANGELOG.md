@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.2] - 2026-03-13
+
+### Added
+
+#### Skills Composition (SKILL-01 to SKILL-05, CLI-08)
+- **8 built-in skill packs** embedded in the binary: `aws`, `kubernetes`, `terraform`, `docker`, `git`, `database`, `security`, `observability`
+- `agentix skills list` — list all available skill packs with descriptions
+- `agentix skills show <name>` — print a skill pack's full instruction content
+- Custom skills: place `SKILL.md` in `agents/<name>/skills/<skill-name>/SKILL.md`
+- Skill injection is deterministic (directory matching) — no LLM routing call required
+- Skills are injected into the agent's system prompt under `## Skill: <name>` headings
+- JSON output support: `agentix skills list --output json`
+
+#### CLI and Shell Tools (TOOL-01, TOOL-03)
+- `CliToolExecutor` — async CLI and shell tool execution with timeout enforcement
+- Replaces blocking `ShellToolExecutor` stub from Phase 13 with proper async implementation
+- `{{variable}}` template substitution in tool commands and args
+- Default 30-second timeout; configurable per tool via `timeout_secs` in tool YAML
+- Tool failures return descriptive error observations — agent decides how to proceed
+
+#### MCP Server Integration (TOOL-02)
+- `McpToolExecutor` — connects agents to MCP servers for tool calls
+- `CompositeToolExecutor` — routes to CLI, MCP, or WASM executors based on tool type
+- stdio, SSE, and HTTP transport support via `agentix-mcp` crate
+- Per-run connection lifecycle — MCP server subprocess started/stopped with each run
+- Error observations on connection failure (no run abort)
+
+#### WASM Sandbox (TOOL-04, TOOL-05)
+- `WasmSandbox` — executes WASM modules via `wasmtime` (feature-gated: `agentix-runtime/wasm`)
+- `CapabilityManifest` — declared permissions in `tools/<name>.yaml` for `type: wasm`
+- `WasmCapability` types: `network`, `filesystem`, `secrets`, `http_endpoints`, `resource_limits`
+- Undeclared capability access returns `WasmViolation` as tool observation
+- Default resource limits: 64 MB memory, 30-second timeout
+
+### Documentation
+- `docs/guides/skills.md` — skills composition guide with examples
+- `docs/guides/tools.md` — CLI, shell, and MCP tool configuration reference
+- `docs/guides/mcp.md` — MCP server setup, transports, and popular servers
+- `docs/guides/wasm-tools.md` — WASM tools, capabilities, and module interface
+
 ## [2.0.0-alpha.1] - 2026-03-13
 
 ### BREAKING CHANGES
