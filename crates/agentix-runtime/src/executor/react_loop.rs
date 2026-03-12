@@ -11,10 +11,13 @@
 //! - `max_iterations` is reached, or
 //! - The configured `timeout` expires.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use agentix_core::{AgentDefinition, AgentixError, ToolEntry};
+use agentix_core::{
+    AgentDefinition, AgentixError, MessageRole, ModelRequest, RequestMessage, ToolCall, ToolEntry,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
@@ -23,7 +26,7 @@ use tokio::sync::broadcast;
 // ---------------------------------------------------------------------------
 
 /// A single tool call requested by the LLM during one ReAct iteration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolAction {
     /// Name of the tool requested.
     pub tool_name: String,
@@ -32,7 +35,7 @@ pub struct ToolAction {
 }
 
 /// One complete plan-act-observe-reflect iteration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReActStep {
     /// LLM reasoning / planning text for this iteration.
     pub plan: String,
@@ -45,7 +48,7 @@ pub struct ReActStep {
 }
 
 /// Events emitted by the ReAct loop during execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ReActEvent {
     /// Emitted after each completed iteration.
     Step(ReActStep),
@@ -56,7 +59,7 @@ pub enum ReActEvent {
 }
 
 /// Final output of a completed ReAct run.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RunResult {
     /// The agent's final answer text.
     pub output: String,
@@ -114,6 +117,12 @@ pub trait ToolExecutor: Send + Sync {
         input: serde_json::Value,
     ) -> Result<String, String>;
 }
+
+// ---------------------------------------------------------------------------
+// ReAct system prompt prefix
+// ---------------------------------------------------------------------------
+
+const REACT_INSTRUCTIONS: &str = "\n\n---\nYou are an AI agent operating in a ReAct (Reason + Act) loop.\n\nFor each step:\n1. Plan: Analyze the current situation and decide what to do next\n2. Act: Call a tool if needed, or provide your final answer\n3. Observe: Review the tool result\n4. Reflect: Decide if you need another step or if you have the answer\n\nWhen you have enough information, respond without calling any tools.\n---";
 
 // ---------------------------------------------------------------------------
 // ReActEngine
