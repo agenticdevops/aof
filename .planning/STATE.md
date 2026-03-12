@@ -17,12 +17,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 13 of 22 (Rebrand + Core Runtime + CLI Foundation)
-Plan: 9 of 9 in current phase
-Status: Executing
-Last activity: 2026-03-13 — Completed 13-08: agentix init and onboard commands with quickstart reference files
+Phase: 14 of 22 (Skills + MCP Integration)
+Plan: 0 of ? in current phase
+Status: Phase 13 Complete — Ready for Phase 14
+Last activity: 2026-03-13 — Completed 13-09: LLM wiring, workspace compilation, documentation rebrand
 
-Progress: [███████░░░] 78%
+Progress: [████████░░] 82%
 
 ---
 
@@ -71,6 +71,10 @@ Progress: [███████░░░] 78%
 - agentix init creates agent DIRECTORIES (GitAgent format) via scaffold_agent_directory; --name is a named flag (13-08)
 - scaffold_agent_directory is a public function shared between init.rs and onboard.rs — single source of truth (13-08)
 - onboard creates agentix.yaml + hello-world agent directory; validates via DirectoryLoader after write (13-08)
+- AgentFlow stubbed in agentix-triggers (v1.0 type); full re-impl deferred to Phase 15 (13-09)
+- Runtime/RuntimeOrchestrator/AgentFlowExecutor stubbed in agentix-triggers; Phase 15 re-implements (13-09)
+- EventBroadcaster stubbed using tokio broadcast; agentix-coordination crate deferred to future phase (13-09)
+- LLM provider wiring already complete from 13-06: create_provider_from_definition() in agent_manager.rs (13-09)
 
 ### Open Questions
 
@@ -85,7 +89,7 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 13-08-PLAN.md — agentix init and onboard commands, quickstart reference files
+Stopped at: Completed 13-09-PLAN.md — LLM wiring, all workspace errors fixed, OpenAgentiX docs updated
 Resume file: None
 
 ---
