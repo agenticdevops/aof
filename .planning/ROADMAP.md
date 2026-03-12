@@ -19,7 +19,7 @@
 **Milestone Goal:** Transform AOF into an enterprise agent automation platform — GitAgent-compatible agent directories, skills + tools + MCP, scheduled/event-driven execution, cost tracking, and a Svelte command center.
 
 - [x] **Phase 13: Rebrand + Core Runtime + CLI Foundation** - `agentix` binary, GitAgent-compatible agent directories, ReAct loop, streaming, backward compatibility (completed 2026-03-12)
-- [ ] **Phase 14: Skills Composition + Tools + WASM Sandbox** - Skill packs, composable agents, WASM-isolated tool execution
+- [x] **Phase 14: Skills Composition + Tools + WASM Sandbox** - Skill packs, composable agents, WASM-isolated tool execution (completed 2026-03-13)
 - [ ] **Phase 15: Triggers + Scheduling** - Cron, webhook, GitHub, Jira, agent-to-agent, run persistence
 - [ ] **Phase 16: Agent Coordination + Memory** - Multi-agent delegation, vector memory, semantic recall, research phase
 - [ ] **Phase 17: Cost Tracking + Budgets** - Per-call/run/agent cost tracking, daily budget limits, smart model routing
