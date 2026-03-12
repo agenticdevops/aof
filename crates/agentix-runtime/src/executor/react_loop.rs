@@ -16,8 +16,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agentix_core::{
-    AgentDefinition, AgentixError, MessageRole, ModelRequest, RequestMessage, ToolCall, ToolEntry,
+    AgentDefinition, AgentixError, ModelRequest, RequestMessage, ToolCall, ToolEntry,
 };
+use agentix_core::model::MessageRole;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
@@ -170,14 +171,163 @@ impl ReActEngine {
     /// # Arguments
     /// * `definition` - Fully assembled `AgentDefinition` (SOUL + RULES + skills + tools).
     /// * `input` - The user's request or task.
+    ///
+    /// The engine:
+    /// 1. Assembles the system prompt via `definition.resolved_system_prompt()`.
+    /// 2. Prepends ReAct instructions.
+    /// 3. Loops up to `config.max_iterations` times, calling the LLM and dispatching tools.
+    /// 4. Feeds tool results (or errors) back as observations — never hard-fails on tool error.
+    /// 5. Terminates when the LLM produces no tool calls (final answer).
     pub async fn run(
         &self,
         definition: &AgentDefinition,
         input: &str,
     ) -> Result<RunResult, AgentixError> {
-        // TODO: implement in GREEN phase
-        let _ = (definition, input);
-        Err(AgentixError::runtime("ReActEngine::run not yet implemented"))
+        let system_prompt = format!(
+            "{}{}",
+            definition.resolved_system_prompt(),
+            REACT_INSTRUCTIONS
+        );
+
+        // Conversation history — starts with the user's message.
+        let mut messages: Vec<RequestMessage> = vec![RequestMessage {
+            role: MessageRole::User,
+            content: input.to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+        }];
+
+        let mut all_tool_calls: Vec<ToolAction> = vec![];
+        let mut iteration: u32 = 0;
+
+        // Wrap the whole run in a timeout.
+        let result = tokio::time::timeout(self.config.timeout, async {
+            loop {
+                if iteration >= self.config.max_iterations {
+                    // Max iterations reached without a final answer.
+                    let run_result = RunResult {
+                        output: String::new(),
+                        iterations: iteration,
+                        tool_calls: all_tool_calls.clone(),
+                        reached_max_iterations: true,
+                    };
+                    self.emit(ReActEvent::Complete(run_result.clone()));
+                    return Ok(run_result);
+                }
+
+                // [Plan + Act] Call the LLM.
+                let request = ModelRequest {
+                    messages: messages.clone(),
+                    system: Some(system_prompt.clone()),
+                    tools: vec![], // Tool dispatch is managed by the loop itself.
+                    temperature: None,
+                    max_tokens: None,
+                    stream: false,
+                    extra: HashMap::new(),
+                };
+
+                let response = self.model.generate(&request).await?;
+
+                if response.tool_calls.is_empty() {
+                    // No tool calls → final answer.
+                    // Count: if no tool iterations happened yet (pure Q&A), count 1.
+                    // Otherwise keep the existing iteration count (tool iterations only).
+                    let final_iterations = if iteration == 0 { 1 } else { iteration };
+                    let run_result = RunResult {
+                        output: response.content.clone(),
+                        iterations: final_iterations,
+                        tool_calls: all_tool_calls.clone(),
+                        reached_max_iterations: false,
+                    };
+                    self.emit(ReActEvent::Complete(run_result.clone()));
+                    return Ok(run_result);
+                }
+
+                // [Act] Dispatch each tool call and collect observations.
+                iteration += 1;
+                let mut observations: Vec<String> = vec![];
+                let mut step_tool_actions: Vec<ToolAction> = vec![];
+
+                for tool_call in &response.tool_calls {
+                    let observation = self.dispatch_tool(definition, tool_call).await;
+
+                    let action = ToolAction {
+                        tool_name: tool_call.name.clone(),
+                        input: tool_call.arguments.clone(),
+                    };
+                    all_tool_calls.push(action.clone());
+                    step_tool_actions.push(action);
+                    observations.push(observation);
+                }
+
+                // [Observe] Format all observations for this iteration.
+                let observation_text = observations.join("\n---\n");
+
+                // Build the ReActStep for this iteration.
+                let step = ReActStep {
+                    plan: response.content.clone(),
+                    action: step_tool_actions.into_iter().next(),
+                    observation: observation_text.clone(),
+                    reflection: String::new(),
+                };
+
+                self.emit(ReActEvent::Step(step));
+
+                // [Reflect] Append the assistant message + observation to conversation.
+                messages.push(RequestMessage {
+                    role: MessageRole::Assistant,
+                    content: response.content.clone(),
+                    tool_calls: Some(response.tool_calls.clone()),
+                    tool_call_id: None,
+                });
+                messages.push(RequestMessage {
+                    role: MessageRole::User,
+                    content: format!("Observation:\n{}", observation_text),
+                    tool_calls: None,
+                    tool_call_id: None,
+                });
+            }
+        })
+        .await;
+
+        match result {
+            Ok(run_result) => run_result,
+            Err(_elapsed) => Err(AgentixError::Timeout(format!(
+                "ReAct loop timed out after {:?}",
+                self.config.timeout
+            ))),
+        }
+    }
+
+    /// Dispatch a single tool call, returning an observation string.
+    ///
+    /// Looks up the `ToolEntry` from `definition.tools` by name.
+    /// If not found, returns an error observation rather than panicking.
+    /// If the tool executor returns an error, formats it as an observation.
+    async fn dispatch_tool(
+        &self,
+        definition: &AgentDefinition,
+        tool_call: &ToolCall,
+    ) -> String {
+        // Find the ToolEntry by name.
+        let tool_entry = definition.tools.iter().find(|t| t.name == tool_call.name);
+
+        match tool_entry {
+            None => format!(
+                "Error: Tool '{}' not found in agent definition",
+                tool_call.name
+            ),
+            Some(entry) => {
+                match self
+                    .tool_executor
+                    .execute(entry, tool_call.arguments.clone())
+                    .await
+                {
+                    Ok(output) => output,
+                    Err(err) => format!("Tool '{}' failed: {}", tool_call.name, err),
+                }
+            }
+        }
     }
 
     /// Emit an event to the broadcast channel, silently dropping if no receivers.

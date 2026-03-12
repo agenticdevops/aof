@@ -24,46 +24,228 @@ pub type EventSender = tokio::sync::broadcast::Sender<ReActEvent>;
 pub type EventReceiver = tokio::sync::broadcast::Receiver<ReActEvent>;
 
 // ---------------------------------------------------------------------------
-// Formatter stubs (filled in during GREEN phase)
+// SseEncoder
 // ---------------------------------------------------------------------------
 
 /// Encodes [`ReActEvent`]s to the Server-Sent Events (`text/event-stream`) wire format.
 ///
-/// Each call to [`SseEncoder::encode`] returns one or more SSE messages terminated
-/// by the mandatory double newline (`\n\n`) per the SSE specification.
+/// Each call to [`SseEncoder::encode`] returns one or more SSE messages. Every message
+/// is terminated by the mandatory double newline (`\n\n`) required by the SSE specification.
+///
+/// A `Step` event emits one SSE message per non-empty phase (plan, act, observe, reflect)
+/// to allow clients to render incremental progress. `Complete` and `Error` events each
+/// produce a single SSE message.
 pub struct SseEncoder;
+
+impl SseEncoder {
+    /// Encode a [`ReActEvent`] to one or more SSE messages.
+    ///
+    /// # Format
+    /// ```text
+    /// event: react_step
+    /// data: {"phase":"plan","content":"..."}
+    ///
+    /// ```
+    pub fn encode(event: &ReActEvent) -> String {
+        match event {
+            ReActEvent::Step(step) => Self::encode_step(step),
+            ReActEvent::Complete(result) => Self::encode_complete(result),
+            ReActEvent::Error(msg) => Self::encode_error(msg),
+        }
+    }
+
+    fn encode_step(step: &ReActStep) -> String {
+        let mut parts = Vec::new();
+
+        // Plan phase — always present
+        parts.push(Self::encode_phase("plan", &step.plan, None));
+
+        // Act phase — only when there is a tool call
+        if let Some(action) = &step.action {
+            let extra = serde_json::json!({
+                "tool_name": action.tool_name,
+                "input": action.input,
+            });
+            parts.push(Self::encode_phase(
+                "act",
+                &format!("Calling tool: {}", action.tool_name),
+                Some(&extra),
+            ));
+        }
+
+        // Observe phase — only when there is an observation
+        if !step.observation.is_empty() {
+            parts.push(Self::encode_phase("observe", &step.observation, None));
+        }
+
+        // Reflect phase — only when there is a reflection
+        if !step.reflection.is_empty() {
+            parts.push(Self::encode_phase("reflect", &step.reflection, None));
+        }
+
+        parts.join("")
+    }
+
+    fn encode_phase(phase: &str, content: &str, extra: Option<&serde_json::Value>) -> String {
+        let mut data = serde_json::json!({ "phase": phase, "content": content });
+        if let Some(extra) = extra {
+            if let (Some(obj), Some(ext)) = (data.as_object_mut(), extra.as_object()) {
+                obj.extend(ext.iter().map(|(k, v)| (k.clone(), v.clone())));
+            }
+        }
+        format!("event: react_step\ndata: {}\n\n", data)
+    }
+
+    fn encode_complete(result: &RunResult) -> String {
+        let data = serde_json::json!({
+            "output": result.output,
+            "iterations": result.iterations,
+            "tool_calls_count": result.tool_calls.len(),
+            "reached_max_iterations": result.reached_max_iterations,
+        });
+        format!("event: complete\ndata: {}\n\n", data)
+    }
+
+    fn encode_error(msg: &str) -> String {
+        let data = serde_json::json!({ "message": msg });
+        format!("event: error\ndata: {}\n\n", data)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TextFormatter
+// ---------------------------------------------------------------------------
 
 /// Formats [`ReActEvent`]s as human-readable text for CLI display.
 ///
-/// When `use_colors` is `true`, ANSI escape codes are added for terminal colour.
-/// Set `use_colors: false` in tests or when stdout is not a TTY.
+/// Each ReAct phase is prefixed with a labelled bracket:
+/// - `[Plan]` — in cyan when colours are enabled
+/// - `[Act]` — in yellow when colours are enabled
+/// - `[Observe]` — in green when colours are enabled
+/// - `[Reflect]` — in blue when colours are enabled
+///
+/// Set `use_colors: false` in tests or when stdout is not a TTY to suppress
+/// ANSI escape codes.
 pub struct TextFormatter {
     /// Whether to emit ANSI colour codes in the output.
     pub use_colors: bool,
 }
 
-/// Formats [`ReActEvent`]s as compact single-line JSON (NDJSON) for programmatic consumers.
-///
-/// Suitable for the `--json` flag and CI/CD pipelines that parse agent output.
-pub struct JsonFormatter;
-
-impl SseEncoder {
-    /// Encode a [`ReActEvent`] to one or more SSE messages.
-    pub fn encode(_event: &ReActEvent) -> String {
-        todo!("implement SseEncoder::encode")
-    }
-}
+// ANSI colour constants
+const CYAN: &str = "\x1b[36m";
+const YELLOW: &str = "\x1b[33m";
+const GREEN: &str = "\x1b[32m";
+const BLUE: &str = "\x1b[34m";
+const RED: &str = "\x1b[31m";
+const RESET: &str = "\x1b[0m";
 
 impl TextFormatter {
     /// Format a [`ReActEvent`] as labelled human-readable text.
-    pub fn format(&self, _event: &ReActEvent) -> String {
-        todo!("implement TextFormatter::format")
+    pub fn format(&self, event: &ReActEvent) -> String {
+        match event {
+            ReActEvent::Step(step) => self.format_step(step),
+            ReActEvent::Complete(result) => self.format_complete(result),
+            ReActEvent::Error(msg) => self.format_error(msg),
+        }
+    }
+
+    fn format_step(&self, step: &ReActStep) -> String {
+        let mut output = String::new();
+
+        // Plan phase — always present
+        output.push_str(&self.label("Plan", CYAN));
+        output.push_str(&step.plan);
+        output.push('\n');
+
+        // Act phase — only when there is a tool call
+        if let Some(action) = &step.action {
+            output.push_str(&self.label("Act", YELLOW));
+            output.push_str(&format!(
+                "Calling tool: {} with {}",
+                action.tool_name, action.input
+            ));
+            output.push('\n');
+        }
+
+        // Observe phase — only when there is an observation
+        if !step.observation.is_empty() {
+            output.push_str(&self.label("Observe", GREEN));
+            output.push_str(&step.observation);
+            output.push('\n');
+        }
+
+        // Reflect phase — only when there is a reflection
+        if !step.reflection.is_empty() {
+            output.push_str(&self.label("Reflect", BLUE));
+            output.push_str(&step.reflection);
+            output.push('\n');
+        }
+
+        output
+    }
+
+    fn format_complete(&self, result: &RunResult) -> String {
+        format!("\n--- Result ---\n{}\n", result.output)
+    }
+
+    fn format_error(&self, msg: &str) -> String {
+        if self.use_colors {
+            format!("{RED}[Error]{RESET} {msg}\n")
+        } else {
+            format!("[Error] {msg}\n")
+        }
+    }
+
+    /// Render a bracketed label with optional ANSI colour.
+    fn label(&self, name: &str, color_code: &str) -> String {
+        if self.use_colors {
+            format!("{color_code}[{name}]{RESET} ")
+        } else {
+            format!("[{name}] ")
+        }
     }
 }
 
+// ---------------------------------------------------------------------------
+// JsonFormatter
+// ---------------------------------------------------------------------------
+
+/// Formats [`ReActEvent`]s as compact single-line JSON (NDJSON) for programmatic consumers.
+///
+/// Suitable for the `--json` flag and CI/CD pipelines that parse agent output.
+/// Every output line is guaranteed to be valid JSON with an `event_type` field.
+pub struct JsonFormatter;
+
 impl JsonFormatter {
     /// Format a [`ReActEvent`] as a single-line JSON object (NDJSON).
-    pub fn format(_event: &ReActEvent) -> String {
-        todo!("implement JsonFormatter::format")
+    pub fn format(event: &ReActEvent) -> String {
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        let json = match event {
+            ReActEvent::Step(step) => serde_json::json!({
+                "event_type": "react_step",
+                "timestamp": timestamp,
+                "plan": step.plan,
+                "action": step.action.as_ref().map(|a| serde_json::json!({
+                    "tool_name": a.tool_name,
+                    "input": a.input,
+                })),
+                "observation": step.observation,
+                "reflection": step.reflection,
+            }),
+            ReActEvent::Complete(result) => serde_json::json!({
+                "event_type": "complete",
+                "timestamp": timestamp,
+                "output": result.output,
+                "iterations": result.iterations,
+                "reached_max_iterations": result.reached_max_iterations,
+            }),
+            ReActEvent::Error(msg) => serde_json::json!({
+                "event_type": "error",
+                "timestamp": timestamp,
+                "message": msg,
+            }),
+        };
+        // serde_json compact serialization produces a single line with no embedded newlines
+        serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
     }
 }
