@@ -86,7 +86,12 @@ annotations:
 
 ## spec.defaults
 
-Default values inherited by all agents in this workspace. An agent that omits a field uses the workspace default. An agent that explicitly sets a field overrides the workspace default.
+Default values inherited by all agents in this workspace. In the GitAgent directory format,
+`agent.yaml` carries only metadata and model preference — runtime behavior fields (`max_iterations`,
+`timeout`, `mode`) are configured here in the workspace defaults, not per-agent.
+
+An agent that omits a field uses the workspace default. The built-in defaults apply when neither
+the agent nor the workspace specifies a value.
 
 ### `spec.defaults.model` (optional)
 
@@ -202,15 +207,46 @@ gateway:
 
 ## spec.agents_dir
 
-Directory containing agent YAML files. Relative paths are resolved from the workspace root (the directory containing `agentix.yaml`).
+Root directory for agent discovery. Relative paths are resolved from the workspace root (the
+directory containing `agentix.yaml`).
 
 - **Type:** string (path)
 - **Default:** `"./agents"`
-- **Behavior:** The gateway scans this directory recursively for files matching `*.yaml` or `*.yml`. Non-agent YAML files (other `kind` values) in this directory are ignored.
 
 ```yaml
 agents_dir: "./agents"
 ```
+
+### Agent Discovery
+
+The gateway scans `agents_dir` at startup and discovers agents using the following rules:
+
+| What is found | Format | Loaded as |
+|---------------|--------|-----------|
+| A subdirectory containing `agent.yaml` | GitAgent directory format (v0.1.0) | Full directory-based agent |
+| A `*.yaml` or `*.yml` file with `kind: Agent` | Flat YAML format (backward compat) | Legacy monolithic agent |
+| Any other file or directory | — | Ignored |
+
+**Example workspace layout:**
+
+```
+./agents/
+├── db-optimizer/         ← directory format (preferred)
+│   ├── agent.yaml
+│   └── SOUL.md
+├── k8s-scanner/          ← directory format
+│   ├── agent.yaml
+│   └── SOUL.md
+└── legacy-agent.yaml     ← flat YAML format (still supported)
+```
+
+The runtime detects the format automatically:
+- If a path under `agents_dir` is a **directory** and contains `agent.yaml` → load as GitAgent
+  directory format (see [agent-directory-structure.md](agent-directory-structure.md))
+- If a path under `agents_dir` is a **`*.yaml` file** at the top level → attempt to load as flat
+  `kind: Agent` YAML (backward compatibility)
+
+Subdirectories that do not contain `agent.yaml` are silently skipped (forward compatibility).
 
 ---
 
@@ -394,7 +430,9 @@ If none are found, the CLI prints an error with instructions to run `agentix onb
 
 ## Related Specifications
 
-- [Agent YAML v1 Specification](agent-yaml-v1.md) — per-agent configuration format
+- [Agent Directory Structure](agent-directory-structure.md) — GitAgent-compatible directory layout
+  (primary agent format)
+- [Agent Manifest (agent.yaml)](agent-yaml-v1.md) — minimal `agent.yaml` manifest field reference
 - Workspace config is parsed by `agentix-core` crate (`WorkspaceConfig` type)
 - Validation uses `serde_path_to_error` for precise field-level error reporting
 - Provider credentials are resolved at gateway startup, not at agent load time
