@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::agent::AgentMode;
+use crate::channel::ChannelConfig;
 use crate::security::SecurityConfig;
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,9 @@ pub struct WorkspaceSpec {
     /// Security settings (Phase 19).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub security: Option<SecurityConfig>,
+    /// Multi-channel gateway configuration (Phase 21).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<Vec<ChannelConfig>>,
 }
 
 /// Telemetry configuration for workspace-level observability settings.

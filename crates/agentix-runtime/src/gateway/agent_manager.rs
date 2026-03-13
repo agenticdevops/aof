@@ -164,6 +164,8 @@ pub struct AgentManager {
     /// Per-agent bounded inboxes for coordination (COORD-01).
     /// One inbox per registered agent, keyed by agent name.
     inboxes: DashMap<String, Arc<AgentInbox>>,
+    /// Multi-channel gateway manager (Phase 21).
+    channel_manager: Option<crate::channels::ChannelGatewayManager>,
 }
 
 impl AgentManager {
@@ -222,6 +224,31 @@ impl AgentManager {
     }
 
     /// Build an OtelExporter from workspace config if telemetry is configured.
+    /// Build the ChannelGatewayManager from workspace config (Phase 21).
+    fn build_channel_manager(
+        workspace_config: &Option<WorkspaceConfig>,
+    ) -> Option<crate::channels::ChannelGatewayManager> {
+        workspace_config.as_ref().and_then(|wc| {
+            wc.spec.channels.as_ref().and_then(|channels| {
+                match crate::channels::ChannelGatewayManager::new(channels.clone()) {
+                    Ok(mgr) => {
+                        tracing::info!("Channel gateway manager initialized");
+                        Some(mgr)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize channel gateway: {}", e);
+                        None
+                    }
+                }
+            })
+        })
+    }
+
+    /// Get a reference to the channel gateway manager (Phase 21).
+    pub fn channel_manager(&self) -> Option<&crate::channels::ChannelGatewayManager> {
+        self.channel_manager.as_ref()
+    }
+
     fn build_otel_exporter(workspace_config: &Option<WorkspaceConfig>) -> Option<OtelExporter> {
         workspace_config.as_ref().and_then(|wc| {
             wc.spec.telemetry.as_ref().and_then(|tc| {
@@ -265,6 +292,7 @@ impl AgentManager {
         let audit_store = Self::open_audit_store_at(":memory:");
         let approval_store = Self::open_approval_store_at(":memory:");
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
+        let channel_manager = Self::build_channel_manager(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -279,6 +307,7 @@ impl AgentManager {
             approval_store,
             otel_exporter,
             inboxes: DashMap::new(),
+            channel_manager,
         });
         // Spawn the trigger dispatcher background task
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
@@ -298,6 +327,7 @@ impl AgentManager {
         let audit_store = Self::open_audit_store_at(&audit_db_path);
         let approval_store = Self::open_approval_store_at(&approval_db_path);
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
+        let channel_manager = Self::build_channel_manager(&workspace_config);
         tracing::info!("Run store: {}", run_db_path);
         tracing::info!("Cost store: {}", cost_db_path);
         tracing::info!("Trace store: {}", trace_db_path);
@@ -317,6 +347,7 @@ impl AgentManager {
             approval_store,
             otel_exporter,
             inboxes: DashMap::new(),
+            channel_manager,
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
         manager
@@ -331,6 +362,7 @@ impl AgentManager {
         let audit_store = Self::open_audit_store_at(":memory:");
         let approval_store = Self::open_approval_store_at(":memory:");
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
+        let channel_manager = Self::build_channel_manager(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -345,6 +377,7 @@ impl AgentManager {
             approval_store,
             otel_exporter,
             inboxes: DashMap::new(),
+            channel_manager,
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
         manager

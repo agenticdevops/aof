@@ -184,6 +184,16 @@ pub trait ChannelGateway: Send + Sync {
         payload: &NotificationPayload,
     ) -> Result<(), AgentixError>;
 
+    /// Parse an inbound webhook payload into a ChannelMessage
+    ///
+    /// Returns None if the payload should be ignored (e.g., url_verification,
+    /// non-mention messages, bot's own messages).
+    fn parse_webhook(
+        &self,
+        payload: &[u8],
+        headers: &std::collections::HashMap<String, String>,
+    ) -> Result<Option<ChannelMessage>, AgentixError>;
+
     /// Returns the platform type this gateway handles
     fn platform_type(&self) -> ChannelPlatformType;
 }

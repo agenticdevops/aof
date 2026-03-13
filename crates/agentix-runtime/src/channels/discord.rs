@@ -54,7 +54,7 @@ impl DiscordChannelGateway {
     /// Returns None for PING interactions, messages without bot mention,
     /// and messages from bot authors.
     /// Returns Some(ChannelMessage) for MESSAGE_CREATE events with bot mention.
-    pub fn parse_webhook(
+    pub fn parse_webhook_payload(
         &self,
         payload: &[u8],
         _headers: &HashMap<String, String>,
@@ -227,6 +227,14 @@ impl DiscordChannelGateway {
 
 #[async_trait]
 impl ChannelGateway for DiscordChannelGateway {
+    fn parse_webhook(
+        &self,
+        payload: &[u8],
+        headers: &HashMap<String, String>,
+    ) -> Result<Option<ChannelMessage>, AgentixError> {
+        self.parse_webhook_payload(payload, headers)
+    }
+
     async fn send_message(
         &self,
         channel_id: &str,

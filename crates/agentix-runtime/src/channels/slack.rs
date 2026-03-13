@@ -50,7 +50,7 @@ impl SlackChannelGateway {
     ///
     /// Returns None for url_verification events and non-mention messages.
     /// Returns Some(ChannelMessage) for app_mention events.
-    pub fn parse_webhook(
+    pub fn parse_webhook_payload(
         &self,
         payload: &[u8],
         _headers: &HashMap<String, String>,
@@ -223,6 +223,14 @@ fn parse_slack_ts(ts: &str) -> DateTime<Utc> {
 
 #[async_trait]
 impl ChannelGateway for SlackChannelGateway {
+    fn parse_webhook(
+        &self,
+        payload: &[u8],
+        headers: &HashMap<String, String>,
+    ) -> Result<Option<ChannelMessage>, AgentixError> {
+        self.parse_webhook_payload(payload, headers)
+    }
+
     async fn send_message(
         &self,
         channel_id: &str,

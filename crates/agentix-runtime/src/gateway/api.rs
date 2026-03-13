@@ -89,6 +89,10 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/approvals/:id/approve", post(approve_request))
         .route("/api/v1/approvals/:id/deny", post(deny_request))
         .route("/webhooks/:trigger_id", post(receive_webhook))
+        // Multi-channel gateway endpoints (Phase 21)
+        .route("/api/v1/channels", get(list_channels))
+        .route("/api/v1/notify", post(send_notification))
+        .route("/webhooks/channels/:platform", post(channel_webhook))
         .layer(CorsLayer::permissive())
         .with_state(manager)
 }
@@ -1056,4 +1060,241 @@ fn extract_yaml_error_field(msg: &str) -> String {
         return field.to_string();
     }
     String::new()
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Channel Gateway endpoints (Phase 21)
+// ---------------------------------------------------------------------------
+
+/// Request body for POST /api/v1/notify
+#[derive(Debug, Deserialize)]
+struct NotifyRequest {
+    platform: String,
+    channel_id: String,
+    agent_name: Option<String>,
+    title: String,
+    body: String,
+    #[serde(default = "default_severity")]
+    severity: String,
+}
+
+fn default_severity() -> String {
+    "info".to_string()
+}
+
+/// GET /api/v1/channels — list all configured channel routes
+async fn list_channels(
+    State(manager): State<Arc<AgentManager>>,
+) -> impl IntoResponse {
+    match manager.channel_manager() {
+        Some(cm) => {
+            let routes = cm.get_all_routes();
+            (StatusCode::OK, Json(serde_json::json!(routes))).into_response()
+        }
+        None => {
+            (StatusCode::OK, Json(serde_json::json!([]))).into_response()
+        }
+    }
+}
+
+/// POST /api/v1/notify — send an outbound notification to a channel
+async fn send_notification(
+    State(manager): State<Arc<AgentManager>>,
+    Json(req): Json<NotifyRequest>,
+) -> impl IntoResponse {
+    let cm = match manager.channel_manager() {
+        Some(cm) => cm,
+        None => {
+            return error_response(
+                StatusCode::NOT_FOUND,
+                "No channel gateway configured".to_string(),
+            );
+        }
+    };
+
+    let platform = match req.platform.as_str() {
+        "slack" => agentix_core::channel::ChannelPlatformType::Slack,
+        "telegram" => agentix_core::channel::ChannelPlatformType::Telegram,
+        "discord" => agentix_core::channel::ChannelPlatformType::Discord,
+        other => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                format!("Unknown platform: {}", other),
+            );
+        }
+    };
+
+    let severity = match req.severity.as_str() {
+        "info" => agentix_core::channel::NotificationSeverity::Info,
+        "warning" => agentix_core::channel::NotificationSeverity::Warning,
+        "error" => agentix_core::channel::NotificationSeverity::Error,
+        "critical" => agentix_core::channel::NotificationSeverity::Critical,
+        other => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                format!("Unknown severity: {}. Use info, warning, error, or critical.", other),
+            );
+        }
+    };
+
+    let target = agentix_core::channel::NotificationTarget {
+        platform,
+        channel_id: req.channel_id.clone(),
+        thread_id: None,
+    };
+
+    let payload = agentix_core::channel::NotificationPayload {
+        agent_name: req.agent_name.unwrap_or_else(|| "cli".to_string()),
+        title: req.title,
+        body: req.body,
+        severity,
+        run_id: None,
+        metadata: HashMap::new(),
+    };
+
+    match cm.send_notification(&target, &payload).await {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": "sent",
+                "channel_id": req.channel_id
+            })),
+        )
+            .into_response(),
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to send notification: {}", e),
+        ),
+    }
+}
+
+/// POST /webhooks/channels/:platform — receive inbound webhook from a channel platform
+async fn channel_webhook(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(platform_str): AxumPath<String>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let cm = match manager.channel_manager() {
+        Some(cm) => cm,
+        None => {
+            return error_response(
+                StatusCode::NOT_FOUND,
+                "No channel gateway configured".to_string(),
+            );
+        }
+    };
+
+    let platform = match platform_str.as_str() {
+        "slack" => agentix_core::channel::ChannelPlatformType::Slack,
+        "telegram" => agentix_core::channel::ChannelPlatformType::Telegram,
+        "discord" => agentix_core::channel::ChannelPlatformType::Discord,
+        other => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                format!("Unknown platform: {}", other),
+            );
+        }
+    };
+
+    // Check for Slack url_verification challenge (return it directly)
+    if platform == agentix_core::channel::ChannelPlatformType::Slack {
+        if let Ok(body_val) = serde_json::from_slice::<serde_json::Value>(&body) {
+            if body_val.get("type").and_then(|v| v.as_str()) == Some("url_verification") {
+                if let Some(challenge) = body_val.get("challenge").and_then(|v| v.as_str()) {
+                    return (StatusCode::OK, Json(serde_json::json!({ "challenge": challenge }))).into_response();
+                }
+            }
+        }
+    }
+
+    // Convert headers to HashMap for the gateway
+    let mut header_map: HashMap<String, String> = HashMap::new();
+    for (name, value) in headers.iter() {
+        if let Ok(v) = value.to_str() {
+            header_map.insert(name.as_str().to_lowercase(), v.to_string());
+        }
+    }
+
+    // Parse the webhook using the appropriate gateway adapter (via trait method)
+    let gw = match cm.get_gateway(&platform) {
+        Some(gw) => gw,
+        None => {
+            return error_response(
+                StatusCode::NOT_FOUND,
+                format!("{} gateway not configured", platform_str),
+            );
+        }
+    };
+
+    let message = gw.parse_webhook(&body, &header_map);
+
+    match message {
+        Ok(Some(channel_msg)) => {
+            // Route to the correct agent
+            let agent_name = match cm.route_inbound(channel_msg.platform.clone(), &channel_msg.channel_id) {
+                Some(name) => name,
+                None => {
+                    tracing::debug!(
+                        "No inbound route for {:?} channel {}",
+                        channel_msg.platform,
+                        channel_msg.channel_id
+                    );
+                    return (StatusCode::OK, Json(serde_json::json!({ "status": "no_route" }))).into_response();
+                }
+            };
+
+            // Trigger the agent run with the message text
+            let mut context = HashMap::new();
+            context.insert("channel_id".to_string(), channel_msg.channel_id.clone());
+            context.insert("user_id".to_string(), channel_msg.user_id.clone());
+            context.insert("platform".to_string(), channel_msg.platform.to_string());
+            let trigger_event = agentix_core::TriggerEvent {
+                source: TriggerSource::Webhook,
+                payload: serde_json::json!({ "text": channel_msg.text }),
+                context,
+                fired_at: chrono::Utc::now(),
+                trigger_id: format!("channel-{}-{}", platform_str, channel_msg.channel_id),
+            };
+
+            match manager.run_agent_with_trigger(&agent_name, trigger_event).await {
+                Ok(run_id) => {
+                    // Wait briefly for the run to complete and send response
+                    // In production, this would need a more sophisticated approach
+                    tracing::info!(
+                        "Channel webhook triggered agent '{}' → run '{}'",
+                        agent_name,
+                        run_id
+                    );
+                    (
+                        StatusCode::OK,
+                        Json(serde_json::json!({
+                            "status": "triggered",
+                            "agent": agent_name,
+                            "run_id": run_id,
+                        })),
+                    )
+                        .into_response()
+                }
+                Err(e) => {
+                    tracing::error!("Failed to trigger agent '{}': {}", agent_name, e);
+                    error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to trigger agent: {}", e),
+                    )
+                }
+            }
+        }
+        Ok(None) => {
+            // Acknowledged but no action needed (url_verification, non-mention, etc.)
+            (StatusCode::OK, Json(serde_json::json!({ "status": "acknowledged" }))).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to parse channel webhook: {}", e);
+            error_response(
+                StatusCode::BAD_REQUEST,
+                format!("Invalid webhook payload: {}", e),
+            )
+        }
+    }
 }
