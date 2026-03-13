@@ -31,11 +31,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 22 of 22 (Command Center Svelte) — IN PROGRESS
-Plan: 1 of TBD in current phase
-Status: 22-01 complete — SvelteKit scaffold, sidebar, API types, REST client
-Last activity: 2026-03-13 — 22-01 SvelteKit App Scaffold executed
+Plan: 2 of TBD in current phase
+Status: 22-02 complete — WebSocket /ws endpoint with EventBroadcaster fan-out
+Last activity: 2026-03-13 — 22-02 WebSocket backend implemented
 
-Progress: [█████████░] 95%
+Progress: [█████████░] 96%
 
 ---
 
@@ -68,6 +68,8 @@ Progress: [█████████░] 95%
 - Channel routing via TriggerEvent for consistency with existing trigger system
 - Command Center uses @sveltejs/adapter-static with fallback: 'index.html' for SPA routing
 - API client reads gateway URL from Svelte store (default localhost:7777, persisted to localStorage)
+- GatewayRouter builder pattern: create_router() returns GatewayRouter, .with_broadcaster() returns Router with /ws + Extension layer
+- EventBroadcaster via axum Extension layer allows optional event broadcasting from REST handlers without changing state type
 
 ### Open Questions
 
@@ -82,8 +84,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 22-01-PLAN.md — SvelteKit scaffold + API client
-Next: Execute Phase 22 Plan 02 (Agent list and detail views)
+Stopped at: Completed 22-02-PLAN.md — WebSocket /ws endpoint + EventBroadcaster
+Next: Execute Phase 22 Plan 03 (Agent list and detail views in SvelteKit)
 Resume file: None
 
 ---
