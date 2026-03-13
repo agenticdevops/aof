@@ -81,6 +81,8 @@ regex = "1.10"
 
 # Cryptography
 sha2 = "0.10"
+aes-gcm = "0.10"
+base64 = "0.22"
 
 # Cron expression parsing and scheduling
 cron = "0.12"

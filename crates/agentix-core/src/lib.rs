@@ -17,6 +17,7 @@ pub mod memory;
 pub mod model;
 pub mod registry;
 pub mod schema;
+pub mod secret_store;
 pub mod security;
 pub mod skills;
 pub mod tool;
@@ -79,6 +80,7 @@ pub use cost::{
 pub use telemetry::{
     LogLevel, SpanKind, SpanRecord, SpanStatus, StructuredLogEntry, TraceContext,
 };
+pub use secret_store::{EncryptedSecret, SecretError, SecretRedactor, SecretStore};
 pub use security::{CapabilityPolicy, SecurityConfig, SsrfGuard, SsrfViolation};
 
 /// Version information
