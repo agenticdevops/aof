@@ -80,6 +80,10 @@ Progress: [█████████░] 97%
 - History section collapsed by default to keep pending requests prominent above the fold
 - Agent Builder skill browser as inline expandable section (not modal) for better form flow
 - Agent Builder edit mode loads from api.agents.get() typed object directly (not raw YAML) for robustness
+- Trace viewer uses SVG-only directed graph (no external library) — graph is small (2-10 nodes)
+- Coordination graph uses hierarchical layout (highest out-degree = coordinator at top) to avoid force layout jitter
+- spanKindColor returns hex strings for SVG compatibility; spanKindBgClass returns Tailwind classes for DOM elements
+- SvelteKit page.params type is string | undefined — use ?? '' fallback on required route params
 
 ### Open Questions
 
