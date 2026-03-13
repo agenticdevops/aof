@@ -62,8 +62,8 @@ pub use agent::{
     ResearchPhaseConfig, SkillEntry, ToolEntry, VectorMemoryConfig,
 };
 pub use config::{
-    GatewayConfig, ProviderConfig, WorkspaceConfig, WorkspaceDefaults, WorkspaceMetadata,
-    WorkspaceSpec,
+    GatewayConfig, ProviderConfig, TelemetryConfig, WorkspaceConfig, WorkspaceDefaults,
+    WorkspaceMetadata, WorkspaceSpec,
 };
 pub use skills::{BuiltinSkillPack, SkillRegistry};
 pub use coordination::{

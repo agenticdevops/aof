@@ -96,6 +96,7 @@ fn execute_interactive() -> Result<()> {
                 port,
             },
             agents_dir: agents_dir.clone(),
+            telemetry: None,
         },
     };
 
@@ -177,6 +178,7 @@ fn execute_non_interactive() -> Result<()> {
                 port,
             },
             agents_dir: agents_dir.clone(),
+            telemetry: None,
         },
     };
 

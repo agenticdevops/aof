@@ -71,6 +71,46 @@ pub struct WorkspaceSpec {
     /// Root directory for agent discovery.
     #[serde(default = "default_agents_dir")]
     pub agents_dir: String,
+    /// Telemetry and observability settings (Phase 18).
+    #[serde(default)]
+    pub telemetry: Option<TelemetryConfig>,
+}
+
+/// Telemetry configuration for workspace-level observability settings.
+///
+/// Controls trace collection, OpenTelemetry export, and Prometheus metrics.
+///
+/// ```yaml
+/// spec:
+///   telemetry:
+///     enabled: true
+///     otlp_endpoint: "http://localhost:4318/v1/traces"
+///     service_name: "my-workspace"
+///     export_metrics: true
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelemetryConfig {
+    /// Whether telemetry collection is enabled (default: true).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// OTLP HTTP endpoint for span export (e.g., "http://localhost:4318/v1/traces").
+    /// When set, spans are pushed to this endpoint after each agent run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub otlp_endpoint: Option<String>,
+    /// Service name reported in OTel resource attributes (default: "agentix").
+    #[serde(default = "default_service_name")]
+    pub service_name: String,
+    /// Whether to export Prometheus metrics at /metrics (default: true).
+    #[serde(default = "default_true")]
+    pub export_metrics: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_service_name() -> String {
+    "agentix".to_string()
 }
 
 fn default_agents_dir() -> String {

@@ -9,7 +9,9 @@ pub mod gateway;
 pub mod health;
 pub mod memory;
 pub mod metrics;
+pub mod otel_exporter;
 pub mod shutdown;
+pub mod trace_store;
 pub mod streaming;
 pub mod telemetry;
 pub mod tools;
@@ -23,7 +25,9 @@ pub use health::{
     check_readiness, DependencyState, DependencyStatus, HealthResponse, ReadinessResponse,
 };
 pub use metrics::AofMetrics;
+pub use otel_exporter::OtelExporter;
 pub use telemetry::TraceCollector;
+pub use trace_store::TraceStore;
 pub use shutdown::{GracefulShutdown, ShutdownHandler};
 
 // Re-export core types

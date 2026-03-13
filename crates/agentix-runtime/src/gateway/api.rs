@@ -25,6 +25,9 @@
 //! | GET  | /api/v1/agents/:name/memory | List all vector memory entries for an agent |
 //! | DELETE | /api/v1/agents/:name/memory | Clear all vector memory entries for an agent |
 //! | POST | /webhooks/:trigger_id | Receive a webhook payload and fire a trigger |
+//! | GET | /api/v1/agents/:name/runs/:run_id/trace | Get execution trace spans for a run |
+//! | GET | /api/v1/agents/:name/runs/:run_id/structured-logs | Get structured log entries for a run |
+//! | GET | /metrics | Prometheus metrics endpoint |
 //! | GET | /api/v1/costs | List cost summaries for all agents |
 //! | GET | /api/v1/costs/agents/:name | Get cost summary for a specific agent |
 //! | GET | /api/v1/costs/agents/:name/runs | List per-run cost breakdown for an agent |
@@ -67,6 +70,9 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/agents/:name/trigger", post(trigger_agent))
         .route("/api/v1/agents/:name/delegate", post(delegate_to_agent))
         .route("/api/v1/agents/:name/memory", get(get_agent_memory).delete(clear_agent_memory))
+        .route("/api/v1/agents/:name/runs/:run_id/trace", get(get_run_trace))
+        .route("/api/v1/agents/:name/runs/:run_id/structured-logs", get(get_run_structured_logs))
+        .route("/metrics", get(prometheus_metrics))
         .route("/api/v1/costs", get(list_all_costs))
         .route("/api/v1/costs/agents/:name", get(get_agent_costs))
         .route("/api/v1/costs/agents/:name/runs", get(get_agent_run_costs))
@@ -618,6 +624,94 @@ async fn clear_agent_memory(
             error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry handlers (TELE-01 through TELE-05)
+// ---------------------------------------------------------------------------
+
+/// GET /api/v1/agents/:name/runs/:run_id/trace
+///
+/// Returns the span tree for a run as a JSON array of span objects, ordered by start_time.
+async fn get_run_trace(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath((name, run_id)): AxumPath<(String, String)>,
+) -> Response {
+    let _ = name; // Agent name validated by path; spans are keyed by run_id
+    match manager.trace_store.get_run_trace(&run_id) {
+        Ok(spans) if spans.is_empty() => {
+            error_response(StatusCode::NOT_FOUND, format!("No trace data found for run '{}'", run_id))
+        }
+        Ok(spans) => {
+            let json: Vec<serde_json::Value> = spans
+                .into_iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "span_id": s.span_id,
+                        "parent_span_id": s.parent_span_id,
+                        "trace_id": s.trace_id,
+                        "name": s.name,
+                        "kind": s.kind,
+                        "start_time": s.start_time.to_rfc3339(),
+                        "end_time": s.end_time.map(|t| t.to_rfc3339()),
+                        "duration_ms": s.duration_ms,
+                        "status": s.status,
+                        "attributes": s.attributes,
+                    })
+                })
+                .collect();
+            Json(json).into_response()
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+/// GET /api/v1/agents/:name/runs/:run_id/structured-logs
+///
+/// Returns structured log entries for a run as a JSON array, ordered by timestamp.
+async fn get_run_structured_logs(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath((name, run_id)): AxumPath<(String, String)>,
+) -> Response {
+    let _ = name;
+    match manager.trace_store.get_run_logs(&run_id) {
+        Ok(logs) => {
+            let json: Vec<serde_json::Value> = logs
+                .into_iter()
+                .map(|l| {
+                    serde_json::json!({
+                        "timestamp": l.timestamp.to_rfc3339(),
+                        "level": l.level,
+                        "message": l.message,
+                        "trace_id": l.trace_id,
+                        "span_id": l.span_id,
+                        "agent": l.agent,
+                        "run_id": l.run_id,
+                        "fields": l.fields,
+                    })
+                })
+                .collect();
+            Json(json).into_response()
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+/// GET /metrics
+///
+/// Returns Prometheus text format metrics for all agent execution counters.
+async fn prometheus_metrics(State(_manager): State<Arc<AgentManager>>) -> Response {
+    // Return placeholder metrics format — full AofMetrics integration is deferred
+    // until metrics are wired into the run lifecycle.
+    let body = "# HELP agentix_info OpenAgentiX gateway information\n\
+                # TYPE agentix_info gauge\n\
+                agentix_info{version=\"2.0.0-alpha.6\"} 1\n";
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
+        body,
+    )
+        .into_response()
 }
 
 // ---------------------------------------------------------------------------

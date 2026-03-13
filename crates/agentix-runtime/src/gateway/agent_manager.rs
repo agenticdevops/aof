@@ -27,8 +27,12 @@ use agentix_llm::ProviderFactory;
 use crate::cost_store::CostStore;
 use crate::executor::react_loop::{ReActConfig, ReActEngine, ReActEvent, RunResult, ToolExecutor};
 use crate::gateway::run_store::{RunRecord, RunStore};
+use crate::otel_exporter::OtelExporter;
 use crate::streaming::EventReceiver;
+use crate::telemetry::TraceCollector;
 use crate::tools::{CliToolExecutor, CompositeToolExecutor, McpToolExecutor, WasmToolExecutor};
+use crate::trace_store::TraceStore;
+use agentix_core::telemetry::TraceContext;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -148,6 +152,10 @@ pub struct AgentManager {
     pub run_store: Arc<RunStore>,
     /// Persistent SQLite cost tracking store (Phase 17).
     pub cost_store: Arc<CostStore>,
+    /// Persistent SQLite trace store for spans and structured logs (Phase 18).
+    pub trace_store: Arc<TraceStore>,
+    /// Optional OTel exporter for pushing spans to external collectors (Phase 18).
+    otel_exporter: Option<OtelExporter>,
     /// Per-agent bounded inboxes for coordination (COORD-01).
     /// One inbox per registered agent, keyed by agent name.
     inboxes: DashMap<String, Arc<AgentInbox>>,
@@ -176,16 +184,42 @@ impl AgentManager {
         }
     }
 
-    /// Ensure the data directory exists and return paths for run and cost DBs.
-    fn data_db_paths(data_dir: &std::path::Path) -> (String, String) {
+    /// Open the TraceStore at the given path (`:memory:` for tests, real path for production).
+    fn open_trace_store_at(path: &str) -> Arc<TraceStore> {
+        match TraceStore::open(path) {
+            Ok(store) => Arc::new(store),
+            Err(e) => {
+                tracing::warn!("Failed to open trace store at '{}': {} — falling back to in-memory", path, e);
+                Arc::new(TraceStore::open(":memory:").expect("in-memory SQLite"))
+            }
+        }
+    }
+
+    /// Build an OtelExporter from workspace config if telemetry is configured.
+    fn build_otel_exporter(workspace_config: &Option<WorkspaceConfig>) -> Option<OtelExporter> {
+        workspace_config.as_ref().and_then(|wc| {
+            wc.spec.telemetry.as_ref().and_then(|tc| {
+                if tc.enabled && tc.otlp_endpoint.is_some() {
+                    Some(OtelExporter::new(tc.clone()))
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
+    /// Ensure the data directory exists and return paths for run, cost, and trace DBs.
+    fn data_db_paths(data_dir: &std::path::Path) -> (String, String, String) {
         if let Err(e) = std::fs::create_dir_all(data_dir) {
             tracing::warn!("Failed to create data dir '{}': {}", data_dir.display(), e);
         }
         let run_db = data_dir.join("runs.db");
         let cost_db = data_dir.join("cost.db");
+        let trace_db = data_dir.join("trace.db");
         (
             run_db.to_str().unwrap_or("./agentix-runs.db").to_string(),
             cost_db.to_str().unwrap_or("./agentix-cost.db").to_string(),
+            trace_db.to_str().unwrap_or("./agentix-trace.db").to_string(),
         )
     }
 
@@ -197,6 +231,8 @@ impl AgentManager {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
         let run_store = Self::open_run_store_at(":memory:");
         let cost_store = Self::open_cost_store_at(":memory:");
+        let trace_store = Self::open_trace_store_at(":memory:");
+        let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -206,6 +242,8 @@ impl AgentManager {
             trigger_event_tx,
             run_store,
             cost_store,
+            trace_store,
+            otel_exporter,
             inboxes: DashMap::new(),
         });
         // Spawn the trigger dispatcher background task
@@ -219,11 +257,14 @@ impl AgentManager {
     /// Used by `Gateway::start` for production deployments.
     pub fn new_with_data_dir(workspace_config: Option<WorkspaceConfig>, data_dir: &std::path::Path) -> Arc<Self> {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
-        let (run_db_path, cost_db_path) = Self::data_db_paths(data_dir);
+        let (run_db_path, cost_db_path, trace_db_path) = Self::data_db_paths(data_dir);
         let run_store = Self::open_run_store_at(&run_db_path);
         let cost_store = Self::open_cost_store_at(&cost_db_path);
+        let trace_store = Self::open_trace_store_at(&trace_db_path);
+        let otel_exporter = Self::build_otel_exporter(&workspace_config);
         tracing::info!("Run store: {}", run_db_path);
         tracing::info!("Cost store: {}", cost_db_path);
+        tracing::info!("Trace store: {}", trace_db_path);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -233,6 +274,8 @@ impl AgentManager {
             trigger_event_tx,
             run_store,
             cost_store,
+            trace_store,
+            otel_exporter,
             inboxes: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
@@ -244,6 +287,8 @@ impl AgentManager {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
         let run_store = Self::open_run_store_at(":memory:");
         let cost_store = Self::open_cost_store_at(":memory:");
+        let trace_store = Self::open_trace_store_at(":memory:");
+        let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -253,6 +298,8 @@ impl AgentManager {
             trigger_event_tx,
             run_store,
             cost_store,
+            trace_store,
+            otel_exporter,
             inboxes: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
@@ -658,14 +705,14 @@ impl AgentManager {
 
         tokio::spawn(async move {
             let result = manager
-                .execute_run(&definition, &input_task, event_tx_task, cancel_rx)
+                .execute_run(&definition, &input_task, &run_id_task, event_tx_task, cancel_rx)
                 .await;
 
             // Update run state on completion
             if let Some(mut run) = manager.runs.get_mut(&run_id_task) {
                 run.completed_at = Some(chrono::Utc::now());
                 match &result {
-                    Ok(run_result) => {
+                    Ok((run_result, _)) => {
                         run.status = RunStatus::Completed;
                         run.output = Some(run_result.output.clone());
                         run.iterations = run_result.iterations;
@@ -682,7 +729,7 @@ impl AgentManager {
             }
 
             // Record cost after successful run (COST-01, COST-02)
-            if let Ok(run_result) = &result {
+            if let Ok((run_result, _)) = &result {
                 if run_result.total_input_tokens > 0 || run_result.total_output_tokens > 0 {
                     use agentix_core::{CostRecord, default_model_pricing, calculate_cost};
                     let pricing_table = default_model_pricing();
@@ -710,6 +757,29 @@ impl AgentManager {
                 }
             }
 
+            // Persist trace spans and logs after run (Phase 18 — TELE-01/TELE-04)
+            if let Ok((_, Some(ref collector))) = &result {
+                let spans = collector.get_spans();
+                let logs = collector.get_logs();
+                if let Err(e) = manager.trace_store.insert_spans(&spans, &agent_name_task, &run_id_task) {
+                    tracing::warn!("Failed to persist trace spans for run '{}': {}", run_id_task, e);
+                }
+                if let Err(e) = manager.trace_store.insert_logs(&logs) {
+                    tracing::warn!("Failed to persist structured logs for run '{}': {}", run_id_task, e);
+                }
+
+                // Push spans to OTel collector if configured (fire-and-forget)
+                if let Some(ref exporter) = manager.otel_exporter {
+                    let exporter = exporter.clone();
+                    let spans = spans.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = exporter.push_to_collector(&spans).await {
+                            tracing::warn!("Failed to push spans to OTel collector: {}", e);
+                        }
+                    });
+                }
+            }
+
             // Mark agent as ready again
             if let Some(mut agent) = manager.agents.get_mut(&agent_name_task) {
                 agent.status = AgentStatus::Ready;
@@ -724,9 +794,10 @@ impl AgentManager {
         &self,
         definition: &AgentDefinition,
         input: &str,
+        run_id: &str,
         event_tx: broadcast::Sender<ReActEvent>,
         cancel_rx: oneshot::Receiver<()>,
-    ) -> Result<RunResult, AgentixError> {
+    ) -> Result<(RunResult, Option<TraceCollector>), AgentixError> {
         // Create the LLM model from the definition's model_preferred field
         let model = create_provider_from_definition(definition, &self.workspace_config)?;
 
@@ -746,17 +817,24 @@ impl AgentManager {
         let _ = wasm_executor; // Reserved for future 3-way composite
         let tool_executor = Arc::new(composite) as Arc<dyn ToolExecutor>;
 
+        // Create trace collector for telemetry (Phase 18)
+        let trace_ctx = TraceContext::new_root(&definition.name, run_id);
+        let trace_collector = TraceCollector::new(trace_ctx);
+
         let engine = ReActEngine::new(model, tool_executor, config)
-            .with_event_stream(event_tx.clone());
+            .with_event_stream(event_tx.clone())
+            .with_trace_collector(trace_collector.clone());
 
         // Race between the run and the cancel signal
-        tokio::select! {
+        let result = tokio::select! {
             result = engine.run(definition, input) => result,
             _ = cancel_rx => {
                 let _ = event_tx.send(ReActEvent::Error("Run cancelled".to_string()));
                 Err(AgentixError::Runtime("Run cancelled".to_string()))
             }
-        }
+        };
+
+        result.map(|r| (r, Some(trace_collector)))
     }
 
     /// Run an agent triggered by a `TriggerEvent`.
