@@ -23,7 +23,7 @@
 - [x] **Phase 15: Triggers + Scheduling** - Cron, webhook, GitHub, Jira, agent-to-agent, run persistence (completed 2026-03-13)
 - [x] **Phase 16: Agent Coordination + Memory** - Multi-agent delegation, vector memory, semantic recall, research phase (completed 2026-03-13)
 - [x] **Phase 17: Cost Tracking + Budgets** - Per-call/run/agent cost tracking, daily budget limits, smart model routing (completed 2026-03-13)
-- [ ] **Phase 18: Telemetry + Observability** - OTel traces + metrics, structured logs, exportable to Grafana/Datadog
+- [x] **Phase 18: Telemetry + Observability** - OTel traces + metrics, structured logs, exportable to Grafana/Datadog (completed 2026-03-13)
 - [ ] **Phase 19: Security** - WASM capability enforcement, secret encryption, audit trail, SSRF protection
 - [ ] **Phase 20: Approval Workflows** - Human-in-the-loop pause/resume, approval queue, three autonomy modes
 - [ ] **Phase 21: Gateway (Multi-Channel)** - Slack, Telegram, Discord bi-directional, per-channel agent routing
@@ -114,11 +114,11 @@ Plans:
 **Plans**: 5 plans in 4 waves
 
 Plans:
-- [ ] 18-01-PLAN.md — Telemetry core types (TraceContext, SpanRecord, SpanKind, SpanStatus, StructuredLogEntry, LogLevel) in agentix-core (TDD)
-- [ ] 18-02-PLAN.md — TraceCollector runtime type + ReAct loop instrumentation (TDD: spans for run, iteration, LLM call, tool call, research, memory recall)
-- [ ] 18-03-PLAN.md — TraceStore SQLite persistence + AgentManager wiring + REST API trace endpoints
-- [ ] 18-04-PLAN.md — OTel exporter (OTLP JSON) + Prometheus /metrics endpoint + TelemetryConfig + OTel integration guide
-- [ ] 18-05-PLAN.md — CLI `agentix logs --trace` waterfall viewer + quickstart examples + reference docs + CHANGELOG v2.0.0-alpha.6
+- [x] 18-01-PLAN.md — Telemetry core types (TraceContext, SpanRecord, SpanKind, SpanStatus, StructuredLogEntry, LogLevel) in agentix-core (TDD)
+- [x] 18-02-PLAN.md — TraceCollector runtime type + ReAct loop instrumentation (TDD: spans for run, iteration, LLM call, tool call, research, memory recall)
+- [x] 18-03-PLAN.md — TraceStore SQLite persistence + AgentManager wiring + REST API trace endpoints
+- [x] 18-04-PLAN.md — OTel exporter (OTLP JSON) + Prometheus /metrics endpoint + TelemetryConfig + OTel integration guide
+- [x] 18-05-PLAN.md — CLI `agentix logs --trace` waterfall viewer + quickstart examples + reference docs + CHANGELOG v2.0.0-alpha.6
 
 ### Phase 19: Security
 **Goal**: Untrusted tools are sandbox-enforced by WASM capabilities, secrets are encrypted at rest and never logged, every agent action is audited, and SSRF attacks are blocked at the network layer.
@@ -178,7 +178,7 @@ Plans:
 | 15. Triggers + Scheduling | v2.0 | Complete    | 2026-03-13 | - |
 | 16. Agent Coordination + Memory | v2.0 | Complete    | 2026-03-13 | - |
 | 17. Cost Tracking + Budgets | v2.0 | Complete    | 2026-03-13 | - |
-| 18. Telemetry + Observability | 4/5 | In Progress|  | - |
+| 18. Telemetry + Observability | 5/5 | Complete   | 2026-03-13 | - |
 | 19. Security | v2.0 | 0/TBD | Not started | - |
 | 20. Approval Workflows | v2.0 | 0/TBD | Not started | - |
 | 21. Gateway (Multi-Channel) | v2.0 | 0/TBD | Not started | - |
