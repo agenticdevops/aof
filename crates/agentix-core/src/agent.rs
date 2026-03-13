@@ -1823,6 +1823,9 @@ pub struct ToolEntry {
     /// Argument templates using `{{var}}` syntax.
     #[serde(default)]
     pub args: Vec<String>,
+    /// WASM capability declarations for sandboxed tool execution (Phase 19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<Vec<serde_json::Value>>,
 }
 
 /// Trigger configuration entry from agent YAML `triggers:` field.
@@ -2240,6 +2243,10 @@ impl FlatYamlLoader {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
                     args: vec![],
+                    capabilities: val
+                        .get("capabilities")
+                        .and_then(|v| v.as_sequence())
+                        .map(|seq| seq.iter().filter_map(|item| serde_json::to_value(item).ok()).collect()),
                 });
             }
         }

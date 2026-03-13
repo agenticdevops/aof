@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::agent::AgentMode;
+use crate::security::SecurityConfig;
 
 // ---------------------------------------------------------------------------
 // WorkspaceConfig — top-level workspace configuration
@@ -74,6 +75,9 @@ pub struct WorkspaceSpec {
     /// Telemetry and observability settings (Phase 18).
     #[serde(default)]
     pub telemetry: Option<TelemetryConfig>,
+    /// Security settings (Phase 19).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security: Option<SecurityConfig>,
 }
 
 /// Telemetry configuration for workspace-level observability settings.

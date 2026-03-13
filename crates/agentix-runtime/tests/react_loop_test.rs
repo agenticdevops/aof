@@ -169,6 +169,7 @@ fn make_tool_entry(name: &str) -> ToolEntry {
         description: Some(format!("Test tool: {}", name)),
         server: None,
         args: vec![],
+        capabilities: None,
     }
 }
 
@@ -213,6 +214,10 @@ fn default_config() -> ReActConfig {
         max_iterations: 10,
         timeout: Duration::from_secs(30),
         max_tokens_per_run: None,
+        ssrf_guard: None,
+        secret_redactor: None,
+        audit_store: None,
+        agent_name: "test-agent".to_string(),
     }
 }
 
@@ -334,6 +339,10 @@ async fn test_react_loop_max_iterations_reached() {
         max_iterations: 2,
         timeout: Duration::from_secs(30),
         max_tokens_per_run: None,
+        ssrf_guard: None,
+        secret_redactor: None,
+        audit_store: None,
+        agent_name: "test-agent".to_string(),
     };
 
     let engine = ReActEngine::new(model, executor, config);

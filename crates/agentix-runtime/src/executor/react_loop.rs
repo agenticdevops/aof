@@ -17,12 +17,14 @@ use std::time::Duration;
 
 use agentix_core::{
     AgentDefinition, AgentixError, ModelRequest, RequestMessage, ToolCall, ToolEntry,
+    SecurityConfig, SsrfGuard, SecretRedactor,
 };
 use agentix_core::model::MessageRole;
 use agentix_core::vector_memory::VectorMemoryBackend;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
+use crate::audit_store::{AuditStore, AuditEntry, AuditEventType, AuditOutcome};
 use crate::memory::{format_memory_context, hash_embedding, open_agent_memory};
 use crate::telemetry::TraceCollector;
 use agentix_core::telemetry::{LogLevel, SpanKind};
@@ -98,6 +100,14 @@ pub struct ReActConfig {
     pub timeout: Duration,
     /// Per-run token limit (input + output combined). Run stops when exceeded (COST-05).
     pub max_tokens_per_run: Option<u64>,
+    /// SSRF guard for HTTP tool calls (Phase 19).
+    pub ssrf_guard: Option<Arc<SsrfGuard>>,
+    /// Secret redactor for sanitizing tool outputs in traces/logs (Phase 19).
+    pub secret_redactor: Option<Arc<SecretRedactor>>,
+    /// Audit store for logging every tool call and LLM call (Phase 19).
+    pub audit_store: Option<Arc<AuditStore>>,
+    /// Agent name for audit entries (Phase 19).
+    pub agent_name: String,
 }
 
 impl ReActConfig {
@@ -107,6 +117,10 @@ impl ReActConfig {
             max_iterations: def.max_iterations,
             timeout: Duration::from_secs(def.timeout_secs),
             max_tokens_per_run: def.budget.as_ref().and_then(|b| b.max_tokens_per_run),
+            ssrf_guard: None,
+            secret_redactor: None,
+            audit_store: None,
+            agent_name: def.name.clone(),
         }
     }
 }
@@ -418,6 +432,29 @@ impl ReActEngine {
                     collector.record_span(span);
                 }
 
+                // Phase 19: Audit logging for LLM calls (non-critical)
+                if let Some(ref audit) = self.config.audit_store {
+                    let mut details = HashMap::new();
+                    details.insert("model".to_string(), serde_json::json!(definition.model_preferred.as_deref().unwrap_or("unknown")));
+                    details.insert("input_tokens".to_string(), serde_json::json!(response.usage.input_tokens));
+                    details.insert("output_tokens".to_string(), serde_json::json!(response.usage.output_tokens));
+                    let audit_entry = AuditEntry {
+                        id: None,
+                        timestamp: chrono::Utc::now(),
+                        event_type: AuditEventType::LlmCall,
+                        agent_name: self.config.agent_name.clone(),
+                        run_id: None,
+                        actor: format!("agent:{}", self.config.agent_name),
+                        action: format!("LLM call: {}", definition.model_preferred.as_deref().unwrap_or("unknown")),
+                        outcome: AuditOutcome::Success,
+                        details,
+                        trace_id: None,
+                    };
+                    if let Err(e) = audit.log_event(audit_entry) {
+                        tracing::warn!("Failed to log audit LlmCall: {}", e);
+                    }
+                }
+
                 // Accumulate token usage (COST-01)
                 total_input_tokens += response.usage.input_tokens as u64;
                 total_output_tokens += response.usage.output_tokens as u64;
@@ -556,7 +593,7 @@ impl ReActEngine {
                         .with_attribute("tool_name", &tool_call.name)
                     });
 
-                    let observation = self.dispatch_tool(definition, tool_call).await;
+                    let observation = self.dispatch_tool(definition, tool_call, None).await;
 
                     // Telemetry: complete ToolCall span
                     let tool_status = if observation.starts_with("Error:") || observation.starts_with("Tool '") && observation.contains("failed:") {
@@ -708,10 +745,16 @@ impl ReActEngine {
     /// Looks up the `ToolEntry` from `definition.tools` by name.
     /// If not found, returns an error observation rather than panicking.
     /// If the tool executor returns an error, formats it as an observation.
+    ///
+    /// Security integrations (Phase 19):
+    /// - SSRF guard checks URL in tool input before execution
+    /// - Audit logging for every tool call (success or failure)
+    /// - Secret redaction on tool output before returning
     async fn dispatch_tool(
         &self,
         definition: &AgentDefinition,
         tool_call: &ToolCall,
+        run_id: Option<&str>,
     ) -> String {
         // Find the ToolEntry by name.
         let tool_entry = definition.tools.iter().find(|t| t.name == tool_call.name);
@@ -722,13 +765,78 @@ impl ReActEngine {
                 tool_call.name
             ),
             Some(entry) => {
-                match self
+                // Phase 19: SSRF guard — check URL in tool input before execution
+                if let Some(ref guard) = self.config.ssrf_guard {
+                    if let Some(url) = tool_call.arguments.get("url").and_then(|v| v.as_str()) {
+                        if let Err(violation) = guard.check_url(url) {
+                            // Log security violation to audit store (non-critical)
+                            if let Some(ref audit) = self.config.audit_store {
+                                let mut details = HashMap::new();
+                                details.insert("tool_name".to_string(), serde_json::json!(tool_call.name));
+                                details.insert("blocked_url".to_string(), serde_json::json!(url));
+                                let audit_entry = AuditEntry {
+                                    id: None,
+                                    timestamp: chrono::Utc::now(),
+                                    event_type: AuditEventType::SecurityViolation,
+                                    agent_name: self.config.agent_name.clone(),
+                                    run_id: run_id.map(|s| s.to_string()),
+                                    actor: format!("agent:{}", self.config.agent_name),
+                                    action: format!("SSRF blocked: {}", violation),
+                                    outcome: AuditOutcome::Blocked(violation.to_string()),
+                                    details,
+                                    trace_id: None,
+                                };
+                                if let Err(e) = audit.log_event(audit_entry) {
+                                    tracing::warn!("Failed to log audit SSRF violation: {}", e);
+                                }
+                            }
+                            return format!("SSRF protection: {}", violation);
+                        }
+                    }
+                }
+
+                let start_time = std::time::Instant::now();
+                let result = self
                     .tool_executor
                     .execute(entry, tool_call.arguments.clone())
-                    .await
-                {
+                    .await;
+                let duration_ms = start_time.elapsed().as_millis() as u64;
+
+                // Phase 19: Audit logging for tool calls (non-critical)
+                if let Some(ref audit) = self.config.audit_store {
+                    let mut details = HashMap::new();
+                    details.insert("tool_name".to_string(), serde_json::json!(tool_call.name));
+                    details.insert("duration_ms".to_string(), serde_json::json!(duration_ms));
+                    let audit_entry = AuditEntry {
+                        id: None,
+                        timestamp: chrono::Utc::now(),
+                        event_type: AuditEventType::ToolCall,
+                        agent_name: self.config.agent_name.clone(),
+                        run_id: run_id.map(|s| s.to_string()),
+                        actor: format!("agent:{}", self.config.agent_name),
+                        action: format!("Tool call: {}", tool_call.name),
+                        outcome: match &result {
+                            Ok(_) => AuditOutcome::Success,
+                            Err(e) => AuditOutcome::Failure(e.to_string()),
+                        },
+                        details,
+                        trace_id: None,
+                    };
+                    if let Err(e) = audit.log_event(audit_entry) {
+                        tracing::warn!("Failed to log audit ToolCall: {}", e);
+                    }
+                }
+
+                let output = match result {
                     Ok(output) => output,
                     Err(err) => format!("Tool '{}' failed: {}", tool_call.name, err),
+                };
+
+                // Phase 19: Secret redaction on tool output
+                if let Some(ref redactor) = self.config.secret_redactor {
+                    redactor.redact(&output)
+                } else {
+                    output
                 }
             }
         }

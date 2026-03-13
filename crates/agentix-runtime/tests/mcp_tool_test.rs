@@ -13,6 +13,7 @@ fn make_mcp_tool(server: &str) -> ToolEntry {
         description: Some("MCP test tool".to_string()),
         server: Some(server.to_string()),
         args: vec![],
+        capabilities: None,
     }
 }
 
@@ -24,6 +25,7 @@ fn make_shell_tool() -> ToolEntry {
         description: None,
         server: None,
         args: vec![],
+        capabilities: None,
     }
 }
 

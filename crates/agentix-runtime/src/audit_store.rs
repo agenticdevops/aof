@@ -142,6 +142,12 @@ pub struct AuditStore {
     conn: Arc<Mutex<Connection>>,
 }
 
+impl std::fmt::Debug for AuditStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuditStore").finish()
+    }
+}
+
 impl AuditStore {
     /// Open or create the audit database at the given path.
     ///

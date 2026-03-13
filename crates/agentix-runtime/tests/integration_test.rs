@@ -184,6 +184,7 @@ async fn sc4_agent_calls_cli_tool_in_react_loop() {
         description: Some("Echo input".to_string()),
         server: None,
         args: vec!["{{message}}".to_string()],
+        capabilities: None,
     };
 
     let result = executor
@@ -204,6 +205,7 @@ async fn sc4_agent_calls_cli_tool_in_react_loop() {
         description: None,
         server: None,
         args: vec![],
+        capabilities: None,
     };
 
     let error_result = executor.execute(&false_tool, serde_json::json!({})).await;

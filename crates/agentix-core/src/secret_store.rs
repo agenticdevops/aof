@@ -160,6 +160,14 @@ pub struct SecretRedactor {
     secrets: Vec<(String, String)>,
 }
 
+impl std::fmt::Debug for SecretRedactor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretRedactor")
+            .field("secrets_count", &self.secrets.len())
+            .finish()
+    }
+}
+
 impl SecretRedactor {
     /// Create a new SecretRedactor with the given secret name-value pairs.
     pub fn new(mut secrets: Vec<(String, String)>) -> Self {

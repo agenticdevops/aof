@@ -13,6 +13,7 @@ fn make_echo_tool() -> ToolEntry {
         description: Some("Echo test tool".to_string()),
         server: None,
         args: vec!["{{message}}".to_string()],
+        capabilities: None,
     }
 }
 
@@ -24,6 +25,7 @@ fn make_cli_tool(cmd: &str) -> ToolEntry {
         description: Some("CLI test tool".to_string()),
         server: None,
         args: vec![],
+        capabilities: None,
     }
 }
 
@@ -35,6 +37,7 @@ fn make_shell_tool(script: &str) -> ToolEntry {
         description: Some("Shell test tool".to_string()),
         server: None,
         args: vec![],
+        capabilities: None,
     }
 }
 
@@ -95,6 +98,7 @@ async fn test_missing_command_returns_err() {
         description: None,
         server: None,
         args: vec![],
+        capabilities: None,
     };
     let result = executor.execute(&tool, serde_json::json!({})).await;
     assert!(result.is_err());
@@ -112,6 +116,7 @@ async fn test_template_substitution_with_multiple_vars() {
         description: None,
         server: None,
         args: vec![],
+        capabilities: None,
     };
     let input = serde_json::json!({"first": "hello", "second": "world"});
     let result = executor.execute(&tool, input).await;
@@ -131,6 +136,7 @@ async fn test_mcp_tool_returns_not_implemented_err() {
         description: None,
         server: Some("my-server".to_string()),
         args: vec![],
+        capabilities: None,
     };
     let result = executor.execute(&tool, serde_json::json!({})).await;
     // MCP not yet wired — should return a descriptive error

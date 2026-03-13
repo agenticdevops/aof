@@ -879,7 +879,20 @@ impl AgentManager {
         // Create the LLM model from the definition's model_preferred field
         let model = create_provider_from_definition(definition, &self.workspace_config)?;
 
-        let config = ReActConfig::from_definition(definition);
+        let mut config = ReActConfig::from_definition(definition);
+
+        // Phase 19: Wire security components into ReActConfig
+        let security_config = self.workspace_config.as_ref()
+            .and_then(|wc| wc.spec.security.clone())
+            .unwrap_or_default();
+        if security_config.ssrf_protection {
+            config.ssrf_guard = Some(Arc::new(
+                agentix_core::SsrfGuard::with_allowed(security_config.allowed_private_endpoints.clone())
+            ));
+        }
+        config.audit_store = Some(self.audit_store.clone());
+        // SecretRedactor is populated per-agent when secrets are available
+        config.secret_redactor = None;
 
         // Build composite tool executor: CLI + MCP + WASM
         let cli_executor = CliToolExecutor::new();
