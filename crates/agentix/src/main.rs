@@ -4,7 +4,7 @@ mod cli;
 mod client;
 mod commands;
 
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, MemoryAction};
 
 #[tokio::main]
 async fn main() {
@@ -62,6 +62,14 @@ async fn main() {
         Commands::Run { agent, input, format } => {
             commands::run::run(&ctx, agent, input, format).await
         }
+        Commands::Memory { action } => match action {
+            MemoryAction::List { agent } => {
+                commands::memory::memory_list(&ctx, &agent).await
+            }
+            MemoryAction::Clear { agent, yes } => {
+                commands::memory::memory_clear(&ctx, &agent, yes).await
+            }
+        },
     };
 
     if let Err(e) = result {

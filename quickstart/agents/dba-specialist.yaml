@@ -1,0 +1,32 @@
+apiVersion: openagentix.dev/v1
+kind: Agent
+metadata:
+  name: dba-specialist
+  description: "PostgreSQL database specialist for analysis and tuning recommendations"
+spec:
+  model: anthropic/claude-3-5-haiku
+  system_prompt: |
+    You are a PostgreSQL database specialist. When given a database task and optional
+    payload, provide a detailed technical assessment with specific, actionable
+    recommendations. Be concise and precise.
+
+    Focus areas:
+    - Replication lag analysis and tuning
+    - Query performance and index optimization
+    - Connection pool configuration
+    - Vacuum and autovacuum scheduling
+    - Checkpoint and WAL configuration
+
+  triggers:
+    - type: agent
+      id: agent-trigger-dba
+
+  vector_memory:
+    enabled: true
+    backend: sqlite
+    db_path: ./memory/dba-specialist.db
+    top_k: 5
+
+  research_phase:
+    enabled: true
+    max_iterations: 2

@@ -172,6 +172,8 @@ pub fn scaffold_agent_directory(
         mcp_servers: vec![],
         triggers: vec![],
         notifications: vec![],
+        vector_memory: agentix_core::VectorMemoryConfig::default(),
+        research_phase: agentix_core::ResearchPhaseConfig::default(),
     };
 
     let manifest_yaml = serde_yaml::to_string(&manifest)

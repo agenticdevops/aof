@@ -546,19 +546,41 @@ async fn delegate_to_agent(
 
 /// GET /api/v1/agents/:name/memory
 ///
-/// Returns all vector memory entries for the named agent.
+/// Returns all vector memory entries for the named agent as a JSON array.
+/// Returns an empty array if memory is disabled for the agent.
 async fn get_agent_memory(
     State(manager): State<Arc<AgentManager>>,
     AxumPath(name): AxumPath<String>,
 ) -> Response {
-    // For now return an empty array — full SqliteVectorBackend integration
-    // requires AgentManager to hold per-agent backends (wired in Plan 16-04).
-    // This endpoint establishes the API contract.
-    if manager.get_agent(&name).is_none() {
-        return error_response(StatusCode::NOT_FOUND, format!("Agent '{}' not found", name));
+    match manager.list_agent_memory(&name).await {
+        Ok(entries) => {
+            let json_entries: Vec<serde_json::Value> = entries
+                .into_iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "id": e.id,
+                        "agent_id": e.agent_id,
+                        "run_id": e.run_id,
+                        "text": e.text,
+                        "metadata": e.metadata,
+                        "stored_at": e.stored_at.to_rfc3339(),
+                    })
+                })
+                .collect();
+            let count = json_entries.len();
+            (StatusCode::OK, Json(serde_json::json!({
+                "agent": name,
+                "entries": json_entries,
+                "count": count
+            }))).into_response()
+        }
+        Err(e) if e.to_string().contains("not found") => {
+            error_response(StatusCode::NOT_FOUND, format!("Agent '{}' not found", name))
+        }
+        Err(e) => {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
     }
-    let entries: Vec<serde_json::Value> = Vec::new();
-    (StatusCode::OK, Json(serde_json::json!({"agent": name, "entries": entries, "count": 0}))).into_response()
 }
 
 /// DELETE /api/v1/agents/:name/memory
@@ -568,10 +590,21 @@ async fn clear_agent_memory(
     State(manager): State<Arc<AgentManager>>,
     AxumPath(name): AxumPath<String>,
 ) -> Response {
-    if manager.get_agent(&name).is_none() {
-        return error_response(StatusCode::NOT_FOUND, format!("Agent '{}' not found", name));
+    match manager.clear_agent_memory(&name).await {
+        Ok(count) => {
+            (StatusCode::OK, Json(serde_json::json!({
+                "cleared": true,
+                "agent": name,
+                "entries_deleted": count
+            }))).into_response()
+        }
+        Err(e) if e.to_string().contains("not found") => {
+            error_response(StatusCode::NOT_FOUND, format!("Agent '{}' not found", name))
+        }
+        Err(e) => {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
     }
-    (StatusCode::OK, Json(serde_json::json!({"cleared": true, "agent": name}))).into_response()
 }
 
 // ---------------------------------------------------------------------------

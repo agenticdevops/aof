@@ -1,5 +1,6 @@
 pub mod gateway;
 pub mod agents;
+pub mod memory;
 pub mod run;
 pub mod runs;
 pub mod logs;

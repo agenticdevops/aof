@@ -172,6 +172,28 @@ impl GatewayClient {
         check_status(resp).await?.json().await.map_err(Into::into)
     }
 
+    /// `GET /api/v1/agents/:name/memory` — list all vector memory entries for an agent.
+    pub async fn list_memory(&self, agent: &str) -> Result<Vec<serde_json::Value>> {
+        let resp = self
+            .client
+            .get(self.url(&format!("/api/v1/agents/{}/memory", agent)))
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `DELETE /api/v1/agents/:name/memory` — clear all memory entries for an agent.
+    pub async fn clear_memory(&self, agent: &str) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .delete(self.url(&format!("/api/v1/agents/{}/memory", agent)))
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
     /// `POST /api/v1/agents/:name/run?format=json` — run an agent and stream NDJSON.
     pub async fn stream_run(
         &self,

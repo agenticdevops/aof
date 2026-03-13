@@ -940,6 +940,78 @@ impl AgentManager {
     }
 
     // -------------------------------------------------------------------------
+    // Memory management methods (CORE-04 / Phase 16-05)
+    // -------------------------------------------------------------------------
+
+    /// List all vector memory entries for a named agent.
+    ///
+    /// Opens (or creates) the agent's `SqliteVectorBackend` and returns all
+    /// stored entries ordered by `stored_at DESC`.
+    /// Returns `Err` if the agent is not loaded or if the backend cannot be opened.
+    pub async fn list_agent_memory(
+        &self,
+        agent_name: &str,
+    ) -> Result<Vec<agentix_core::VectorEntry>, AgentixError> {
+        use agentix_core::vector_memory::VectorMemoryBackend;
+
+        let definition = self
+            .agents
+            .get(agent_name)
+            .map(|e| e.value().definition.clone())
+            .ok_or_else(|| AgentixError::Runtime(format!("Agent '{}' not found", agent_name)))?;
+
+        if !definition.vector_memory.enabled {
+            return Ok(Vec::new());
+        }
+
+        let backend = crate::memory::open_agent_memory(
+            agent_name,
+            definition.vector_memory.db_path.as_deref(),
+        )
+        .await
+        .map_err(|e| AgentixError::Runtime(format!("Failed to open memory backend: {}", e)))?;
+
+        backend
+            .list_entries(agent_name)
+            .await
+            .map_err(|e| AgentixError::Runtime(format!("Failed to list memory entries: {}", e)))
+    }
+
+    /// Clear all vector memory entries for a named agent.
+    ///
+    /// Opens the agent's `SqliteVectorBackend` and deletes all entries for that agent.
+    /// Returns the number of entries deleted.
+    pub async fn clear_agent_memory(&self, agent_name: &str) -> Result<u64, AgentixError> {
+        use agentix_core::vector_memory::VectorMemoryBackend;
+
+        let definition = self
+            .agents
+            .get(agent_name)
+            .map(|e| e.value().definition.clone())
+            .ok_or_else(|| AgentixError::Runtime(format!("Agent '{}' not found", agent_name)))?;
+
+        if !definition.vector_memory.enabled {
+            return Ok(0);
+        }
+
+        let backend = crate::memory::open_agent_memory(
+            agent_name,
+            definition.vector_memory.db_path.as_deref(),
+        )
+        .await
+        .map_err(|e| AgentixError::Runtime(format!("Failed to open memory backend: {}", e)))?;
+
+        // list_entries to count, then clear
+        let entries = backend.list_entries(agent_name).await.unwrap_or_default();
+        let count = entries.len() as u64;
+        backend
+            .clear_agent_memory(agent_name)
+            .await
+            .map_err(|e| AgentixError::Runtime(format!("Failed to clear memory: {}", e)))?;
+        Ok(count)
+    }
+
+    // -------------------------------------------------------------------------
     // Query methods
     // -------------------------------------------------------------------------
 

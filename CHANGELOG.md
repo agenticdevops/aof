@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.4] - 2026-03-13
+
+### Added
+
+#### Agent Coordination (Phase 16 — COORD-01 through COORD-05)
+- **AgentInbox**: bounded mpsc channel (capacity 256) per agent for message passing
+- **Delegation API**: coordinator agents delegate tasks to specialist agents via `POST /api/v1/agents/:name/delegate`; returns structured `DelegationResult` with output, status, and delegation_id
+- **Parallel fan-out**: `CoordinatorProtocol::delegate_parallel()` fans out N tasks concurrently and returns results in order
+- **Audit trail for delegations**: every agent-to-agent delegation is recorded in the run audit log with `delegation_id`, `from_agent`, and child run linkage
+- **CoordinatorProtocol trait**: pluggable coordinator interface in `agentix-core`
+- **`DelegationMessage`** and **`DelegationResult`** types in `agentix-core::coordination`
+
+#### Vector Memory (Phase 16 — MEM-01 through MEM-04, CORE-04)
+- **Vector memory**: agents with `spec.vector_memory.enabled=true` store run outputs as embeddings and recall top_k similar past contexts before each run
+- **SQLite vector backend**: `SqliteVectorBackend` stores embeddings as BLOBs in SQLite; cosine-similarity search computed in Rust
+- **Per-agent isolation**: all memory queries and stores are scoped by `agent_id` — agents cannot access each other's memories
+- **`VectorMemoryBackend` trait**: pluggable backend interface in `agentix-core` for custom embedding stores
+- **`format_memory_context()`**: formats recalled entries as a `## Relevant context from past runs` system prompt block
+- **Deterministic hash embedding**: built-in FNV-1a hash fallback generates 256-dim embeddings without an external embedding API
+
+#### Research Phase (Phase 16 — CORE-06)
+- **Research phase pre-loop**: agents with `spec.research_phase.enabled=true` fire a fact-gathering LLM call before the main ReAct loop
+- Gathered facts are injected as `## Research Context` into the system prompt
+- Configurable `max_iterations` (default: 3)
+
+#### CLI Memory Commands
+- **`agentix memory list <agent>`**: lists all stored vector memory entries for an agent (id, run_id, text snippet, stored_at)
+- **`agentix memory clear <agent>`**: deletes all memory entries for an agent (with confirmation prompt)
+
+#### REST Memory API
+- **`GET /api/v1/agents/:name/memory`**: returns all memory entries for the agent as a JSON array
+- **`DELETE /api/v1/agents/:name/memory`**: clears all memory entries; returns `{"cleared": true, "entries_deleted": N}`
+
+#### Quickstart Examples
+- `quickstart/agents/ops-coordinator.yaml` — coordinator agent with memory, delegates to dba-specialist
+- `quickstart/agents/dba-specialist.yaml` — specialist agent with memory and research phase
+
+#### New Documentation
+- `docs/guides/agent-memory.md` — complete memory configuration reference
+- `docs/guides/coordinator-agents.md` — coordinator pattern guide with YAML examples
+- `docs/concepts/agent-coordination.md` — coordination primitives reference
+- `docs/concepts/vector-memory.md` — vector memory architecture guide
+- `docs/guides/quickstart-coordination.md` — step-by-step coordinator quickstart
+
+### Requirements Completed
+- COORD-01, COORD-02, COORD-03, COORD-04, COORD-05 (Agent Coordination)
+- MEM-01, MEM-02, MEM-03, MEM-04 (Memory & Knowledge)
+- CORE-04 (Agent memory recall and storage)
+- CORE-06 (Agent research phase pre-loop)
+
+---
+
 ## [2.0.0-alpha.3] - 2026-03-13
 
 ### Added

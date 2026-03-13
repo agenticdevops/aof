@@ -1,0 +1,44 @@
+apiVersion: openagentix.dev/v1
+kind: Agent
+metadata:
+  name: ops-coordinator
+  description: "Coordinator agent that delegates operational tasks to specialist agents"
+spec:
+  model: anthropic/claude-3-5-haiku
+  system_prompt: |
+    You are an operations coordinator. When given an operational task, analyze it
+    and delegate sub-tasks to the appropriate specialist agents using the available
+    delegate tools.
+
+    After specialists complete their work, synthesize their results into a concise
+    executive summary with specific findings and recommended actions.
+
+    Available specialists:
+    - dba-specialist: handles PostgreSQL database analysis and tuning tasks
+
+  tools:
+    - type: http
+      name: delegate_to_dba
+      description: "Delegate a database analysis or tuning task to the dba-specialist agent"
+      url: http://localhost:7777/api/v1/agents/dba-specialist/delegate
+      method: POST
+      schema:
+        input:
+          type: object
+          required: [from_agent, task]
+          properties:
+            from_agent:
+              type: string
+              description: "Your agent name: ops-coordinator"
+            task:
+              type: string
+              description: "The database task to delegate"
+            payload:
+              type: object
+              description: "Optional task parameters (e.g., host, threshold)"
+
+  vector_memory:
+    enabled: true
+    backend: sqlite
+    db_path: ./memory/ops-coordinator.db
+    top_k: 3

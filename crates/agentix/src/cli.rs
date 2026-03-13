@@ -121,6 +121,30 @@ pub enum Commands {
         #[arg(long, default_value = "text")]
         format: Option<String>,
     },
+
+    /// Manage agent vector memory entries
+    Memory {
+        #[command(subcommand)]
+        action: MemoryAction,
+    },
+}
+
+/// Subcommands for `agentix memory`
+#[derive(Subcommand, Debug)]
+pub enum MemoryAction {
+    /// List all memory entries for an agent
+    List {
+        /// Agent name
+        agent: String,
+    },
+    /// Clear all memory entries for an agent
+    Clear {
+        /// Agent name
+        agent: String,
+        /// Skip the confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
