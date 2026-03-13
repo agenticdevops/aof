@@ -31,9 +31,9 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 22 of 22 (Command Center Svelte) — IN PROGRESS
-Plan: 4 of TBD in current phase
-Status: 22-04 complete — Cost dashboard with Chart.js bar/line/doughnut charts
-Last activity: 2026-03-13 — 22-04 Cost dashboard with interactive charts implemented
+Plan: 6 of TBD in current phase
+Status: 22-06 complete — Approval queue page with approve/deny actions and WebSocket real-time updates
+Last activity: 2026-03-13 — 22-06 Approval queue with optimistic UI and WebSocket reactivity implemented
 
 Progress: [█████████░] 96%
 
@@ -75,6 +75,9 @@ Progress: [█████████░] 96%
 - chart.js used directly (no svelte-chartjs wrapper) — svelte-chartjs requires Svelte 4, incompatible with project's Svelte 5
 - Canvas binding in Svelte 5 requires $state() declaration: `let canvas = $state() as HTMLCanvasElement`
 - Chart.js gradient backgrounds use ScriptableContext<'line'> type; datasets typed as ChartDataset<'line'>[]
+- Approval queue uses optimistic UI with rollback: status updates immediately in store, reverts if API fails
+- Approval deny flow uses inline text input (not modal) for minimal friction in high-urgency operational context
+- History section collapsed by default to keep pending requests prominent above the fold
 
 ### Open Questions
 
@@ -89,8 +92,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 22-04-PLAN.md — Cost Dashboard with interactive Chart.js charts
-Next: Execute Phase 22 Plan 05 (next plan in sequence)
+Stopped at: Completed 22-06-PLAN.md — Approval Queue with approve/deny actions and WebSocket reactivity
+Next: Execute Phase 22 Plan 07 (next plan in sequence)
 Resume file: None
 
 ---
