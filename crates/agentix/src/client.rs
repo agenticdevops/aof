@@ -390,6 +390,44 @@ impl GatewayClient {
             .map_err(|e| gateway_err(&self.base_url, e))?;
         check_status(resp).await?.json().await.map_err(Into::into)
     }
+
+    /// `GET /api/v1/channels` — list all configured channel routes.
+    pub async fn list_channels(&self) -> Result<Vec<serde_json::Value>> {
+        let resp = self
+            .client
+            .get(self.url("/api/v1/channels"))
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `POST /api/v1/notify` — send an outbound notification to a channel.
+    pub async fn send_notify(
+        &self,
+        platform: &str,
+        channel_id: &str,
+        title: &str,
+        body: &str,
+        severity: &str,
+    ) -> Result<serde_json::Value> {
+        let payload = serde_json::json!({
+            "platform": platform,
+            "channel_id": channel_id,
+            "agent_name": "cli",
+            "title": title,
+            "body": body,
+            "severity": severity,
+        });
+        let resp = self
+            .client
+            .post(self.url("/api/v1/notify"))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
 }
 
 // ---------------------------------------------------------------------------

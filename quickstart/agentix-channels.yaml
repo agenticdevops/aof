@@ -1,0 +1,42 @@
+apiVersion: openagentix.dev/v1
+kind: Workspace
+metadata:
+  name: multi-channel-demo
+spec:
+  defaults:
+    model: anthropic/claude-sonnet-4-6
+  providers:
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+  gateway:
+    host: "0.0.0.0"
+    port: 8080
+  agents_dir: "./agents"
+  channels:
+    - platform: slack
+      credentials:
+        platform: slack
+        bot_token: "${SLACK_BOT_TOKEN}"
+        signing_secret: "${SLACK_SIGNING_SECRET}"
+        app_id: "${SLACK_APP_ID}"
+      routes:
+        - channel_id: "${SLACK_CHANNEL_DEVOPS}"
+          agent_name: devops-assistant
+          direction: bidirectional
+          description: "DevOps team channel — ask infrastructure questions"
+        - channel_id: "${SLACK_CHANNEL_ALERTS}"
+          agent_name: devops-assistant
+          direction: outbound
+          description: "Alerts channel — agent sends notifications here"
+      enabled: true
+    - platform: telegram
+      credentials:
+        platform: telegram
+        bot_token: "${TELEGRAM_BOT_TOKEN}"
+        webhook_secret: "${TELEGRAM_WEBHOOK_SECRET}"
+      routes:
+        - channel_id: "${TELEGRAM_CHAT_ID}"
+          agent_name: devops-assistant
+          direction: bidirectional
+          description: "Telegram group for on-call team"
+      enabled: true

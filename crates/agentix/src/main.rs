@@ -89,6 +89,12 @@ async fn main() {
         Commands::Deny { id, reason } => {
             commands::approvals::deny(&ctx, &id, reason.as_deref()).await
         }
+        Commands::Channels => {
+            commands::channels::list_channels(&ctx).await
+        }
+        Commands::Notify { platform, channel_id, title, body, severity } => {
+            commands::channels::send_notify(&ctx, &platform, &channel_id, &title, &body, &severity).await
+        }
     };
 
     if let Err(e) = result {

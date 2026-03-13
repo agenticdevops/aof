@@ -5,6 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.9] — 2026-03-13
+
+### Phase 21: Multi-Channel Gateway
+
+#### New: Channel Gateway Core Types (GW-01)
+- `ChannelGateway` async trait — pluggable channel adapter interface in `agentix-core`
+- `ChannelPlatformType` enum: `Slack`, `Telegram`, `Discord`
+- `ChannelCredentials` tagged enum with per-platform credential fields (bot tokens, signing secrets, public keys)
+- `ChannelDirection` enum: `Inbound`, `Outbound`, `Bidirectional` (default)
+- `ChannelRoute` with `matches_agent()` and `allows_outbound()` routing methods
+- `NotificationPayload` with `agent_name`, `title`, `body`, `severity`, `run_id`, `metadata`
+- `NotificationSeverity`: `Info`, `Warning`, `Error`, `Critical`
+- `ChannelMessage` envelope for inbound messages (platform, channel_id, sender_id, text, thread_id, timestamp)
+
+#### New: Slack Channel Adapter (GW-02)
+- `SlackChannelGateway` — Events API webhook parsing (`app_mention` events)
+- `chat.postMessage` response delivery with thread reply support
+- Block Kit notification formatting with severity color coding
+- HMAC-SHA256 webhook signature verification (`X-Slack-Signature` header)
+- Slack `url_verification` challenge auto-response
+
+#### New: Telegram Channel Adapter (GW-03)
+- `TelegramChannelGateway` — Bot API `Update` webhook parsing
+- `sendMessage` response delivery with `reply_to_message_id` threading
+- MarkdownV2 notification formatting with severity emojis
+- Webhook secret token verification (`X-Telegram-Bot-Api-Secret-Token` header)
+
+#### New: Discord Channel Adapter (GW-04)
+- `DiscordChannelGateway` — `MESSAGE_CREATE` event parsing with `<@APPLICATION_ID>` mention detection
+- REST API message delivery to Discord channels
+- Embed notification formatting with severity color coding
+- Ed25519 webhook signature verification (`X-Signature-Ed25519` header)
+- Bot self-message filtering to prevent response loops
+
+#### New: Channel Gateway Manager + REST API (GW-05)
+- `ChannelGatewayManager` — orchestrates all platform adapters with HashMap-based routing
+- `route_inbound()` — resolves platform + channel_id to agent name for dispatch
+- `send_response()` — delivers agent response to originating channel/thread
+- `send_notification()` — dispatches outbound notifications to target channels
+- `AgentManager` integration — builds channel manager from `WorkspaceSpec.channels` config
+- REST API: `GET /api/v1/channels` — list all configured channel routes
+- REST API: `POST /api/v1/notify` — send outbound notification to a channel
+- REST API: `POST /webhooks/channels/:platform` — receive inbound platform webhooks
+- Webhook handler routes inbound messages to agents via `TriggerEvent`
+
+#### New: CLI — `agentix channels`, `agentix notify` (GW-06)
+- `agentix channels` — list configured channel routes (table format with platform, channel ID, agent, direction)
+- `agentix notify` — send outbound notification with `--platform`, `--channel-id`, `--title`, `--body`, `--severity`
+- JSON output support via `--output json`
+
+#### New: Documentation and Examples
+- `docs/concepts/multi-channel-gateway.md` — platform matrix, routing, notifications, security, message flow
+- `docs/reference/channel-config.md` — full YAML reference for channel configuration
+- `docs/reference/cli-channels.md` — CLI reference for channels and notify commands
+- `quickstart/agentix-channels.yaml` — workspace config with Slack + Telegram channel routing
+- `quickstart/slack-agent/` — minimal DevOps assistant agent for channel demos
+
+### Requirements Completed
+- GW-01 (Channel gateway core types)
+- GW-02 (Slack channel adapter)
+- GW-03 (Telegram channel adapter)
+- GW-04 (Discord channel adapter)
+- GW-05 (Channel gateway manager + REST API)
+- GW-06 (CLI commands + docs + CHANGELOG)
+
+---
+
 ## [2.0.0-alpha.8] — 2026-03-13
 
 ### Phase 20: Approval Workflows

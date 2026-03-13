@@ -1,5 +1,6 @@
 pub mod approvals;
 pub mod audit;
+pub mod channels;
 pub mod gateway;
 pub mod agents;
 pub mod costs;

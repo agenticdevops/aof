@@ -1,0 +1,6 @@
+spec_version: "0.1.0"
+name: devops-assistant
+version: "1.0.0"
+description: "DevOps assistant agent that responds to Slack messages and sends alerts"
+model:
+  preferred: "anthropic/claude-sonnet-4-6"

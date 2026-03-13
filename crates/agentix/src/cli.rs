@@ -182,6 +182,28 @@ pub enum Commands {
         #[arg(long)]
         reason: Option<String>,
     },
+
+    /// List configured channel routes
+    Channels,
+
+    /// Send a notification to a channel
+    Notify {
+        /// Target platform (slack, telegram, discord)
+        #[arg(long)]
+        platform: String,
+        /// Target channel ID
+        #[arg(long)]
+        channel_id: String,
+        /// Notification title
+        #[arg(long)]
+        title: String,
+        /// Notification body
+        #[arg(long)]
+        body: String,
+        /// Severity level (info, warning, error, critical)
+        #[arg(long, default_value = "info")]
+        severity: String,
+    },
 }
 
 /// Subcommands for `agentix costs`

@@ -98,6 +98,7 @@ fn execute_interactive() -> Result<()> {
             agents_dir: agents_dir.clone(),
             telemetry: None,
             security: None,
+            channels: None,
         },
     };
 
@@ -181,6 +182,7 @@ fn execute_non_interactive() -> Result<()> {
             agents_dir: agents_dir.clone(),
             telemetry: None,
             security: None,
+            channels: None,
         },
     };
 
