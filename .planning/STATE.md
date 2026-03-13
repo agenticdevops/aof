@@ -30,10 +30,10 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 22 of 22 (Command Center Svelte) — NOT STARTED
-Plan: 0 of TBD in current phase
-Status: Phase 21 completed — all 6 plans across 4 waves executed successfully
-Last activity: 2026-03-13 — Phase 21 Multi-Channel Gateway completed
+Phase: 22 of 22 (Command Center Svelte) — IN PROGRESS
+Plan: 1 of TBD in current phase
+Status: 22-01 complete — SvelteKit scaffold, sidebar, API types, REST client
+Last activity: 2026-03-13 — 22-01 SvelteKit App Scaffold executed
 
 Progress: [█████████░] 95%
 
@@ -66,6 +66,8 @@ Progress: [█████████░] 95%
 - ChannelGateway trait uses parse_webhook for polymorphic dispatch (no unsafe downcasting)
 - One gateway per platform in ChannelGatewayManager HashMap
 - Channel routing via TriggerEvent for consistency with existing trigger system
+- Command Center uses @sveltejs/adapter-static with fallback: 'index.html' for SPA routing
+- API client reads gateway URL from Svelte store (default localhost:7777, persisted to localStorage)
 
 ### Open Questions
 
@@ -80,8 +82,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Phase 21 completed — Multi-Channel Gateway fully implemented
-Next: Execute Phase 22 (Command Center - Svelte web dashboard)
+Stopped at: Completed 22-01-PLAN.md — SvelteKit scaffold + API client
+Next: Execute Phase 22 Plan 02 (Agent list and detail views)
 Resume file: None
 
 ---

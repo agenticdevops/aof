@@ -217,4 +217,4 @@ Plans:
 | 19. Security | 5/5 | Complete    | 2026-03-13 | - |
 | 20. Approval Workflows | 5/5 | Complete    | 2026-03-13 | - |
 | 21. Gateway (Multi-Channel) | 6/6 | Complete    | 2026-03-13 | - |
-| 22. Command Center (Svelte) | v2.0 | 0/8 | Planning complete | - |
+| 22. Command Center (Svelte) | 1/8 | In Progress|  | - |

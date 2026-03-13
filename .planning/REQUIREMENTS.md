@@ -127,7 +127,7 @@
 
 ### Command Center (Svelte)
 
-- [ ] **CMD-01**: Web dashboard shows all registered agents with status (running/idle/error/scheduled)
+- [x] **CMD-01**: Web dashboard shows all registered agents with status (running/idle/error/scheduled)
 - [ ] **CMD-02**: Agent detail view shows configuration, run history, costs, and logs
 - [ ] **CMD-03**: Run history view shows all runs with filtering by agent, status, date range
 - [ ] **CMD-04**: Cost dashboard shows per-agent and aggregate cost charts over time
@@ -135,7 +135,7 @@
 - [ ] **CMD-06**: Scheduler view shows cron schedules and upcoming runs
 - [ ] **CMD-07**: Trace viewer shows agent execution traces (tool calls, LLM calls, decisions)
 - [ ] **CMD-08**: Approval queue shows pending approval requests with approve/deny actions
-- [ ] **CMD-09**: Real-time updates via WebSocket (agent status changes, run completions, cost updates)
+- [x] **CMD-09**: Real-time updates via WebSocket (agent status changes, run completions, cost updates)
 
 ## v2.1 Requirements
 
@@ -290,7 +290,7 @@
 | CLI-10 | Phase 13 | Complete |
 | CLI-11 | Phase 13 | Complete |
 | CLI-12 | Phase 13 | Complete |
-| CMD-01 | Phase 22 | Pending |
+| CMD-01 | Phase 22 | Complete |
 | CMD-02 | Phase 22 | Pending |
 | CMD-03 | Phase 22 | Pending |
 | CMD-04 | Phase 22 | Pending |
@@ -298,7 +298,7 @@
 | CMD-06 | Phase 22 | Pending |
 | CMD-07 | Phase 22 | Pending |
 | CMD-08 | Phase 22 | Pending |
-| CMD-09 | Phase 22 | Pending |
+| CMD-09 | Phase 22 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 90 total (note: original estimate was 81; actual count after enumeration is 90)
