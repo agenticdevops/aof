@@ -11,6 +11,7 @@ pub mod memory;
 pub mod metrics;
 pub mod shutdown;
 pub mod streaming;
+pub mod telemetry;
 pub mod tools;
 
 pub use cost_store::CostStore;
@@ -22,6 +23,7 @@ pub use health::{
     check_readiness, DependencyState, DependencyStatus, HealthResponse, ReadinessResponse,
 };
 pub use metrics::AofMetrics;
+pub use telemetry::TraceCollector;
 pub use shutdown::{GracefulShutdown, ShutdownHandler};
 
 // Re-export core types

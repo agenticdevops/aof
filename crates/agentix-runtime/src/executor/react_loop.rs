@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::memory::{format_memory_context, hash_embedding, open_agent_memory};
+use crate::telemetry::TraceCollector;
+use agentix_core::telemetry::{LogLevel, SpanKind};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -161,6 +163,8 @@ pub struct ReActEngine {
     config: ReActConfig,
     /// Optional broadcast channel for streaming `ReActEvent`s.
     event_tx: Option<broadcast::Sender<ReActEvent>>,
+    /// Optional trace collector for telemetry spans (Phase 18).
+    trace_collector: Option<TraceCollector>,
 }
 
 impl ReActEngine {
@@ -175,12 +179,23 @@ impl ReActEngine {
             tool_executor,
             config,
             event_tx: None,
+            trace_collector: None,
         }
     }
 
     /// Attach a broadcast channel for streaming `ReActEvent`s.
     pub fn with_event_stream(mut self, tx: broadcast::Sender<ReActEvent>) -> Self {
         self.event_tx = Some(tx);
+        self
+    }
+
+    /// Attach a trace collector for telemetry span recording (Phase 18).
+    ///
+    /// When set, the engine records spans for each execution phase:
+    /// Run, Iteration, LlmCall, ToolCall, Research, and MemoryRecall.
+    /// Zero-cost when not set — all instrumentation is guarded by `if let Some`.
+    pub fn with_trace_collector(mut self, collector: TraceCollector) -> Self {
+        self.trace_collector = Some(collector);
         self
     }
 
@@ -202,12 +217,36 @@ impl ReActEngine {
         input: &str,
     ) -> Result<RunResult, AgentixError> {
         // ---------------------------------------------------------------------------
+        // Telemetry: start root Run span (Phase 18)
+        // ---------------------------------------------------------------------------
+        let mut run_span = self.trace_collector.as_ref().map(|c| {
+            let span = c
+                .start_span("agent_run", SpanKind::Run)
+                .with_attribute("agent", &definition.name);
+            span
+        });
+
+        if let Some(ref collector) = self.trace_collector {
+            let mut fields = HashMap::new();
+            fields.insert(
+                "input_length".to_string(),
+                serde_json::json!(input.len()),
+            );
+            collector.log(LogLevel::Info, "Agent run started", fields);
+        }
+
+        // ---------------------------------------------------------------------------
         // Memory recall (CORE-04): retrieve top_k past contexts before the ReAct loop
         // ---------------------------------------------------------------------------
         let (memory_prefix, memory_backend, query_embedding) =
             if definition.vector_memory.enabled {
+                // Telemetry: MemoryRecall span
+                let mut mem_span = self.trace_collector.as_ref().map(|c| {
+                    c.start_span("memory_recall", SpanKind::MemoryRecall)
+                });
+
                 let db_path = definition.vector_memory.db_path.as_deref();
-                match open_agent_memory(&definition.name, db_path).await {
+                let result = match open_agent_memory(&definition.name, db_path).await {
                     Ok(backend) => {
                         let embedding = hash_embedding(input);
                         let top_k = definition.vector_memory.top_k;
@@ -224,9 +263,23 @@ impl ReActEngine {
                             error = %e,
                             "Failed to open vector memory — running without memory"
                         );
+                        if let Some(ref mut span) = mem_span {
+                            span.complete_with_error(&e.to_string());
+                        }
                         (String::new(), None, Vec::new())
                     }
+                };
+
+                if let Some(ref mut span) = mem_span {
+                    if span.end_time.is_none() {
+                        span.complete();
+                    }
                 }
+                if let (Some(span), Some(ref collector)) = (mem_span, &self.trace_collector) {
+                    collector.record_span(span);
+                }
+
+                result
             } else {
                 (String::new(), None, Vec::new())
             };
@@ -235,6 +288,11 @@ impl ReActEngine {
         // Research phase (CORE-06): proactive fact-gathering before main ReAct loop
         // ---------------------------------------------------------------------------
         let research_context = if definition.research_phase.enabled {
+            // Telemetry: Research span
+            let mut research_span = self.trace_collector.as_ref().map(|c| {
+                c.start_span("research_phase", SpanKind::Research)
+            });
+
             let ctx = self
                 .run_research_phase(
                     input,
@@ -243,6 +301,14 @@ impl ReActEngine {
                 )
                 .await
                 .unwrap_or_default();
+
+            if let Some(ref mut span) = research_span {
+                span.complete();
+            }
+            if let (Some(span), Some(ref collector)) = (research_span, &self.trace_collector) {
+                collector.record_span(span);
+            }
+
             if !ctx.is_empty() {
                 format!("## Research Context\n\n{}\n\n---\n\n", ctx)
             } else {
@@ -281,6 +347,22 @@ impl ReActEngine {
         let result = tokio::time::timeout(self.config.timeout, async {
             loop {
                 if iteration >= self.config.max_iterations {
+                    // Telemetry: finalize run span on max iterations
+                    if let (Some(ref mut span), Some(ref collector)) =
+                        (&mut run_span, &self.trace_collector)
+                    {
+                        let span = span
+                            .clone()
+                            .with_attribute("total_iterations", &iteration.to_string())
+                            .with_attribute("total_tool_calls", &all_tool_calls.len().to_string())
+                            .with_attribute("total_input_tokens", &total_input_tokens.to_string())
+                            .with_attribute("total_output_tokens", &total_output_tokens.to_string())
+                            .with_attribute("final_status", "max_iterations");
+                        let mut span = span;
+                        span.complete();
+                        collector.record_span(span);
+                    }
+
                     // Max iterations reached without a final answer.
                     let run_result = RunResult {
                         output: String::new(),
@@ -296,6 +378,15 @@ impl ReActEngine {
                     return Ok(run_result);
                 }
 
+                // Telemetry: start Iteration span
+                let mut iter_span = self.trace_collector.as_ref().map(|c| {
+                    c.start_span(
+                        &format!("iteration_{}", iteration + 1),
+                        SpanKind::Iteration,
+                    )
+                    .with_attribute("iteration_number", &(iteration + 1).to_string())
+                });
+
                 // [Plan + Act] Call the LLM.
                 let request = ModelRequest {
                     messages: messages.clone(),
@@ -307,7 +398,25 @@ impl ReActEngine {
                     extra: HashMap::new(),
                 };
 
+                // Telemetry: start LlmCall span
+                let mut llm_span = self.trace_collector.as_ref().map(|c| {
+                    c.start_span("llm_call", SpanKind::LlmCall)
+                });
+
                 let response = self.model.generate(&request).await?;
+
+                // Telemetry: complete LlmCall span with attributes
+                if let Some(ref mut span) = llm_span {
+                    *span = span
+                        .clone()
+                        .with_attribute("model", definition.model_preferred.as_deref().unwrap_or("unknown"))
+                        .with_attribute("input_tokens", &response.usage.input_tokens.to_string())
+                        .with_attribute("output_tokens", &response.usage.output_tokens.to_string());
+                    span.complete();
+                }
+                if let (Some(span), Some(ref collector)) = (llm_span, &self.trace_collector) {
+                    collector.record_span(span);
+                }
 
                 // Accumulate token usage (COST-01)
                 total_input_tokens += response.usage.input_tokens as u64;
@@ -317,6 +426,32 @@ impl ReActEngine {
                 if let Some(max_tokens) = self.config.max_tokens_per_run {
                     let used = total_input_tokens + total_output_tokens;
                     if used > max_tokens {
+                        // Telemetry: complete iteration span
+                        if let Some(ref mut span) = iter_span {
+                            span.complete();
+                        }
+                        if let (Some(span), Some(ref collector)) =
+                            (iter_span, &self.trace_collector)
+                        {
+                            collector.record_span(span);
+                        }
+
+                        // Telemetry: finalize run span on token limit
+                        if let (Some(ref mut span), Some(ref collector)) =
+                            (&mut run_span, &self.trace_collector)
+                        {
+                            let span = span
+                                .clone()
+                                .with_attribute("total_iterations", &iteration.to_string())
+                                .with_attribute("total_tool_calls", &all_tool_calls.len().to_string())
+                                .with_attribute("total_input_tokens", &total_input_tokens.to_string())
+                                .with_attribute("total_output_tokens", &total_output_tokens.to_string())
+                                .with_attribute("final_status", "token_limit_exceeded");
+                            let mut span = span;
+                            span.complete_with_error("token limit exceeded");
+                            collector.record_span(span);
+                        }
+
                         let run_result = RunResult {
                             output: format!(
                                 "Run stopped: token limit exceeded ({used} tokens used, limit is {max_tokens})."
@@ -342,6 +477,36 @@ impl ReActEngine {
                     // Count: if no tool iterations happened yet (pure Q&A), count 1.
                     // Otherwise keep the existing iteration count (tool iterations only).
                     let final_iterations = if iteration == 0 { 1 } else { iteration };
+
+                    // Telemetry: complete iteration span
+                    if let Some(ref mut span) = iter_span {
+                        *span = span
+                            .clone()
+                            .with_attribute("tool_count", "0");
+                        span.complete();
+                    }
+                    if let (Some(span), Some(ref collector)) =
+                        (iter_span, &self.trace_collector)
+                    {
+                        collector.record_span(span);
+                    }
+
+                    // Telemetry: finalize run span on completion
+                    if let (Some(ref mut span), Some(ref collector)) =
+                        (&mut run_span, &self.trace_collector)
+                    {
+                        let span = span
+                            .clone()
+                            .with_attribute("total_iterations", &final_iterations.to_string())
+                            .with_attribute("total_tool_calls", &all_tool_calls.len().to_string())
+                            .with_attribute("total_input_tokens", &total_input_tokens.to_string())
+                            .with_attribute("total_output_tokens", &total_output_tokens.to_string())
+                            .with_attribute("final_status", "completed");
+                        let mut span = span;
+                        span.complete();
+                        collector.record_span(span);
+                    }
+
                     let run_result = RunResult {
                         output: response.content.clone(),
                         iterations: final_iterations,
@@ -379,9 +544,37 @@ impl ReActEngine {
                 iteration += 1;
                 let mut observations: Vec<String> = vec![];
                 let mut step_tool_actions: Vec<ToolAction> = vec![];
+                let mut tool_count: u32 = 0;
 
                 for tool_call in &response.tool_calls {
+                    // Telemetry: start ToolCall span
+                    let mut tool_span = self.trace_collector.as_ref().map(|c| {
+                        c.start_span(
+                            &format!("tool_call_{}", tool_call.name),
+                            SpanKind::ToolCall,
+                        )
+                        .with_attribute("tool_name", &tool_call.name)
+                    });
+
                     let observation = self.dispatch_tool(definition, tool_call).await;
+
+                    // Telemetry: complete ToolCall span
+                    let tool_status = if observation.starts_with("Error:") || observation.starts_with("Tool '") && observation.contains("failed:") {
+                        "error"
+                    } else {
+                        "ok"
+                    };
+                    if let Some(ref mut span) = tool_span {
+                        *span = span.clone().with_attribute("status", tool_status);
+                        if tool_status == "error" {
+                            span.complete_with_error(&observation);
+                        } else {
+                            span.complete();
+                        }
+                    }
+                    if let (Some(span), Some(ref collector)) = (tool_span, &self.trace_collector) {
+                        collector.record_span(span);
+                    }
 
                     let action = ToolAction {
                         tool_name: tool_call.name.clone(),
@@ -390,6 +583,18 @@ impl ReActEngine {
                     all_tool_calls.push(action.clone());
                     step_tool_actions.push(action);
                     observations.push(observation);
+                    tool_count += 1;
+                }
+
+                // Telemetry: complete Iteration span
+                if let Some(ref mut span) = iter_span {
+                    *span = span
+                        .clone()
+                        .with_attribute("tool_count", &tool_count.to_string());
+                    span.complete();
+                }
+                if let (Some(span), Some(ref collector)) = (iter_span, &self.trace_collector) {
+                    collector.record_span(span);
                 }
 
                 // [Observe] Format all observations for this iteration.
@@ -424,10 +629,26 @@ impl ReActEngine {
 
         match result {
             Ok(run_result) => run_result,
-            Err(_elapsed) => Err(AgentixError::Timeout(format!(
-                "ReAct loop timed out after {:?}",
-                self.config.timeout
-            ))),
+            Err(_elapsed) => {
+                // Telemetry: finalize run span on timeout
+                if let (Some(ref mut span), Some(ref collector)) =
+                    (&mut run_span, &self.trace_collector)
+                {
+                    let span = span
+                        .clone()
+                        .with_attribute("total_iterations", &iteration.to_string())
+                        .with_attribute("total_tool_calls", &all_tool_calls.len().to_string())
+                        .with_attribute("final_status", "timeout");
+                    let mut span = span;
+                    span.complete_with_error("timeout");
+                    collector.record_span(span);
+                }
+
+                Err(AgentixError::Timeout(format!(
+                    "ReAct loop timed out after {:?}",
+                    self.config.timeout
+                )))
+            }
         }
     }
 
