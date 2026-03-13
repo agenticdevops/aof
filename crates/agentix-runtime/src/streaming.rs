@@ -51,6 +51,21 @@ impl SseEncoder {
             ReActEvent::Step(step) => Self::encode_step(step),
             ReActEvent::Complete(result) => Self::encode_complete(result),
             ReActEvent::Error(msg) => Self::encode_error(msg),
+            ReActEvent::ApprovalWaiting { request_id, tool_name, description } => {
+                let data = serde_json::json!({
+                    "request_id": request_id,
+                    "tool_name": tool_name,
+                    "description": description,
+                });
+                format!("event: approval_waiting\ndata: {}\n\n", data)
+            }
+            ReActEvent::ApprovalDecided { request_id, approved } => {
+                let data = serde_json::json!({
+                    "request_id": request_id,
+                    "approved": approved,
+                });
+                format!("event: approval_decided\ndata: {}\n\n", data)
+            }
         }
     }
 
@@ -142,6 +157,21 @@ impl SseEncoder {
                 let json = serde_json::json!({ "message": msg });
                 serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
             }
+            ReActEvent::ApprovalWaiting { request_id, tool_name, description } => {
+                let json = serde_json::json!({
+                    "request_id": request_id,
+                    "tool_name": tool_name,
+                    "description": description,
+                });
+                serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
+            }
+            ReActEvent::ApprovalDecided { request_id, approved } => {
+                let json = serde_json::json!({
+                    "request_id": request_id,
+                    "approved": approved,
+                });
+                serde_json::to_string(&json).unwrap_or_else(|_| "{}".to_string())
+            }
         }
     }
 
@@ -154,6 +184,8 @@ impl SseEncoder {
             ReActEvent::Step(_) => "react_step".to_string(),
             ReActEvent::Complete(_) => "complete".to_string(),
             ReActEvent::Error(_) => "error".to_string(),
+            ReActEvent::ApprovalWaiting { .. } => "approval_waiting".to_string(),
+            ReActEvent::ApprovalDecided { .. } => "approval_decided".to_string(),
         }
     }
 }
@@ -192,6 +224,28 @@ impl TextFormatter {
             ReActEvent::Step(step) => self.format_step(step),
             ReActEvent::Complete(result) => self.format_complete(result),
             ReActEvent::Error(msg) => self.format_error(msg),
+            ReActEvent::ApprovalWaiting { request_id, tool_name, description } => {
+                if self.use_colors {
+                    format!(
+                        "{YELLOW}[Approval Required]{RESET} Tool '{}' needs approval (request: {})\n  {}\n",
+                        tool_name, request_id, description
+                    )
+                } else {
+                    format!(
+                        "[Approval Required] Tool '{}' needs approval (request: {})\n  {}\n",
+                        tool_name, request_id, description
+                    )
+                }
+            }
+            ReActEvent::ApprovalDecided { request_id, approved } => {
+                let status = if *approved { "APPROVED" } else { "DENIED" };
+                if self.use_colors {
+                    let color = if *approved { GREEN } else { RED };
+                    format!("{color}[Approval {status}]{RESET} Request: {request_id}\n")
+                } else {
+                    format!("[Approval {status}] Request: {request_id}\n")
+                }
+            }
         }
     }
 
@@ -289,6 +343,19 @@ impl JsonFormatter {
                 "event_type": "error",
                 "timestamp": timestamp,
                 "message": msg,
+            }),
+            ReActEvent::ApprovalWaiting { request_id, tool_name, description } => serde_json::json!({
+                "event_type": "approval_waiting",
+                "timestamp": timestamp,
+                "request_id": request_id,
+                "tool_name": tool_name,
+                "description": description,
+            }),
+            ReActEvent::ApprovalDecided { request_id, approved } => serde_json::json!({
+                "event_type": "approval_decided",
+                "timestamp": timestamp,
+                "request_id": request_id,
+                "approved": approved,
             }),
         };
         // serde_json compact serialization produces a single line with no embedded newlines

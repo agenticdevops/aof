@@ -64,6 +64,22 @@ pub enum ReActEvent {
     Complete(RunResult),
     /// Emitted when the loop encounters a fatal error.
     Error(String),
+    /// Emitted when the agent is waiting for human approval (Phase 20).
+    ApprovalWaiting {
+        /// Unique ID for this approval request.
+        request_id: String,
+        /// Name of the tool that requires approval.
+        tool_name: String,
+        /// Human-readable description.
+        description: String,
+    },
+    /// Emitted when an approval decision is received (Phase 20).
+    ApprovalDecided {
+        /// Unique ID for this approval request.
+        request_id: String,
+        /// Whether the action was approved.
+        approved: bool,
+    },
 }
 
 /// Final output of a completed ReAct run.
@@ -108,6 +124,12 @@ pub struct ReActConfig {
     pub audit_store: Option<Arc<AuditStore>>,
     /// Agent name for audit entries (Phase 19).
     pub agent_name: String,
+    /// Approval policy for human-in-the-loop (Phase 20).
+    pub approval_policy: Option<agentix_core::ApprovalPolicy>,
+    /// Approval store for persisting approval requests (Phase 20).
+    pub approval_store: Option<Arc<crate::approval_store::ApprovalStore>>,
+    /// Run ID — needed to create approval requests scoped to the run (Phase 20).
+    pub run_id: Option<String>,
 }
 
 impl ReActConfig {
@@ -121,6 +143,9 @@ impl ReActConfig {
             secret_redactor: None,
             audit_store: None,
             agent_name: def.name.clone(),
+            approval_policy: def.approval.clone(),
+            approval_store: None,
+            run_id: None,
         }
     }
 }
@@ -593,7 +618,69 @@ impl ReActEngine {
                         .with_attribute("tool_name", &tool_call.name)
                     });
 
-                    let observation = self.dispatch_tool(definition, tool_call, None).await;
+                    // Phase 20: Approval gate — check if this tool call needs approval
+                    let run_id_ref = self.config.run_id.as_deref();
+                    if let Some(ref policy) = self.config.approval_policy {
+                        let tool_desc = definition.tools.iter()
+                            .find(|t| t.name == tool_call.name)
+                            .map(|t| t.description.as_deref().unwrap_or(""))
+                            .unwrap_or("");
+                        if policy.requires_approval(&tool_call.name, tool_desc) {
+                            let approval_observation = self.wait_for_approval(
+                                &tool_call.name,
+                                &tool_call.arguments,
+                                tool_desc,
+                                run_id_ref,
+                                policy,
+                            ).await;
+
+                            // If approval was denied or expired, use that as the observation
+                            if let Some(denied_obs) = approval_observation {
+                                // Log denial to audit store
+                                if let Some(ref audit) = self.config.audit_store {
+                                    let mut details = HashMap::new();
+                                    details.insert("tool_name".to_string(), serde_json::json!(tool_call.name));
+                                    let audit_entry = AuditEntry {
+                                        id: None,
+                                        timestamp: chrono::Utc::now(),
+                                        event_type: AuditEventType::ApprovalDecision,
+                                        agent_name: self.config.agent_name.clone(),
+                                        run_id: run_id_ref.map(|s| s.to_string()),
+                                        actor: format!("agent:{}", self.config.agent_name),
+                                        action: format!("Approval denied/expired for tool: {}", tool_call.name),
+                                        outcome: AuditOutcome::Denied(denied_obs.clone()),
+                                        details,
+                                        trace_id: None,
+                                    };
+                                    if let Err(e) = audit.log_event(audit_entry) {
+                                        tracing::warn!("Failed to log audit ApprovalDecision: {}", e);
+                                    }
+                                }
+
+                                // Complete telemetry span
+                                if let Some(ref mut span) = tool_span {
+                                    *span = span.clone().with_attribute("status", "denied");
+                                    span.complete_with_error(&denied_obs);
+                                }
+                                if let (Some(span), Some(ref collector)) = (tool_span, &self.trace_collector) {
+                                    collector.record_span(span);
+                                }
+
+                                let action = ToolAction {
+                                    tool_name: tool_call.name.clone(),
+                                    input: tool_call.arguments.clone(),
+                                };
+                                all_tool_calls.push(action.clone());
+                                step_tool_actions.push(action);
+                                observations.push(denied_obs);
+                                tool_count += 1;
+                                continue;
+                            }
+                            // If approved, fall through to execute the tool
+                        }
+                    }
+
+                    let observation = self.dispatch_tool(definition, tool_call, run_id_ref).await;
 
                     // Telemetry: complete ToolCall span
                     let tool_status = if observation.starts_with("Error:") || observation.starts_with("Tool '") && observation.contains("failed:") {
@@ -839,6 +926,183 @@ impl ReActEngine {
                     output
                 }
             }
+        }
+    }
+
+    /// Phase 20: Wait for human approval before executing a flagged tool call.
+    ///
+    /// Creates an approval request in the store (if available), emits an
+    /// `ApprovalWaiting` event, and polls the store until the request is
+    /// approved, denied, or expired.
+    ///
+    /// Returns:
+    /// - `None` if approved (caller should proceed with tool execution)
+    /// - `Some(observation)` if denied or expired (caller should use this as the observation)
+    async fn wait_for_approval(
+        &self,
+        tool_name: &str,
+        tool_input: &serde_json::Value,
+        tool_desc: &str,
+        run_id: Option<&str>,
+        policy: &agentix_core::ApprovalPolicy,
+    ) -> Option<String> {
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let description = format!(
+            "Agent '{}' wants to call tool '{}': {}",
+            self.config.agent_name, tool_name, tool_desc
+        );
+
+        // Create the approval request
+        let request = agentix_core::ApprovalRequest::new(
+            request_id.clone(),
+            self.config.agent_name.clone(),
+            run_id.unwrap_or("unknown").to_string(),
+            tool_name.to_string(),
+            tool_input.clone(),
+            description.clone(),
+            policy.timeout_seconds,
+        );
+
+        // Persist to store (non-critical — if store is unavailable, auto-deny)
+        if let Some(ref store) = self.config.approval_store {
+            if let Err(e) = store.create_request(&request) {
+                tracing::warn!("Failed to create approval request: {}", e);
+                return Some(format!(
+                    "Approval required for '{}' but approval store is unavailable: {}",
+                    tool_name, e
+                ));
+            }
+        }
+
+        // Emit waiting event
+        self.emit(ReActEvent::ApprovalWaiting {
+            request_id: request_id.clone(),
+            tool_name: tool_name.to_string(),
+            description: description.clone(),
+        });
+
+        tracing::info!(
+            agent = %self.config.agent_name,
+            tool = %tool_name,
+            request_id = %request_id,
+            "Waiting for approval"
+        );
+
+        // Poll the store for a decision
+        let poll_interval = Duration::from_secs(1);
+        let timeout = Duration::from_secs(policy.timeout_seconds as u64);
+        let deadline = tokio::time::Instant::now() + timeout;
+
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                // Expire the request
+                if let Some(ref store) = self.config.approval_store {
+                    let _ = store.expire_stale();
+                }
+
+                self.emit(ReActEvent::ApprovalDecided {
+                    request_id: request_id.clone(),
+                    approved: false,
+                });
+
+                return Some(format!(
+                    "Approval request '{}' for tool '{}' expired after {}s without a decision.",
+                    request_id, tool_name, policy.timeout_seconds
+                ));
+            }
+
+            // Check the store for a decision
+            if let Some(ref store) = self.config.approval_store {
+                match store.get_request(&request_id) {
+                    Ok(Some(req)) => match req.status {
+                        agentix_core::ApprovalStatus::Approved => {
+                            self.emit(ReActEvent::ApprovalDecided {
+                                request_id: request_id.clone(),
+                                approved: true,
+                            });
+
+                            // Log approval to audit store
+                            if let Some(ref audit) = self.config.audit_store {
+                                let mut details = HashMap::new();
+                                details.insert("tool_name".to_string(), serde_json::json!(tool_name));
+                                details.insert("request_id".to_string(), serde_json::json!(request_id));
+                                if let Some(ref decision) = req.decision {
+                                    details.insert("approver".to_string(), serde_json::json!(decision.approver));
+                                }
+                                let audit_entry = AuditEntry {
+                                    id: None,
+                                    timestamp: chrono::Utc::now(),
+                                    event_type: AuditEventType::ApprovalDecision,
+                                    agent_name: self.config.agent_name.clone(),
+                                    run_id: run_id.map(|s| s.to_string()),
+                                    actor: req.decision.as_ref().map(|d| d.approver.clone()).unwrap_or_else(|| "unknown".to_string()),
+                                    action: format!("Approved tool call: {}", tool_name),
+                                    outcome: AuditOutcome::Success,
+                                    details,
+                                    trace_id: None,
+                                };
+                                if let Err(e) = audit.log_event(audit_entry) {
+                                    tracing::warn!("Failed to log audit ApprovalDecision: {}", e);
+                                }
+                            }
+
+                            tracing::info!(
+                                agent = %self.config.agent_name,
+                                tool = %tool_name,
+                                request_id = %request_id,
+                                "Approval granted — proceeding with tool call"
+                            );
+                            return None; // Approved — proceed with execution
+                        }
+                        agentix_core::ApprovalStatus::Denied => {
+                            self.emit(ReActEvent::ApprovalDecided {
+                                request_id: request_id.clone(),
+                                approved: false,
+                            });
+
+                            let reason = req.decision.as_ref()
+                                .and_then(|d| d.reason.clone())
+                                .unwrap_or_else(|| "no reason given".to_string());
+
+                            return Some(format!(
+                                "Approval denied for tool '{}': {}",
+                                tool_name, reason
+                            ));
+                        }
+                        agentix_core::ApprovalStatus::Expired => {
+                            self.emit(ReActEvent::ApprovalDecided {
+                                request_id: request_id.clone(),
+                                approved: false,
+                            });
+
+                            return Some(format!(
+                                "Approval request '{}' for tool '{}' expired.",
+                                request_id, tool_name
+                            ));
+                        }
+                        agentix_core::ApprovalStatus::Pending => {
+                            // Still waiting — continue polling
+                        }
+                    },
+                    Ok(None) => {
+                        return Some(format!(
+                            "Approval request '{}' disappeared from store.",
+                            request_id
+                        ));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to poll approval store: {}", e);
+                    }
+                }
+            } else {
+                // No store — auto-deny (shouldn't happen if properly wired)
+                return Some(format!(
+                    "Approval required for '{}' but no approval store configured.",
+                    tool_name
+                ));
+            }
+
+            tokio::time::sleep(poll_interval).await;
         }
     }
 

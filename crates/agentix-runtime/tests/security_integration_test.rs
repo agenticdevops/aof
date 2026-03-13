@@ -167,6 +167,7 @@ fn make_definition(tools: Vec<ToolEntry>) -> AgentDefinition {
         vector_memory: agentix_core::VectorMemoryConfig::default(),
         research_phase: agentix_core::ResearchPhaseConfig::default(),
         budget: None,
+        approval: None,
     }
 }
 
@@ -179,6 +180,9 @@ fn make_config() -> ReActConfig {
         secret_redactor: None,
         audit_store: None,
         agent_name: "security-test-agent".to_string(),
+        approval_policy: None,
+        approval_store: None,
+        run_id: None,
     }
 }
 
@@ -501,6 +505,9 @@ async fn all_security_features_work_together() {
         secret_redactor: Some(Arc::new(redactor)),
         audit_store: Some(audit_store.clone()),
         agent_name: "combined-security-agent".to_string(),
+        approval_policy: None,
+        approval_store: None,
+        run_id: None,
     };
 
     let definition = make_definition(vec![

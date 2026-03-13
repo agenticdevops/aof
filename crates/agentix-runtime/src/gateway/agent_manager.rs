@@ -157,6 +157,8 @@ pub struct AgentManager {
     pub trace_store: Arc<TraceStore>,
     /// Persistent SQLite audit trail store (Phase 19).
     pub audit_store: Arc<AuditStore>,
+    /// Persistent SQLite approval request store (Phase 20).
+    pub approval_store: Arc<crate::approval_store::ApprovalStore>,
     /// Optional OTel exporter for pushing spans to external collectors (Phase 18).
     otel_exporter: Option<OtelExporter>,
     /// Per-agent bounded inboxes for coordination (COORD-01).
@@ -208,6 +210,17 @@ impl AgentManager {
         }
     }
 
+    /// Open the ApprovalStore at the given path (`:memory:` for tests, real path for production).
+    fn open_approval_store_at(path: &str) -> Arc<crate::approval_store::ApprovalStore> {
+        match crate::approval_store::ApprovalStore::open(path) {
+            Ok(store) => Arc::new(store),
+            Err(e) => {
+                tracing::warn!("Failed to open approval store at '{}': {} — falling back to in-memory", path, e);
+                Arc::new(crate::approval_store::ApprovalStore::open(":memory:").expect("in-memory SQLite"))
+            }
+        }
+    }
+
     /// Build an OtelExporter from workspace config if telemetry is configured.
     fn build_otel_exporter(workspace_config: &Option<WorkspaceConfig>) -> Option<OtelExporter> {
         workspace_config.as_ref().and_then(|wc| {
@@ -222,7 +235,7 @@ impl AgentManager {
     }
 
     /// Ensure the data directory exists and return paths for run, cost, and trace DBs.
-    fn data_db_paths(data_dir: &std::path::Path) -> (String, String, String, String) {
+    fn data_db_paths(data_dir: &std::path::Path) -> (String, String, String, String, String) {
         if let Err(e) = std::fs::create_dir_all(data_dir) {
             tracing::warn!("Failed to create data dir '{}': {}", data_dir.display(), e);
         }
@@ -230,11 +243,13 @@ impl AgentManager {
         let cost_db = data_dir.join("cost.db");
         let trace_db = data_dir.join("trace.db");
         let audit_db = data_dir.join("audit.db");
+        let approval_db = data_dir.join("approval.db");
         (
             run_db.to_str().unwrap_or("./agentix-runs.db").to_string(),
             cost_db.to_str().unwrap_or("./agentix-cost.db").to_string(),
             trace_db.to_str().unwrap_or("./agentix-trace.db").to_string(),
             audit_db.to_str().unwrap_or("./agentix-audit.db").to_string(),
+            approval_db.to_str().unwrap_or("./agentix-approval.db").to_string(),
         )
     }
 
@@ -248,6 +263,7 @@ impl AgentManager {
         let cost_store = Self::open_cost_store_at(":memory:");
         let trace_store = Self::open_trace_store_at(":memory:");
         let audit_store = Self::open_audit_store_at(":memory:");
+        let approval_store = Self::open_approval_store_at(":memory:");
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
@@ -260,6 +276,7 @@ impl AgentManager {
             cost_store,
             trace_store,
             audit_store,
+            approval_store,
             otel_exporter,
             inboxes: DashMap::new(),
         });
@@ -274,16 +291,18 @@ impl AgentManager {
     /// Used by `Gateway::start` for production deployments.
     pub fn new_with_data_dir(workspace_config: Option<WorkspaceConfig>, data_dir: &std::path::Path) -> Arc<Self> {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
-        let (run_db_path, cost_db_path, trace_db_path, audit_db_path) = Self::data_db_paths(data_dir);
+        let (run_db_path, cost_db_path, trace_db_path, audit_db_path, approval_db_path) = Self::data_db_paths(data_dir);
         let run_store = Self::open_run_store_at(&run_db_path);
         let cost_store = Self::open_cost_store_at(&cost_db_path);
         let trace_store = Self::open_trace_store_at(&trace_db_path);
         let audit_store = Self::open_audit_store_at(&audit_db_path);
+        let approval_store = Self::open_approval_store_at(&approval_db_path);
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         tracing::info!("Run store: {}", run_db_path);
         tracing::info!("Cost store: {}", cost_db_path);
         tracing::info!("Trace store: {}", trace_db_path);
         tracing::info!("Audit store: {}", audit_db_path);
+        tracing::info!("Approval store: {}", approval_db_path);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -295,6 +314,7 @@ impl AgentManager {
             cost_store,
             trace_store,
             audit_store,
+            approval_store,
             otel_exporter,
             inboxes: DashMap::new(),
         });
@@ -309,6 +329,7 @@ impl AgentManager {
         let cost_store = Self::open_cost_store_at(":memory:");
         let trace_store = Self::open_trace_store_at(":memory:");
         let audit_store = Self::open_audit_store_at(":memory:");
+        let approval_store = Self::open_approval_store_at(":memory:");
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
@@ -321,6 +342,7 @@ impl AgentManager {
             cost_store,
             trace_store,
             audit_store,
+            approval_store,
             otel_exporter,
             inboxes: DashMap::new(),
         });
@@ -893,6 +915,10 @@ impl AgentManager {
         config.audit_store = Some(self.audit_store.clone());
         // SecretRedactor is populated per-agent when secrets are available
         config.secret_redactor = None;
+
+        // Phase 20: Wire approval components into ReActConfig
+        config.approval_store = Some(self.approval_store.clone());
+        config.run_id = Some(run_id.to_string());
 
         // Build composite tool executor: CLI + MCP + WASM
         let cli_executor = CliToolExecutor::new();

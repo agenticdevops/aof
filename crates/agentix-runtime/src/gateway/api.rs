@@ -33,6 +33,10 @@
 //! | GET | /api/v1/costs/agents/:name/runs | List per-run cost breakdown for an agent |
 //! | GET | /api/v1/agents/:name/audit | Get audit trail for an agent |
 //! | GET | /api/v1/audit/security | Get security-relevant audit events |
+//! | GET | /api/v1/approvals | List pending approval requests |
+//! | GET | /api/v1/approvals/:id | Get a specific approval request |
+//! | POST | /api/v1/approvals/:id/approve | Approve a pending request |
+//! | POST | /api/v1/approvals/:id/deny | Deny a pending request |
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -80,6 +84,10 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/costs/agents/:name/runs", get(get_agent_run_costs))
         .route("/api/v1/agents/:name/audit", get(get_agent_audit))
         .route("/api/v1/audit/security", get(get_security_audit))
+        .route("/api/v1/approvals", get(list_approvals))
+        .route("/api/v1/approvals/:id", get(get_approval))
+        .route("/api/v1/approvals/:id/approve", post(approve_request))
+        .route("/api/v1/approvals/:id/deny", post(deny_request))
         .route("/webhooks/:trigger_id", post(receive_webhook))
         .layer(CorsLayer::permissive())
         .with_state(manager)
@@ -866,6 +874,170 @@ async fn get_security_audit(
             Json(serde_json::json!(json)).into_response()
         }
         Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Security audit query failed: {}", e)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Approval endpoints (Phase 20: APPR-01 through APPR-05)
+// ---------------------------------------------------------------------------
+
+/// Query parameters for approval list.
+#[derive(Debug, Deserialize)]
+struct ApprovalListQuery {
+    /// Filter by agent name.
+    #[serde(default)]
+    agent: Option<String>,
+    /// Maximum number of entries to return (default: 50).
+    #[serde(default = "default_approval_list_limit")]
+    limit: u32,
+}
+
+fn default_approval_list_limit() -> u32 {
+    50
+}
+
+/// Request body for POST approve/deny.
+#[derive(Debug, Deserialize)]
+struct ApprovalDecisionBody {
+    /// Who is making the decision.
+    #[serde(default = "default_approver")]
+    approver: String,
+    /// Optional reason for the decision.
+    reason: Option<String>,
+}
+
+fn default_approver() -> String {
+    "api".to_string()
+}
+
+/// GET /api/v1/approvals — List pending approval requests.
+///
+/// Returns all pending approval requests, optionally filtered by agent name.
+/// Automatically expires any stale requests before returning.
+async fn list_approvals(
+    State(manager): State<Arc<AgentManager>>,
+    Query(params): Query<ApprovalListQuery>,
+) -> Response {
+    // Expire any stale requests first
+    let _ = manager.approval_store.expire_stale();
+
+    let result = if let Some(ref agent) = params.agent {
+        manager.approval_store.list_by_agent(agent, params.limit)
+    } else {
+        manager.approval_store.list_pending(params.limit)
+    };
+
+    match result {
+        Ok(requests) => {
+            let json: Vec<serde_json::Value> = requests.into_iter().map(|r| {
+                serde_json::json!({
+                    "id": r.id,
+                    "agent_name": r.agent_name,
+                    "run_id": r.run_id,
+                    "tool_name": r.tool_name,
+                    "tool_input": r.tool_input,
+                    "description": r.description,
+                    "status": r.status.to_string(),
+                    "created_at": r.created_at.to_rfc3339(),
+                    "expires_at": r.expires_at.to_rfc3339(),
+                    "decision": r.decision.as_ref().map(|d| serde_json::json!({
+                        "approver": d.approver,
+                        "action": d.action,
+                        "reason": d.reason,
+                        "decided_at": d.decided_at.to_rfc3339(),
+                    })),
+                })
+            }).collect();
+            Json(json).into_response()
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to list approvals: {}", e)),
+    }
+}
+
+/// GET /api/v1/approvals/:id — Get a specific approval request.
+async fn get_approval(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(id): AxumPath<String>,
+) -> Response {
+    match manager.approval_store.get_request(&id) {
+        Ok(Some(r)) => {
+            Json(serde_json::json!({
+                "id": r.id,
+                "agent_name": r.agent_name,
+                "run_id": r.run_id,
+                "tool_name": r.tool_name,
+                "tool_input": r.tool_input,
+                "description": r.description,
+                "status": r.status.to_string(),
+                "created_at": r.created_at.to_rfc3339(),
+                "expires_at": r.expires_at.to_rfc3339(),
+                "decision": r.decision.as_ref().map(|d| serde_json::json!({
+                    "approver": d.approver,
+                    "action": d.action,
+                    "reason": d.reason,
+                    "decided_at": d.decided_at.to_rfc3339(),
+                })),
+            }))
+            .into_response()
+        }
+        Ok(None) => error_response(StatusCode::NOT_FOUND, format!("Approval request '{}' not found", id)),
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get approval: {}", e)),
+    }
+}
+
+/// POST /api/v1/approvals/:id/approve — Approve a pending request.
+async fn approve_request(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(id): AxumPath<String>,
+    Json(body): Json<ApprovalDecisionBody>,
+) -> Response {
+    match manager.approval_store.approve(&id, &body.approver, body.reason.as_deref()) {
+        Ok(r) => {
+            Json(serde_json::json!({
+                "id": r.id,
+                "status": r.status.to_string(),
+                "message": format!("Approved by {}", body.approver),
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("not found") {
+                error_response(StatusCode::NOT_FOUND, msg)
+            } else if msg.contains("not pending") {
+                error_response(StatusCode::CONFLICT, msg)
+            } else {
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
+        }
+    }
+}
+
+/// POST /api/v1/approvals/:id/deny — Deny a pending request.
+async fn deny_request(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(id): AxumPath<String>,
+    Json(body): Json<ApprovalDecisionBody>,
+) -> Response {
+    match manager.approval_store.deny(&id, &body.approver, body.reason.as_deref()) {
+        Ok(r) => {
+            Json(serde_json::json!({
+                "id": r.id,
+                "status": r.status.to_string(),
+                "message": format!("Denied by {}", body.approver),
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("not found") {
+                error_response(StatusCode::NOT_FOUND, msg)
+            } else if msg.contains("not pending") {
+                error_response(StatusCode::CONFLICT, msg)
+            } else {
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
+        }
     }
 }
 

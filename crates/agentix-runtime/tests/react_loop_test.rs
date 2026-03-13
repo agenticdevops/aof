@@ -206,6 +206,7 @@ fn make_agent_definition(
         vector_memory: agentix_core::VectorMemoryConfig::default(),
         research_phase: agentix_core::ResearchPhaseConfig::default(),
         budget: None,
+        approval: None,
     }
 }
 
@@ -218,6 +219,9 @@ fn default_config() -> ReActConfig {
         secret_redactor: None,
         audit_store: None,
         agent_name: "test-agent".to_string(),
+        approval_policy: None,
+        approval_store: None,
+        run_id: None,
     }
 }
 
@@ -343,6 +347,9 @@ async fn test_react_loop_max_iterations_reached() {
         secret_redactor: None,
         audit_store: None,
         agent_name: "test-agent".to_string(),
+        approval_policy: None,
+        approval_store: None,
+        run_id: None,
     };
 
     let engine = ReActEngine::new(model, executor, config);
