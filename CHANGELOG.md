@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.10] — 2026-03-13
+
+### Phase 22: Command Center (SvelteKit)
+
+#### New: Web Dashboard — Command Center
+- **Dashboard**: Metrics bar (agents, active runs, daily cost, pending approvals), real-time activity feed via WebSocket, active runs panel, pending approvals panel, scheduled agents panel (agents with cron triggers)
+- **Agent Monitoring**: Agent list with live status badges (idle/running/scheduled/error) updated via WebSocket; agent detail page with overview, runs, and configuration tabs
+- **Cost Analytics**: Interactive bar, line, and doughnut charts for spending by agent and date; date range filtering; per-run cost drill-down
+- **Trace Viewer**: Jaeger-style waterfall timeline with span hierarchy (run, iteration, LLM call, tool call); span details panel; multi-agent coordination directed graph visualization (SVG, hierarchical layout)
+- **Approval Queue**: Pending approvals with approve/deny buttons and optional inline reason input; optimistic UI with rollback; real-time updates via WebSocket; history section
+- **Agent Builder**: Visual form (name, model, mode, budget, triggers), SOUL.md Markdown editor, skill browser (8 built-in skill packs), YAML preview, Test Run button with SSE streaming; edit mode pre-fills from existing agent
+- **First-Run Wizard**: 4-step onboarding overlay (welcome, connect gateway, explore agents, done); only shown on first visit; re-launchable from Settings
+- **Settings Page**: Gateway URL configuration with connection test, theme selector (light/dark/system), wizard relaunch button, about section
+- **Dark/Light Theme**: Slate color palette with CSS variable theming
+
+#### New: Gateway WebSocket Broadcasting
+- Real-time event broadcasting at `/ws` endpoint
+- Event types: `agent_status`, `run_event`, `approval_event`, `cost_update`
+- WebSocket auto-reconnect with exponential backoff (1s → 30s)
+
+#### New: Documentation
+- `docs/command-center/overview.md` — architecture, features overview, screenshot descriptions
+- `docs/command-center/getting-started.md` — prerequisites, quick start, first-run wizard, production build, deployment
+- `docs/command-center/features.md` — detailed reference for every Command Center section
+
+### Requirements Completed
+- CMD-01 (SvelteKit project scaffold with static adapter)
+- CMD-02 (Dashboard with metrics bar and activity feed)
+- CMD-03 (Agent list with live status badges)
+- CMD-04 (Cost dashboard with interactive charts)
+- CMD-05 (Trace viewer with waterfall timeline)
+- CMD-06 (Scheduler view — scheduled agents panel and cron trigger visibility)
+- CMD-07 (Approval queue with approve/deny)
+- CMD-08 (Agent builder with visual form and SOUL.md editor)
+
+---
+
 ## [2.0.0-alpha.9] — 2026-03-13
 
 ### Phase 21: Multi-Channel Gateway
