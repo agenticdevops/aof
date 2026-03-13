@@ -30,10 +30,10 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 18 of 22 (Telemetry + Observability) — PLANNED
-Plan: 0 of 5 in current phase
-Status: Phase 18 Planned — Ready for execution (5 plans, 4 waves)
-Last activity: 2026-03-13 — Phase 18 planning complete: telemetry core types, ReAct instrumentation, TraceStore, OTel exporter, CLI trace viewer
+Phase: 18 of 22 (Telemetry + Observability) — IN PROGRESS
+Plan: 4 of 5 in current phase
+Status: Waves 1-3 complete (18-01 through 18-04), Wave 4 (18-05) remaining
+Last activity: 2026-03-13 — Plans 18-01 through 18-04 complete: core types, ReAct instrumentation, TraceStore, OTel exporter + Prometheus metrics
 
 Progress: [█████████░] 86%
 
@@ -102,8 +102,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Phase 18 planning complete — 5 plans across 4 waves, ready for execution starting at 18-01
-Phase 17 fully complete, Phase 18 planned
+Stopped at: Phase 18 Wave 3 complete — Plans 18-01 through 18-04 done, Wave 4 (18-05 CLI trace viewer) remaining
+Phase 17 fully complete, Phase 18 4/5 plans done
 Resume file: None
 
 ---
