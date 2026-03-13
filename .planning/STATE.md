@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
 status: completed
-last_updated: "2026-03-13T06:15:41.416Z"
+last_updated: "2026-03-13T07:27:38Z"
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 52
-  completed_plans: 47
+  completed_plans: 48
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
@@ -31,9 +31,9 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 22 of 22 (Command Center Svelte) — IN PROGRESS
-Plan: 2 of TBD in current phase
-Status: 22-02 complete — WebSocket /ws endpoint with EventBroadcaster fan-out
-Last activity: 2026-03-13 — 22-02 WebSocket backend implemented
+Plan: 3 of TBD in current phase
+Status: 22-03 complete — Dashboard, agent views, run history, WebSocket integration
+Last activity: 2026-03-13 — 22-03 Dashboard + agent list/detail + runs page implemented
 
 Progress: [█████████░] 96%
 
@@ -70,6 +70,8 @@ Progress: [█████████░] 96%
 - API client reads gateway URL from Svelte store (default localhost:7777, persisted to localStorage)
 - GatewayRouter builder pattern: create_router() returns GatewayRouter, .with_broadcaster() returns Router with /ws + Extension layer
 - EventBroadcaster via axum Extension layer allows optional event broadcasting from REST handlers without changing state type
+- Agent detail implemented as full page with back link (not slide-over) for URL-driven navigation
+- WebSocket auto-reconnect with exponential backoff (1s→30s); agent_status events update store in-place without full reload
 
 ### Open Questions
 
@@ -84,8 +86,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 22-02-PLAN.md — WebSocket /ws endpoint + EventBroadcaster
-Next: Execute Phase 22 Plan 03 (Agent list and detail views in SvelteKit)
+Stopped at: Completed 22-03-PLAN.md — Dashboard, Agent Views & Run History
+Next: Execute Phase 22 Plan 04 (Costs dashboard with charts)
 Resume file: None
 
 ---

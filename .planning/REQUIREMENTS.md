@@ -128,8 +128,8 @@
 ### Command Center (Svelte)
 
 - [x] **CMD-01**: Web dashboard shows all registered agents with status (running/idle/error/scheduled)
-- [ ] **CMD-02**: Agent detail view shows configuration, run history, costs, and logs
-- [ ] **CMD-03**: Run history view shows all runs with filtering by agent, status, date range
+- [x] **CMD-02**: Agent detail view shows configuration, run history, costs, and logs
+- [x] **CMD-03**: Run history view shows all runs with filtering by agent, status, date range
 - [ ] **CMD-04**: Cost dashboard shows per-agent and aggregate cost charts over time
 - [ ] **CMD-05**: Agent builder provides a visual YAML editor with validation and skill browser
 - [ ] **CMD-06**: Scheduler view shows cron schedules and upcoming runs
@@ -291,8 +291,8 @@
 | CLI-11 | Phase 13 | Complete |
 | CLI-12 | Phase 13 | Complete |
 | CMD-01 | Phase 22 | Complete |
-| CMD-02 | Phase 22 | Pending |
-| CMD-03 | Phase 22 | Pending |
+| CMD-02 | Phase 22 | Complete |
+| CMD-03 | Phase 22 | Complete |
 | CMD-04 | Phase 22 | Pending |
 | CMD-05 | Phase 22 | Pending |
 | CMD-06 | Phase 22 | Pending |
