@@ -25,7 +25,7 @@
 - [x] **Phase 17: Cost Tracking + Budgets** - Per-call/run/agent cost tracking, daily budget limits, smart model routing (completed 2026-03-13)
 - [x] **Phase 18: Telemetry + Observability** - OTel traces + metrics, structured logs, exportable to Grafana/Datadog (completed 2026-03-13)
 - [x] **Phase 19: Security** - WASM capability enforcement, secret encryption, audit trail, SSRF protection (completed 2026-03-13)
-- [ ] **Phase 20: Approval Workflows** - Human-in-the-loop pause/resume, approval queue, three autonomy modes
+- [x] **Phase 20: Approval Workflows** - Human-in-the-loop pause/resume, approval queue, three autonomy modes (completed 2026-03-13)
 - [ ] **Phase 21: Gateway (Multi-Channel)** - Slack, Telegram, Discord bi-directional, per-channel agent routing
 - [ ] **Phase 22: Command Center (Svelte)** - Web dashboard, agent builder, cost charts, trace viewer, approval queue
 
@@ -144,11 +144,18 @@ Plans:
 **Requirements**: APPR-01, APPR-02, APPR-03, APPR-04, APPR-05
 **Success Criteria** (what must be TRUE):
   1. An agent in `semi-autonomous` mode pauses before a flagged action and sends a notification to the configured approver
-  2. Approver runs `agentix approve <run-id>` or responds in a messaging channel to resume the agent
-  3. Approver runs `agentix deny <run-id>` to abort the action; agent logs the denial and stops that action path
+  2. Approver runs `agentix approve <request-id>` to resume the agent
+  3. Approver runs `agentix deny <request-id>` to abort the action; agent logs the denial and stops that action path
   4. An agent in `manual` mode requests approval for every action; in `autonomous` mode it requires no approvals
   5. All approval decisions appear in the audit trail with approver identity, timestamp, and decision
-**Plans**: TBD
+**Plans**: 5 plans in 4 waves
+
+Plans:
+- [x] 20-01-PLAN.md — Approval core types (ApprovalRequest, ApprovalStatus, ApprovalDecision, ApprovalPolicy) in agentix-core (TDD)
+- [x] 20-02-PLAN.md — ApprovalStore SQLite persistence in agentix-runtime (TDD)
+- [x] 20-03-PLAN.md — ReAct loop approval gate integration — pause/resume when approval required (TDD)
+- [x] 20-04-PLAN.md — AgentManager wiring + REST API approval endpoints (GET/POST /api/v1/approvals)
+- [x] 20-05-PLAN.md — CLI `agentix approve/deny/approvals` commands + quickstart + docs + CHANGELOG v2.0.0-alpha.8
 
 ### Phase 21: Gateway (Multi-Channel)
 **Goal**: Agents can receive messages from and send responses to Slack, Telegram, and Discord — with per-channel routing configuration and bi-directional trigger + delivery.
@@ -163,15 +170,18 @@ Plans:
 **Plans**: TBD
 
 ### Phase 22: Command Center (Svelte)
-**Goal**: Users have a web dashboard (Svelte) to monitor all agents, view run history and costs, inspect execution traces, manage approvals, and build/edit agent definitions — with real-time WebSocket updates.
+**Goal**: Users have a web dashboard (Svelte) to monitor all agents, view run history and costs, inspect execution traces, manage approvals, and build/edit agent definitions — with real-time WebSocket updates and interactive visualizations for traces, costs, and agent coordination.
 **Depends on**: Phase 17, Phase 18, Phase 20
-**Requirements**: CMD-01, CMD-02, CMD-03, CMD-04, CMD-05, CMD-06, CMD-07, CMD-08, CMD-09
+**Requirements**: CMD-01, CMD-02, CMD-03, CMD-04, CMD-05, CMD-06, CMD-07, CMD-08, CMD-09, VIZ-01, VIZ-02, VIZ-03
 **Success Criteria** (what must be TRUE):
   1. Dashboard shows all registered agents with live status (running/idle/error/scheduled) updating in real time via WebSocket
   2. Agent detail view shows configuration, run history, per-run cost, and logs in one place
   3. Cost dashboard renders per-agent and aggregate cost charts filterable by date range
   4. Trace viewer shows a waterfall of spans (tool calls, LLM calls, loop iterations) for any selected run
   5. Approval queue shows pending approval requests; user clicks Approve or Deny and the agent resumes/aborts
+  6. Agent run traces render as interactive waterfall diagrams with expandable span details
+  7. Cost data renders as interactive charts (bar, line, pie) with date range filtering and drill-down
+  8. Multi-agent coordination renders as interactive directed graphs showing delegation relationships
 **Plans**: TBD
 
 ## Progress
@@ -186,7 +196,7 @@ Plans:
 | 16. Agent Coordination + Memory | v2.0 | Complete    | 2026-03-13 | - |
 | 17. Cost Tracking + Budgets | v2.0 | Complete    | 2026-03-13 | - |
 | 18. Telemetry + Observability | 5/5 | Complete    | 2026-03-13 | - |
-| 19. Security | 3/5 | Complete    | 2026-03-13 | - |
-| 20. Approval Workflows | v2.0 | 0/TBD | Not started | - |
+| 19. Security | 5/5 | Complete    | 2026-03-13 | - |
+| 20. Approval Workflows | 5/5 | Complete    | 2026-03-13 | - |
 | 21. Gateway (Multi-Channel) | v2.0 | 0/TBD | Not started | - |
 | 22. Command Center (Svelte) | v2.0 | 0/TBD | Not started | - |

@@ -1,0 +1,37 @@
+# OpenAgentiX Workspace with Approval Workflows
+#
+# This example demonstrates human-in-the-loop approval workflows:
+# - Semi-autonomous mode: agent pauses before flagged tool calls
+# - Pattern-based matching: only certain tools require approval
+# - Configurable expiry: unapproved requests expire after timeout
+#
+# Usage:
+#   export ANTHROPIC_API_KEY="sk-ant-..."
+#   agentix gateway start --config quickstart/agentix-approvals.yaml
+#
+# Then in another terminal:
+#   agentix approvals                          # List pending approvals
+#   agentix approve <request-id>               # Approve a request
+#   agentix deny <request-id> --reason "..."   # Deny a request
+
+apiVersion: openagentix.dev/v1
+kind: Workspace
+metadata:
+  name: approval-workspace
+  annotations:
+    description: "Workspace with human-in-the-loop approval workflows"
+spec:
+  agents_dir: ./agents
+  providers:
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+  defaults:
+    model: anthropic/claude-sonnet-4-6
+    max_iterations: 10
+    timeout: 5m
+  gateway:
+    host: "127.0.0.1"
+    port: 7777
+  security:
+    ssrf_protection: true
+    audit_enabled: true

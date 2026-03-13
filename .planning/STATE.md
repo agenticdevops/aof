@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
-status: completed
-last_updated: "2026-03-13T05:09:48.760Z"
+status: in_progress
+last_updated: "2026-03-13T11:00:00.000Z"
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 41
-  completed_plans: 41
+  total_phases: 10
+  completed_phases: 8
+  total_plans: 51
+  completed_plans: 46
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
 
 **Last Updated:** 2026-03-13
 **Milestone:** v2.0 OpenAgentiX
-**Status:** Milestone complete
+**Status:** In progress
 
 ---
 
@@ -24,18 +24,36 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Let any technical organization automate operational tasks with AI agents — without writing Python, without managing infrastructure, without giving up control.
-**Current focus:** Phase 19 — Security Infrastructure
+**Current focus:** Phase 21 — Gateway (Multi-Channel)
 
 ---
 
 ## Current Position
 
-Phase: 19 of 22 (Security) — PLANNED
-Plan: 0 of 5 in current phase
-Status: Phase 19 planned — 5 plans across 4 waves ready for execution
-Last activity: 2026-03-13 — Phase 19 planned: security core types, secret encryption, audit store, runtime wiring, CLI audit
+Phase: 20 of 22 (Approval Workflows) — COMPLETE
+Plan: 5 of 5 in current phase
+Status: Phase 20 complete — all 5 plans executed across 4 waves
+Last activity: 2026-03-13 — Phase 20 complete: approval core types, store, ReAct gate, REST API, CLI commands
 
-Progress: [█████████░] 86%
+Progress: [████████░░] 90%
+
+---
+
+## Phase 20 Plan Summary
+
+| Plan | Wave | Description | Depends On | Status |
+|------|------|-------------|------------|--------|
+| 20-01 | 1 | Approval core types (ApprovalRequest, ApprovalStatus, ApprovalDecision, ApprovalPolicy) in agentix-core (TDD) | — | Complete |
+| 20-02 | 1 | ApprovalStore SQLite persistence in agentix-runtime (TDD) | — | Complete |
+| 20-03 | 2 | ReAct loop approval gate — pause/resume when approval required (TDD) | 20-01, 20-02 | Complete |
+| 20-04 | 3 | AgentManager wiring + REST API approval endpoints | 20-01, 20-02, 20-03 | Complete |
+| 20-05 | 4 | CLI approve/deny/approvals commands + quickstart + docs + CHANGELOG | 20-01..20-04 | Complete |
+
+**Wave execution order:**
+- Wave 1: 20-01 + 20-02 (parallel — core types + store have no mutual dependencies)
+- Wave 2: 20-03 (ReAct loop gate depends on types + store)
+- Wave 3: 20-04 (API endpoints depend on gate integration)
+- Wave 4: 20-05 (CLI + docs depend on all backend work)
 
 ---
 
@@ -102,8 +120,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Phase 19 planned — 5 plans in 4 waves ready
-Next: Execute Phase 19 Wave 1 (19-01 security core types + 19-02 secret encryption — parallel)
+Stopped at: Phase 20 complete — all 5 plans executed
+Next: Execute Phase 21 (Gateway Multi-Channel)
 Resume file: None
 
 ---

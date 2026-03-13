@@ -301,6 +301,84 @@ impl GatewayClient {
         check_status(resp).await?.json().await.map_err(Into::into)
     }
 
+    // -----------------------------------------------------------------------
+    // Approval endpoints
+    // -----------------------------------------------------------------------
+
+    /// `GET /api/v1/approvals` — list pending approval requests.
+    pub async fn list_approvals(
+        &self,
+        agent: Option<&str>,
+        status: Option<&str>,
+    ) -> Result<Vec<serde_json::Value>> {
+        let mut query: Vec<(&str, String)> = Vec::new();
+        if let Some(a) = agent {
+            query.push(("agent", a.to_string()));
+        }
+        if let Some(s) = status {
+            query.push(("status", s.to_string()));
+        }
+        let resp = self
+            .client
+            .get(self.url("/api/v1/approvals"))
+            .query(&query)
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `GET /api/v1/approvals/:id` — get a single approval request by ID.
+    pub async fn get_approval(&self, id: &str) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .get(self.url(&format!("/api/v1/approvals/{}", id)))
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `POST /api/v1/approvals/:id/approve` — approve a pending request.
+    pub async fn approve_request(
+        &self,
+        id: &str,
+        reason: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let body = serde_json::json!({
+            "decided_by": "cli",
+            "reason": reason.unwrap_or(""),
+        });
+        let resp = self
+            .client
+            .post(self.url(&format!("/api/v1/approvals/{}/approve", id)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `POST /api/v1/approvals/:id/deny` — deny a pending request.
+    pub async fn deny_request(
+        &self,
+        id: &str,
+        reason: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        let body = serde_json::json!({
+            "decided_by": "cli",
+            "reason": reason.unwrap_or(""),
+        });
+        let resp = self
+            .client
+            .post(self.url(&format!("/api/v1/approvals/{}/deny", id)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
     /// `GET /api/v1/audit/security?limit=N` — get security audit events.
     pub async fn get_security_audit(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
         let resp = self

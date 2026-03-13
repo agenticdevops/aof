@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.8] — 2026-03-13
+
+### Phase 20: Approval Workflows
+
+#### New: Approval Core Types (APR-01)
+- `AutonomyMode` enum: `Autonomous`, `SemiAutonomous`, `Manual`
+- `ApprovalPolicy` with regex-based pattern matching for `require_approval_for` tool patterns
+- `ApprovalRequest` with full lifecycle: `Pending` -> `Approved` | `Denied` | `Expired`
+- `ApprovalDecision` records who decided, when, and why (optional reason)
+- `ApprovalAction` for matching against tool name and description
+- `AgentDefinition` extended with optional `approval: ApprovalPolicy` field
+
+#### New: ApprovalStore — SQLite Persistence (APR-02)
+- SQLite-backed `ApprovalStore` (`data/approval.db`) following AuditStore/CostStore pattern
+- CRUD operations: `create_request`, `get_request`, `list_pending`, `list_by_agent`
+- Decision operations: `approve(id, decided_by, reason)`, `deny(id, decided_by, reason)`
+- Stale request expiry: `expire_stale()` transitions expired pending requests automatically
+- WAL mode for concurrent read access during approval waits
+
+#### New: ReAct Loop Approval Gate (APR-03)
+- Before every tool dispatch, the ReAct loop checks `ApprovalPolicy.requires_approval()`
+- When approval is required, creates a request in ApprovalStore and emits `ApprovalWaiting` SSE event
+- Poll-based wait (1-second intervals) until the request is approved, denied, or expired
+- Approved: tool executes normally. Denied/Expired: error observation returned to agent
+- Two new `ReActEvent` variants: `ApprovalWaiting`, `ApprovalDecided`
+- SSE, Text, and JSON formatters all updated for approval events
+
+#### New: REST API — Approval Endpoints (APR-04)
+- `GET /api/v1/approvals` — list approval requests (filter by `?agent=`, `?status=`)
+- `GET /api/v1/approvals/:id` — get a single approval request
+- `POST /api/v1/approvals/:id/approve` — approve with `decided_by` and optional `reason`
+- `POST /api/v1/approvals/:id/deny` — deny with `decided_by` and optional `reason`
+- Auto-expiry of stale requests on every list query
+- `AgentManager` wires `ApprovalStore` + `run_id` into every `ReActConfig`
+
+#### New: CLI — `agentix approve`, `agentix deny`, `agentix approvals` (APR-05)
+- `agentix approvals` — list pending approval requests (table format with color-coded status)
+- `agentix approvals --all` — show all statuses (approved, denied, expired)
+- `agentix approvals --agent <name>` — filter by agent name
+- `agentix approve <id>` — approve a pending request
+- `agentix approve <id> --reason "..."` — approve with reason (recorded in audit trail)
+- `agentix deny <id>` — deny a pending request
+- `agentix deny <id> --reason "..."` — deny with reason
+- All commands support `--output json` for programmatic use
+
+#### New: GatewayClient Methods
+- `list_approvals(agent, status)` — query approval requests
+- `get_approval(id)` — fetch single request
+- `approve_request(id, reason)` — approve via HTTP
+- `deny_request(id, reason)` — deny via HTTP
+
+#### New: Documentation and Examples
+- `docs/concepts/approval-workflows.md` — autonomy modes, pattern matching, lifecycle, API reference
+- `docs/reference/cli-approvals.md` — full CLI command reference for approve/deny/approvals
+- `quickstart/agentix-approvals.yaml` — workspace config with approval workflow example
+
+### Requirements Completed
+- APR-01 (Approval core types)
+- APR-02 (ApprovalStore SQLite persistence)
+- APR-03 (ReAct loop approval gate)
+- APR-04 (REST API endpoints + AgentManager wiring)
+- APR-05 (CLI commands + docs + CHANGELOG)
+
+---
+
 ## [2.0.0-alpha.7] — 2026-03-13
 
 ### Phase 19: Security Infrastructure

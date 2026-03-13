@@ -80,6 +80,15 @@ async fn main() {
         Commands::Audit { agent, limit, security, run } => {
             commands::audit::run(&ctx, &agent, limit, security, run.as_deref()).await
         }
+        Commands::Approvals { agent, all } => {
+            commands::approvals::list(&ctx, agent.as_deref(), all).await
+        }
+        Commands::Approve { id, reason } => {
+            commands::approvals::approve(&ctx, &id, reason.as_deref()).await
+        }
+        Commands::Deny { id, reason } => {
+            commands::approvals::deny(&ctx, &id, reason.as_deref()).await
+        }
     };
 
     if let Err(e) = result {

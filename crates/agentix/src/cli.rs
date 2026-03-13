@@ -154,6 +154,34 @@ pub enum Commands {
         #[arg(long)]
         run: Option<String>,
     },
+
+    /// List pending approval requests
+    Approvals {
+        /// Filter by agent name
+        #[arg(long)]
+        agent: Option<String>,
+        /// Show all statuses (not just pending)
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// Approve a pending approval request
+    Approve {
+        /// Approval request ID
+        id: String,
+        /// Reason for approval
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
+    /// Deny a pending approval request
+    Deny {
+        /// Approval request ID
+        id: String,
+        /// Reason for denial
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 /// Subcommands for `agentix costs`
