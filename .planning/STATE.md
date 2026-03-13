@@ -31,11 +31,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 22 of 22 (Command Center Svelte) — IN PROGRESS
-Plan: 6 of TBD in current phase
-Status: 22-06 complete — Approval queue page with approve/deny actions and WebSocket real-time updates
-Last activity: 2026-03-13 — 22-06 Approval queue with optimistic UI and WebSocket reactivity implemented
+Plan: 7 of TBD in current phase
+Status: 22-07 complete — Agent Builder with visual form, SOUL.md editor, skill browser, YAML generator, and SSE test run
+Last activity: 2026-03-13 — 22-07 Agent Builder page implemented
 
-Progress: [█████████░] 96%
+Progress: [█████████░] 97%
 
 ---
 
@@ -78,6 +78,8 @@ Progress: [█████████░] 96%
 - Approval queue uses optimistic UI with rollback: status updates immediately in store, reverts if API fails
 - Approval deny flow uses inline text input (not modal) for minimal friction in high-urgency operational context
 - History section collapsed by default to keep pending requests prominent above the fold
+- Agent Builder skill browser as inline expandable section (not modal) for better form flow
+- Agent Builder edit mode loads from api.agents.get() typed object directly (not raw YAML) for robustness
 
 ### Open Questions
 
@@ -92,8 +94,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 22-06-PLAN.md — Approval Queue with approve/deny actions and WebSocket reactivity
-Next: Execute Phase 22 Plan 07 (next plan in sequence)
+Stopped at: Completed 22-07-PLAN.md — Agent Builder with form, SOUL.md editor, skill browser, YAML generator, and SSE test run
+Next: Execute Phase 22 Plan 08 (next plan in sequence)
 Resume file: None
 
 ---
