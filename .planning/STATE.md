@@ -31,11 +31,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 22 of 22 (Command Center Svelte) — IN PROGRESS
-Plan: 7 of TBD in current phase
-Status: 22-07 complete — Agent Builder with visual form, SOUL.md editor, skill browser, YAML generator, and SSE test run
-Last activity: 2026-03-13 — 22-07 Agent Builder page implemented
+Plan: 8 of 8 in current phase
+Status: 22-08 complete — Settings, first-run wizard, scheduled agents panel, docs, CHANGELOG v2.0.0-alpha.10
+Last activity: 2026-03-13 — 22-08 Phase 22 final plan complete
 
-Progress: [█████████░] 97%
+Progress: [██████████] 100%
 
 ---
 
@@ -84,6 +84,9 @@ Progress: [█████████░] 97%
 - Coordination graph uses hierarchical layout (highest out-degree = coordinator at top) to avoid force layout jitter
 - spanKindColor returns hex strings for SVG compatibility; spanKindBgClass returns Tailwind classes for DOM elements
 - SvelteKit page.params type is string | undefined — use ?? '' fallback on required route params
+- First-run wizard shown by checking hasCompletedWizard in layout onMount; localStorage key agentix-wizard-complete
+- Scheduled agents shown inline on dashboard filtered from agents store by triggers.type === 'cron'
+- Settings page wizard relaunch: resetWizard() + window.location.href='/' (simpler than shared signal)
 
 ### Open Questions
 
@@ -98,8 +101,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 22-07-PLAN.md — Agent Builder with form, SOUL.md editor, skill browser, YAML generator, and SSE test run
-Next: Execute Phase 22 Plan 08 (next plan in sequence)
+Stopped at: Completed 22-08-PLAN.md — Settings, first-run wizard, scheduled agents, docs, CHANGELOG v2.0.0-alpha.10
+Next: Phase 22 complete — all 8 plans executed
 Resume file: None
 
 ---

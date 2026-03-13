@@ -132,7 +132,7 @@
 - [x] **CMD-03**: Run history view shows all runs with filtering by agent, status, date range
 - [x] **CMD-04**: Cost dashboard shows per-agent and aggregate cost charts over time
 - [x] **CMD-05**: Agent builder provides a visual YAML editor with validation and skill browser
-- [ ] **CMD-06**: Scheduler view shows cron schedules and upcoming runs
+- [x] **CMD-06**: Scheduler view shows cron schedules and upcoming runs
 - [x] **CMD-07**: Trace viewer shows agent execution traces (tool calls, LLM calls, decisions)
 - [x] **CMD-08**: Approval queue shows pending approval requests with approve/deny actions
 - [x] **CMD-09**: Real-time updates via WebSocket (agent status changes, run completions, cost updates)
@@ -295,7 +295,7 @@
 | CMD-03 | Phase 22 | Complete |
 | CMD-04 | Phase 22 | Complete |
 | CMD-05 | Phase 22 | Complete |
-| CMD-06 | Phase 22 | Pending |
+| CMD-06 | Phase 22 | Complete |
 | CMD-07 | Phase 22 | Complete |
 | CMD-08 | Phase 22 | Complete |
 | CMD-09 | Phase 22 | Complete |
