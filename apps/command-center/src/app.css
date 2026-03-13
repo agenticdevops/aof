@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+	--font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+	/* slate light palette - literal hex for TW4 compatibility */
+	--color-background: #f8fafc;
+	--color-foreground: #0f172a;
+	--color-muted: #f1f5f9;
+	--color-muted-foreground: #64748b;
+	--color-border: #e2e8f0;
+	--color-input: #e2e8f0;
+	--color-ring: #94a3b8;
+
+	--color-primary: #0f172a;
+	--color-primary-foreground: #f8fafc;
+	--color-secondary: #f1f5f9;
+	--color-secondary-foreground: #0f172a;
+	--color-accent: #f1f5f9;
+	--color-accent-foreground: #0f172a;
+	--color-destructive: #ef4444;
+	--color-destructive-foreground: #f8fafc;
+
+	--color-card: #ffffff;
+	--color-card-foreground: #0f172a;
+	--color-popover: #ffffff;
+	--color-popover-foreground: #0f172a;
+
+	--color-success: #22c55e;
+	--color-warning: #f59e0b;
+	--color-info: #0891b2;
+
+	--radius-sm: 0.375rem;
+	--radius-md: 0.5rem;
+	--radius-lg: 0.75rem;
+	--radius-xl: 1rem;
+}
+
+/* slate dark palette */
+.dark {
+	--color-background: #020617;
+	--color-foreground: #f8fafc;
+	--color-muted: #1e293b;
+	--color-muted-foreground: #94a3b8;
+	--color-border: #1e293b;
+	--color-input: #1e293b;
+	--color-ring: #475569;
+
+	--color-primary: #f8fafc;
+	--color-primary-foreground: #0f172a;
+	--color-secondary: #1e293b;
+	--color-secondary-foreground: #f8fafc;
+	--color-accent: #1e293b;
+	--color-accent-foreground: #f8fafc;
+
+	--color-card: #0f172a;
+	--color-card-foreground: #f8fafc;
+	--color-popover: #0f172a;
+	--color-popover-foreground: #f8fafc;
+}
+
+* {
+	border-color: var(--color-border);
+}
+
+body {
+	font-family: var(--font-sans);
+	background-color: var(--color-background);
+	color: var(--color-foreground);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
