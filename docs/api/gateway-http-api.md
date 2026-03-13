@@ -246,9 +246,83 @@ Failed agents are logged as warnings; other agents continue loading.
 
 ---
 
+---
+
+## WebSocket — Real-Time Event Stream
+
+### `GET /ws`
+
+Upgrade to a WebSocket connection and receive real-time typed JSON events from the gateway.
+
+The Command Center uses this endpoint instead of polling the REST API. Any client that needs live updates (agent status changes, run completions, approval requests) should connect here.
+
+**Protocol:** HTTP → WebSocket upgrade (standard `Upgrade: websocket` handshake).
+
+**Connection flow:**
+
+1. Client connects and sends `Upgrade: websocket` headers.
+2. Server upgrades the connection and immediately sends a `Connected` event.
+3. Server broadcasts all subsequent events to every connected client.
+4. Client receives events as JSON text frames.
+5. Client may close the connection at any time; server handles cleanup gracefully.
+
+**Event envelope:** Every event is a JSON object with a `"type"` discriminant.
+
+```json
+{ "type": "connected", "message": "Connected to OpenAgentiX gateway" }
+```
+
+**Event reference:**
+
+| `type`                | Fields                                                       | Triggered by                           |
+|-----------------------|--------------------------------------------------------------|----------------------------------------|
+| `connected`           | `message: string`                                            | On every new WebSocket connection      |
+| `agent_status`        | `agent_name: string`, `status: string`                       | Agent status changes                   |
+| `run_started`         | `agent_name: string`, `run_id: string`                       | `POST /api/v1/agents/:name/run`        |
+| `run_completed`       | `agent_name`, `run_id`, `status`, `duration_ms?: number`     | Run lifecycle events                   |
+| `approval_requested`  | `id: string`, `agent_name: string`, `action: string`         | Approval gate in agent execution       |
+| `approval_decided`    | `id: string`, `decision: "approved" \| "denied"`             | `POST /approvals/:id/approve` or deny  |
+| `cost_update`         | `agent_name: string`, `total_cost_usd: number`               | After each run (LLM cost update)       |
+
+**Example events:**
+
+```json
+{"type":"connected","message":"Connected to OpenAgentiX gateway"}
+{"type":"run_started","agent_name":"deploy-agent","run_id":"a1b2-c3d4"}
+{"type":"approval_requested","id":"req-001","agent_name":"deploy-agent","action":"kubectl apply -f deployment.yaml"}
+{"type":"approval_decided","id":"req-001","decision":"approved"}
+{"type":"run_completed","agent_name":"deploy-agent","run_id":"a1b2-c3d4","status":"success","duration_ms":4200}
+{"type":"cost_update","agent_name":"deploy-agent","total_cost_usd":0.0043}
+```
+
+**Fan-out:** All connected clients receive the same events. The channel has capacity 256; slow clients are dropped (lagged) rather than blocking event producers.
+
+**JavaScript client example:**
+
+```javascript
+const ws = new WebSocket('ws://localhost:7777/ws');
+
+ws.onmessage = ({ data }) => {
+  const event = JSON.parse(data);
+  switch (event.type) {
+    case 'run_started':
+      console.log(`Run ${event.run_id} started for ${event.agent_name}`);
+      break;
+    case 'approval_requested':
+      promptUser(event.id, event.action);
+      break;
+    case 'run_completed':
+      console.log(`Run done in ${event.duration_ms}ms: ${event.status}`);
+      break;
+  }
+};
+```
+
+---
+
 ## CORS
 
-All endpoints have permissive CORS headers enabled (`CorsLayer::permissive()`). For production, configure your reverse proxy to restrict origins.
+All endpoints (including `/ws` upgrade) have permissive CORS headers enabled (`CorsLayer::permissive()`). For production, configure your reverse proxy to restrict origins.
 
 ---
 

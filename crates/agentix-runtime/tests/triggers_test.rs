@@ -48,7 +48,7 @@ spec:
 fn test_router_with_agent(yaml: &str) -> axum::Router {
     let manager = AgentManager::new(None);
     manager.register_from_yaml(yaml).unwrap();
-    create_router(manager)
+    create_router(manager).into()
 }
 
 async fn body_to_json(body: Body) -> serde_json::Value {
@@ -249,12 +249,12 @@ async fn test_trigger_unknown_agent_returns_404() {
 /// Fires a CLI trigger, waits briefly for async completion, then checks runs list.
 #[tokio::test]
 async fn test_runs_have_trigger_source_field() {
-    use std::sync::Arc;
-    let manager = Arc::new(AgentManager::new(None));
+    // AgentManager::new already returns Arc<AgentManager>
+    let manager = AgentManager::new(None);
     manager
         .register_from_yaml(&plain_agent_yaml("trigger-source-agent"))
         .unwrap();
-    let app = create_router(Arc::clone(&manager));
+    let app: axum::Router = create_router(manager.clone()).into();
 
     // Fire a trigger
     let trigger_body = serde_json::json!({

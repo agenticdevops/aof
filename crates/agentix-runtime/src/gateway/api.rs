@@ -37,12 +37,13 @@
 //! | GET | /api/v1/approvals/:id | Get a specific approval request |
 //! | POST | /api/v1/approvals/:id/approve | Approve a pending request |
 //! | POST | /api/v1/approvals/:id/deny | Deny a pending request |
+//! | GET | /ws | WebSocket endpoint for real-time event broadcasting |
 
 use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{Path as AxumPath, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response, sse::Event, sse::KeepAlive, Sse},
@@ -56,6 +57,7 @@ use tokio_stream::StreamExt;
 use tower_http::cors::CorsLayer;
 
 use super::agent_manager::AgentManager;
+use super::websocket::{EventBroadcaster, GatewayEvent, ws_handler};
 use crate::streaming::SseEncoder;
 
 // ---------------------------------------------------------------------------
@@ -63,8 +65,22 @@ use crate::streaming::SseEncoder;
 // ---------------------------------------------------------------------------
 
 /// Build the axum router with all gateway endpoints.
-pub fn create_router(manager: Arc<AgentManager>) -> Router {
-    Router::new()
+///
+/// Returns a `GatewayRouter` builder so callers can optionally attach an
+/// `EventBroadcaster` for WebSocket support:
+///
+/// ```no_run
+/// # use std::sync::Arc;
+/// # use agentix_runtime::gateway::AgentManager;
+/// # use agentix_runtime::gateway::api::create_router;
+/// # use agentix_runtime::gateway::EventBroadcaster;
+/// // AgentManager::new already returns Arc<AgentManager>
+/// let manager = AgentManager::new(None);
+/// let broadcaster = Arc::new(EventBroadcaster::new(64));
+/// let app = create_router(manager).with_broadcaster(broadcaster);
+/// ```
+pub fn create_router(manager: Arc<AgentManager>) -> GatewayRouter {
+    let router = Router::new()
         .route("/healthz", get(health))
         .route("/api/v1/agents", get(list_agents).post(register_agent))
         .route("/api/v1/agents/:name", get(get_agent).put(update_agent))
@@ -94,7 +110,49 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/notify", post(send_notification))
         .route("/webhooks/channels/:platform", post(channel_webhook))
         .layer(CorsLayer::permissive())
-        .with_state(manager)
+        .with_state(manager);
+
+    GatewayRouter { inner: router }
+}
+
+/// Builder wrapper returned by `create_router`.
+///
+/// Provides `with_broadcaster` to attach WebSocket support, then implements
+/// `Into<Router>` (and `IntoMakeService`) so axum can serve it directly.
+///
+/// `Clone` delegates to the inner `Router::clone()` so test helpers can call
+/// `.clone().oneshot(req)` as before.
+#[derive(Clone)]
+pub struct GatewayRouter {
+    inner: Router,
+}
+
+impl GatewayRouter {
+    /// Attach an `EventBroadcaster` so the `/ws` WebSocket endpoint is live.
+    ///
+    /// This also adds the broadcaster as an `Extension` layer on the whole
+    /// router, allowing REST handlers (approve, deny, run) to optionally
+    /// broadcast events via `Option<Extension<Arc<EventBroadcaster>>>`.
+    ///
+    /// Without calling this method, requests to `/ws` will return 404, and
+    /// REST handlers will not broadcast any events.
+    pub fn with_broadcaster(self, broadcaster: Arc<EventBroadcaster>) -> Router {
+        // /ws sub-router uses State<Arc<EventBroadcaster>> for ws_handler
+        let ws_router = Router::new()
+            .route("/ws", get(ws_handler))
+            .with_state(Arc::clone(&broadcaster));
+
+        // Merge ws route + add broadcaster as Extension for REST handlers
+        self.inner
+            .merge(ws_router)
+            .layer(axum::extract::Extension(broadcaster))
+    }
+}
+
+impl From<GatewayRouter> for Router {
+    fn from(gr: GatewayRouter) -> Router {
+        gr.inner
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -272,12 +330,21 @@ async fn update_agent(
 /// Returns 404 if agent not found.
 async fn run_agent(
     State(manager): State<Arc<AgentManager>>,
+    broadcaster: Option<Extension<Arc<EventBroadcaster>>>,
     AxumPath(name): AxumPath<String>,
     Query(query): Query<RunQuery>,
     Json(body): Json<RunBody>,
 ) -> Response {
     match manager.start_run(&name, &body.input).await {
-        Ok((_run_id, event_rx)) => {
+        Ok((run_id, event_rx)) => {
+            // Broadcast RunStarted event to all WebSocket clients
+            if let Some(Extension(b)) = broadcaster {
+                b.send(GatewayEvent::RunStarted {
+                    agent_name: name.clone(),
+                    run_id: run_id.clone(),
+                });
+            }
+            let _run_id = run_id;
             let use_json = query.format.as_deref() == Some("json");
 
             // Convert broadcast receiver to a stream
@@ -992,11 +1059,19 @@ async fn get_approval(
 /// POST /api/v1/approvals/:id/approve — Approve a pending request.
 async fn approve_request(
     State(manager): State<Arc<AgentManager>>,
+    broadcaster: Option<Extension<Arc<EventBroadcaster>>>,
     AxumPath(id): AxumPath<String>,
     Json(body): Json<ApprovalDecisionBody>,
 ) -> Response {
     match manager.approval_store.approve(&id, &body.approver, body.reason.as_deref()) {
         Ok(r) => {
+            // Broadcast ApprovalDecided event to all WebSocket clients
+            if let Some(Extension(b)) = broadcaster {
+                b.send(GatewayEvent::ApprovalDecided {
+                    id: r.id.clone(),
+                    decision: "approved".to_string(),
+                });
+            }
             Json(serde_json::json!({
                 "id": r.id,
                 "status": r.status.to_string(),
@@ -1020,11 +1095,19 @@ async fn approve_request(
 /// POST /api/v1/approvals/:id/deny — Deny a pending request.
 async fn deny_request(
     State(manager): State<Arc<AgentManager>>,
+    broadcaster: Option<Extension<Arc<EventBroadcaster>>>,
     AxumPath(id): AxumPath<String>,
     Json(body): Json<ApprovalDecisionBody>,
 ) -> Response {
     match manager.approval_store.deny(&id, &body.approver, body.reason.as_deref()) {
         Ok(r) => {
+            // Broadcast ApprovalDecided event to all WebSocket clients
+            if let Some(Extension(b)) = broadcaster {
+                b.send(GatewayEvent::ApprovalDecided {
+                    id: r.id.clone(),
+                    decision: "denied".to_string(),
+                });
+            }
             Json(serde_json::json!({
                 "id": r.id,
                 "status": r.status.to_string(),

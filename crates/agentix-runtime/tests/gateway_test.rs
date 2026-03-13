@@ -45,14 +45,14 @@ spec:
 /// Build the test router (empty AgentManager, no workspace config).
 fn test_router() -> axum::Router {
     let manager = AgentManager::new(None);
-    create_router(manager)
+    create_router(manager).into()
 }
 
 /// Build a test router with one pre-loaded agent.
 fn test_router_with_agent(name: &str) -> axum::Router {
     let manager = AgentManager::new(None);
     manager.register_from_yaml(&minimal_agent_yaml(name)).unwrap();
-    create_router(manager)
+    create_router(manager).into()
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ async fn test_list_agents_empty() {
 #[tokio::test]
 async fn test_register_and_list_agent() {
     let manager = AgentManager::new(None);
-    let app = create_router(manager);
+    let app: axum::Router = create_router(manager).into();
 
     // Register an agent
     let body = serde_json::json!({ "yaml": minimal_agent_yaml("test-agent") });
@@ -175,7 +175,7 @@ spec:
 #[tokio::test]
 async fn test_register_duplicate_returns_409() {
     let manager = AgentManager::new(None);
-    let app = create_router(manager);
+    let app: axum::Router = create_router(manager).into();
 
     let body = serde_json::json!({ "yaml": minimal_agent_yaml("dup-agent") });
 
@@ -207,7 +207,7 @@ async fn test_register_duplicate_returns_409() {
 #[tokio::test]
 async fn test_update_agent() {
     let manager = AgentManager::new(None);
-    let app = create_router(manager);
+    let app: axum::Router = create_router(manager).into();
 
     // Register
     let body = serde_json::json!({ "yaml": minimal_agent_yaml("update-agent") });

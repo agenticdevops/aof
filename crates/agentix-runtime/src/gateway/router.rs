@@ -3,15 +3,18 @@
 //! `Gateway::start` is called by the CLI `agentix gateway start` command.
 //! It:
 //! 1. Creates an `AgentManager` with the workspace config
-//! 2. Scans `agents_dir` and loads all agents
-//! 3. Starts the axum HTTP server on `config.host:config.port`
+//! 2. Creates an `EventBroadcaster` for WebSocket event fan-out
+//! 3. Scans `agents_dir` and loads all agents
+//! 4. Starts the axum HTTP server on `config.host:config.port`
 
 use std::path::Path;
+use std::sync::Arc;
 
 use agentix_core::{AgentixError, GatewayConfig, WorkspaceConfig};
 
 use super::agent_manager::AgentManager;
 use super::api;
+use super::websocket::EventBroadcaster;
 
 /// The OpenAgentiX gateway service.
 ///
@@ -51,7 +54,9 @@ impl Gateway {
             println!("  - {}", name);
         }
 
-        let app = api::create_router(manager);
+        // Create broadcaster and wire the WebSocket endpoint
+        let broadcaster = Arc::new(EventBroadcaster::new(256));
+        let app = api::create_router(manager).with_broadcaster(broadcaster);
 
         let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
             AgentixError::Runtime(format!("Failed to bind {}: {}", addr, e))
