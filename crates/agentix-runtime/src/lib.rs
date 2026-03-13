@@ -6,12 +6,14 @@
 pub mod executor;
 pub mod gateway;
 pub mod health;
+pub mod memory;
 pub mod metrics;
 pub mod shutdown;
 pub mod streaming;
 pub mod tools;
 
 pub use executor::{ReActConfig, ReActEngine, ReActEvent, ReActStep, RunResult, ToolAction};
+pub use memory::{format_memory_context, hash_embedding, open_agent_memory};
 pub use tools::CliToolExecutor;
 pub use streaming::{EventReceiver, EventSender, JsonFormatter, SseEncoder, TextFormatter};
 pub use health::{

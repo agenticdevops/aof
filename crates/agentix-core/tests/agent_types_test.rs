@@ -424,9 +424,14 @@ spec:
         skills: vec![],
         tools: vec![],
         sub_agents: vec![],
+        mcp_servers: vec![],
         max_iterations: 10,
         timeout_secs: 300,
         mode: agentix_core::AgentMode::Manual,
+        triggers: vec![],
+        notifications: vec![],
+        vector_memory: agentix_core::VectorMemoryConfig::default(),
+        research_phase: agentix_core::ResearchPhaseConfig::default(),
     };
 
     definition.apply_workspace_defaults(&workspace);

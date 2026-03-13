@@ -250,6 +250,69 @@ impl fmt::Display for MemorySpec {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Vector memory configuration (v2.0 — distinct from the legacy MemorySpec)
+// ---------------------------------------------------------------------------
+
+/// Backend type for vector memory.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryBackendType {
+    /// SQLite-backed vector store (default, no external dependencies).
+    #[default]
+    Sqlite,
+}
+
+fn default_memory_backend() -> MemoryBackendType {
+    MemoryBackendType::Sqlite
+}
+
+fn default_top_k() -> usize {
+    5
+}
+
+/// Vector memory configuration for an agent.
+///
+/// Controls whether the agent recalls relevant past run contexts before each
+/// run and stores its final answer after each run.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VectorMemoryConfig {
+    /// Enable vector memory for this agent.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Storage backend (sqlite is the only supported backend in v2.0).
+    #[serde(default = "default_memory_backend")]
+    pub backend: MemoryBackendType,
+    /// Path to the SQLite database file.
+    /// Default: `./memory/<agent-name>.db`.
+    pub db_path: Option<String>,
+    /// Number of similar past contexts to retrieve per run.
+    #[serde(default = "default_top_k")]
+    pub top_k: usize,
+    /// Optional override for the embedding model.
+    /// Default: use the agent's configured model.
+    pub embed_model: Option<String>,
+}
+
+fn default_research_iterations() -> usize {
+    3
+}
+
+/// Research phase configuration — pre-loop fact-gathering step (CORE-06).
+///
+/// When enabled, a proactive fact-gathering pass runs before the main ReAct
+/// loop, injecting gathered facts as a `## Research Context` block into the
+/// system prompt.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResearchPhaseConfig {
+    /// Enable the research phase before the main ReAct loop.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Maximum fact-gathering iterations (default: 3).
+    #[serde(default = "default_research_iterations")]
+    pub max_iterations: usize,
+}
+
 /// Tool specification - unified way to configure both built-in and MCP tools
 ///
 /// Supports multiple formats:
@@ -1610,6 +1673,12 @@ pub struct AgentManifest {
     /// Notification routing — where to send run results.
     #[serde(default)]
     pub notifications: Vec<AgentNotificationConfig>,
+    /// Vector memory configuration (v2.0).
+    #[serde(default)]
+    pub vector_memory: VectorMemoryConfig,
+    /// Research phase configuration (v2.0 / CORE-06).
+    #[serde(default)]
+    pub research_phase: ResearchPhaseConfig,
 }
 
 /// Model configuration within an `AgentManifest`.
@@ -1835,6 +1904,10 @@ pub struct AgentDefinition {
     pub triggers: Vec<AgentTriggerConfig>,
     /// Notification routing configurations from `notifications:` field.
     pub notifications: Vec<AgentNotificationConfig>,
+    /// Vector memory configuration (v2.0 — CORE-04).
+    pub vector_memory: VectorMemoryConfig,
+    /// Research phase configuration (v2.0 — CORE-06).
+    pub research_phase: ResearchPhaseConfig,
 }
 
 impl AgentDefinition {
@@ -2041,6 +2114,8 @@ impl DirectoryLoader {
             mode: AgentMode::Autonomous,
             triggers: manifest.triggers,
             notifications: manifest.notifications,
+            vector_memory: manifest.vector_memory,
+            research_phase: manifest.research_phase,
         })
     }
 }
@@ -2077,6 +2152,10 @@ struct FlatAgentSpecBody {
     triggers: Vec<AgentTriggerConfig>,
     #[serde(default)]
     notifications: Vec<AgentNotificationConfig>,
+    #[serde(default)]
+    vector_memory: VectorMemoryConfig,
+    #[serde(default)]
+    research_phase: ResearchPhaseConfig,
 }
 
 /// Loads flat YAML agents (`apiVersion: openagentix.dev/v1 / kind: Agent`) into `AgentDefinition`.
@@ -2109,6 +2188,8 @@ impl FlatYamlLoader {
             tools: vec![],
             triggers: vec![],
             notifications: vec![],
+            vector_memory: VectorMemoryConfig::default(),
+            research_phase: ResearchPhaseConfig::default(),
         });
 
         // system_prompt and instructions are aliases
@@ -2166,6 +2247,8 @@ impl FlatYamlLoader {
             mode: AgentMode::Autonomous,
             triggers: spec.triggers,
             notifications: spec.notifications,
+            vector_memory: spec.vector_memory,
+            research_phase: spec.research_phase,
         })
     }
 }

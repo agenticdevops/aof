@@ -19,8 +19,11 @@ use agentix_core::{
     AgentDefinition, AgentixError, ModelRequest, RequestMessage, ToolCall, ToolEntry,
 };
 use agentix_core::model::MessageRole;
+use agentix_core::vector_memory::VectorMemoryBackend;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
+
+use crate::memory::{format_memory_context, hash_embedding, open_agent_memory};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -183,8 +186,64 @@ impl ReActEngine {
         definition: &AgentDefinition,
         input: &str,
     ) -> Result<RunResult, AgentixError> {
+        // ---------------------------------------------------------------------------
+        // Memory recall (CORE-04): retrieve top_k past contexts before the ReAct loop
+        // ---------------------------------------------------------------------------
+        let (memory_prefix, memory_backend, query_embedding) =
+            if definition.vector_memory.enabled {
+                let db_path = definition.vector_memory.db_path.as_deref();
+                match open_agent_memory(&definition.name, db_path).await {
+                    Ok(backend) => {
+                        let embedding = hash_embedding(input);
+                        let top_k = definition.vector_memory.top_k;
+                        let matches = backend
+                            .search_similar(&definition.name, &embedding, top_k)
+                            .await
+                            .unwrap_or_default();
+                        let prefix = format_memory_context(&matches);
+                        (prefix, Some(backend), embedding)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            agent = %definition.name,
+                            error = %e,
+                            "Failed to open vector memory — running without memory"
+                        );
+                        (String::new(), None, Vec::new())
+                    }
+                }
+            } else {
+                (String::new(), None, Vec::new())
+            };
+
+        // ---------------------------------------------------------------------------
+        // Research phase (CORE-06): proactive fact-gathering before main ReAct loop
+        // ---------------------------------------------------------------------------
+        let research_context = if definition.research_phase.enabled {
+            let ctx = self
+                .run_research_phase(
+                    input,
+                    &definition.resolved_system_prompt(),
+                    definition.research_phase.max_iterations,
+                )
+                .await
+                .unwrap_or_default();
+            if !ctx.is_empty() {
+                format!("## Research Context\n\n{}\n\n---\n\n", ctx)
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // ---------------------------------------------------------------------------
+        // Assemble system prompt: memory prefix + research context + base + ReAct instructions
+        // ---------------------------------------------------------------------------
         let system_prompt = format!(
-            "{}{}",
+            "{}{}{}{}",
+            memory_prefix,
+            research_context,
             definition.resolved_system_prompt(),
             REACT_INSTRUCTIONS
         );
@@ -240,6 +299,25 @@ impl ReActEngine {
                         reached_max_iterations: false,
                     };
                     self.emit(ReActEvent::Complete(run_result.clone()));
+
+                    // Memory store (CORE-04): persist final answer for future recall.
+                    // Non-critical — a store failure must not fail the run.
+                    if let Some(backend) = &memory_backend {
+                        if !query_embedding.is_empty() {
+                            let mut meta = HashMap::new();
+                            meta.insert("trigger_source".to_string(), "react".to_string());
+                            let _ = backend
+                                .store_embedding(
+                                    &definition.name,
+                                    "unknown", // run_id not available here; overridden by gateway
+                                    &response.content,
+                                    query_embedding.clone(),
+                                    meta,
+                                )
+                                .await;
+                        }
+                    }
+
                     return Ok(run_result);
                 }
 
@@ -296,6 +374,57 @@ impl ReActEngine {
                 "ReAct loop timed out after {:?}",
                 self.config.timeout
             ))),
+        }
+    }
+
+    /// Run the research phase pre-loop (CORE-06).
+    ///
+    /// Fires a single LLM call asking the model to identify and summarise
+    /// relevant facts for the query. Tool calls are not executed in this
+    /// lightweight pass — the model summarises what it knows from context.
+    ///
+    /// Returns the research summary text, or an empty string on failure.
+    async fn run_research_phase(
+        &self,
+        input: &str,
+        system_prompt: &str,
+        _max_iterations: usize,
+    ) -> Result<String, AgentixError> {
+        let research_prompt = format!(
+            "You are in the RESEARCH PHASE. Your goal is to identify key facts relevant to the query.\n\
+             Do NOT generate a final answer yet.\n\n\
+             System context:\n{system_prompt}\n\n\
+             Query: {input}\n\n\
+             List 3-5 specific facts you already know that are relevant to this query, then summarise \
+             them in a concise ## RESEARCH COMPLETE block.\n\
+             Format:\n\
+             ## RESEARCH COMPLETE\n\
+             <bullet list of gathered facts>"
+        );
+
+        let request = ModelRequest {
+            messages: vec![RequestMessage {
+                role: MessageRole::User,
+                content: research_prompt,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            system: None,
+            tools: vec![],
+            temperature: Some(0.3),
+            max_tokens: Some(512),
+            stream: false,
+            extra: HashMap::new(),
+        };
+
+        let response = self.model.generate(&request).await?;
+        let content = response.content;
+
+        // Extract the block after "## RESEARCH COMPLETE" if present.
+        if let Some(pos) = content.find("## RESEARCH COMPLETE") {
+            Ok(content[pos..].to_string())
+        } else {
+            Ok(content)
         }
     }
 

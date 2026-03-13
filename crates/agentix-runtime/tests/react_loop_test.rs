@@ -196,9 +196,14 @@ fn make_agent_definition(
             .collect(),
         tools,
         sub_agents: vec![],
+        mcp_servers: vec![],
         max_iterations,
         timeout_secs,
         mode: AgentMode::Autonomous,
+        triggers: vec![],
+        notifications: vec![],
+        vector_memory: agentix_core::VectorMemoryConfig::default(),
+        research_phase: agentix_core::ResearchPhaseConfig::default(),
     }
 }
 
