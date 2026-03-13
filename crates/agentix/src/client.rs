@@ -284,6 +284,34 @@ impl GatewayClient {
         let resp = check_status(resp).await?;
         Ok(resp.bytes_stream())
     }
+
+    /// `GET /api/v1/agents/:name/audit?limit=N` — get audit trail for an agent.
+    pub async fn get_agent_audit(
+        &self,
+        agent: &str,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>> {
+        let resp = self
+            .client
+            .get(self.url(&format!("/api/v1/agents/{}/audit", agent)))
+            .query(&[("limit", limit.to_string())])
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `GET /api/v1/audit/security?limit=N` — get security audit events.
+    pub async fn get_security_audit(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
+        let resp = self
+            .client
+            .get(self.url("/api/v1/audit/security"))
+            .query(&[("limit", limit.to_string())])
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
 }
 
 // ---------------------------------------------------------------------------

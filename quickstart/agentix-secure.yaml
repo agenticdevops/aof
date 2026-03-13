@@ -1,0 +1,43 @@
+# OpenAgentiX Workspace with Security Features Enabled
+#
+# This example demonstrates all security features:
+# - SSRF protection for outbound HTTP tool calls
+# - AES-256-GCM encryption for secrets at rest
+# - Audit trail logging for all agent actions
+# - Allow-list for internal services
+#
+# Usage:
+#   export AGENTIX_SECRET_KEY="your-secure-passphrase"
+#   export ANTHROPIC_API_KEY="sk-ant-..."
+#   agentix gateway start --config quickstart/agentix-secure.yaml
+
+apiVersion: openagentix.dev/v1
+kind: Workspace
+metadata:
+  name: secure-workspace
+  annotations:
+    description: "Workspace with all security features enabled"
+spec:
+  agents_dir: ./agents
+  providers:
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+  defaults:
+    model: anthropic/claude-sonnet-4-6
+    max_iterations: 10
+    timeout: 5m
+  gateway:
+    host: "127.0.0.1"
+    port: 7777
+  security:
+    # Block HTTP tool calls to private/internal IPs (default: true)
+    ssrf_protection: true
+    # Encrypt secrets at rest with AES-256-GCM (default: true)
+    # Requires AGENTIX_SECRET_KEY environment variable
+    secret_encryption: true
+    # Log every tool call, LLM call, and security event (default: true)
+    audit_enabled: true
+    # Allow-list: internal services that agents may reach despite SSRF protection
+    allowed_private_endpoints:
+      - "10.0.0.5"      # Internal Prometheus
+      - "172.16.1.10"    # Internal Grafana

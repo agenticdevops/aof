@@ -77,6 +77,9 @@ async fn main() {
                 commands::costs::costs_agent(&ctx, &name, effective_limit).await
             }
         },
+        Commands::Audit { agent, limit, security, run } => {
+            commands::audit::run(&ctx, &agent, limit, security, run.as_deref()).await
+        }
     };
 
     if let Err(e) = result {

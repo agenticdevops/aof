@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod gateway;
 pub mod agents;
 pub mod costs;

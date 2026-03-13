@@ -139,6 +139,21 @@ pub enum Commands {
         #[arg(long, default_value = "20")]
         limit: usize,
     },
+
+    /// Show audit trail for an agent
+    Audit {
+        /// Agent name
+        agent: String,
+        /// Maximum number of entries to show
+        #[arg(long, default_value = "50")]
+        limit: usize,
+        /// Show security events only (violations, denials, blocks)
+        #[arg(long)]
+        security: bool,
+        /// Filter to a specific run ID
+        #[arg(long)]
+        run: Option<String>,
+    },
 }
 
 /// Subcommands for `agentix costs`

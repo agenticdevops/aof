@@ -129,7 +129,14 @@ Plans:
   2. Secrets defined in agent config are stored AES-256-GCM encrypted and do not appear in logs, traces, or error output
   3. Audit trail records every tool call, LLM call, and approval decision with actor, timestamp, and outcome
   4. An HTTP tool call targeting a private IP (RFC 1918), localhost, or cloud metadata endpoint (169.254.x.x) is rejected with a SSRF error
-**Plans**: TBD
+**Plans**: 5 plans in 4 waves
+
+Plans:
+- [ ] 19-01-PLAN.md — Security core types (SsrfGuard, SsrfViolation, SecurityConfig, CapabilityPolicy) in agentix-core (TDD)
+- [ ] 19-02-PLAN.md — Secret encryption (AES-256-GCM SecretStore + SecretRedactor) in agentix-core (TDD)
+- [ ] 19-03-PLAN.md — AuditStore SQLite persistence + AgentManager wiring + REST API audit endpoints (TDD)
+- [ ] 19-04-PLAN.md — Security runtime wiring — SSRF guard, audit logging, secret redaction, WASM capability in ReAct loop + AgentManager
+- [ ] 19-05-PLAN.md — CLI `agentix audit` command + docs + quickstart + CHANGELOG v2.0.0-alpha.7
 
 ### Phase 20: Approval Workflows
 **Goal**: Agents can pause at flagged actions, notify a human approver, and resume or abort based on the approval decision — with all decisions logged.
@@ -179,7 +186,7 @@ Plans:
 | 16. Agent Coordination + Memory | v2.0 | Complete    | 2026-03-13 | - |
 | 17. Cost Tracking + Budgets | v2.0 | Complete    | 2026-03-13 | - |
 | 18. Telemetry + Observability | 5/5 | Complete    | 2026-03-13 | - |
-| 19. Security | v2.0 | 0/TBD | Not started | - |
+| 19. Security | 3/5 | In Progress|  | - |
 | 20. Approval Workflows | v2.0 | 0/TBD | Not started | - |
 | 21. Gateway (Multi-Channel) | v2.0 | 0/TBD | Not started | - |
 | 22. Command Center (Svelte) | v2.0 | 0/TBD | Not started | - |

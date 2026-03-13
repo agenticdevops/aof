@@ -5,6 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.7] — 2026-03-13
+
+### Phase 19: Security Infrastructure
+
+#### New: SSRF Protection (SEC-05)
+- `SsrfGuard` blocks outbound HTTP tool calls to RFC 1918 private IPs (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`, `::1`), and cloud metadata endpoints (`169.254.0.0/16`)
+- Configurable allow-list for internal services via `security.allowed_private_endpoints` in workspace config
+- SSRF violations return non-fatal error observations to the agent (agent can continue with other tools)
+- Every blocked request logged as `SecurityViolation` audit entry with `outcome: Blocked`
+
+#### New: Secret Encryption (SEC-03)
+- `SecretStore` encrypts/decrypts agent secrets using AES-256-GCM with SHA-256 key derivation
+- Unique 12-byte random nonce per encryption ensures different ciphertext each time
+- `SecretRedactor` prevents secret values from appearing in logs, traces, or error output
+- Redaction replaces matches with `[REDACTED:<secret_name>]`, processes longest-first to avoid partial matches
+- Encryption key sourced from `AGENTIX_SECRET_KEY` environment variable
+
+#### New: Audit Trail (SEC-04)
+- `AuditStore` with SQLite backend (`data/audit.db`) logs every significant action
+- 8 event types: `AgentStart`, `AgentComplete`, `AgentError`, `ToolCall`, `LlmCall`, `SecurityViolation`, `SecretAccess`, `ApprovalDecision`
+- 4 outcome types: `Success`, `Failure(reason)`, `Denied(reason)`, `Blocked(reason)`
+- Each entry includes timestamp, event_type, agent_name, run_id, actor, action, outcome, and details
+- Audit logging is non-critical — store failures are logged as warnings but never fail the run
+
+#### New: WASM Capability Enforcement (SEC-01, SEC-02)
+- `CapabilityPolicy` reads capabilities from tool YAML manifests for WASM tools
+- Undeclared capability access is blocked and logged as `SecurityViolation` with `outcome: Denied`
+- Available capabilities: `network`, `filesystem`, `secrets`, `http_endpoints`, `resource_limits`
+- `ToolEntry` extended with `capabilities` field for WASM tool manifests
+
+#### New: Security Runtime Wiring
+- ReAct loop integrates SSRF guard, secret redactor, and audit logging for every tool and LLM call
+- `ReActConfig` extended with `ssrf_guard`, `secret_redactor`, `audit_store`, and `agent_name` fields
+- `AgentManager` reads `SecurityConfig` from workspace spec and passes security components into each run
+- `WorkspaceSpec` extended with `security: Option<SecurityConfig>` field
+
+#### New: CLI — `agentix audit` (SEC-04)
+- `agentix audit <agent-name>` — show last 50 audit entries for an agent
+- `--security` flag to filter to security events only (violations, denials, blocks)
+- `--run <run-id>` flag to filter to a specific run
+- `--limit N` flag to control number of entries shown
+- Color-coded outcomes: green for success, red for failure/blocked, yellow for denied
+
+#### New: REST API
+- `GET /api/v1/agents/:name/audit?limit=N` — agent audit trail
+- `GET /api/v1/audit/security?limit=N` — security events across all agents
+
+#### New: Configuration
+- `security:` block in workspace `agentix.yaml` with `ssrf_protection`, `secret_encryption`, `audit_enabled`, and `allowed_private_endpoints` fields
+- All security features enabled by default (opt-out, not opt-in)
+
+#### New: Documentation and Examples
+- `docs/concepts/security.md` — four-pillar security model reference
+- `docs/reference/cli-audit.md` — `agentix audit` CLI command reference
+- `docs/tutorials/security-setup.md` — step-by-step security setup tutorial
+- `quickstart/agentix-secure.yaml` — workspace config with all security features
+
+### Requirements Completed
+- SEC-01 (WASM capability enforcement)
+- SEC-02 (Capability policy types)
+- SEC-03 (Secret encryption)
+- SEC-04 (Audit trail)
+- SEC-05 (SSRF protection)
+
+---
+
 ## [2.0.0-alpha.6] — 2026-03-13
 
 ### Phase 18: Telemetry + Observability
