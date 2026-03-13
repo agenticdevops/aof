@@ -6,6 +6,8 @@
 pub mod agent;
 pub mod config;
 pub mod context;
+pub mod coordination;
+pub mod vector_memory;
 pub mod error;
 pub mod error_tracker;
 pub mod mcp;
@@ -61,6 +63,11 @@ pub use config::{
     WorkspaceSpec,
 };
 pub use skills::{BuiltinSkillPack, SkillRegistry};
+pub use coordination::{
+    AgentInbox, CoordinatorProtocol, DelegationMessage, DelegationResult, DelegationStatus,
+    INBOX_CAPACITY,
+};
+pub use vector_memory::{cosine_similarity, MemoryMatch, VectorEntry, VectorMemoryBackend};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

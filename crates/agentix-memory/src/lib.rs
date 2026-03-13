@@ -24,6 +24,7 @@
 //! ```
 
 pub mod backend;
+pub mod sqlite_vector;
 
 // Re-export main types
 pub use backend::file::FileBackend;
@@ -32,3 +33,6 @@ pub use backend::SimpleMemory;
 
 // Re-export core memory types
 pub use agentix_core::{Memory, MemoryBackend, MemoryEntry, MemoryQuery};
+
+// Re-export vector memory types
+pub use sqlite_vector::SqliteVectorBackend;

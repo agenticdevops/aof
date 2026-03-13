@@ -22,6 +22,9 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 dashmap = { workspace = true }
 parking_lot = { workspace = true }
+rusqlite = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
 
 # Optional backends
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"], optional = true }
