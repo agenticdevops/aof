@@ -26,7 +26,7 @@
 - [x] **Phase 18: Telemetry + Observability** - OTel traces + metrics, structured logs, exportable to Grafana/Datadog (completed 2026-03-13)
 - [x] **Phase 19: Security** - WASM capability enforcement, secret encryption, audit trail, SSRF protection (completed 2026-03-13)
 - [x] **Phase 20: Approval Workflows** - Human-in-the-loop pause/resume, approval queue, three autonomy modes (completed 2026-03-13)
-- [ ] **Phase 21: Gateway (Multi-Channel)** - Slack, Telegram, Discord bi-directional, per-channel agent routing
+- [x] **Phase 21: Gateway (Multi-Channel)** - Slack, Telegram, Discord bi-directional, per-channel agent routing (completed 2026-03-13)
 - [ ] **Phase 22: Command Center (Svelte)** - Web dashboard, agent builder, cost charts, trace viewer, approval queue
 
 ## Phase Details
@@ -167,7 +167,15 @@ Plans:
   3. A message sent on Discord triggers the agent and the response arrives in the same Discord channel
   4. Agent sends a notification (run result, alert, approval request) to configured channels without a user-initiated trigger
   5. Per-channel config (`channels:`) routes different agents to different Slack channels or Telegram chats
-**Plans**: TBD
+**Plans**: 6 plans in 4 waves
+
+Plans:
+- [x] 21-01-PLAN.md — Channel gateway core types (ChannelConfig, ChannelRoute, ChannelGateway trait, NotificationTarget, NotificationPayload) in agentix-core (TDD)
+- [x] 21-02-PLAN.md — Slack channel adapter (SlackChannelGateway implementing ChannelGateway trait) in agentix-runtime (TDD)
+- [x] 21-03-PLAN.md — Telegram channel adapter (TelegramChannelGateway implementing ChannelGateway trait) in agentix-runtime (TDD)
+- [x] 21-04-PLAN.md — Discord channel adapter (DiscordChannelGateway implementing ChannelGateway trait) in agentix-runtime (TDD)
+- [x] 21-05-PLAN.md — ChannelGatewayManager + AgentManager wiring + REST API channel endpoints + workspace config
+- [x] 21-06-PLAN.md — CLI `agentix channels/notify` commands + quickstart + docs + CHANGELOG v2.0.0-alpha.9
 
 ### Phase 22: Command Center (Svelte)
 **Goal**: Users have a web dashboard (Svelte) to monitor all agents, view run history and costs, inspect execution traces, manage approvals, and build/edit agent definitions — with real-time WebSocket updates and interactive visualizations for traces, costs, and agent coordination.
@@ -198,5 +206,5 @@ Plans:
 | 18. Telemetry + Observability | 5/5 | Complete    | 2026-03-13 | - |
 | 19. Security | 5/5 | Complete    | 2026-03-13 | - |
 | 20. Approval Workflows | 5/5 | Complete    | 2026-03-13 | - |
-| 21. Gateway (Multi-Channel) | v2.0 | 0/TBD | Not started | - |
+| 21. Gateway (Multi-Channel) | 6/6 | Complete    | 2026-03-13 | - |
 | 22. Command Center (Svelte) | v2.0 | 0/TBD | Not started | - |

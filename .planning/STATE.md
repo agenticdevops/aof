@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
-status: completed
-last_updated: "2026-03-13T05:37:56.507Z"
+status: in_progress
+last_updated: "2026-03-13T12:00:00.000Z"
 progress:
   total_phases: 8
-  completed_phases: 7
-  total_plans: 46
-  completed_plans: 41
+  completed_phases: 8
+  total_plans: 58
+  completed_plans: 47
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
 
 **Last Updated:** 2026-03-13
 **Milestone:** v2.0 OpenAgentiX
-**Status:** Milestone complete
+**Status:** In progress
 
 ---
 
@@ -24,36 +24,33 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Let any technical organization automate operational tasks with AI agents — without writing Python, without managing infrastructure, without giving up control.
-**Current focus:** Phase 21 — Gateway (Multi-Channel)
+**Current focus:** Phase 22 — Command Center (Svelte)
 
 ---
 
 ## Current Position
 
-Phase: 20 of 22 (Approval Workflows) — COMPLETE
-Plan: 5 of 5 in current phase
-Status: Phase 20 complete — all 5 plans executed across 4 waves
-Last activity: 2026-03-13 — Phase 20 complete: approval core types, store, ReAct gate, REST API, CLI commands
+Phase: 22 of 22 (Command Center Svelte) — NOT STARTED
+Plan: 0 of TBD in current phase
+Status: Phase 21 completed — all 6 plans across 4 waves executed successfully
+Last activity: 2026-03-13 — Phase 21 Multi-Channel Gateway completed
 
-Progress: [████████░░] 90%
+Progress: [█████████░] 95%
 
 ---
 
-## Phase 20 Plan Summary
+## Phase 21 Results
 
-| Plan | Wave | Description | Depends On | Status |
-|------|------|-------------|------------|--------|
-| 20-01 | 1 | Approval core types (ApprovalRequest, ApprovalStatus, ApprovalDecision, ApprovalPolicy) in agentix-core (TDD) | — | Complete |
-| 20-02 | 1 | ApprovalStore SQLite persistence in agentix-runtime (TDD) | — | Complete |
-| 20-03 | 2 | ReAct loop approval gate — pause/resume when approval required (TDD) | 20-01, 20-02 | Complete |
-| 20-04 | 3 | AgentManager wiring + REST API approval endpoints | 20-01, 20-02, 20-03 | Complete |
-| 20-05 | 4 | CLI approve/deny/approvals commands + quickstart + docs + CHANGELOG | 20-01..20-04 | Complete |
+| Plan | Wave | Description | Status |
+|------|------|-------------|--------|
+| 21-01 | 1 | Channel gateway core types in agentix-core | Complete |
+| 21-02 | 2 | Slack channel adapter (SlackChannelGateway) | Complete |
+| 21-03 | 2 | Telegram channel adapter (TelegramChannelGateway) | Complete |
+| 21-04 | 2 | Discord channel adapter (DiscordChannelGateway) | Complete |
+| 21-05 | 3 | ChannelGatewayManager + REST API + gateway wiring | Complete |
+| 21-06 | 4 | CLI channels/notify + quickstart + docs + CHANGELOG | Complete |
 
-**Wave execution order:**
-- Wave 1: 20-01 + 20-02 (parallel — core types + store have no mutual dependencies)
-- Wave 2: 20-03 (ReAct loop gate depends on types + store)
-- Wave 3: 20-04 (API endpoints depend on gate integration)
-- Wave 4: 20-05 (CLI + docs depend on all backend work)
+**Test results:** 66 tests pass across 5 test suites (18 core + 11 Slack + 16 Telegram + 12 Discord + 9 manager)
 
 ---
 
@@ -61,55 +58,18 @@ Progress: [████████░░] 90%
 
 ### Key Decisions
 
-- Pivoted from AOF (personality-driven) → OpenAgentiX (enterprise automation)
+- Pivoted from AOF (personality-driven) to OpenAgentiX (enterprise automation)
 - CLI binary named `agentix` (confirmed)
-- Svelte replaces React for command center; current branch React UI work discarded, build Phase 13 from main
+- Svelte replaces React for command center; current branch React UI work discarded
 - WASM sandbox introduced in Phase 14 (runtime), enforced as security policy in Phase 19
 - Phase 22 (Command Center) depends on Phases 17, 18, 20 — backend must be solid first
-- See PROJECT.md Key Decisions table for full list
-- All crates renamed from aof-* to agentix-*, AofError/AofResult aliased to AgentixError/AgentixResult (13-01)
-- schema.rs kept in agentix-core (agent.rs depends on it) — not deleted despite being in v1.0 list (13-01)
-- Agent YAML uses `apiVersion: openagentix.dev/v1` / `kind: Agent` full Kubernetes style (13-02 old spec, now superseded)
-- Unified `spec.tools` list with `type` discriminator (`cli`/`mcp`/`shell`) — no separate tool sections (13-02)
-- `provider/model` explicit notation enforced in `spec.model` (exactly one `/` required) (13-02)
-- `system_prompt` and `system_prompt_file` are mutually exclusive (13-02)
-- Three-tier resolution order: agent YAML > workspace defaults > built-in defaults (13-02)
-- Provider credentials are workspace-only (`agentix.yaml`) — cannot be set per-agent (13-02)
-- Agent definitions are directories (GitAgent-compatible): agent.yaml = minimal manifest only (13-02)
-- agent.yaml carries only spec_version, name, version, description, model.preferred, extends, dependencies (13-02)
-- Behavior lives in SOUL.md + RULES.md + skills/ — NOT in agent.yaml (13-02)
-- Runtime behavior fields (max_iterations, timeout, mode) moved to workspace defaults only (13-02)
-- agents_dir scanning: directory with agent.yaml = GitAgent format; flat *.yaml = backward compat (13-02)
-- Sub-agents (agents/ subdirectory) are lazy-loaded on first delegation from parent (13-02)
-- AgentManifest (thin manifest) and AgentDefinition (assembled runtime type) are distinct — manifest is from agent.yaml only (13-03)
-- DirectoryToolType named to avoid collision with existing ToolType in tool.rs (13-03)
-- WorkspaceConfig uses Kubernetes-style apiVersion/kind/metadata/spec structure per spec (13-03)
-- Legacy AgentConfig and new AgentManifest/AgentDefinition coexist in agent.rs — agentix-runtime imports depend on AgentConfig (13-03)
-- ReActEngine iterations counts tool-call cycles only; pure Q&A (no tools) counts as 1 (13-04)
-- ToolExecutor trait in react_loop.rs is decoupled from agentix-core ToolExecutor — simpler execute(ToolEntry, Value)->Result<String,String> (13-04)
-- agentix_core::model::MessageRole must be imported directly (not alias) to match RequestMessage.role type (13-04)
-- ReActEvent types canonical in react_loop.rs; streaming.rs re-exports via pub use — no duplication (13-05)
-- SSE emits one message per phase within a Step for granular client progress rendering (13-05)
-- No colored crate dependency — ANSI escape codes embedded directly in TextFormatter (13-05)
-- AgentManager uses DashMap for lock-free concurrent state; gateway runners spawn tokio tasks with broadcast event channels (13-06)
-- AgentixError::Runtime used for gateway errors (no Other variant exists in AgentixError) (13-06)
-- FlatYamlLoader::load_from_str added to agentix-core for inline YAML parsing from API request bodies (13-06)
-- SseEncoder::encode_data and encode_event_name methods added for axum SSE integration (13-06)
-- CliContext struct introduced to hold gateway_url/output/quiet for borrow-safe CLI dispatch (13-07)
-- FlatYamlLoader::load_from_str is correct API for inline YAML parsing (not AgentLoader::load_yaml_str) (13-07)
-- validate auto-detects agent.yaml manifests inside directory format and redirects to DirectoryLoader (13-07)
-- init.rs and onboard.rs retained as valid pre-existing commands wired up in main.rs (13-07)
-- agentix init creates agent DIRECTORIES (GitAgent format) via scaffold_agent_directory; --name is a named flag (13-08)
-- scaffold_agent_directory is a public function shared between init.rs and onboard.rs — single source of truth (13-08)
-- onboard creates agentix.yaml + hello-world agent directory; validates via DirectoryLoader after write (13-08)
-- AgentFlow stubbed in agentix-triggers (v1.0 type); full re-impl deferred to Phase 15 (13-09)
-- Runtime/RuntimeOrchestrator/AgentFlowExecutor stubbed in agentix-triggers; Phase 15 re-implements (13-09)
-- EventBroadcaster stubbed using tokio broadcast; agentix-coordination crate deferred to future phase (13-09)
-- LLM provider wiring already complete from 13-06: create_provider_from_definition() in agent_manager.rs (13-09)
+- ChannelGateway trait uses parse_webhook for polymorphic dispatch (no unsafe downcasting)
+- One gateway per platform in ChannelGatewayManager HashMap
+- Channel routing via TriggerEvent for consistency with existing trigger system
 
 ### Open Questions
 
-1. **Repository rename:** github.com/agenticdevops/aof → github.com/openagentix/openagentix?
+1. **Repository rename:** github.com/agenticdevops/aof -> github.com/openagentix/openagentix?
 
 ### Blockers
 
@@ -120,8 +80,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Phase 20 complete — all 5 plans executed
-Next: Execute Phase 21 (Gateway Multi-Channel)
+Stopped at: Phase 21 completed — Multi-Channel Gateway fully implemented
+Next: Execute Phase 22 (Command Center - Svelte web dashboard)
 Resume file: None
 
 ---
