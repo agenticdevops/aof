@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Bot, RefreshCw, ShieldCheck, PlayCircle } from 'lucide-svelte';
+	import { Bot, RefreshCw, ShieldCheck, PlayCircle, Clock } from 'lucide-svelte';
 	import MetricsBar from '$lib/components/metrics-bar.svelte';
 	import ActivityFeed from '$lib/components/activity-feed.svelte';
 	import Card from '$lib/components/ui/card.svelte';
@@ -10,7 +10,29 @@
 	import { wsEvents } from '$lib/stores/websocket.js';
 	import type { GatewayEvent } from '$lib/stores/websocket.js';
 	import { api } from '$lib/api/client.js';
-	import type { CostSummary, ApprovalRequest, AgentRun } from '$lib/api/types.js';
+	import type { CostSummary, ApprovalRequest, AgentRun, Agent } from '$lib/api/types.js';
+
+	// Scheduled agents: agents with cron triggers
+	const scheduledAgents = $derived(
+		$agents.filter((a: Agent) => a.triggers?.some((t) => t.type === 'cron'))
+	);
+
+	function humanizeCron(expr: string): string {
+		// Very simple humanizer for common cron patterns
+		const parts = expr.trim().split(/\s+/);
+		if (parts.length < 5) return expr;
+		const [min, hour, dom, month, dow] = parts;
+		if (min === '0' && dom === '*' && month === '*' && dow === '*') {
+			return `Every day at ${hour}:00`;
+		}
+		if (dom === '*' && month === '*' && dow !== '*') {
+			const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+			const dayName = days[parseInt(dow)] ?? `day ${dow}`;
+			return `Every ${dayName} at ${hour}:${min.padStart(2, '0')}`;
+		}
+		if (min === '*' && hour === '*') return 'Every minute';
+		return expr;
+	}
 
 	let costsToday = $state(0);
 	let pendingApprovals = $state<ApprovalRequest[]>([]);
@@ -191,6 +213,28 @@
 							<ShieldCheck class="h-3.5 w-3.5" />
 							Review Approvals
 						</a>
+					{/if}
+				</Card>
+			<!-- Scheduled agents -->
+				<Card class="p-4">
+					<div class="flex items-center gap-2 mb-3 border-b pb-2">
+						<Clock class="h-4 w-4 text-muted-foreground" />
+						<h3 class="text-sm font-semibold">Scheduled Agents</h3>
+					</div>
+					{#if scheduledAgents.length === 0}
+						<p class="text-xs text-muted-foreground py-4 text-center">No agents with cron triggers</p>
+					{:else}
+						<ul class="space-y-2">
+							{#each scheduledAgents.slice(0, 5) as agent (agent.name)}
+								{@const cronTrigger = agent.triggers.find((t) => t.type === 'cron')}
+								<li class="flex items-start justify-between text-xs gap-2">
+									<span class="font-medium truncate max-w-[45%]">{agent.name}</span>
+									<span class="text-muted-foreground text-right truncate">
+										{cronTrigger?.expression ? humanizeCron(cronTrigger.expression) : 'Cron'}
+									</span>
+								</li>
+							{/each}
+						</ul>
 					{/if}
 				</Card>
 			</div>

@@ -1,22 +1,35 @@
 <script lang="ts">
 	import '../app.css';
 	import Sidebar from '$lib/components/sidebar.svelte';
+	import FirstRunWizard from '$lib/components/first-run-wizard.svelte';
 	import { Menu } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { initWebSocket, disconnectWebSocket } from '$lib/stores/websocket.js';
+	import { hasCompletedWizard, completeWizard } from '$lib/stores/settings.js';
 
 	let { children }: { children: Snippet } = $props();
 
 	let mobileOpen = $state(false);
+	let showWizard = $state(false);
 
 	onMount(() => {
 		initWebSocket();
+		// Show wizard on first visit
+		const unsub = hasCompletedWizard.subscribe((done) => {
+			showWizard = !done;
+		});
+		return unsub;
 	});
 
 	onDestroy(() => {
 		disconnectWebSocket();
 	});
+
+	function handleWizardClose() {
+		completeWizard();
+		showWizard = false;
+	}
 </script>
 
 <div class="flex h-screen overflow-hidden">
@@ -44,3 +57,7 @@
 		{@render children()}
 	</main>
 </div>
+
+{#if showWizard}
+	<FirstRunWizard onclose={handleWizardClose} />
+{/if}
