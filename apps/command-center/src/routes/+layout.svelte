@@ -3,10 +3,20 @@
 	import Sidebar from '$lib/components/sidebar.svelte';
 	import { Menu } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { initWebSocket, disconnectWebSocket } from '$lib/stores/websocket.js';
 
 	let { children }: { children: Snippet } = $props();
 
 	let mobileOpen = $state(false);
+
+	onMount(() => {
+		initWebSocket();
+	});
+
+	onDestroy(() => {
+		disconnectWebSocket();
+	});
 </script>
 
 <div class="flex h-screen overflow-hidden">
