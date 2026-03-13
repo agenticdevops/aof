@@ -60,3 +60,5 @@ http-body-util = { workspace = true }
 tower = { workspace = true }
 ## For WASM tests: compile WAT (WebAssembly Text Format) to bytes
 wat = "1"
+## For WebSocket tests: connect to the ws endpoint
+tokio-tungstenite = { version = "0.21", features = ["connect"] }
