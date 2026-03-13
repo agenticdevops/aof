@@ -24,6 +24,7 @@ use agentix_core::{
 };
 use agentix_llm::ProviderFactory;
 
+use crate::audit_store::{AuditStore, AuditEntry, AuditEventType, AuditOutcome};
 use crate::cost_store::CostStore;
 use crate::executor::react_loop::{ReActConfig, ReActEngine, ReActEvent, RunResult, ToolExecutor};
 use crate::gateway::run_store::{RunRecord, RunStore};
@@ -154,6 +155,8 @@ pub struct AgentManager {
     pub cost_store: Arc<CostStore>,
     /// Persistent SQLite trace store for spans and structured logs (Phase 18).
     pub trace_store: Arc<TraceStore>,
+    /// Persistent SQLite audit trail store (Phase 19).
+    pub audit_store: Arc<AuditStore>,
     /// Optional OTel exporter for pushing spans to external collectors (Phase 18).
     otel_exporter: Option<OtelExporter>,
     /// Per-agent bounded inboxes for coordination (COORD-01).
@@ -195,6 +198,16 @@ impl AgentManager {
         }
     }
 
+    fn open_audit_store_at(path: &str) -> Arc<AuditStore> {
+        match AuditStore::open(path) {
+            Ok(store) => Arc::new(store),
+            Err(e) => {
+                tracing::warn!("Failed to open audit store at '{}': {} — falling back to in-memory", path, e);
+                Arc::new(AuditStore::open(":memory:").expect("in-memory SQLite"))
+            }
+        }
+    }
+
     /// Build an OtelExporter from workspace config if telemetry is configured.
     fn build_otel_exporter(workspace_config: &Option<WorkspaceConfig>) -> Option<OtelExporter> {
         workspace_config.as_ref().and_then(|wc| {
@@ -209,17 +222,19 @@ impl AgentManager {
     }
 
     /// Ensure the data directory exists and return paths for run, cost, and trace DBs.
-    fn data_db_paths(data_dir: &std::path::Path) -> (String, String, String) {
+    fn data_db_paths(data_dir: &std::path::Path) -> (String, String, String, String) {
         if let Err(e) = std::fs::create_dir_all(data_dir) {
             tracing::warn!("Failed to create data dir '{}': {}", data_dir.display(), e);
         }
         let run_db = data_dir.join("runs.db");
         let cost_db = data_dir.join("cost.db");
         let trace_db = data_dir.join("trace.db");
+        let audit_db = data_dir.join("audit.db");
         (
             run_db.to_str().unwrap_or("./agentix-runs.db").to_string(),
             cost_db.to_str().unwrap_or("./agentix-cost.db").to_string(),
             trace_db.to_str().unwrap_or("./agentix-trace.db").to_string(),
+            audit_db.to_str().unwrap_or("./agentix-audit.db").to_string(),
         )
     }
 
@@ -232,6 +247,7 @@ impl AgentManager {
         let run_store = Self::open_run_store_at(":memory:");
         let cost_store = Self::open_cost_store_at(":memory:");
         let trace_store = Self::open_trace_store_at(":memory:");
+        let audit_store = Self::open_audit_store_at(":memory:");
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
@@ -243,6 +259,7 @@ impl AgentManager {
             run_store,
             cost_store,
             trace_store,
+            audit_store,
             otel_exporter,
             inboxes: DashMap::new(),
         });
@@ -257,14 +274,16 @@ impl AgentManager {
     /// Used by `Gateway::start` for production deployments.
     pub fn new_with_data_dir(workspace_config: Option<WorkspaceConfig>, data_dir: &std::path::Path) -> Arc<Self> {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
-        let (run_db_path, cost_db_path, trace_db_path) = Self::data_db_paths(data_dir);
+        let (run_db_path, cost_db_path, trace_db_path, audit_db_path) = Self::data_db_paths(data_dir);
         let run_store = Self::open_run_store_at(&run_db_path);
         let cost_store = Self::open_cost_store_at(&cost_db_path);
         let trace_store = Self::open_trace_store_at(&trace_db_path);
+        let audit_store = Self::open_audit_store_at(&audit_db_path);
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         tracing::info!("Run store: {}", run_db_path);
         tracing::info!("Cost store: {}", cost_db_path);
         tracing::info!("Trace store: {}", trace_db_path);
+        tracing::info!("Audit store: {}", audit_db_path);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -275,6 +294,7 @@ impl AgentManager {
             run_store,
             cost_store,
             trace_store,
+            audit_store,
             otel_exporter,
             inboxes: DashMap::new(),
         });
@@ -288,6 +308,7 @@ impl AgentManager {
         let run_store = Self::open_run_store_at(":memory:");
         let cost_store = Self::open_cost_store_at(":memory:");
         let trace_store = Self::open_trace_store_at(":memory:");
+        let audit_store = Self::open_audit_store_at(":memory:");
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
@@ -299,6 +320,7 @@ impl AgentManager {
             run_store,
             cost_store,
             trace_store,
+            audit_store,
             otel_exporter,
             inboxes: DashMap::new(),
         });
@@ -696,6 +718,25 @@ impl AgentManager {
             agent_model.splitn(2, '/').nth(1).unwrap_or(&agent_model).to_string()
         };
 
+        // Audit: log AgentStart event (non-critical)
+        {
+            let audit_entry = AuditEntry {
+                id: None,
+                timestamp: chrono::Utc::now(),
+                event_type: AuditEventType::AgentStart,
+                agent_name: agent_name.to_string(),
+                run_id: Some(run_id.clone()),
+                actor: "system".to_string(),
+                action: format!("Starting agent run {}", run_id),
+                outcome: AuditOutcome::Success,
+                details: std::collections::HashMap::new(),
+                trace_id: None,
+            };
+            if let Err(e) = self.audit_store.log_event(audit_entry) {
+                tracing::warn!("Failed to log audit AgentStart: {}", e);
+            }
+        }
+
         // Spawn the run task
         let manager = self.clone();
         let run_id_task = run_id.clone();
@@ -716,6 +757,26 @@ impl AgentManager {
                         run.status = RunStatus::Completed;
                         run.output = Some(run_result.output.clone());
                         run.iterations = run_result.iterations;
+
+                        // Audit: log AgentComplete (non-critical)
+                        let mut details = std::collections::HashMap::new();
+                        details.insert("iterations".to_string(), serde_json::json!(run_result.iterations));
+                        details.insert("tool_calls_count".to_string(), serde_json::json!(run_result.tool_calls.len()));
+                        let audit_entry = AuditEntry {
+                            id: None,
+                            timestamp: chrono::Utc::now(),
+                            event_type: AuditEventType::AgentComplete,
+                            agent_name: agent_name_task.clone(),
+                            run_id: Some(run_id_task.clone()),
+                            actor: "system".to_string(),
+                            action: format!("Agent run {} completed", run_id_task),
+                            outcome: AuditOutcome::Success,
+                            details,
+                            trace_id: None,
+                        };
+                        if let Err(e) = manager.audit_store.log_event(audit_entry) {
+                            tracing::warn!("Failed to log audit AgentComplete: {}", e);
+                        }
                     }
                     Err(err) => {
                         // Check if it was cancelled
@@ -723,6 +784,23 @@ impl AgentManager {
                             // Already marked cancelled
                         } else {
                             run.status = RunStatus::Failed(err.to_string());
+                        }
+
+                        // Audit: log AgentError (non-critical)
+                        let audit_entry = AuditEntry {
+                            id: None,
+                            timestamp: chrono::Utc::now(),
+                            event_type: AuditEventType::AgentError,
+                            agent_name: agent_name_task.clone(),
+                            run_id: Some(run_id_task.clone()),
+                            actor: "system".to_string(),
+                            action: format!("Agent run {} failed", run_id_task),
+                            outcome: AuditOutcome::Failure(err.to_string()),
+                            details: std::collections::HashMap::new(),
+                            trace_id: None,
+                        };
+                        if let Err(e) = manager.audit_store.log_event(audit_entry) {
+                            tracing::warn!("Failed to log audit AgentError: {}", e);
                         }
                     }
                 }

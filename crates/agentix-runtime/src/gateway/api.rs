@@ -31,6 +31,8 @@
 //! | GET | /api/v1/costs | List cost summaries for all agents |
 //! | GET | /api/v1/costs/agents/:name | Get cost summary for a specific agent |
 //! | GET | /api/v1/costs/agents/:name/runs | List per-run cost breakdown for an agent |
+//! | GET | /api/v1/agents/:name/audit | Get audit trail for an agent |
+//! | GET | /api/v1/audit/security | Get security-relevant audit events |
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -76,6 +78,8 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/costs", get(list_all_costs))
         .route("/api/v1/costs/agents/:name", get(get_agent_costs))
         .route("/api/v1/costs/agents/:name/runs", get(get_agent_run_costs))
+        .route("/api/v1/agents/:name/audit", get(get_agent_audit))
+        .route("/api/v1/audit/security", get(get_security_audit))
         .route("/webhooks/:trigger_id", post(receive_webhook))
         .layer(CorsLayer::permissive())
         .with_state(manager)
@@ -791,6 +795,78 @@ async fn get_agent_run_costs(
         })
         .collect();
     Json(json)
+}
+
+// ---------------------------------------------------------------------------
+// Audit endpoints (Phase 19)
+// ---------------------------------------------------------------------------
+
+/// Query parameters for audit endpoints.
+#[derive(Debug, Deserialize)]
+struct AuditQuery {
+    /// Maximum number of entries to return (default: 100).
+    #[serde(default = "default_audit_limit")]
+    limit: u32,
+}
+
+fn default_audit_limit() -> u32 {
+    100
+}
+
+/// GET /api/v1/agents/:name/audit — Get audit trail for an agent.
+async fn get_agent_audit(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(name): AxumPath<String>,
+    Query(params): Query<AuditQuery>,
+) -> Response {
+    match manager.audit_store.get_agent_audit(&name, params.limit) {
+        Ok(entries) => {
+            let json: Vec<serde_json::Value> = entries.into_iter().map(|e| {
+                serde_json::json!({
+                    "id": e.id,
+                    "timestamp": e.timestamp.to_rfc3339(),
+                    "event_type": e.event_type,
+                    "agent_name": e.agent_name,
+                    "run_id": e.run_id,
+                    "actor": e.actor,
+                    "action": e.action,
+                    "outcome": e.outcome,
+                    "details": e.details,
+                    "trace_id": e.trace_id,
+                })
+            }).collect();
+            Json(serde_json::json!(json)).into_response()
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Audit query failed: {}", e)),
+    }
+}
+
+/// GET /api/v1/audit/security — Get security-relevant audit events.
+async fn get_security_audit(
+    State(manager): State<Arc<AgentManager>>,
+    Query(params): Query<AuditQuery>,
+) -> Response {
+    let limit = if params.limit == 100 { 50 } else { params.limit };
+    match manager.audit_store.get_security_events(limit) {
+        Ok(entries) => {
+            let json: Vec<serde_json::Value> = entries.into_iter().map(|e| {
+                serde_json::json!({
+                    "id": e.id,
+                    "timestamp": e.timestamp.to_rfc3339(),
+                    "event_type": e.event_type,
+                    "agent_name": e.agent_name,
+                    "run_id": e.run_id,
+                    "actor": e.actor,
+                    "action": e.action,
+                    "outcome": e.outcome,
+                    "details": e.details,
+                    "trace_id": e.trace_id,
+                })
+            }).collect();
+            Json(serde_json::json!(json)).into_response()
+        }
+        Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Security audit query failed: {}", e)),
+    }
 }
 
 // ---------------------------------------------------------------------------
