@@ -20,7 +20,7 @@
 
 - [x] **Phase 13: Rebrand + Core Runtime + CLI Foundation** - `agentix` binary, GitAgent-compatible agent directories, ReAct loop, streaming, backward compatibility (completed 2026-03-12)
 - [x] **Phase 14: Skills Composition + Tools + WASM Sandbox** - Skill packs, composable agents, WASM-isolated tool execution (completed 2026-03-13)
-- [ ] **Phase 15: Triggers + Scheduling** - Cron, webhook, GitHub, Jira, agent-to-agent, run persistence
+- [x] **Phase 15: Triggers + Scheduling** - Cron, webhook, GitHub, Jira, agent-to-agent, run persistence (completed 2026-03-13)
 - [ ] **Phase 16: Agent Coordination + Memory** - Multi-agent delegation, vector memory, semantic recall, research phase
 - [ ] **Phase 17: Cost Tracking + Budgets** - Per-call/run/agent cost tracking, daily budget limits, smart model routing
 - [ ] **Phase 18: Telemetry + Observability** - OTel traces + metrics, structured logs, exportable to Grafana/Datadog
