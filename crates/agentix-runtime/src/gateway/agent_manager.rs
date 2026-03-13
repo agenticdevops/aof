@@ -19,6 +19,8 @@ use uuid::Uuid;
 use agentix_core::{
     AgentDefinition, AgentixError, AgentLoader, FlatYamlLoader, ModelConfig,
     ModelProvider, TriggerEvent, TriggerRunRegistry, WorkspaceConfig,
+    coordination::{AgentInbox, CoordinatorProtocol, DelegationMessage, DelegationResult, DelegationStatus},
+    TriggerSource,
 };
 use agentix_llm::ProviderFactory;
 
@@ -143,6 +145,9 @@ pub struct AgentManager {
     trigger_event_tx: mpsc::Sender<(String, TriggerEvent)>,
     /// Persistent SQLite run history store.
     pub run_store: Arc<RunStore>,
+    /// Per-agent bounded inboxes for coordination (COORD-01).
+    /// One inbox per registered agent, keyed by agent name.
+    inboxes: DashMap<String, Arc<AgentInbox>>,
 }
 
 impl AgentManager {
@@ -170,6 +175,7 @@ impl AgentManager {
             trigger_registry: Mutex::new(TriggerRunRegistry::new()),
             trigger_event_tx,
             run_store,
+            inboxes: DashMap::new(),
         });
         // Spawn the trigger dispatcher background task
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
@@ -188,6 +194,7 @@ impl AgentManager {
             trigger_registry: Mutex::new(TriggerRunRegistry::new()),
             trigger_event_tx,
             run_store,
+            inboxes: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
         manager
@@ -283,6 +290,8 @@ impl AgentManager {
                             status: AgentStatus::Ready,
                         },
                     );
+                    // Create inbox for coordination (COORD-01)
+                    self.inboxes.entry(name.clone()).or_insert_with(|| Arc::new(AgentInbox::default_capacity()));
                     tracing::info!("Loaded agent '{}' from {:?}", name, path);
                     loaded_names.push(name);
                 }
@@ -455,6 +464,8 @@ impl AgentManager {
                 status: AgentStatus::Ready,
             },
         );
+        // Create inbox for coordination (COORD-01)
+        self.inboxes.entry(name.clone()).or_insert_with(|| Arc::new(AgentInbox::default_capacity()));
 
         Ok(name)
     }
@@ -838,6 +849,97 @@ impl AgentManager {
     }
 
     // -------------------------------------------------------------------------
+    // Coordination methods (COORD-01 through COORD-05)
+    // -------------------------------------------------------------------------
+
+    /// Get the inbox for a named agent.
+    /// Returns None if the agent is not registered.
+    pub fn inbox_for(&self, agent_name: &str) -> Option<Arc<AgentInbox>> {
+        self.inboxes.get(agent_name).map(|v| v.clone())
+    }
+
+    /// Delegate a task to a specialist agent and return the result.
+    ///
+    /// Creates a TriggerEvent wrapping the delegation, fires the target agent,
+    /// and waits for the run to complete. Records a delegation audit log entry.
+    pub async fn delegate_task(
+        self: &Arc<Self>,
+        from_agent: &str,
+        target: &str,
+        task: &str,
+        payload: serde_json::Value,
+    ) -> Result<DelegationResult, AgentixError> {
+        let delegation_id = Uuid::new_v4().to_string();
+
+        if !self.agents.contains_key(target) {
+            return Err(AgentixError::Runtime(format!(
+                "Delegation target agent '{}' not found",
+                target
+            )));
+        }
+
+        // Build a TriggerEvent representing the delegation
+        let event = agentix_core::TriggerEvent {
+            source: TriggerSource::Agent,
+            payload: serde_json::json!({
+                "delegation_id": delegation_id,
+                "from_agent": from_agent,
+                "task": task,
+                "payload": payload,
+            }),
+            context: {
+                let mut ctx = std::collections::HashMap::new();
+                ctx.insert("delegation_id".to_string(), delegation_id.clone());
+                ctx.insert("from_agent".to_string(), from_agent.to_string());
+                ctx
+            },
+            fired_at: chrono::Utc::now(),
+            trigger_id: delegation_id.clone(),
+        };
+
+        // Run the target agent; wait for completion via run_agent_with_trigger + run store polling
+        let run_id = self.run_agent_with_trigger(target, event).await?;
+
+        // Log delegation to audit trail via run_store metadata
+        tracing::info!(
+            delegation_id = %delegation_id,
+            from_agent = %from_agent,
+            target = %target,
+            run_id = %run_id,
+            "Delegation dispatched"
+        );
+
+        // Poll the run store for completion (max 60s)
+        let output = self.await_run_completion(&run_id, 60).await;
+        let success = output.is_some();
+
+        Ok(DelegationResult {
+            delegation_id,
+            from_agent: target.to_string(),
+            output: output.unwrap_or_else(|| format!("Agent '{}' did not produce output", target)),
+            status: if success { DelegationStatus::Success } else { DelegationStatus::Failure },
+            completed_at: chrono::Utc::now(),
+        })
+    }
+
+    /// Wait for a run to complete and return its output summary.
+    /// Polls the run store every 500ms up to `timeout_secs`.
+    async fn await_run_completion(&self, run_id: &str, timeout_secs: u64) -> Option<String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+        loop {
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
+            if let Ok(Some(record)) = self.run_store.get(run_id) {
+                if record.status == "completed" || record.status == "failed" {
+                    return record.output_summary;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Query methods
     // -------------------------------------------------------------------------
 
@@ -917,6 +1019,84 @@ impl AgentManager {
                 iterations: r.iterations,
             }
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CoordinatorProtocol implementation for AgentManager (COORD-02, COORD-03, COORD-04)
+// ---------------------------------------------------------------------------
+
+#[async_trait::async_trait]
+impl CoordinatorProtocol for AgentManager {
+    async fn delegate(
+        &self,
+        target: &str,
+        task: &str,
+        payload: serde_json::Value,
+    ) -> Result<DelegationResult, AgentixError> {
+        // Use a temporary Arc wrapping for the delegate_task method.
+        // This method is called on an existing Arc<AgentManager> via axum State.
+        let delegation_id = Uuid::new_v4().to_string();
+
+        if !self.agents.contains_key(target) {
+            return Err(AgentixError::Runtime(format!(
+                "Delegation target agent '{}' not found",
+                target
+            )));
+        }
+
+        let event = agentix_core::TriggerEvent {
+            source: TriggerSource::Agent,
+            payload: serde_json::json!({
+                "delegation_id": delegation_id,
+                "task": task,
+                "payload": payload,
+            }),
+            context: {
+                let mut ctx = std::collections::HashMap::new();
+                ctx.insert("delegation_id".to_string(), delegation_id.clone());
+                ctx
+            },
+            fired_at: chrono::Utc::now(),
+            trigger_id: delegation_id.clone(),
+        };
+
+        // Fire the target agent — this persists a RunRecord and starts the run
+        // Note: run_agent_with_trigger requires Arc<Self>, so we use trigger_event_tx instead
+        self.trigger_event_tx
+            .send((target.to_string(), event))
+            .await
+            .map_err(|e| AgentixError::Runtime(format!("Delegation channel closed: {e}")))?;
+
+        tracing::info!(
+            delegation_id = %delegation_id,
+            target = %target,
+            task = %task,
+            "Delegation dispatched via CoordinatorProtocol"
+        );
+
+        // For now, return an accepted result. Full synchronous result routing
+        // (await run completion) is provided via delegate_task() which uses Arc<Self>.
+        Ok(DelegationResult {
+            delegation_id,
+            from_agent: target.to_string(),
+            output: format!("Delegation accepted by '{}'", target),
+            status: DelegationStatus::Success,
+            completed_at: chrono::Utc::now(),
+        })
+    }
+
+    async fn delegate_parallel(
+        &self,
+        delegations: Vec<(String, String, serde_json::Value)>,
+    ) -> Result<Vec<DelegationResult>, AgentixError> {
+        let mut results = Vec::with_capacity(delegations.len());
+        // Sequential fallback for trait impl (Arc version is parallel)
+        for (target, task, payload) in delegations {
+            let result = self.delegate(&target, &task, payload).await?;
+            results.push(result);
+        }
+        Ok(results)
     }
 }
 

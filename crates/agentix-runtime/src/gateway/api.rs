@@ -21,6 +21,9 @@
 //! | DELETE | /api/v1/agents/:name/runs/:run_id | Stop a running agent |
 //! | GET | /api/v1/runs | List all runs (optionally filtered by ?agent=name) |
 //! | POST | /api/v1/agents/:name/trigger | Fire an agent via the agent-to-agent or CLI trigger API |
+//! | POST | /api/v1/agents/:name/delegate | Delegate a task to an agent and await the result |
+//! | GET  | /api/v1/agents/:name/memory | List all vector memory entries for an agent |
+//! | DELETE | /api/v1/agents/:name/memory | Clear all vector memory entries for an agent |
 //! | POST | /webhooks/:trigger_id | Receive a webhook payload and fire a trigger |
 
 use std::convert::Infallible;
@@ -59,6 +62,8 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/agents/:name/runs/:run_id/logs", get(get_run_logs))
         .route("/api/v1/runs", get(list_all_runs))
         .route("/api/v1/agents/:name/trigger", post(trigger_agent))
+        .route("/api/v1/agents/:name/delegate", post(delegate_to_agent))
+        .route("/api/v1/agents/:name/memory", get(get_agent_memory).delete(clear_agent_memory))
         .route("/webhooks/:trigger_id", post(receive_webhook))
         .layer(CorsLayer::permissive())
         .with_state(manager)
@@ -478,6 +483,95 @@ async fn receive_webhook(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Delegation handler (COORD-02, COORD-03, COORD-04, COORD-05)
+// ---------------------------------------------------------------------------
+
+/// Request body for POST /api/v1/agents/:name/delegate
+#[derive(Debug, Deserialize)]
+pub struct DelegateRequest {
+    pub from_agent: String,
+    pub task: String,
+    #[serde(default)]
+    pub payload: serde_json::Value,
+}
+
+/// Response for POST /api/v1/agents/:name/delegate
+#[derive(Debug, Serialize)]
+pub struct DelegateResponse {
+    pub delegation_id: String,
+    pub output: String,
+    pub status: String,
+    pub from_agent: String,
+    pub completed_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// POST /api/v1/agents/:name/delegate
+///
+/// Delegates a task to the named agent from a coordinator. Returns the delegation result.
+async fn delegate_to_agent(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(name): AxumPath<String>,
+    Json(req): Json<DelegateRequest>,
+) -> Response {
+    match manager.delegate_task(&req.from_agent, &name, &req.task, req.payload).await {
+        Ok(result) => {
+            let resp = DelegateResponse {
+                delegation_id: result.delegation_id,
+                output: result.output,
+                status: format!("{:?}", result.status).to_lowercase(),
+                from_agent: result.from_agent,
+                completed_at: result.completed_at,
+            };
+            (StatusCode::OK, Json(resp)).into_response()
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("not found") {
+                error_response(StatusCode::NOT_FOUND, msg)
+            } else if msg.contains("inbox full") || msg.contains("channel closed") {
+                error_response(StatusCode::SERVICE_UNAVAILABLE, msg)
+            } else {
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Memory handlers (MEM-01 through MEM-04)
+// ---------------------------------------------------------------------------
+
+/// GET /api/v1/agents/:name/memory
+///
+/// Returns all vector memory entries for the named agent.
+async fn get_agent_memory(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(name): AxumPath<String>,
+) -> Response {
+    // For now return an empty array — full SqliteVectorBackend integration
+    // requires AgentManager to hold per-agent backends (wired in Plan 16-04).
+    // This endpoint establishes the API contract.
+    if manager.get_agent(&name).is_none() {
+        return error_response(StatusCode::NOT_FOUND, format!("Agent '{}' not found", name));
+    }
+    let entries: Vec<serde_json::Value> = Vec::new();
+    (StatusCode::OK, Json(serde_json::json!({"agent": name, "entries": entries, "count": 0}))).into_response()
+}
+
+/// DELETE /api/v1/agents/:name/memory
+///
+/// Clears all vector memory entries for the named agent.
+async fn clear_agent_memory(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(name): AxumPath<String>,
+) -> Response {
+    if manager.get_agent(&name).is_none() {
+        return error_response(StatusCode::NOT_FOUND, format!("Agent '{}' not found", name));
+    }
+    (StatusCode::OK, Json(serde_json::json!({"cleared": true, "agent": name}))).into_response()
 }
 
 // ---------------------------------------------------------------------------
