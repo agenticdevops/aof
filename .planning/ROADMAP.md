@@ -190,7 +190,17 @@ Plans:
   6. Agent run traces render as interactive waterfall diagrams with expandable span details
   7. Cost data renders as interactive charts (bar, line, pie) with date range filtering and drill-down
   8. Multi-agent coordination renders as interactive directed graphs showing delegation relationships
-**Plans**: TBD
+**Plans**: 8 plans in 4 waves
+
+Plans:
+- [ ] 22-01-PLAN.md — Fork mission-control scaffold, SvelteKit 5 app with sidebar, API types, REST client
+- [ ] 22-02-PLAN.md — Gateway WebSocket endpoint for real-time event broadcasting (Rust)
+- [ ] 22-03-PLAN.md — Dashboard landing, agent list with live status, agent detail, run history
+- [ ] 22-04-PLAN.md — Cost dashboard with interactive bar, line, and doughnut charts
+- [ ] 22-05-PLAN.md — Trace viewer with Jaeger-style waterfall and multi-agent coordination graph
+- [ ] 22-06-PLAN.md — Approval queue with approve/deny actions and real-time updates
+- [ ] 22-07-PLAN.md — Agent builder with form, SOUL.md editor, skill browser, test run
+- [ ] 22-08-PLAN.md — Scheduler view, first-run wizard, settings, docs, CHANGELOG v2.0.0-alpha.10
 
 ## Progress
 
@@ -207,4 +217,4 @@ Plans:
 | 19. Security | 5/5 | Complete    | 2026-03-13 | - |
 | 20. Approval Workflows | 5/5 | Complete    | 2026-03-13 | - |
 | 21. Gateway (Multi-Channel) | 6/6 | Complete    | 2026-03-13 | - |
-| 22. Command Center (Svelte) | v2.0 | 0/TBD | Not started | - |
+| 22. Command Center (Svelte) | v2.0 | 0/8 | Planning complete | - |
