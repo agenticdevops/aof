@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.6] — 2026-03-13
+
+### Phase 18: Telemetry + Observability
+
+#### New: OpenTelemetry Traces (TELE-01, TELE-03)
+- Every agent run produces trace spans for: run, iteration, LLM call, tool call, research phase, memory recall
+- Spans carry attributes: model, provider, input_tokens, output_tokens, tool_name, status
+- Traces exportable to any OTLP-compatible backend (Jaeger, Grafana Tempo, Datadog)
+- Configure via `telemetry.otlp_endpoint` in agentix.yaml
+
+#### New: OpenTelemetry Metrics (TELE-02)
+- Prometheus metrics endpoint at GET /metrics
+- Metrics: aof_agent_executions_total, aof_agent_execution_duration_seconds, aof_llm_tokens_total, aof_llm_latency_seconds, aof_llm_requests_total
+- Compatible with Prometheus, Grafana, Datadog Agent
+
+#### New: Structured JSON Logs (TELE-04)
+- All agent run logs are structured JSON with correlation IDs (trace_id, span_id)
+- REST API: GET /api/v1/agents/:name/runs/:run_id/structured-logs
+- Logs link to trace spans for cross-referencing
+
+#### New: CLI Trace Viewer (TELE-05)
+- `agentix logs <agent> --trace` shows execution trace waterfall in the terminal
+- `agentix logs <agent> --trace --output json` for programmatic access
+- Waterfall shows span hierarchy with durations and attributes
+
+#### New: REST API
+- `GET /api/v1/agents/:name/runs/:run_id/trace` — span tree for a run
+- `GET /api/v1/agents/:name/runs/:run_id/structured-logs` — structured log entries
+- `GET /metrics` — Prometheus text format metrics
+
+#### Infrastructure
+- `TraceContext`, `SpanRecord`, `SpanKind`, `SpanStatus`, `StructuredLogEntry`, `LogLevel` types in `agentix-core::telemetry`
+- `TraceCollector` in `agentix-runtime` for thread-safe span/log aggregation during runs
+- `TraceStore` SQLite backend in `agentix-runtime` for persistent trace/log storage in `data/trace.db`
+- `OtelExporter` converts SpanRecords to OTLP v1 JSON and pushes to any OTel collector
+- `TelemetryConfig` in workspace config for otlp_endpoint, service_name, enabled, export_metrics
+- Zero overhead when telemetry disabled — all instrumentation guarded by `if let Some`
+
+#### New: Examples and Documentation
+- `quickstart/agents/telemetry-example/` — GitAgent-compatible agent with tracing
+- `quickstart/agentix-otel.yaml` — workspace config with OTel endpoint
+- `docs/guides/otel-integration.md` — setup guide for Jaeger, Grafana Tempo, Prometheus, Datadog
+- `docs/reference/telemetry-config.md` — full TelemetryConfig field reference
+- `docs/reference/cli-logs-trace.md` — CLI `agentix logs --trace` usage and examples
+- `docs/concepts/telemetry.md` — telemetry concepts documentation
+
 ## [2.0.0-alpha.5] — 2026-03-13
 
 ### Phase 17: Cost Tracking + Budgets

@@ -1,0 +1,6 @@
+spec_version: 1
+name: telemetry-example
+version: "1.0"
+description: "Example agent demonstrating telemetry and tracing"
+model:
+  preferred: anthropic/claude-3-5-haiku-20241022

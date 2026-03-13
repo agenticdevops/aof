@@ -45,7 +45,7 @@ async fn main() {
         Commands::Gateway { command } => commands::gateway::run(command).await,
         Commands::Agents { namespace } => commands::agents::run(&ctx, namespace).await,
         Commands::Runs { agent, limit } => commands::runs::run(&ctx, agent, limit).await,
-        Commands::Logs { agent, run, follow } => commands::logs::run(&ctx, agent, run, follow).await,
+        Commands::Logs { agent, run, follow, trace } => commands::logs::run(&ctx, agent, run, follow, trace).await,
         Commands::Stop { agent, run } => commands::stop::run(&ctx, agent, run).await,
         Commands::Apply { file } => commands::apply::run(&ctx, file).await,
         Commands::Validate { path } => commands::validate::run(path).await,

@@ -106,6 +106,42 @@ impl GatewayClient {
         check_status(resp).await?.json().await.map_err(Into::into)
     }
 
+    /// `GET /api/v1/agents/:name/runs/:run_id/trace` — get trace spans for a run.
+    pub async fn get_run_trace(
+        &self,
+        agent: &str,
+        run_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        let resp = self
+            .client
+            .get(self.url(&format!(
+                "/api/v1/agents/{}/runs/{}/trace",
+                agent, run_id
+            )))
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `GET /api/v1/agents/:name/runs/:run_id/structured-logs` — get structured log entries for a run.
+    pub async fn get_run_structured_logs(
+        &self,
+        agent: &str,
+        run_id: &str,
+    ) -> Result<Vec<serde_json::Value>> {
+        let resp = self
+            .client
+            .get(self.url(&format!(
+                "/api/v1/agents/{}/runs/{}/structured-logs",
+                agent, run_id
+            )))
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
     /// `DELETE /api/v1/agents/:name/runs/:run_id` — stop a run.
     pub async fn stop_run(&self, agent: &str, run_id: &str) -> Result<()> {
         let resp = self

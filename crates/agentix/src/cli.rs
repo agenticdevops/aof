@@ -59,6 +59,9 @@ pub enum Commands {
         /// Follow log output
         #[arg(long, short = 'f')]
         follow: bool,
+        /// Show execution trace with span waterfall
+        #[arg(long)]
+        trace: bool,
     },
     /// Stop a running agent
     Stop {

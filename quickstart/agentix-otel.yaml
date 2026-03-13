@@ -1,0 +1,19 @@
+apiVersion: openagentix.dev/v1
+kind: Workspace
+metadata:
+  name: otel-quickstart
+spec:
+  agents_dir: ./agents
+  providers:
+    anthropic:
+      api_key: "${ANTHROPIC_API_KEY}"
+  defaults:
+    model: anthropic/claude-sonnet-4-6
+  gateway:
+    host: "0.0.0.0"
+    port: 7777
+  telemetry:
+    enabled: true
+    otlp_endpoint: "http://localhost:4318/v1/traces"
+    service_name: "agentix-quickstart"
+    export_metrics: true
