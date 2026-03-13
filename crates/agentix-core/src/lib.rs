@@ -4,6 +4,8 @@
 // agentic systems for enterprise automation workflows.
 
 pub mod agent;
+pub mod approval;
+pub mod channel;
 pub mod config;
 pub mod context;
 pub mod coordination;
@@ -82,6 +84,15 @@ pub use telemetry::{
 };
 pub use secret_store::{EncryptedSecret, SecretError, SecretRedactor, SecretStore};
 pub use security::{CapabilityPolicy, SecurityConfig, SsrfGuard, SsrfViolation};
+pub use approval::{
+    ApprovalAction, ApprovalDecision, ApprovalPolicy, ApprovalRequest, ApprovalStatus,
+    AutonomyMode,
+};
+pub use channel::{
+    ChannelConfig, ChannelCredentials, ChannelDirection, ChannelGateway, ChannelMessage,
+    ChannelPlatformType, ChannelRoute, NotificationPayload, NotificationSeverity,
+    NotificationTarget,
+};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
