@@ -1,0 +1,21 @@
+apiVersion: openagentix.dev/v1
+kind: Agent
+metadata:
+  name: scheduled-reporter
+  description: Generates a weekly operational summary every Monday at 9 AM UTC
+spec:
+  model: anthropic/claude-3-haiku-20240307
+  system_prompt: |
+    You are a weekly operations reporter. When triggered by the cron scheduler,
+    generate a concise operational summary covering system health, recent incidents,
+    and action items for the week ahead. Keep the summary under 500 words.
+    Format the output as a Markdown report with clear section headers.
+  triggers:
+    - type: cron
+      expression: "0 9 * * 1"
+  notifications:
+    - type: webhook
+      url: ${SLACK_WEBHOOK_URL}
+  mode: autonomous
+  max_iterations: 3
+  tools: []

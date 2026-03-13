@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.3] - 2026-03-13
+
+### Added
+
+#### Triggers + Scheduling (Phase 15 — TRIG-01 through TRIG-11)
+- **Cron trigger**: agents fire automatically on cron schedules (`triggers: [{type: cron, expression: "0 9 * * 1"}]`)
+- **Webhook trigger**: generic HTTP POST at `/webhooks/:trigger_id` fires an agent; optional HMAC-SHA256 signature verification
+- **GitHub trigger**: HMAC-verified GitHub webhook fires agents on `pull_request`, `push`, `release`, and other events
+- **Jira trigger**: Jira webhook fires agents on `issue_updated`, `comment_created`, and other events (event from `webhookEvent` body field)
+- **Channel mention trigger**: @mentioning the agent in Slack (`app_mention`), Discord (message with `<@`), or Telegram fires the agent
+- **Agent-to-agent trigger**: one agent fires another via `POST /api/v1/agents/:name/trigger`
+- **CLI trigger**: `agentix run <agent> --input "..."` for one-shot manual invocation
+- `TriggerTrait` pluggable interface in `agentix-core` — add new trigger types without modifying core
+- `TriggerEvent` envelope type carrying source, payload, context, fired_at, and trigger_id through the entire pipeline
+- `TriggerSource` enum: `Cron`, `Webhook`, `GitHub`, `Jira`, `Slack`, `Discord`, `Telegram`, `Agent`, `Cli`
+- `POST /api/v1/agents/:name/trigger` — REST endpoint for agent and CLI triggers
+- `POST /webhooks/:trigger_id` — REST endpoint for webhook, GitHub, and Jira triggers
+
+#### Run Persistence (TRIG-10)
+- Every agent run is stored in SQLite (`./agentix-runs.db`) with trigger_source, timestamps, duration, and output summaries
+- `GET /api/v1/runs` — global run history endpoint, filterable by `?agent=name` and `?limit=N`
+- `agentix runs` now shows a **TRIGGER** column with the trigger source for each run
+
+#### Notification Routing (TRIG-11)
+- `webhook` notification type: POST run summary to a configured URL after every triggered run
+- `log` notification type: emit structured log line after every triggered run
+- Configured via `notifications:` field in agent YAML spec
+
+#### Quickstart Examples
+- `quickstart/agents/scheduled-reporter.yaml` — weekly cron report with Slack webhook notification
+- `quickstart/agents/github-pr-reviewer.yaml` — automatic PR review on GitHub `pull_request` events
+
+#### New Documentation
+- `docs/concepts/triggers.md` — trigger system overview and architecture
+- `docs/concepts/cron-triggers.md` — cron scheduling reference
+- `docs/concepts/webhook-triggers.md` — HTTP webhooks, GitHub, and Jira trigger reference
+- `docs/concepts/run-persistence.md` — run history, SQLite storage, and notification routing
+- `docs/guides/github-integration.md` — end-to-end GitHub webhook setup
+- `docs/guides/jira-integration.md` — Jira webhook setup
+- `docs/guides/slack-mention-trigger.md` — Slack app_mention trigger setup
+- `docs/guides/discord-mention-trigger.md` — Discord mention trigger setup
+- `docs/guides/telegram-mention-trigger.md` — Telegram message trigger setup
+- `docs/guides/agent-to-agent-triggers.md` — agent orchestration via triggers
+- `docs/guides/cli-triggers.md` — manual CLI invocation reference
+- `docs/guides/triggers-quickstart.md` — 5-minute quickstart guide for all trigger types
+
+---
+
 ## [2.0.0-alpha.2] - 2026-03-13
 
 ### Added

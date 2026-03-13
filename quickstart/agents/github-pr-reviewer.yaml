@@ -1,0 +1,26 @@
+apiVersion: openagentix.dev/v1
+kind: Agent
+metadata:
+  name: github-pr-reviewer
+  description: Automatically reviews pull requests when opened on GitHub
+spec:
+  model: anthropic/claude-3-5-sonnet-20241022
+  system_prompt: |
+    You are a code review assistant. When a GitHub pull request is opened,
+    review the PR title, description, and metadata provided in the trigger payload.
+    Provide constructive feedback covering:
+    - Clarity and completeness of the description
+    - Potential risks or missing test coverage mentions
+    - Whether the PR title follows conventional commit format
+    - Suggestions for improvement
+
+    Keep reviews concise (under 300 words) and actionable.
+    Begin with a brief summary line, then use bullet points for specific feedback.
+  triggers:
+    - type: github
+      webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+      events:
+        - pull_request
+  mode: autonomous
+  max_iterations: 5
+  tools: []
