@@ -8,6 +8,7 @@ pub mod config;
 pub mod context;
 pub mod coordination;
 pub mod cost;
+pub mod telemetry;
 pub mod vector_memory;
 pub mod error;
 pub mod error_tracker;
@@ -73,6 +74,9 @@ pub use vector_memory::{cosine_similarity, MemoryMatch, VectorEntry, VectorMemor
 pub use cost::{
     BudgetConfig, BudgetStopReason, CostRecord, CostSummary, ModelComplexityScore, ModelPricing,
     ModelTier, RunCostSummary, calculate_cost, default_model_pricing,
+};
+pub use telemetry::{
+    LogLevel, SpanKind, SpanRecord, SpanStatus, StructuredLogEntry, TraceContext,
 };
 
 /// Version information
