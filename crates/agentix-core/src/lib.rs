@@ -17,6 +17,7 @@ pub mod memory;
 pub mod model;
 pub mod registry;
 pub mod schema;
+pub mod security;
 pub mod skills;
 pub mod tool;
 pub mod trigger;
@@ -78,6 +79,7 @@ pub use cost::{
 pub use telemetry::{
     LogLevel, SpanKind, SpanRecord, SpanStatus, StructuredLogEntry, TraceContext,
 };
+pub use security::{CapabilityPolicy, SecurityConfig, SsrfGuard, SsrfViolation};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
