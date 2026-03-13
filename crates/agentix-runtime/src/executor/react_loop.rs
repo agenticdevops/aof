@@ -73,6 +73,18 @@ pub struct RunResult {
     pub tool_calls: Vec<ToolAction>,
     /// Whether the loop stopped because `max_iterations` was reached.
     pub reached_max_iterations: bool,
+    /// Total input tokens consumed across all LLM calls in this run (COST-01).
+    #[serde(default)]
+    pub total_input_tokens: u64,
+    /// Total output tokens produced across all LLM calls in this run (COST-01).
+    #[serde(default)]
+    pub total_output_tokens: u64,
+    /// Estimated total cost for this run in USD (COST-02).
+    #[serde(default)]
+    pub total_cost_usd: f64,
+    /// Reason the run was stopped by a budget limit, if applicable (COST-04/COST-05).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub stopped_reason: Option<agentix_core::BudgetStopReason>,
 }
 
 /// Configuration derived from an `AgentDefinition` for a single run.
@@ -82,6 +94,8 @@ pub struct ReActConfig {
     pub max_iterations: u32,
     /// Wall-clock timeout for the entire run.
     pub timeout: Duration,
+    /// Per-run token limit (input + output combined). Run stops when exceeded (COST-05).
+    pub max_tokens_per_run: Option<u64>,
 }
 
 impl ReActConfig {
@@ -90,6 +104,7 @@ impl ReActConfig {
         Self {
             max_iterations: def.max_iterations,
             timeout: Duration::from_secs(def.timeout_secs),
+            max_tokens_per_run: def.budget.as_ref().and_then(|b| b.max_tokens_per_run),
         }
     }
 }
@@ -258,6 +273,9 @@ impl ReActEngine {
 
         let mut all_tool_calls: Vec<ToolAction> = vec![];
         let mut iteration: u32 = 0;
+        // Token accumulators for cost tracking (COST-01)
+        let mut total_input_tokens: u64 = 0;
+        let mut total_output_tokens: u64 = 0;
 
         // Wrap the whole run in a timeout.
         let result = tokio::time::timeout(self.config.timeout, async {
@@ -269,6 +287,10 @@ impl ReActEngine {
                         iterations: iteration,
                         tool_calls: all_tool_calls.clone(),
                         reached_max_iterations: true,
+                        total_input_tokens,
+                        total_output_tokens,
+                        total_cost_usd: 0.0,
+                        stopped_reason: None,
                     };
                     self.emit(ReActEvent::Complete(run_result.clone()));
                     return Ok(run_result);
@@ -287,6 +309,34 @@ impl ReActEngine {
 
                 let response = self.model.generate(&request).await?;
 
+                // Accumulate token usage (COST-01)
+                total_input_tokens += response.usage.input_tokens as u64;
+                total_output_tokens += response.usage.output_tokens as u64;
+
+                // Check per-run token budget (COST-05)
+                if let Some(max_tokens) = self.config.max_tokens_per_run {
+                    let used = total_input_tokens + total_output_tokens;
+                    if used > max_tokens {
+                        let run_result = RunResult {
+                            output: format!(
+                                "Run stopped: token limit exceeded ({used} tokens used, limit is {max_tokens})."
+                            ),
+                            iterations: iteration,
+                            tool_calls: all_tool_calls.clone(),
+                            reached_max_iterations: false,
+                            total_input_tokens,
+                            total_output_tokens,
+                            total_cost_usd: 0.0,
+                            stopped_reason: Some(agentix_core::BudgetStopReason::TokenLimitExceeded {
+                                limit: max_tokens,
+                                used,
+                            }),
+                        };
+                        self.emit(ReActEvent::Complete(run_result.clone()));
+                        return Ok(run_result);
+                    }
+                }
+
                 if response.tool_calls.is_empty() {
                     // No tool calls → final answer.
                     // Count: if no tool iterations happened yet (pure Q&A), count 1.
@@ -297,6 +347,10 @@ impl ReActEngine {
                         iterations: final_iterations,
                         tool_calls: all_tool_calls.clone(),
                         reached_max_iterations: false,
+                        total_input_tokens,
+                        total_output_tokens,
+                        total_cost_usd: 0.0, // computed by AgentManager using pricing table
+                        stopped_reason: None,
                     };
                     self.emit(ReActEvent::Complete(run_result.clone()));
 

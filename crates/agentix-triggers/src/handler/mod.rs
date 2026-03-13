@@ -2223,6 +2223,7 @@ impl TriggerHandler {
             max_tokens: Some(2000),
             output_schema: None,
             routing: None,
+            budget: None,
             extra: std::collections::HashMap::new(),
         };
 

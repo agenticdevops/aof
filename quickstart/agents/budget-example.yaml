@@ -1,0 +1,20 @@
+apiVersion: openagentix.dev/v1
+kind: Agent
+metadata:
+  name: budget-example
+  description: "Example agent demonstrating cost tracking, budget enforcement, and smart model routing"
+spec:
+  model: google/gemini-2.0-flash
+  system_prompt: |
+    You are a helpful assistant. Answer questions concisely and accurately.
+    When asked to research or analyze, provide clear structured responses.
+
+  # Budget configuration — enforced by the gateway before each run starts
+  # and within the ReAct loop during execution.
+  budget:
+    # Block new runs if this agent has already spent $0.50 today.
+    daily_limit_usd: 0.50
+    # Stop the ReAct loop if total tokens (input + output combined) exceed 4,000.
+    max_tokens_per_run: 4000
+
+  max_iterations: 5

@@ -450,6 +450,7 @@ mod tests {
             output_schema: None,
             routing: None,
             extra: HashMap::new(),
+            budget: None,
         };
 
         registry.register(agent).unwrap();

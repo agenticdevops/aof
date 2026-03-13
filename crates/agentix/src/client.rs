@@ -194,6 +194,44 @@ impl GatewayClient {
         check_status(resp).await?.json().await.map_err(Into::into)
     }
 
+    /// `GET /api/v1/costs` — list cost summaries for all agents, sorted by total spend.
+    pub async fn list_all_costs(&self) -> Result<Vec<serde_json::Value>> {
+        let resp = self
+            .client
+            .get(self.url("/api/v1/costs"))
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `GET /api/v1/costs/agents/:name` — get cost summary for a specific agent.
+    pub async fn get_agent_cost_summary(&self, agent: &str) -> Result<serde_json::Value> {
+        let resp = self
+            .client
+            .get(self.url(&format!("/api/v1/costs/agents/{}", agent)))
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
+    /// `GET /api/v1/costs/agents/:name/runs` — list per-run cost breakdown for an agent.
+    pub async fn list_agent_run_costs(
+        &self,
+        agent: &str,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>> {
+        let resp = self
+            .client
+            .get(self.url(&format!("/api/v1/costs/agents/{}/runs", agent)))
+            .query(&[("limit", limit.to_string())])
+            .send()
+            .await
+            .map_err(|e| gateway_err(&self.base_url, e))?;
+        check_status(resp).await?.json().await.map_err(Into::into)
+    }
+
     /// `POST /api/v1/agents/:name/run?format=json` — run an agent and stream NDJSON.
     pub async fn stream_run(
         &self,

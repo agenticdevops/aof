@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.5] — 2026-03-13
+
+### Phase 17: Cost Tracking + Budgets
+
+#### New: Token and Cost Tracking (COST-01, COST-02, COST-03, COST-07)
+- Every LLM call records input tokens, output tokens, estimated cost, and actual provider cost when reported
+- Per-call cost records stored in `data/cost.db` (SQLite, WAL mode)
+- Costs aggregated per run and per agent with `COALESCE(actual_cost_usd, cost_usd)` — actual provider costs always take precedence over estimates
+- `CostRecord`, `CostSummary`, `RunCostSummary`, `ModelPricing` types in `agentix-core::cost`
+- `default_model_pricing()` covers 9 models across Anthropic, OpenAI, Google, and Groq
+
+#### New: Budget Enforcement (COST-04, COST-05)
+- `budget.daily_limit_usd` in agent YAML blocks new runs when daily USD spend is exceeded
+- `budget.max_tokens_per_run` stops the ReAct loop mid-run when cumulative token usage exceeds the limit
+- `BudgetStopReason` enum: `DailyLimitExceeded { limit_usd, spent_usd }` and `TokenLimitExceeded { limit, used }`
+- `RunResult` extended with `total_input_tokens`, `total_output_tokens`, `stopped_reason`
+- `BudgetConfig` field added to `AgentConfig`, `AgentDefinition`, and all agent loader paths
+
+#### New: Smart Model Routing (CORE-05)
+- `ModelComplexityScore::score()` scores messages 0-100 based on length, complexity keywords, and question depth
+- `ModelComplexityScore::tier()` maps scores to `ModelTier::Flash` (0-30), `Standard` (31-70), or `Pro` (71-100)
+- Scoring keywords: analyze, research, architecture, investigate, implement, compare, explain, design, optimize, debug, refactor
+
+#### New: CLI — `agentix costs` (CLI-09, COST-06)
+- `agentix costs` — prints table of all agents with total runs, token counts, and USD costs sorted by spend
+- `agentix costs agent <name>` — prints agent summary plus per-run cost breakdown table
+- `--limit N` flag to control number of recent runs shown (default: 20)
+- `--output json` for machine-readable output
+
+#### New: REST API (COST-06)
+- `GET /api/v1/costs` — all agent cost summaries, sorted by total spend descending
+- `GET /api/v1/costs/agents/:name` — single agent cost summary (404 if no data)
+- `GET /api/v1/costs/agents/:name/runs?limit=N` — paginated per-run cost history
+
+#### Infrastructure
+- `CostStore` SQLite backend in `agentix-runtime` with 7 methods: open, insert_record, get_run_summary, get_agent_summary, list_run_summaries, list_all_summaries, get_today_spend
+- `AgentManager::new_with_data_dir()` creates persistent `data/runs.db` and `data/cost.db` on startup
+- `Gateway::start` now uses `new_with_data_dir(Path::new("data"))` for production persistence
+
+#### New: Examples and Documentation
+- `quickstart/agents/budget-example.yaml` — agent demonstrating budget configuration with daily limit and token cap
+- `docs/guides/cost-budgets.md` — setup guide for cost tracking, budgets, and smart model routing
+- `docs/reference/agent-spec-budget.md` — full budget field reference with behavior description
+- `docs/reference/cli-costs.md` — CLI command reference with output examples
+- `docs/concepts/cost-tracking.md` — cost data model, pricing table, and API overview
+
+### Requirements Completed
+- COST-01, COST-02, COST-03, COST-04, COST-05, COST-06, COST-07 (Cost Tracking + Budgets)
+- CLI-09 (`agentix costs` command)
+- CORE-05 (Smart model routing by complexity score)
+
+---
+
 ## [2.0.0-alpha.4] - 2026-03-13
 
 ### Added

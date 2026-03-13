@@ -733,6 +733,10 @@ pub struct AgentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub routing: Option<RoutingConfig>,
 
+    /// Budget configuration — daily USD limit and per-run token limit (Phase 17)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget: Option<crate::cost::BudgetConfig>,
+
     /// Custom configuration
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -981,6 +985,7 @@ struct AgentSpec {
     max_tokens: Option<usize>,
     output_schema: Option<OutputSchemaSpec>,
     routing: Option<RoutingConfig>,
+    budget: Option<crate::cost::BudgetConfig>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
 }
@@ -1006,6 +1011,7 @@ struct FlatAgentConfig {
     max_tokens: Option<usize>,
     output_schema: Option<OutputSchemaSpec>,
     routing: Option<RoutingConfig>,
+    budget: Option<crate::cost::BudgetConfig>,
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
 }
@@ -1027,6 +1033,7 @@ impl From<AgentConfigInput> for AgentConfig {
                 max_tokens: flat.max_tokens,
                 output_schema: flat.output_schema,
                 routing: flat.routing,
+                budget: flat.budget,
                 extra: flat.extra,
             },
             AgentConfigInput::Kubernetes(k8s) => {
@@ -1044,6 +1051,7 @@ impl From<AgentConfigInput> for AgentConfig {
                     max_tokens: k8s.spec.max_tokens,
                     output_schema: k8s.spec.output_schema,
                     routing: k8s.spec.routing,
+                    budget: k8s.spec.budget,
                     extra: k8s.spec.extra,
                 }
             }
@@ -1908,6 +1916,8 @@ pub struct AgentDefinition {
     pub vector_memory: VectorMemoryConfig,
     /// Research phase configuration (v2.0 — CORE-06).
     pub research_phase: ResearchPhaseConfig,
+    /// Budget configuration — daily USD limit and per-run token limit (Phase 17).
+    pub budget: Option<crate::cost::BudgetConfig>,
 }
 
 impl AgentDefinition {
@@ -2116,6 +2126,7 @@ impl DirectoryLoader {
             notifications: manifest.notifications,
             vector_memory: manifest.vector_memory,
             research_phase: manifest.research_phase,
+            budget: None,
         })
     }
 }
@@ -2156,6 +2167,7 @@ struct FlatAgentSpecBody {
     vector_memory: VectorMemoryConfig,
     #[serde(default)]
     research_phase: ResearchPhaseConfig,
+    budget: Option<crate::cost::BudgetConfig>,
 }
 
 /// Loads flat YAML agents (`apiVersion: openagentix.dev/v1 / kind: Agent`) into `AgentDefinition`.
@@ -2190,6 +2202,7 @@ impl FlatYamlLoader {
             notifications: vec![],
             vector_memory: VectorMemoryConfig::default(),
             research_phase: ResearchPhaseConfig::default(),
+            budget: None,
         });
 
         // system_prompt and instructions are aliases
@@ -2249,6 +2262,7 @@ impl FlatYamlLoader {
             notifications: spec.notifications,
             vector_memory: spec.vector_memory,
             research_phase: spec.research_phase,
+            budget: spec.budget,
         })
     }
 }

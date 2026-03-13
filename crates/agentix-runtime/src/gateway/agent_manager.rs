@@ -24,6 +24,7 @@ use agentix_core::{
 };
 use agentix_llm::ProviderFactory;
 
+use crate::cost_store::CostStore;
 use crate::executor::react_loop::{ReActConfig, ReActEngine, ReActEvent, RunResult, ToolExecutor};
 use crate::gateway::run_store::{RunRecord, RunStore};
 use crate::streaming::EventReceiver;
@@ -145,28 +146,57 @@ pub struct AgentManager {
     trigger_event_tx: mpsc::Sender<(String, TriggerEvent)>,
     /// Persistent SQLite run history store.
     pub run_store: Arc<RunStore>,
+    /// Persistent SQLite cost tracking store (Phase 17).
+    pub cost_store: Arc<CostStore>,
     /// Per-agent bounded inboxes for coordination (COORD-01).
     /// One inbox per registered agent, keyed by agent name.
     inboxes: DashMap<String, Arc<AgentInbox>>,
 }
 
 impl AgentManager {
-    /// Open the RunStore. Uses `./agentix-runs.db` by default.
-    fn open_run_store(_workspace_config: &Option<WorkspaceConfig>) -> Arc<RunStore> {
-        let db_path = "./agentix-runs.db";
-        match RunStore::open(db_path) {
+    /// Open the RunStore at the given path (`:memory:` for tests, real path for production).
+    fn open_run_store_at(path: &str) -> Arc<RunStore> {
+        match RunStore::open(path) {
             Ok(store) => Arc::new(store),
             Err(e) => {
-                tracing::warn!("Failed to open run store at '{}': {} — falling back to in-memory", db_path, e);
+                tracing::warn!("Failed to open run store at '{}': {} — falling back to in-memory", path, e);
                 Arc::new(RunStore::open(":memory:").expect("in-memory SQLite"))
             }
         }
     }
 
+    /// Open the CostStore at the given path (`:memory:` for tests, real path for production).
+    fn open_cost_store_at(path: &str) -> Arc<CostStore> {
+        match CostStore::open(path) {
+            Ok(store) => Arc::new(store),
+            Err(e) => {
+                tracing::warn!("Failed to open cost store at '{}': {} — falling back to in-memory", path, e);
+                Arc::new(CostStore::open(":memory:").expect("in-memory SQLite"))
+            }
+        }
+    }
+
+    /// Ensure the data directory exists and return paths for run and cost DBs.
+    fn data_db_paths(data_dir: &std::path::Path) -> (String, String) {
+        if let Err(e) = std::fs::create_dir_all(data_dir) {
+            tracing::warn!("Failed to create data dir '{}': {}", data_dir.display(), e);
+        }
+        let run_db = data_dir.join("runs.db");
+        let cost_db = data_dir.join("cost.db");
+        (
+            run_db.to_str().unwrap_or("./agentix-runs.db").to_string(),
+            cost_db.to_str().unwrap_or("./agentix-cost.db").to_string(),
+        )
+    }
+
     /// Create a new `AgentManager` wrapped in an `Arc` for sharing.
+    ///
+    /// Uses in-memory SQLite for both run and cost stores (suitable for tests).
+    /// In production, call `new_with_data_dir` instead.
     pub fn new(workspace_config: Option<WorkspaceConfig>) -> Arc<Self> {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
-        let run_store = Self::open_run_store(&workspace_config);
+        let run_store = Self::open_run_store_at(":memory:");
+        let cost_store = Self::open_cost_store_at(":memory:");
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -175,6 +205,7 @@ impl AgentManager {
             trigger_registry: Mutex::new(TriggerRunRegistry::new()),
             trigger_event_tx,
             run_store,
+            cost_store,
             inboxes: DashMap::new(),
         });
         // Spawn the trigger dispatcher background task
@@ -182,10 +213,37 @@ impl AgentManager {
         manager
     }
 
+    /// Create a new `AgentManager` with persistent SQLite stores under `data_dir`.
+    ///
+    /// Creates `data_dir/runs.db` and `data_dir/cost.db` on startup.
+    /// Used by `Gateway::start` for production deployments.
+    pub fn new_with_data_dir(workspace_config: Option<WorkspaceConfig>, data_dir: &std::path::Path) -> Arc<Self> {
+        let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
+        let (run_db_path, cost_db_path) = Self::data_db_paths(data_dir);
+        let run_store = Self::open_run_store_at(&run_db_path);
+        let cost_store = Self::open_cost_store_at(&cost_db_path);
+        tracing::info!("Run store: {}", run_db_path);
+        tracing::info!("Cost store: {}", cost_db_path);
+        let manager = Arc::new(Self {
+            agents: DashMap::new(),
+            runs: DashMap::new(),
+            workspace_config,
+            agents_dir: None,
+            trigger_registry: Mutex::new(TriggerRunRegistry::new()),
+            trigger_event_tx,
+            run_store,
+            cost_store,
+            inboxes: DashMap::new(),
+        });
+        manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
+        manager
+    }
+
     /// Create an `AgentManager` with a known agents directory (used for WASM tool resolution).
     pub fn with_agents_dir(workspace_config: Option<WorkspaceConfig>, agents_dir: std::path::PathBuf) -> Arc<Self> {
         let (trigger_event_tx, trigger_event_rx) = mpsc::channel::<(String, TriggerEvent)>(256);
-        let run_store = Self::open_run_store(&workspace_config);
+        let run_store = Self::open_run_store_at(":memory:");
+        let cost_store = Self::open_cost_store_at(":memory:");
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -194,6 +252,7 @@ impl AgentManager {
             trigger_registry: Mutex::new(TriggerRunRegistry::new()),
             trigger_event_tx,
             run_store,
+            cost_store,
             inboxes: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
@@ -531,6 +590,24 @@ impl AgentManager {
         let definition = loaded.definition.clone();
         drop(loaded); // Release dashmap guard
 
+        // Check daily budget limit before starting run (COST-04)
+        if let Some(budget) = &definition.budget {
+            if let Some(daily_limit) = budget.daily_limit_usd {
+                match self.cost_store.get_today_spend(agent_name) {
+                    Ok(today_spend) if today_spend >= daily_limit => {
+                        return Err(AgentixError::Runtime(format!(
+                            "Daily budget limit exceeded for agent '{}': limit=${:.4}, today=${:.4}",
+                            agent_name, daily_limit, today_spend
+                        )));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to check daily budget for '{}': {}", agent_name, e);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Create run ID and channels
         let run_id = Uuid::new_v4().to_string();
         let (event_tx, event_rx): (
@@ -561,6 +638,17 @@ impl AgentManager {
             agent.status = AgentStatus::Running;
         }
 
+        // Capture model info for cost recording (before spawning task)
+        let agent_model = definition.model_preferred.clone().unwrap_or_default();
+        let agent_provider = {
+            // Extract provider from "provider/model" format
+            agent_model.split('/').next().unwrap_or("unknown").to_string()
+        };
+        let agent_model_name = {
+            // Extract model name after the "/"
+            agent_model.splitn(2, '/').nth(1).unwrap_or(&agent_model).to_string()
+        };
+
         // Spawn the run task
         let manager = self.clone();
         let run_id_task = run_id.clone();
@@ -576,10 +664,10 @@ impl AgentManager {
             // Update run state on completion
             if let Some(mut run) = manager.runs.get_mut(&run_id_task) {
                 run.completed_at = Some(chrono::Utc::now());
-                match result {
+                match &result {
                     Ok(run_result) => {
                         run.status = RunStatus::Completed;
-                        run.output = Some(run_result.output);
+                        run.output = Some(run_result.output.clone());
                         run.iterations = run_result.iterations;
                     }
                     Err(err) => {
@@ -589,6 +677,35 @@ impl AgentManager {
                         } else {
                             run.status = RunStatus::Failed(err.to_string());
                         }
+                    }
+                }
+            }
+
+            // Record cost after successful run (COST-01, COST-02)
+            if let Ok(run_result) = &result {
+                if run_result.total_input_tokens > 0 || run_result.total_output_tokens > 0 {
+                    use agentix_core::{CostRecord, default_model_pricing, calculate_cost};
+                    let pricing_table = default_model_pricing();
+                    let pricing_key = format!("{}/{}", agent_provider, agent_model_name);
+                    let cost_usd = if let Some(pricing) = pricing_table.get(&pricing_key) {
+                        calculate_cost(run_result.total_input_tokens, run_result.total_output_tokens, pricing)
+                    } else {
+                        run_result.total_cost_usd
+                    };
+                    let record = CostRecord {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        agent_name: agent_name_task.clone(),
+                        run_id: run_id_task.clone(),
+                        model: agent_model_name.clone(),
+                        provider: agent_provider.clone(),
+                        input_tokens: run_result.total_input_tokens,
+                        output_tokens: run_result.total_output_tokens,
+                        cost_usd,
+                        actual_cost_usd: None,
+                        recorded_at: chrono::Utc::now(),
+                    };
+                    if let Err(e) = manager.cost_store.insert_record(&record) {
+                        tracing::warn!("Failed to record cost for run '{}': {}", run_id_task, e);
                     }
                 }
             }
@@ -1009,6 +1126,37 @@ impl AgentManager {
             .await
             .map_err(|e| AgentixError::Runtime(format!("Failed to clear memory: {}", e)))?;
         Ok(count)
+    }
+
+    // -------------------------------------------------------------------------
+    // Cost query methods (Phase 17 — COST-06)
+    // -------------------------------------------------------------------------
+
+    /// List cost summaries for all agents (sorted by total_cost_usd DESC).
+    pub fn get_all_cost_summaries(&self) -> Vec<agentix_core::CostSummary> {
+        let mut summaries = self.cost_store.list_all_summaries().unwrap_or_default();
+        summaries.sort_by(|a, b| {
+            b.total_cost_usd
+                .partial_cmp(&a.total_cost_usd)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        summaries
+    }
+
+    /// Get cost summary for a single agent.
+    pub fn get_agent_cost_summary(&self, agent_name: &str) -> Option<agentix_core::CostSummary> {
+        self.cost_store.get_agent_summary(agent_name).ok()
+    }
+
+    /// List per-run cost summaries for an agent (newest first, paginated).
+    pub fn get_agent_run_cost_summaries(
+        &self,
+        agent_name: &str,
+        limit: usize,
+    ) -> Vec<agentix_core::RunCostSummary> {
+        self.cost_store
+            .list_run_summaries(agent_name, limit)
+            .unwrap_or_default()
     }
 
     // -------------------------------------------------------------------------

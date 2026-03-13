@@ -7,6 +7,7 @@ pub mod agent;
 pub mod config;
 pub mod context;
 pub mod coordination;
+pub mod cost;
 pub mod vector_memory;
 pub mod error;
 pub mod error_tracker;
@@ -69,6 +70,10 @@ pub use coordination::{
     INBOX_CAPACITY,
 };
 pub use vector_memory::{cosine_similarity, MemoryMatch, VectorEntry, VectorMemoryBackend};
+pub use cost::{
+    BudgetConfig, BudgetStopReason, CostRecord, CostSummary, ModelComplexityScore, ModelPricing,
+    ModelTier, RunCostSummary, calculate_cost, default_model_pricing,
+};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

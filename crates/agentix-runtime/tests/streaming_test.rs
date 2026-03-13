@@ -52,6 +52,10 @@ fn complete_event() -> ReActEvent {
         iterations: 3,
         tool_calls: vec![],
         reached_max_iterations: false,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cost_usd: 0.0,
+        stopped_reason: None,
     })
 }
 

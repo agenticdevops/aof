@@ -25,6 +25,9 @@
 //! | GET  | /api/v1/agents/:name/memory | List all vector memory entries for an agent |
 //! | DELETE | /api/v1/agents/:name/memory | Clear all vector memory entries for an agent |
 //! | POST | /webhooks/:trigger_id | Receive a webhook payload and fire a trigger |
+//! | GET | /api/v1/costs | List cost summaries for all agents |
+//! | GET | /api/v1/costs/agents/:name | Get cost summary for a specific agent |
+//! | GET | /api/v1/costs/agents/:name/runs | List per-run cost breakdown for an agent |
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -64,6 +67,9 @@ pub fn create_router(manager: Arc<AgentManager>) -> Router {
         .route("/api/v1/agents/:name/trigger", post(trigger_agent))
         .route("/api/v1/agents/:name/delegate", post(delegate_to_agent))
         .route("/api/v1/agents/:name/memory", get(get_agent_memory).delete(clear_agent_memory))
+        .route("/api/v1/costs", get(list_all_costs))
+        .route("/api/v1/costs/agents/:name", get(get_agent_costs))
+        .route("/api/v1/costs/agents/:name/runs", get(get_agent_run_costs))
         .route("/webhooks/:trigger_id", post(receive_webhook))
         .layer(CorsLayer::permissive())
         .with_state(manager)
@@ -93,6 +99,13 @@ pub struct RunQuery {
 pub struct RunsQuery {
     /// Filter by agent name.
     pub agent: Option<String>,
+    /// Maximum number of runs to return (default: 20).
+    pub limit: Option<usize>,
+}
+
+/// Query params for the per-agent run cost listing endpoint.
+#[derive(Debug, Deserialize)]
+pub struct CostRunsQuery {
     /// Maximum number of runs to return (default: 20).
     pub limit: Option<usize>,
 }
@@ -605,6 +618,85 @@ async fn clear_agent_memory(
             error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cost handlers (COST-01 through COST-07, CLI-09)
+// ---------------------------------------------------------------------------
+
+/// GET /api/v1/costs
+///
+/// Returns a cost summary for every agent that has recorded LLM usage,
+/// sorted by total_cost_usd descending.
+async fn list_all_costs(State(manager): State<Arc<AgentManager>>) -> impl IntoResponse {
+    let summaries = manager.get_all_cost_summaries();
+    let json: Vec<serde_json::Value> = summaries
+        .into_iter()
+        .map(|s| {
+            serde_json::json!({
+                "agent": s.agent_name,
+                "total_runs": s.total_runs,
+                "total_input_tokens": s.total_input_tokens,
+                "total_output_tokens": s.total_output_tokens,
+                "total_cost_usd": s.total_cost_usd,
+                "last_run_at": s.last_run_at.map(|d| d.to_rfc3339()),
+            })
+        })
+        .collect();
+    Json(json)
+}
+
+/// GET /api/v1/costs/agents/:name
+///
+/// Returns the cost summary for a specific agent.
+/// Returns 404 if no cost data exists for that agent.
+async fn get_agent_costs(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(name): AxumPath<String>,
+) -> Response {
+    match manager.get_agent_cost_summary(&name) {
+        Some(s) => Json(serde_json::json!({
+            "agent": s.agent_name,
+            "total_runs": s.total_runs,
+            "total_input_tokens": s.total_input_tokens,
+            "total_output_tokens": s.total_output_tokens,
+            "total_cost_usd": s.total_cost_usd,
+            "last_run_at": s.last_run_at.map(|d| d.to_rfc3339()),
+        }))
+        .into_response(),
+        None => error_response(
+            StatusCode::NOT_FOUND,
+            format!("No cost data found for agent '{}'", name),
+        ),
+    }
+}
+
+/// GET /api/v1/costs/agents/:name/runs
+///
+/// Returns a paginated per-run cost breakdown for the named agent.
+/// Use `?limit=N` to control the number of results (default: 20).
+async fn get_agent_run_costs(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(name): AxumPath<String>,
+    Query(query): Query<CostRunsQuery>,
+) -> impl IntoResponse {
+    let limit = query.limit.unwrap_or(20);
+    let runs = manager.get_agent_run_cost_summaries(&name, limit);
+    let json: Vec<serde_json::Value> = runs
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "run_id": r.run_id,
+                "agent": r.agent_name,
+                "model": r.model,
+                "input_tokens": r.input_tokens,
+                "output_tokens": r.output_tokens,
+                "cost_usd": r.cost_usd,
+                "started_at": r.started_at.to_rfc3339(),
+            })
+        })
+        .collect();
+    Json(json)
 }
 
 // ---------------------------------------------------------------------------

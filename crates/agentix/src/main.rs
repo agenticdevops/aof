@@ -4,7 +4,7 @@ mod cli;
 mod client;
 mod commands;
 
-use cli::{Cli, Commands, MemoryAction};
+use cli::{Cli, Commands, CostsAction, MemoryAction};
 
 #[tokio::main]
 async fn main() {
@@ -68,6 +68,13 @@ async fn main() {
             }
             MemoryAction::Clear { agent, yes } => {
                 commands::memory::memory_clear(&ctx, &agent, yes).await
+            }
+        },
+        Commands::Costs { action, limit } => match action {
+            None => commands::costs::costs_all(&ctx).await,
+            Some(CostsAction::Agent { name, limit: agent_limit }) => {
+                let effective_limit = if agent_limit != 20 { agent_limit } else { limit };
+                commands::costs::costs_agent(&ctx, &name, effective_limit).await
             }
         },
     };

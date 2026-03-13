@@ -3,6 +3,7 @@
 //! This crate provides the ReAct (Reason + Act) loop execution engine for
 //! OpenAgentiX agents, handling plan-act-observe-reflect cycles.
 
+pub mod cost_store;
 pub mod executor;
 pub mod gateway;
 pub mod health;
@@ -12,6 +13,7 @@ pub mod shutdown;
 pub mod streaming;
 pub mod tools;
 
+pub use cost_store::CostStore;
 pub use executor::{ReActConfig, ReActEngine, ReActEvent, ReActStep, RunResult, ToolAction};
 pub use memory::{format_memory_context, hash_embedding, open_agent_memory};
 pub use tools::CliToolExecutor;

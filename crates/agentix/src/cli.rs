@@ -127,6 +127,28 @@ pub enum Commands {
         #[command(subcommand)]
         action: MemoryAction,
     },
+
+    /// View LLM cost tracking data
+    Costs {
+        #[command(subcommand)]
+        action: Option<CostsAction>,
+        /// Maximum number of per-run records to show (with `agent` subcommand)
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
+}
+
+/// Subcommands for `agentix costs`
+#[derive(Subcommand, Debug)]
+pub enum CostsAction {
+    /// Show cost summary and per-run breakdown for a specific agent
+    Agent {
+        /// Agent name
+        name: String,
+        /// Maximum number of recent runs to show
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
 }
 
 /// Subcommands for `agentix memory`

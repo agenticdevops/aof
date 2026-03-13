@@ -95,6 +95,7 @@ fn test_model_request_serialization() {
                 role: agentix_core::model::MessageRole::User,
                 content: "Hello".to_string(),
                 tool_calls: None,
+                tool_call_id: None,
             },
         ],
         system: Some("You are helpful".to_string()),

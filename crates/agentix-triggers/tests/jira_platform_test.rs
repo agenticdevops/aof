@@ -25,7 +25,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// Create a valid JiraConfig for testing
 fn create_test_config() -> JiraConfig {
     JiraConfig {
-        api_url: "https://example.atlassian.net".to_string(),
+        base_url: "https://example.atlassian.net".to_string(),
         email: "bot@example.com".to_string(),
         api_token: "test_api_token_1234567890".to_string(),
         webhook_secret: "test_webhook_secret".to_string(),
@@ -34,6 +34,7 @@ fn create_test_config() -> JiraConfig {
         allowed_events: None,
         allowed_users: None,
         enable_comments: true,
+        enable_updates: true,
         enable_transitions: true,
     }
 }
@@ -217,7 +218,7 @@ fn sample_sprint_started_payload() -> Vec<u8> {
 #[test]
 fn test_jira_config_creation() {
     let config = create_test_config();
-    assert_eq!(config.api_url, "https://example.atlassian.net");
+    assert_eq!(config.base_url, "https://example.atlassian.net");
     assert_eq!(config.email, "bot@example.com");
     assert_eq!(config.bot_name, "jira-bot");
     assert!(config.enable_comments);
@@ -234,7 +235,7 @@ fn test_jira_platform_new_success() {
 #[test]
 fn test_jira_platform_new_missing_config() {
     let invalid_config = JiraConfig {
-        api_url: "".to_string(),
+        base_url: "".to_string(),
         email: "bot@example.com".to_string(),
         api_token: "token".to_string(),
         webhook_secret: "secret".to_string(),
@@ -243,6 +244,7 @@ fn test_jira_platform_new_missing_config() {
         allowed_events: None,
         allowed_users: None,
         enable_comments: true,
+        enable_updates: true,
         enable_transitions: true,
     };
 
@@ -253,7 +255,7 @@ fn test_jira_platform_new_missing_config() {
 #[test]
 fn test_jira_config_empty_token() {
     let invalid_config = JiraConfig {
-        api_url: "https://example.atlassian.net".to_string(),
+        base_url: "https://example.atlassian.net".to_string(),
         email: "bot@example.com".to_string(),
         api_token: "".to_string(),
         webhook_secret: "secret".to_string(),
@@ -262,6 +264,7 @@ fn test_jira_config_empty_token() {
         allowed_events: None,
         allowed_users: None,
         enable_comments: true,
+        enable_updates: true,
         enable_transitions: true,
     };
 
@@ -272,7 +275,7 @@ fn test_jira_config_empty_token() {
 #[test]
 fn test_jira_config_empty_webhook_secret() {
     let invalid_config = JiraConfig {
-        api_url: "https://example.atlassian.net".to_string(),
+        base_url: "https://example.atlassian.net".to_string(),
         email: "bot@example.com".to_string(),
         api_token: "token".to_string(),
         webhook_secret: "".to_string(),
@@ -281,6 +284,7 @@ fn test_jira_config_empty_webhook_secret() {
         allowed_events: None,
         allowed_users: None,
         enable_comments: true,
+        enable_updates: true,
         enable_transitions: true,
     };
 

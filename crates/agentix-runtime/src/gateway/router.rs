@@ -32,7 +32,9 @@ impl Gateway {
         workspace_config: Option<WorkspaceConfig>,
         agents_dir: &Path,
     ) -> Result<(), AgentixError> {
-        let manager = AgentManager::new(workspace_config);
+        // Use persistent SQLite stores under the `data/` directory (created if absent).
+        let data_dir = std::path::Path::new("data");
+        let manager = AgentManager::new_with_data_dir(workspace_config, data_dir);
 
         let loaded = manager.load_from_dir(agents_dir);
 

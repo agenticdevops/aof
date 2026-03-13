@@ -22,7 +22,7 @@
 - [x] **Phase 14: Skills Composition + Tools + WASM Sandbox** - Skill packs, composable agents, WASM-isolated tool execution (completed 2026-03-13)
 - [x] **Phase 15: Triggers + Scheduling** - Cron, webhook, GitHub, Jira, agent-to-agent, run persistence (completed 2026-03-13)
 - [x] **Phase 16: Agent Coordination + Memory** - Multi-agent delegation, vector memory, semantic recall, research phase (completed 2026-03-13)
-- [ ] **Phase 17: Cost Tracking + Budgets** - Per-call/run/agent cost tracking, daily budget limits, smart model routing
+- [x] **Phase 17: Cost Tracking + Budgets** - Per-call/run/agent cost tracking, daily budget limits, smart model routing (completed 2026-03-13)
 - [ ] **Phase 18: Telemetry + Observability** - OTel traces + metrics, structured logs, exportable to Grafana/Datadog
 - [ ] **Phase 19: Security** - WASM capability enforcement, secret encryption, audit trail, SSRF protection
 - [ ] **Phase 20: Approval Workflows** - Human-in-the-loop pause/resume, approval queue, three autonomy modes
@@ -169,7 +169,7 @@ Plans:
 | 13. Rebrand + Core Runtime + CLI Foundation | 9/9 | Complete   | 2026-03-12 | - |
 | 14. Skills Composition + Tools + WASM Sandbox | v2.0 | 0/TBD | Not started | - |
 | 15. Triggers + Scheduling | v2.0 | Complete    | 2026-03-13 | - |
-| 16. Agent Coordination + Memory | v2.0 | 0/TBD | Not started | - |
+| 16. Agent Coordination + Memory | v2.0 | Complete    | 2026-03-13 | - |
 | 17. Cost Tracking + Budgets | v2.0 | 0/TBD | Not started | - |
 | 18. Telemetry + Observability | v2.0 | 0/TBD | Not started | - |
 | 19. Security | v2.0 | 0/TBD | Not started | - |

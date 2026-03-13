@@ -204,6 +204,7 @@ fn make_agent_definition(
         notifications: vec![],
         vector_memory: agentix_core::VectorMemoryConfig::default(),
         research_phase: agentix_core::ResearchPhaseConfig::default(),
+        budget: None,
     }
 }
 
@@ -211,6 +212,7 @@ fn default_config() -> ReActConfig {
     ReActConfig {
         max_iterations: 10,
         timeout: Duration::from_secs(30),
+        max_tokens_per_run: None,
     }
 }
 
@@ -331,6 +333,7 @@ async fn test_react_loop_max_iterations_reached() {
     let config = ReActConfig {
         max_iterations: 2,
         timeout: Duration::from_secs(30),
+        max_tokens_per_run: None,
     };
 
     let engine = ReActEngine::new(model, executor, config);

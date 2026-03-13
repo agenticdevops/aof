@@ -432,6 +432,7 @@ spec:
         notifications: vec![],
         vector_memory: agentix_core::VectorMemoryConfig::default(),
         research_phase: agentix_core::ResearchPhaseConfig::default(),
+        budget: None,
     };
 
     definition.apply_workspace_defaults(&workspace);
