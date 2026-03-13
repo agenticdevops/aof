@@ -31,9 +31,9 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 22 of 22 (Command Center Svelte) — IN PROGRESS
-Plan: 3 of TBD in current phase
-Status: 22-03 complete — Dashboard, agent views, run history, WebSocket integration
-Last activity: 2026-03-13 — 22-03 Dashboard + agent list/detail + runs page implemented
+Plan: 4 of TBD in current phase
+Status: 22-04 complete — Cost dashboard with Chart.js bar/line/doughnut charts
+Last activity: 2026-03-13 — 22-04 Cost dashboard with interactive charts implemented
 
 Progress: [█████████░] 96%
 
@@ -72,6 +72,9 @@ Progress: [█████████░] 96%
 - EventBroadcaster via axum Extension layer allows optional event broadcasting from REST handlers without changing state type
 - Agent detail implemented as full page with back link (not slide-over) for URL-driven navigation
 - WebSocket auto-reconnect with exponential backoff (1s→30s); agent_status events update store in-place without full reload
+- chart.js used directly (no svelte-chartjs wrapper) — svelte-chartjs requires Svelte 4, incompatible with project's Svelte 5
+- Canvas binding in Svelte 5 requires $state() declaration: `let canvas = $state() as HTMLCanvasElement`
+- Chart.js gradient backgrounds use ScriptableContext<'line'> type; datasets typed as ChartDataset<'line'>[]
 
 ### Open Questions
 
@@ -86,8 +89,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-13
-Stopped at: Completed 22-03-PLAN.md — Dashboard, Agent Views & Run History
-Next: Execute Phase 22 Plan 04 (Costs dashboard with charts)
+Stopped at: Completed 22-04-PLAN.md — Cost Dashboard with interactive Chart.js charts
+Next: Execute Phase 22 Plan 05 (next plan in sequence)
 Resume file: None
 
 ---
