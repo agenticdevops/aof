@@ -111,7 +111,14 @@ Plans:
   2. OTel metrics (run duration, token usage, tool call count, success/failure rate) export to a configured collector
   3. `agentix logs <agent> --trace` shows structured trace output in the terminal with correlation IDs
   4. All agent run logs are structured JSON with consistent correlation IDs linking logs to traces
-**Plans**: TBD
+**Plans**: 5 plans in 4 waves
+
+Plans:
+- [ ] 18-01-PLAN.md — Telemetry core types (TraceContext, SpanRecord, SpanKind, SpanStatus, StructuredLogEntry, LogLevel) in agentix-core (TDD)
+- [ ] 18-02-PLAN.md — TraceCollector runtime type + ReAct loop instrumentation (TDD: spans for run, iteration, LLM call, tool call, research, memory recall)
+- [ ] 18-03-PLAN.md — TraceStore SQLite persistence + AgentManager wiring + REST API trace endpoints
+- [ ] 18-04-PLAN.md — OTel exporter (OTLP JSON) + Prometheus /metrics endpoint + TelemetryConfig + OTel integration guide
+- [ ] 18-05-PLAN.md — CLI `agentix logs --trace` waterfall viewer + quickstart examples + reference docs + CHANGELOG v2.0.0-alpha.6
 
 ### Phase 19: Security
 **Goal**: Untrusted tools are sandbox-enforced by WASM capabilities, secrets are encrypted at rest and never logged, every agent action is audited, and SSRF attacks are blocked at the network layer.
@@ -170,8 +177,8 @@ Plans:
 | 14. Skills Composition + Tools + WASM Sandbox | v2.0 | 0/TBD | Not started | - |
 | 15. Triggers + Scheduling | v2.0 | Complete    | 2026-03-13 | - |
 | 16. Agent Coordination + Memory | v2.0 | Complete    | 2026-03-13 | - |
-| 17. Cost Tracking + Budgets | v2.0 | 0/TBD | Not started | - |
-| 18. Telemetry + Observability | v2.0 | 0/TBD | Not started | - |
+| 17. Cost Tracking + Budgets | v2.0 | Complete    | 2026-03-13 | - |
+| 18. Telemetry + Observability | 1/5 | In Progress|  | - |
 | 19. Security | v2.0 | 0/TBD | Not started | - |
 | 20. Approval Workflows | v2.0 | 0/TBD | Not started | - |
 | 21. Gateway (Multi-Channel) | v2.0 | 0/TBD | Not started | - |
