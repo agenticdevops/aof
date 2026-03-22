@@ -31,11 +31,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 23 of 23 (LLM Subscription Proxy) — IN PROGRESS
-Plan: 2 of 7 in current phase (23-02 complete)
-Status: 23-02 complete — OAuth provider flows (OpenAI, Gemini, Anthropic) + AuthService coordinator
-Last activity: 2026-03-22 — 23-02 OAuth provider flows + AuthService complete
+Plan: 3 of 7 in current phase (23-01, 23-02, 23-03 complete)
+Status: 23-03 complete — Subscription provider adapters (Anthropic, OpenAI, Google) + ProviderFactory routing
+Last activity: 2026-03-22 — 23-03 Subscription provider adapters complete
 
-Progress: [██████████] 98% (50/59 plans)
+Progress: [██████████] 98% (51/59 plans)
 
 ---
 
@@ -94,6 +94,10 @@ Progress: [██████████] 98% (50/59 plans)
 - normalize_provider uses "openai" (not "openai-codex") as canonical name for OpenAgentiX — cleaner UX
 - auth_service.rs is a standalone module (not nested under auth/) — higher-level coordinator, cleaner dependency direction
 - Gemini OAuth credentials come from GEMINI_OAUTH_CLIENT_ID/GEMINI_OAUTH_CLIENT_SECRET env vars (not hardcoded)
+- Subscription adapters are self-contained (each has private API types) to prevent coupling and allow independent evolution
+- ProviderFactory subscription routing via ModelConfig.extra["provider_mode"] = "subscription" — no signature change needed
+- OpenAI subscription is a thin wrapper over standard provider (both use Bearer auth already)
+- Token refresh is out-of-scope for adapters — AuthService (plan 02) ensures valid token before factory call
 
 ### Roadmap Evolution
 
@@ -112,8 +116,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-22
-Stopped at: Completed 23-02-PLAN.md — OAuth provider flows (OpenAI, Gemini, Anthropic) + AuthService
-Next: 23-03 — Gateway OAuth endpoints
+Stopped at: Completed 23-03-PLAN.md — Subscription provider adapters + ProviderFactory routing
+Next: 23-04 — Gateway OAuth endpoints
 Resume file: None
 
 ---
