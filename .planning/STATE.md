@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
 status: in-progress
-last_updated: "2026-03-22T05:20:05Z"
+last_updated: "2026-03-22T05:41:00Z"
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 59
-  completed_plans: 51
+  completed_plans: 52
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
@@ -31,11 +31,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 23 of 23 (LLM Subscription Proxy) — IN PROGRESS
-Plan: 3 of 7 in current phase (23-01, 23-02, 23-03 complete)
-Status: 23-03 complete — Subscription provider adapters (Anthropic, OpenAI, Google) + ProviderFactory routing
-Last activity: 2026-03-22 — 23-03 Subscription provider adapters complete
+Plan: 4 of 7 in current phase (23-01, 23-02, 23-03, 23-04 complete)
+Status: 23-04 complete — Gateway OAuth endpoints + AgentManager subscription token wiring
+Last activity: 2026-03-22 — 23-04 Gateway OAuth REST endpoints + AuthService in AgentManager
 
-Progress: [██████████] 98% (51/59 plans)
+Progress: [██████████] 88% (52/59 plans)
 
 ---
 
@@ -98,6 +98,10 @@ Progress: [██████████] 98% (51/59 plans)
 - ProviderFactory subscription routing via ModelConfig.extra["provider_mode"] = "subscription" — no signature change needed
 - OpenAI subscription is a thin wrapper over standard provider (both use Bearer auth already)
 - Token refresh is out-of-scope for adapters — AuthService (plan 02) ensures valid token before factory call
+- PKCE state stored in AgentManager::pending_pkce DashMap — reuses existing State<Arc<AgentManager>> axum state without new state layer
+- create_provider_from_definition converted from sync (block_in_place) to fully async in execute_run context
+- Subscription error message includes `agentix auth start <provider>` for CLI discoverability
+- Gateway callback serves UI popup flows only; CLI loopback servers separate per CONTEXT.md
 
 ### Roadmap Evolution
 
@@ -116,8 +120,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-22
-Stopped at: Completed 23-03-PLAN.md — Subscription provider adapters + ProviderFactory routing
-Next: 23-04 — Gateway OAuth endpoints
+Stopped at: Completed 23-04-PLAN.md — Gateway OAuth REST endpoints + AuthService in AgentManager
+Next: 23-05 — CLI auth commands
 Resume file: None
 
 ---

@@ -300,6 +300,142 @@ Set or update a provider's API key at runtime. Runtime keys override workspace c
 
 ---
 
+## OAuth / Auth — LLM Subscription Authentication
+
+These endpoints manage OAuth2 credentials for using LLM subscriptions (ChatGPT Plus, Claude, Gemini Advanced) instead of API keys.
+
+**Two authentication paths:**
+
+- **UI popup flow** (these endpoints): Browser opens a popup to the OAuth provider, which redirects back to the gateway callback.
+- **CLI loopback flow** (see `agentix auth` CLI): Spawns a per-provider loopback listener (OpenAI → :1455, Gemini → :1456). Used by `agentix auth start <provider>`.
+
+Both paths store tokens via the same `AuthService`.
+
+### `GET /api/v1/auth/:provider/start`
+
+Initiate an OAuth2 PKCE flow for the named provider.
+
+**Supported providers:** `openai`, `gemini`/`google`, `anthropic`
+
+**OpenAI / Gemini response (200):**
+```json
+{
+  "provider": "openai",
+  "auth_url": "https://auth.openai.com/oauth/authorize?...",
+  "method": "oauth"
+}
+```
+
+Open `auth_url` in a browser popup. The OAuth provider will redirect to `/api/v1/auth/:provider/callback` after authorization.
+
+**Anthropic response (200):**
+```json
+{
+  "provider": "anthropic",
+  "auth_url": null,
+  "method": "token",
+  "instructions": "Paste your Claude setup-token or API key using POST /api/v1/auth/anthropic/token"
+}
+```
+
+Anthropic uses token-paste flow — no OAuth redirect.
+
+---
+
+### `GET /api/v1/auth/:provider/callback`
+
+OAuth2 redirect callback endpoint for UI popup flows.
+
+Called by the OAuth provider after user authorization. Returns HTML that closes the popup and posts a `postMessage` to the opener window.
+
+**Query params:** `code`, `state` (from OAuth provider), `error` (on failure)
+
+**Success:** Returns HTML that closes the popup and sends `{type: 'auth_success', provider: 'openai'}` via `postMessage`.
+
+**Error:** Returns HTML that closes the popup and sends `{type: 'auth_error', ...}` via `postMessage`.
+
+---
+
+### `GET /api/v1/auth/:provider/status`
+
+Returns the current authentication status for the named provider.
+
+**Response (200):**
+```json
+{
+  "provider": "openai",
+  "authenticated": true,
+  "mode": "oauth",
+  "expires_at": "2026-03-22T10:00:00Z",
+  "account_id": "user-abc123",
+  "needs_reauth": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `provider` | string | Normalized provider name |
+| `authenticated` | bool | Whether a valid profile is stored |
+| `mode` | `"oauth"` \| `"token"` \| `null` | Authentication method |
+| `expires_at` | ISO8601 \| `null` | Token expiry time |
+| `account_id` | string \| `null` | Provider account identifier |
+| `needs_reauth` | bool | Token expired with no refresh token |
+
+---
+
+### `DELETE /api/v1/auth/:provider`
+
+Remove the stored OAuth profile for the named provider.
+
+**Response (204):** No Content — profile removed.
+
+**Response (404):** No active profile found for the provider.
+
+---
+
+### `POST /api/v1/auth/:provider/token`
+
+Store a static bearer token or API key for the named provider.
+
+**Request:**
+```json
+{ "token": "sk-ant-api03-..." }
+```
+
+**Response (200):**
+```json
+{
+  "provider": "anthropic",
+  "profile": "anthropic:default",
+  "kind": "token",
+  "status": "stored"
+}
+```
+
+---
+
+### Subscription Mode Configuration
+
+To use subscription tokens for agent model execution, configure the provider in `agentix.yaml`:
+
+```yaml
+spec:
+  providers:
+    openai:
+      mode: subscription
+    gemini:
+      mode: subscription
+```
+
+When `mode: subscription`, `AgentManager` resolves the OAuth access token from `AuthService` before creating the model. A clear error is returned if no token is stored:
+
+```
+Provider 'openai' is configured for subscription mode but no OAuth token was found.
+Run `agentix auth start openai` to authenticate.
+```
+
+---
+
 ## WebSocket — Real-Time Event Stream
 
 ### `GET /ws`
