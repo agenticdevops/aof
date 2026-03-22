@@ -6,6 +6,7 @@
 pub mod agent;
 pub mod approval;
 pub mod auth;
+pub mod auth_service;
 pub mod channel;
 pub mod config;
 pub mod context;
@@ -100,6 +101,7 @@ pub use auth::{
     url_decode, url_encode,
 };
 pub use auth::anthropic_token::{AnthropicAuthKind, detect_auth_kind};
+pub use auth_service::{AuthService, normalize_provider};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
