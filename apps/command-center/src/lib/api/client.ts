@@ -10,7 +10,9 @@ import type {
 	ApprovalRequest,
 	AuditEntry,
 	ChannelInfo,
-	ProviderStatus
+	ProviderStatus,
+	AuthStatus,
+	AuthStartResponse
 } from './types.js';
 
 // ============================================================
@@ -301,6 +303,31 @@ export const api = {
 				api_key: apiKey,
 				base_url: baseUrl
 			});
+		}
+	},
+
+	// ----------------------------------------------------------
+	// Auth (subscription / OAuth)
+	// ----------------------------------------------------------
+	auth: {
+		/** Start an OAuth flow for a provider. Returns auth_url if browser redirect needed. */
+		start(provider: string): Promise<AuthStartResponse> {
+			return request<AuthStartResponse>('GET', `/api/v1/auth/${encodeURIComponent(provider)}/start`);
+		},
+
+		/** Get the current auth status for a provider. */
+		status(provider: string): Promise<AuthStatus> {
+			return request<AuthStatus>('GET', `/api/v1/auth/${encodeURIComponent(provider)}/status`);
+		},
+
+		/** Disconnect / remove stored credentials for a provider. */
+		async disconnect(provider: string): Promise<void> {
+			await del(`/api/v1/auth/${encodeURIComponent(provider)}`);
+		},
+
+		/** Submit a bearer token directly (Anthropic setup-token flow). */
+		submitToken(provider: string, token: string): Promise<void> {
+			return request<void>('POST', `/api/v1/auth/${encodeURIComponent(provider)}/token`, { token });
 		}
 	},
 

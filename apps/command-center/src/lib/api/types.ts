@@ -169,6 +169,26 @@ export interface ProviderStatus {
 }
 
 // ============================================================
+// Auth types (subscription / OAuth)
+// ============================================================
+
+export interface AuthStatus {
+	provider: string;
+	authenticated: boolean;
+	mode: 'oauth' | 'token' | null;
+	expires_at: string | null;
+	account_id: string | null;
+	needs_reauth: boolean;
+}
+
+export interface AuthStartResponse {
+	auth_url: string | null;
+	provider: string;
+	method?: 'oauth' | 'token';
+	instructions?: string;
+}
+
+// ============================================================
 // Structured log entry (from /structured-logs endpoint)
 // ============================================================
 
