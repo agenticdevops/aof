@@ -251,6 +251,8 @@ fn setup_providers() -> Result<(HashMap<String, ProviderConfig>, Option<String>)
                     ProviderConfig {
                         api_key: Some(api_key),
                         base_url: None,
+                        mode: None,
+                        oauth: None,
                     },
                 );
                 let suggested = "anthropic/claude-sonnet-4-6";
@@ -273,6 +275,8 @@ fn setup_providers() -> Result<(HashMap<String, ProviderConfig>, Option<String>)
                     ProviderConfig {
                         api_key: Some(api_key),
                         base_url: None,
+                        mode: None,
+                        oauth: None,
                     },
                 );
                 let suggested = "openai/gpt-4o";
@@ -295,6 +299,8 @@ fn setup_providers() -> Result<(HashMap<String, ProviderConfig>, Option<String>)
                     ProviderConfig {
                         api_key: Some(api_key),
                         base_url: None,
+                        mode: None,
+                        oauth: None,
                     },
                 );
                 let suggested = "google/gemini-2.0-flash";
@@ -314,6 +320,8 @@ fn setup_providers() -> Result<(HashMap<String, ProviderConfig>, Option<String>)
                     ProviderConfig {
                         api_key: None,
                         base_url: Some(url),
+                        mode: None,
+                        oauth: None,
                     },
                 );
                 let suggested = "ollama/llama3.2";

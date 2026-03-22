@@ -1428,6 +1428,8 @@ async fn update_provider(
     let config = agentix_core::ProviderConfig {
         api_key: body.api_key,
         base_url: body.base_url,
+        mode: None,
+        oauth: None,
     };
 
     manager.set_provider(body.name.clone(), config);
