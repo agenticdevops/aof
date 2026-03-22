@@ -9,7 +9,8 @@ import type {
 	StructuredLogEntry,
 	ApprovalRequest,
 	AuditEntry,
-	ChannelInfo
+	ChannelInfo,
+	ProviderStatus
 } from './types.js';
 
 // ============================================================
@@ -281,6 +282,25 @@ export const api = {
 		/** Send a notification via a channel. */
 		notify(target: unknown): Promise<void> {
 			return request<void>('POST', '/api/v1/notify', target);
+		}
+	},
+
+	// ----------------------------------------------------------
+	// Providers
+	// ----------------------------------------------------------
+	providers: {
+		/** List all configured LLM providers (keys masked). */
+		list(): Promise<ProviderStatus[]> {
+			return request<ProviderStatus[]>('GET', '/api/v1/providers');
+		},
+
+		/** Set or update a provider API key. */
+		update(name: string, apiKey?: string, baseUrl?: string): Promise<void> {
+			return request<void>('PUT', '/api/v1/providers', {
+				name,
+				api_key: apiKey,
+				base_url: baseUrl
+			});
 		}
 	},
 

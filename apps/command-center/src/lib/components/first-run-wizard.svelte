@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X, CheckCircle, AlertCircle, Bot } from 'lucide-svelte';
+	import { X, CheckCircle, AlertCircle, Bot, Key } from 'lucide-svelte';
 	import WizardStep from './wizard-step.svelte';
 	import { completeWizard } from '$lib/stores/settings.js';
 	import { gatewayUrl, setGatewayUrl } from '$lib/stores/gateway.js';
@@ -18,6 +18,34 @@
 	let inputUrl = $state($gatewayUrl);
 	let connectionStatus = $state<'idle' | 'testing' | 'ok' | 'error'>('idle');
 	let connectionError = $state('');
+
+	// Provider key state
+	let providerKeys = $state<Record<string, string>>({});
+	let providerSaving = $state(false);
+	let providerSaved = $state(false);
+
+	const PROVIDERS = [
+		{ id: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-...' },
+		{ id: 'openai', label: 'OpenAI', placeholder: 'sk-...' },
+		{ id: 'google', label: 'Google (Gemini)', placeholder: 'AIza...' }
+	];
+
+	async function saveProviderKeys() {
+		providerSaving = true;
+		try {
+			for (const [name, key] of Object.entries(providerKeys)) {
+				if (key.trim()) {
+					await api.providers.update(name, key.trim());
+				}
+			}
+			providerSaved = true;
+			setTimeout(() => (providerSaved = false), 2500);
+		} catch {
+			// Silently handle — gateway may not support this yet
+		} finally {
+			providerSaving = false;
+		}
+	}
 
 	// Step 3 state
 	let agentCount = $state<number | null>(null);
@@ -177,6 +205,43 @@
 						<div class="flex items-center gap-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
 							<AlertCircle class="h-4 w-4 text-destructive shrink-0" />
 							<p class="text-sm text-destructive">{connectionError || 'Could not connect to gateway.'}</p>
+						</div>
+					{/if}
+
+					<!-- Provider API Keys (shown after successful connection) -->
+					{#if connectionStatus === 'ok'}
+						<div class="space-y-3 pt-2 border-t">
+							<div class="flex items-center gap-2">
+								<Key class="h-4 w-4 text-muted-foreground" />
+								<p class="text-sm font-medium">LLM Provider Keys <span class="text-muted-foreground font-normal">(optional)</span></p>
+							</div>
+							<p class="text-xs text-muted-foreground">
+								Configure API keys for LLM providers. Keys set in agentix.yaml or environment are used automatically.
+							</p>
+							{#each PROVIDERS as provider}
+								<div class="space-y-1">
+									<label for="wizard-key-{provider.id}" class="text-xs font-medium text-muted-foreground">{provider.label}</label>
+									<input
+										id="wizard-key-{provider.id}"
+										type="password"
+										bind:value={providerKeys[provider.id]}
+										placeholder={provider.placeholder}
+										class="w-full rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+									/>
+								</div>
+							{/each}
+							<div class="flex items-center gap-2">
+								<button
+									onclick={saveProviderKeys}
+									disabled={providerSaving || !Object.values(providerKeys).some(k => k?.trim())}
+									class="rounded-md border px-4 py-1.5 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50 cursor-pointer"
+								>
+									{providerSaving ? 'Saving...' : 'Save Keys'}
+								</button>
+								{#if providerSaved}
+									<span class="text-xs text-green-600 dark:text-green-400">Saved!</span>
+								{/if}
+							</div>
 						</div>
 					{/if}
 				</div>

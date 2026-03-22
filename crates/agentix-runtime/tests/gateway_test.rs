@@ -311,6 +311,109 @@ async fn test_stop_nonexistent_run() {
     assert!(json["error"].is_string());
 }
 
+// ---------------------------------------------------------------------------
+// Provider config endpoint tests
+// ---------------------------------------------------------------------------
+
+/// Test: GET /api/v1/providers with no workspace config returns empty list
+#[tokio::test]
+async fn test_list_providers_empty() {
+    let app = test_router();
+    let req = Request::builder()
+        .uri("/api/v1/providers")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = body_to_json(response.into_body()).await;
+    assert!(json.is_array());
+    assert_eq!(json.as_array().unwrap().len(), 0);
+}
+
+/// Test: GET /api/v1/providers with workspace config returns provider names
+#[tokio::test]
+async fn test_list_providers_with_config() {
+    use agentix_core::WorkspaceConfig;
+
+    let yaml = r#"
+apiVersion: openagentix.dev/v1
+kind: Workspace
+metadata:
+  name: test
+spec:
+  defaults:
+    model: anthropic/claude-sonnet-4-6
+  providers:
+    anthropic:
+      api_key: "sk-test-key"
+    openai:
+      api_key: "sk-openai-key"
+"#;
+    let config = WorkspaceConfig::from_yaml(yaml).unwrap();
+    let manager = AgentManager::new(Some(config));
+    let app: axum::Router = create_router(manager).into();
+
+    let req = Request::builder()
+        .uri("/api/v1/providers")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let json = body_to_json(response.into_body()).await;
+    let providers = json.as_array().unwrap();
+    assert_eq!(providers.len(), 2);
+
+    // Keys should be masked (not returned in full)
+    for p in providers {
+        assert!(p["name"].is_string());
+        assert!(p["configured"].as_bool().unwrap());
+        // api_key should be masked or absent
+        assert!(
+            p.get("api_key").is_none() || p["api_key"].as_str().unwrap().contains("***"),
+            "API key should be masked"
+        );
+    }
+}
+
+/// Test: PUT /api/v1/providers sets a provider key, GET reflects it
+#[tokio::test]
+async fn test_update_provider() {
+    let manager = AgentManager::new(None);
+    let app: axum::Router = create_router(manager).into();
+
+    // Set a provider key
+    let body = serde_json::json!({
+        "name": "anthropic",
+        "api_key": "sk-ant-new-key"
+    });
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/v1/providers")
+        .header("Content-Type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+
+    let response = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Now list — should show anthropic as configured
+    let req = Request::builder()
+        .uri("/api/v1/providers")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(req).await.unwrap();
+    let json = body_to_json(response.into_body()).await;
+    let providers = json.as_array().unwrap();
+    assert_eq!(providers.len(), 1);
+    assert_eq!(providers[0]["name"], "anthropic");
+    assert!(providers[0]["configured"].as_bool().unwrap());
+}
+
 /// Bonus test: POST /api/v1/agents/:name/run on a registered agent returns text/event-stream header
 ///
 /// We don't test actual LLM execution here — just verifies the SSE Content-Type.

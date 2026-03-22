@@ -37,6 +37,8 @@
 //! | GET | /api/v1/approvals/:id | Get a specific approval request |
 //! | POST | /api/v1/approvals/:id/approve | Approve a pending request |
 //! | POST | /api/v1/approvals/:id/deny | Deny a pending request |
+//! | GET | /api/v1/providers | List configured LLM providers (keys masked) |
+//! | PUT | /api/v1/providers | Set a provider API key at runtime |
 //! | GET | /ws | WebSocket endpoint for real-time event broadcasting |
 
 use std::convert::Infallible;
@@ -105,6 +107,8 @@ pub fn create_router(manager: Arc<AgentManager>) -> GatewayRouter {
         .route("/api/v1/approvals/:id/approve", post(approve_request))
         .route("/api/v1/approvals/:id/deny", post(deny_request))
         .route("/webhooks/:trigger_id", post(receive_webhook))
+        // Provider configuration (Phase 22)
+        .route("/api/v1/providers", get(list_providers).put(update_provider))
         // Multi-channel gateway endpoints (Phase 21)
         .route("/api/v1/channels", get(list_channels))
         .route("/api/v1/notify", post(send_notification))
@@ -1380,4 +1384,60 @@ async fn channel_webhook(
             )
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Provider configuration endpoints (Phase 22)
+// ---------------------------------------------------------------------------
+
+/// Body for PUT /api/v1/providers
+#[derive(Debug, Deserialize)]
+pub struct UpdateProviderBody {
+    /// Provider name (e.g. "anthropic", "openai", "google").
+    pub name: String,
+    /// API key for this provider.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Optional base URL override.
+    #[serde(default)]
+    pub base_url: Option<String>,
+}
+
+/// GET /api/v1/providers
+///
+/// Returns a JSON array of configured providers with masked keys.
+async fn list_providers(State(manager): State<Arc<AgentManager>>) -> impl IntoResponse {
+    Json(manager.list_providers())
+}
+
+/// PUT /api/v1/providers
+///
+/// Set or update a provider's API key at runtime.
+async fn update_provider(
+    State(manager): State<Arc<AgentManager>>,
+    Json(body): Json<UpdateProviderBody>,
+) -> Response {
+    if body.name.is_empty() {
+        return error_response_with_field(
+            StatusCode::BAD_REQUEST,
+            "Provider name is required",
+            "name",
+        );
+    }
+
+    let config = agentix_core::ProviderConfig {
+        api_key: body.api_key,
+        base_url: body.base_url,
+    };
+
+    manager.set_provider(body.name.clone(), config);
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "name": body.name,
+            "status": "updated"
+        })),
+    )
+        .into_response()
 }

@@ -34,6 +34,7 @@ use crate::telemetry::TraceCollector;
 use crate::tools::{CliToolExecutor, CompositeToolExecutor, McpToolExecutor, WasmToolExecutor};
 use crate::trace_store::TraceStore;
 use agentix_core::telemetry::TraceContext;
+use serde::Serialize;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -166,6 +167,9 @@ pub struct AgentManager {
     inboxes: DashMap<String, Arc<AgentInbox>>,
     /// Multi-channel gateway manager (Phase 21).
     channel_manager: Option<crate::channels::ChannelGatewayManager>,
+    /// Runtime provider overrides set via the `/api/v1/providers` endpoint.
+    /// Checked before `workspace_config.spec.providers` during model creation.
+    provider_overrides: DashMap<String, agentix_core::ProviderConfig>,
 }
 
 impl AgentManager {
@@ -308,6 +312,7 @@ impl AgentManager {
             otel_exporter,
             inboxes: DashMap::new(),
             channel_manager,
+            provider_overrides: DashMap::new(),
         });
         // Spawn the trigger dispatcher background task
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
@@ -348,6 +353,7 @@ impl AgentManager {
             otel_exporter,
             inboxes: DashMap::new(),
             channel_manager,
+            provider_overrides: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
         manager
@@ -378,6 +384,7 @@ impl AgentManager {
             otel_exporter,
             inboxes: DashMap::new(),
             channel_manager,
+            provider_overrides: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
         manager
@@ -932,7 +939,7 @@ impl AgentManager {
         cancel_rx: oneshot::Receiver<()>,
     ) -> Result<(RunResult, Option<TraceCollector>), AgentixError> {
         // Create the LLM model from the definition's model_preferred field
-        let model = create_provider_from_definition(definition, &self.workspace_config)?;
+        let model = create_provider_from_definition(definition, &self.workspace_config, &self.provider_overrides)?;
 
         let mut config = ReActConfig::from_definition(definition);
 
@@ -1468,6 +1475,95 @@ impl AgentManager {
             }
         })
     }
+    // ---------------------------------------------------------------------------
+    // Provider configuration (runtime overrides)
+    // ---------------------------------------------------------------------------
+
+    /// List all configured providers (from workspace config + runtime overrides).
+    ///
+    /// Returns provider name, whether it has a key configured, and a masked key.
+    /// Runtime overrides take precedence over workspace config values.
+    pub fn list_providers(&self) -> Vec<ProviderStatus> {
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+
+        // Runtime overrides first (take precedence)
+        for entry in self.provider_overrides.iter() {
+            let name = entry.key().clone();
+            let cfg = entry.value();
+            let has_key = cfg.api_key.as_ref().map_or(false, |k| !k.is_empty());
+            result.push(ProviderStatus {
+                name: name.clone(),
+                configured: has_key,
+                api_key_masked: cfg.api_key.as_ref().map(|k| mask_key(k)),
+                base_url: cfg.base_url.clone(),
+                source: "runtime".to_string(),
+            });
+            seen.insert(name);
+        }
+
+        // Workspace config providers (if not overridden)
+        if let Some(ws) = &self.workspace_config {
+            for (name, cfg) in &ws.spec.providers {
+                if seen.contains(name) {
+                    continue;
+                }
+                let has_key = cfg.api_key.as_ref().map_or(false, |k| !k.is_empty());
+                result.push(ProviderStatus {
+                    name: name.clone(),
+                    configured: has_key,
+                    api_key_masked: cfg.api_key.as_ref().map(|k| mask_key(k)),
+                    base_url: cfg.base_url.clone(),
+                    source: "config".to_string(),
+                });
+            }
+        }
+
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+        result
+    }
+
+    /// Set a runtime provider override.
+    pub fn set_provider(&self, name: String, config: agentix_core::ProviderConfig) {
+        self.provider_overrides.insert(name, config);
+    }
+
+    /// Get the effective provider config (override first, then workspace config).
+    pub fn get_provider_config(&self, provider_name: &str) -> Option<agentix_core::ProviderConfig> {
+        // Check runtime overrides first
+        if let Some(entry) = self.provider_overrides.get(provider_name) {
+            return Some(entry.value().clone());
+        }
+        // Fall back to workspace config
+        self.workspace_config
+            .as_ref()
+            .and_then(|ws| ws.spec.providers.get(provider_name).cloned())
+    }
+}
+
+/// Summary of a configured provider (returned by the API).
+#[derive(Debug, Clone, Serialize)]
+pub struct ProviderStatus {
+    pub name: String,
+    pub configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key_masked: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    pub source: String,
+}
+
+/// Mask an API key, showing only the first 4 and last 4 characters.
+fn mask_key(key: &str) -> String {
+    if key.contains("${") {
+        // Environment variable reference — show as-is
+        return key.to_string();
+    }
+    let len = key.len();
+    if len <= 8 {
+        return "***".to_string();
+    }
+    format!("{}***{}", &key[..4], &key[len - 4..])
 }
 
 // ---------------------------------------------------------------------------
@@ -1559,6 +1655,7 @@ impl CoordinatorProtocol for AgentManager {
 fn create_provider_from_definition(
     definition: &AgentDefinition,
     workspace_config: &Option<WorkspaceConfig>,
+    provider_overrides: &DashMap<String, agentix_core::ProviderConfig>,
 ) -> Result<Arc<dyn agentix_core::Model + Send + Sync>, AgentixError> {
     let model_preferred = definition.model_preferred.as_deref().ok_or_else(|| {
         AgentixError::Config(format!(
@@ -1581,8 +1678,13 @@ fn create_provider_from_definition(
     // Parse provider enum
     let provider = parse_provider_name(provider_name)?;
 
-    // Look up credentials from workspace config
-    let (api_key, endpoint) = if let Some(ws) = workspace_config {
+    // Look up credentials: runtime overrides → workspace config → env vars
+    let (api_key, endpoint) = if let Some(override_cfg) = provider_overrides.get(provider_name) {
+        (
+            override_cfg.api_key.clone(),
+            override_cfg.base_url.clone(),
+        )
+    } else if let Some(ws) = workspace_config {
         let provider_cfg = ws.spec.providers.get(provider_name);
         (
             provider_cfg.and_then(|p| p.api_key.clone()),

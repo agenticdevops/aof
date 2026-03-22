@@ -248,6 +248,58 @@ Failed agents are logged as warnings; other agents continue loading.
 
 ---
 
+## Providers — LLM Configuration
+
+### `GET /api/v1/providers`
+
+List all configured LLM providers with masked API keys.
+
+Returns providers from both the workspace config (`agentix.yaml`) and runtime overrides (set via `PUT`). Runtime overrides take precedence.
+
+**Response:**
+```json
+[
+  {
+    "name": "anthropic",
+    "configured": true,
+    "api_key_masked": "sk-a***key1",
+    "source": "config"
+  },
+  {
+    "name": "openai",
+    "configured": true,
+    "api_key_masked": "sk-o***key2",
+    "base_url": "https://api.openai.com/v1",
+    "source": "runtime"
+  }
+]
+```
+
+### `PUT /api/v1/providers`
+
+Set or update a provider's API key at runtime. Runtime keys override workspace config and environment variables.
+
+**Request:**
+```json
+{
+  "name": "anthropic",
+  "api_key": "sk-ant-api03-...",
+  "base_url": null
+}
+```
+
+**Response (200):**
+```json
+{
+  "name": "anthropic",
+  "status": "updated"
+}
+```
+
+**Note:** Runtime overrides persist only while the gateway is running. They are not written back to `agentix.yaml`. To persist permanently, update the workspace config file or set the corresponding environment variable (e.g. `ANTHROPIC_API_KEY`).
+
+---
+
 ## WebSocket — Real-Time Event Stream
 
 ### `GET /ws`

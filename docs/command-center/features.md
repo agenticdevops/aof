@@ -135,6 +135,8 @@ The Settings page at `/settings` lets you configure Command Center preferences.
 
 **Gateway Connection** — Change the gateway URL and test the connection without navigating away.
 
+**LLM Provider Keys** — Configure API keys for Anthropic, OpenAI, and Google (Gemini) providers at runtime. Each provider card shows its configuration status (configured/not configured), the source (config file or runtime override), and a masked view of the current key. Keys entered here are sent to the gateway via `PUT /api/v1/providers` and take precedence over values in `agentix.yaml` or environment variables. An eye toggle lets you show/hide the key input.
+
 **Appearance** — Choose between Light, Dark, or System theme.
 
 **Onboarding** — Re-launch the first-run setup wizard. Useful after pointing the Command Center at a new gateway.
@@ -150,7 +152,7 @@ Settings are persisted to `localStorage` and take effect immediately.
 A 4-step onboarding overlay shown on the first visit (before any gateway is configured).
 
 1. **Welcome** — Introduction with a Get Started button.
-2. **Connect to Gateway** — URL input with a Test Connection button. Next is disabled until a successful connection is verified.
+2. **Connect to Gateway** — URL input with a Test Connection button. Next is disabled until a successful connection is verified. After a successful connection, an optional provider key section appears for configuring Anthropic, OpenAI, and Google API keys.
 3. **Explore** — Shows how many agents are registered on the connected gateway with quick links to the Dashboard and Agent Builder.
 4. **Done** — Summary of all available sections. Clicking Open Dashboard completes setup and dismisses the wizard.
 

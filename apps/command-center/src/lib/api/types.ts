@@ -157,6 +157,18 @@ export interface ChannelInfo {
 }
 
 // ============================================================
+// Provider types
+// ============================================================
+
+export interface ProviderStatus {
+	name: string;
+	configured: boolean;
+	api_key_masked?: string;
+	base_url?: string;
+	source: string;
+}
+
+// ============================================================
 // Structured log entry (from /structured-logs endpoint)
 // ============================================================
 
