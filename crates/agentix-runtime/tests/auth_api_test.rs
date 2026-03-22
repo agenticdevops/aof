@@ -193,3 +193,52 @@ async fn auth_start_anthropic_returns_token_instructions() {
     // auth_url should be null for Anthropic (token paste flow)
     assert!(json["auth_url"].is_null(), "Anthropic should not have auth_url");
 }
+
+// ---------------------------------------------------------------------------
+// Test: subscription mode — AuthService returns None when no token stored
+//
+// This tests the precondition that triggers the subscription error in
+// `create_provider_from_definition`: when ProviderMode::Subscription is
+// configured but no token is in the AuthService, the function returns an error.
+//
+// We test the precondition (no token → get_valid_openai_access_token = None)
+// rather than testing through the private execute_run pathway.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn subscription_mode_no_token_in_auth_service() {
+    use agentix_core::AuthService;
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let auth_service = AuthService::new(tmp.path(), false);
+
+    // No profiles stored — should return None for OpenAI
+    let result = auth_service.get_valid_openai_access_token(None).await;
+    assert!(result.is_ok(), "Should not error on missing profile");
+    assert!(result.unwrap().is_none(), "Should return None when no OpenAI profile stored");
+
+    // Same for Gemini
+    let result = auth_service.get_valid_gemini_access_token(None).await;
+    assert!(result.is_ok(), "Should not error on missing Gemini profile");
+    assert!(result.unwrap().is_none(), "Should return None when no Gemini profile stored");
+
+    // Same for Anthropic bearer token
+    let result = auth_service.get_provider_bearer_token("anthropic", None).await;
+    assert!(result.is_ok(), "Should not error on missing Anthropic profile");
+    assert!(result.unwrap().is_none(), "Should return None when no Anthropic profile stored");
+}
+
+// ---------------------------------------------------------------------------
+// Test: AgentManager has auth_service accessible
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn agent_manager_has_auth_service() {
+    let manager = agentix_runtime::gateway::AgentManager::new(None);
+    // Verify auth_service is accessible and functional
+    let result = manager.auth_service.load_profiles().await;
+    assert!(result.is_ok(), "AuthService should load profiles without error");
+    let profiles = result.unwrap();
+    assert_eq!(profiles.profiles.len(), 0, "Fresh AuthService should have no profiles");
+}
