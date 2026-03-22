@@ -5,6 +5,7 @@
 
 pub mod agent;
 pub mod approval;
+pub mod auth;
 pub mod channel;
 pub mod config;
 pub mod context;
@@ -92,6 +93,11 @@ pub use channel::{
     ChannelConfig, ChannelCredentials, ChannelDirection, ChannelGateway, ChannelMessage,
     ChannelPlatformType, ChannelRoute, NotificationPayload, NotificationSeverity,
     NotificationTarget,
+};
+pub use auth::{
+    AuthProfile, AuthProfileKind, AuthProfilesData, AuthProfilesStore, PkceState, TokenSet,
+    generate_pkce_state, parse_query_params, profile_id, random_base64url, select_profile_id,
+    url_decode, url_encode,
 };
 
 /// Version information
