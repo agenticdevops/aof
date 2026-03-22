@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
 status: in-progress
-last_updated: "2026-03-22T05:09:00Z"
+last_updated: "2026-03-22T05:20:05Z"
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 59
-  completed_plans: 49
+  completed_plans: 51
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
@@ -31,11 +31,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 23 of 23 (LLM Subscription Proxy) — IN PROGRESS
-Plan: 1 of 7 in current phase (23-01 complete)
-Status: 23-01 complete — Auth core types, encrypted profile store, PKCE utilities
-Last activity: 2026-03-22 — 23-01 Auth foundation complete
+Plan: 2 of 7 in current phase (23-02 complete)
+Status: 23-02 complete — OAuth provider flows (OpenAI, Gemini, Anthropic) + AuthService coordinator
+Last activity: 2026-03-22 — 23-02 OAuth provider flows + AuthService complete
 
-Progress: [██████████] 98% (49/59 plans)
+Progress: [██████████] 98% (50/59 plans)
 
 ---
 
@@ -90,6 +90,10 @@ Progress: [██████████] 98% (49/59 plans)
 - Used AES-256-GCM (already in workspace) instead of ChaCha20-Poly1305 for auth token encryption — enc2: prefix convention maintained
 - ProviderMode is Option<ProviderMode> on ProviderConfig for backward compatibility with existing YAML configs (None = Api)
 - AuthProfilesStore standalone (not wrapping SecretStore struct) to support enc2: hex string pattern for JSON storage
+- auth.rs converted to auth/ module directory (auth/mod.rs + provider submodules) to keep files under 500 lines
+- normalize_provider uses "openai" (not "openai-codex") as canonical name for OpenAgentiX — cleaner UX
+- auth_service.rs is a standalone module (not nested under auth/) — higher-level coordinator, cleaner dependency direction
+- Gemini OAuth credentials come from GEMINI_OAUTH_CLIENT_ID/GEMINI_OAUTH_CLIENT_SECRET env vars (not hardcoded)
 
 ### Roadmap Evolution
 
@@ -108,8 +112,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-22
-Stopped at: Completed 23-01-PLAN.md — Auth core types, encrypted profile store, PKCE utilities
-Next: 23-02 — OAuth provider implementations (Anthropic, OpenAI, Gemini)
+Stopped at: Completed 23-02-PLAN.md — OAuth provider flows (OpenAI, Gemini, Anthropic) + AuthService
+Next: 23-03 — Gateway OAuth endpoints
 Resume file: None
 
 ---
