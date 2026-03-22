@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
-status: completed
-last_updated: "2026-03-13T07:27:38Z"
+status: in-progress
+last_updated: "2026-03-22T05:09:00Z"
 progress:
-  total_phases: 9
-  completed_phases: 8
-  total_plans: 52
-  completed_plans: 48
+  total_phases: 10
+  completed_phases: 9
+  total_plans: 59
+  completed_plans: 49
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
 
-**Last Updated:** 2026-03-13
+**Last Updated:** 2026-03-22
 **Milestone:** v2.0 OpenAgentiX
-**Status:** Milestone complete
+**Status:** Phase 23 in progress
 
 ---
 
@@ -24,18 +24,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Let any technical organization automate operational tasks with AI agents — without writing Python, without managing infrastructure, without giving up control.
-**Current focus:** Phase 22 — Command Center (Svelte)
+**Current focus:** Phase 23 — LLM Subscription Proxy
 
 ---
 
 ## Current Position
 
-Phase: 22 of 22 (Command Center Svelte) — IN PROGRESS
-Plan: 8 of 8 in current phase
-Status: 22-08 complete — Settings, first-run wizard, scheduled agents panel, docs, CHANGELOG v2.0.0-alpha.10
-Last activity: 2026-03-13 — 22-08 Phase 22 final plan complete
+Phase: 23 of 23 (LLM Subscription Proxy) — IN PROGRESS
+Plan: 1 of 7 in current phase (23-01 complete)
+Status: 23-01 complete — Auth core types, encrypted profile store, PKCE utilities
+Last activity: 2026-03-22 — 23-01 Auth foundation complete
 
-Progress: [██████████] 100%
+Progress: [██████████] 98% (49/59 plans)
 
 ---
 
@@ -87,6 +87,13 @@ Progress: [██████████] 100%
 - First-run wizard shown by checking hasCompletedWizard in layout onMount; localStorage key agentix-wizard-complete
 - Scheduled agents shown inline on dashboard filtered from agents store by triggers.type === 'cron'
 - Settings page wizard relaunch: resetWizard() + window.location.href='/' (simpler than shared signal)
+- Used AES-256-GCM (already in workspace) instead of ChaCha20-Poly1305 for auth token encryption — enc2: prefix convention maintained
+- ProviderMode is Option<ProviderMode> on ProviderConfig for backward compatibility with existing YAML configs (None = Api)
+- AuthProfilesStore standalone (not wrapping SecretStore struct) to support enc2: hex string pattern for JSON storage
+
+### Roadmap Evolution
+
+- Phase 23 added: LLM Subscription Proxy — enable agents to use existing LLM subscriptions (Claude, ChatGPT, Gemini) via OAuth instead of API keys
 
 ### Open Questions
 
@@ -100,9 +107,9 @@ None active.
 
 ## Session Continuity
 
-Last session: 2026-03-13
-Stopped at: Completed 22-08-PLAN.md — Settings, first-run wizard, scheduled agents, docs, CHANGELOG v2.0.0-alpha.10
-Next: Phase 22 complete — all 8 plans executed
+Last session: 2026-03-22
+Stopped at: Completed 23-01-PLAN.md — Auth core types, encrypted profile store, PKCE utilities
+Next: 23-02 — OAuth provider implementations (Anthropic, OpenAI, Gemini)
 Resume file: None
 
 ---
