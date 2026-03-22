@@ -31,11 +31,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 23 of 23 (LLM Subscription Proxy) — IN PROGRESS
-Plan: 4 of 7 in current phase (23-01, 23-02, 23-03, 23-04 complete)
-Status: 23-04 complete — Gateway OAuth endpoints + AgentManager subscription token wiring
-Last activity: 2026-03-22 — 23-04 Gateway OAuth REST endpoints + AuthService in AgentManager
+Plan: 5 of 7 in current phase (23-01, 23-02, 23-03, 23-04, 23-05 complete)
+Status: 23-05 complete — CLI auth commands (agentix auth start/status/disconnect)
+Last activity: 2026-03-22 — 23-05 CLI auth: PKCE browser OAuth + device code + Anthropic token paste
 
-Progress: [██████████] 88% (52/59 plans)
+Progress: [██████████] 90% (53/59 plans)
 
 ---
 
@@ -102,6 +102,9 @@ Progress: [██████████] 88% (52/59 plans)
 - create_provider_from_definition converted from sync (block_in_place) to fully async in execute_run context
 - Subscription error message includes `agentix auth start <provider>` for CLI discoverability
 - Gateway callback serves UI popup flows only; CLI loopback servers separate per CONTEXT.md
+- Browser open via subprocess (open/xdg-open/cmd) not a crate — minimal dependencies for CLI
+- agentix auth start anthropic reads token from stdin (not browser) — CLI path matches `claude setup-token` UX
+- find_active_profile() in status command mirrors active_profiles > default > first priority chain for single-pass table render
 
 ### Roadmap Evolution
 
@@ -120,8 +123,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-22
-Stopped at: Completed 23-04-PLAN.md — Gateway OAuth REST endpoints + AuthService in AgentManager
-Next: 23-05 — CLI auth commands
+Stopped at: Completed 23-05-PLAN.md — CLI auth commands (agentix auth start/status/disconnect)
+Next: 23-06 — Command Center auth UI
 Resume file: None
 
 ---
