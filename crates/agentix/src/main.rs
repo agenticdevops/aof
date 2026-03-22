@@ -4,7 +4,7 @@ mod cli;
 mod client;
 mod commands;
 
-use cli::{Cli, Commands, CostsAction, MemoryAction};
+use cli::{AuthCommands, Cli, Commands, CostsAction, MemoryAction};
 
 #[tokio::main]
 async fn main() {
@@ -95,6 +95,17 @@ async fn main() {
         Commands::Notify { platform, channel_id, title, body, severity } => {
             commands::channels::send_notify(&ctx, &platform, &channel_id, &title, &body, &severity).await
         }
+        Commands::Auth { command } => match command {
+            AuthCommands::Start { provider, device_code } => {
+                commands::auth::start(&provider, device_code).await
+            }
+            AuthCommands::Status => {
+                commands::auth::status().await
+            }
+            AuthCommands::Disconnect { provider } => {
+                commands::auth::disconnect(&provider).await
+            }
+        },
     };
 
     if let Err(e) = result {

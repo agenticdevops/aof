@@ -38,6 +38,7 @@ chrono = { workspace = true }
 colored = "2.1"
 uuid = { version = "1.6", features = ["v4"] }
 reqwest = { workspace = true }
+dirs = "5.0"
 futures-util = "0.3"
 bytes = { workspace = true }
 

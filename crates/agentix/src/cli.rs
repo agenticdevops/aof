@@ -204,6 +204,32 @@ pub enum Commands {
         #[arg(long, default_value = "info")]
         severity: String,
     },
+
+    /// Manage LLM subscription authentication (OAuth for Anthropic, OpenAI, Gemini)
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommands,
+    },
+}
+
+/// Subcommands for `agentix auth`
+#[derive(Subcommand, Debug)]
+pub enum AuthCommands {
+    /// Initiate OAuth flow for a provider (opens browser)
+    Start {
+        /// Provider name: anthropic, openai, gemini (aliases: claude, codex, google)
+        provider: String,
+        /// Use device code flow instead of browser popup (for headless environments)
+        #[arg(long)]
+        device_code: bool,
+    },
+    /// Show authentication status for all providers
+    Status,
+    /// Remove stored credentials for a provider
+    Disconnect {
+        /// Provider name: anthropic, openai, gemini
+        provider: String,
+    },
 }
 
 /// Subcommands for `agentix costs`

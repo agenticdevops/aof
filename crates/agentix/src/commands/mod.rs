@@ -1,5 +1,6 @@
 pub mod approvals;
 pub mod audit;
+pub mod auth;
 pub mod channels;
 pub mod gateway;
 pub mod agents;
