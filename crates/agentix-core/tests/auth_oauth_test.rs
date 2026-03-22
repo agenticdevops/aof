@@ -31,30 +31,34 @@ use base64::Engine;
 // Helper: isolate environment variable changes
 // ---------------------------------------------------------------------------
 
-struct EnvGuard {
-    key: &'static str,
-    original: Option<String>,
-}
+/// Global mutex to serialize tests that mutate environment variables.
+/// Env vars are process-global state — parallel test threads race on them.
+static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-impl EnvGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let original = std::env::var(key).ok();
-        std::env::set_var(key, value);
-        Self { key, original }
-    }
+fn with_env_vars<F: FnOnce()>(vars: &[(&'static str, Option<&str>)], f: F) {
+    let _guard = ENV_MUTEX.lock().expect("env mutex poisoned");
 
-    fn remove(key: &'static str) -> Self {
-        let original = std::env::var(key).ok();
-        std::env::remove_var(key);
-        Self { key, original }
-    }
-}
+    // Save originals and apply changes
+    let originals: Vec<(&'static str, Option<String>)> = vars
+        .iter()
+        .map(|(key, new_val)| {
+            let original = std::env::var(key).ok();
+            match new_val {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
+            (*key, original)
+        })
+        .collect();
 
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        match &self.original {
-            Some(v) => std::env::set_var(self.key, v),
-            None => std::env::remove_var(self.key),
+    // Run the test body
+    f();
+
+    // Restore originals
+    for (key, original) in originals {
+        match original {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
         }
     }
 }
@@ -133,32 +137,43 @@ fn openai_authorize_url_contains_redirect_uri() {
 
 #[test]
 fn gemini_authorize_url_contains_pkce() {
-    let _client_id = EnvGuard::set("GEMINI_OAUTH_CLIENT_ID", "test-client-id-123");
-    let _client_secret = EnvGuard::set("GEMINI_OAUTH_CLIENT_SECRET", "test-client-secret");
+    with_env_vars(
+        &[
+            ("GEMINI_OAUTH_CLIENT_ID", Some("test-client-id-123")),
+            ("GEMINI_OAUTH_CLIENT_SECRET", Some("test-client-secret")),
+        ],
+        || {
+            let pkce = generate_pkce_state();
+            let url = gemini_build_authorize_url(&pkce)
+                .expect("Failed to build Gemini authorize URL");
 
-    let pkce = generate_pkce_state();
-    let url = gemini_build_authorize_url(&pkce).expect("Failed to build Gemini authorize URL");
-
-    assert!(url.contains(GOOGLE_OAUTH_AUTHORIZE_URL));
-    assert!(url.contains("client_id="));
-    assert!(url.contains("code_challenge="));
-    assert!(url.contains("code_challenge_method=S256"));
-    assert!(url.contains("access_type=offline"));
-    assert!(url.contains("prompt=consent"));
-    assert!(url.contains("redirect_uri="));
-    assert!(url.contains("1456"));
+            assert!(url.contains(GOOGLE_OAUTH_AUTHORIZE_URL));
+            assert!(url.contains("client_id="));
+            assert!(url.contains("code_challenge="));
+            assert!(url.contains("code_challenge_method=S256"));
+            assert!(url.contains("access_type=offline"));
+            assert!(url.contains("prompt=consent"));
+            assert!(url.contains("redirect_uri="));
+            assert!(url.contains("1456"));
+        },
+    );
 }
 
 #[test]
 fn gemini_authorize_url_fails_without_env_vars() {
-    let _client_id = EnvGuard::remove("GEMINI_OAUTH_CLIENT_ID");
-    let _client_secret = EnvGuard::remove("GEMINI_OAUTH_CLIENT_SECRET");
-
-    let pkce = generate_pkce_state();
-    let result = gemini_build_authorize_url(&pkce);
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("GEMINI_OAUTH_CLIENT_ID"));
+    with_env_vars(
+        &[
+            ("GEMINI_OAUTH_CLIENT_ID", None),
+            ("GEMINI_OAUTH_CLIENT_SECRET", None),
+        ],
+        || {
+            let pkce = generate_pkce_state();
+            let result = gemini_build_authorize_url(&pkce);
+            assert!(result.is_err());
+            let err_msg = result.unwrap_err().to_string();
+            assert!(err_msg.contains("GEMINI_OAUTH_CLIENT_ID"));
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------
