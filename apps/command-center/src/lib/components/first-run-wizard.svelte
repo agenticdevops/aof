@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { X, CheckCircle, AlertCircle, Bot, Key } from 'lucide-svelte';
+	import { X, CheckCircle, AlertCircle, Bot, Key, RefreshCw, Wifi, WifiOff } from 'lucide-svelte';
 	import WizardStep from './wizard-step.svelte';
 	import { completeWizard } from '$lib/stores/settings.js';
 	import { gatewayUrl, setGatewayUrl } from '$lib/stores/gateway.js';
@@ -19,16 +19,24 @@
 	let connectionStatus = $state<'idle' | 'testing' | 'ok' | 'error'>('idle');
 	let connectionError = $state('');
 
-	// Provider key state
+	// Provider auth state
 	let providerKeys = $state<Record<string, string>>({});
+	let providerModes = $state<Record<string, 'api' | 'subscription'>>({});
 	let providerSaving = $state(false);
 	let providerSaved = $state(false);
+	let anthropicWizardToken = $state('');
+	let anthropicWizardSaving = $state(false);
+	let authLoading = $state<Record<string, boolean>>({});
 
 	const PROVIDERS = [
 		{ id: 'anthropic', label: 'Anthropic', placeholder: 'sk-ant-...' },
 		{ id: 'openai', label: 'OpenAI', placeholder: 'sk-...' },
 		{ id: 'google', label: 'Google (Gemini)', placeholder: 'AIza...' }
 	];
+
+	function setWizardProviderMode(providerId: string, mode: 'api' | 'subscription') {
+		providerModes[providerId] = mode;
+	}
 
 	async function saveProviderKeys() {
 		providerSaving = true;
@@ -44,6 +52,53 @@
 			// Silently handle — gateway may not support this yet
 		} finally {
 			providerSaving = false;
+		}
+	}
+
+	async function startWizardAuth(providerId: string) {
+		authLoading[providerId] = true;
+		let popup: Window | null = null;
+		try {
+			const resp = await api.auth.start(providerId);
+			if (resp.auth_url) {
+				popup = window.open(resp.auth_url, 'agentix-auth', 'width=600,height=700,left=200,top=100');
+				const pollStart = Date.now();
+				await new Promise<void>((resolve, reject) => {
+					const interval = setInterval(async () => {
+						if (Date.now() - pollStart > 5 * 60 * 1000) {
+							clearInterval(interval);
+							reject(new Error('Timed out'));
+							return;
+						}
+						try {
+							const status = await api.auth.status(providerId);
+							if (status.authenticated) {
+								clearInterval(interval);
+								if (popup && !popup.closed) popup.close();
+								resolve();
+							}
+						} catch { /* keep polling */ }
+					}, 2000);
+				});
+			}
+		} catch {
+			if (popup && !popup.closed) popup.close();
+		} finally {
+			authLoading[providerId] = false;
+		}
+	}
+
+	async function submitWizardAnthropicToken() {
+		const token = anthropicWizardToken.trim();
+		if (!token) return;
+		anthropicWizardSaving = true;
+		try {
+			await api.auth.submitToken('anthropic', token);
+			anthropicWizardToken = '';
+		} catch {
+			// Silently handle
+		} finally {
+			anthropicWizardSaving = false;
 		}
 	}
 
@@ -208,40 +263,108 @@
 						</div>
 					{/if}
 
-					<!-- Provider API Keys (shown after successful connection) -->
+					<!-- LLM Provider Setup (shown after successful connection) -->
 					{#if connectionStatus === 'ok'}
 						<div class="space-y-3 pt-2 border-t">
 							<div class="flex items-center gap-2">
 								<Key class="h-4 w-4 text-muted-foreground" />
-								<p class="text-sm font-medium">LLM Provider Keys <span class="text-muted-foreground font-normal">(optional)</span></p>
+								<p class="text-sm font-medium">LLM Providers <span class="text-muted-foreground font-normal">(optional)</span></p>
 							</div>
 							<p class="text-xs text-muted-foreground">
-								Configure API keys for LLM providers. Keys set in agentix.yaml or environment are used automatically.
+								Use your existing subscription or an API key — both options work equally well.
 							</p>
 							{#each PROVIDERS as provider}
-								<div class="space-y-1">
-									<label for="wizard-key-{provider.id}" class="text-xs font-medium text-muted-foreground">{provider.label}</label>
-									<input
-										id="wizard-key-{provider.id}"
-										type="password"
-										bind:value={providerKeys[provider.id]}
-										placeholder={provider.placeholder}
-										class="w-full rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono"
-									/>
+								{@const mode = providerModes[provider.id]}
+								{@const loading = authLoading[provider.id]}
+								<div class="rounded-lg border p-3 space-y-2">
+									<!-- Provider header + mode toggle -->
+									<div class="flex items-center justify-between gap-2">
+										<span class="text-xs font-medium">{provider.label}</span>
+										<div class="inline-flex rounded-full border bg-muted/40 p-0.5 gap-0.5 text-xs font-medium shrink-0">
+											<button
+												onclick={() => setWizardProviderMode(provider.id, 'api')}
+												class="rounded-full px-2.5 py-0.5 transition-colors cursor-pointer {mode === 'api'
+													? 'bg-background text-foreground shadow-sm'
+													: 'text-muted-foreground hover:text-foreground'}"
+											>
+												API Key
+											</button>
+											<button
+												onclick={() => setWizardProviderMode(provider.id, 'subscription')}
+												class="rounded-full px-2.5 py-0.5 transition-colors cursor-pointer {mode === 'subscription'
+													? 'bg-background text-foreground shadow-sm'
+													: 'text-muted-foreground hover:text-foreground'}"
+											>
+												Subscription
+											</button>
+										</div>
+									</div>
+									<!-- API Key input -->
+									{#if mode === 'api'}
+										<input
+											id="wizard-key-{provider.id}"
+											type="password"
+											bind:value={providerKeys[provider.id]}
+											placeholder={provider.placeholder}
+											class="w-full rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+										/>
+									{/if}
+									<!-- Subscription flow -->
+									{#if mode === 'subscription'}
+										{#if provider.id === 'anthropic'}
+											<div class="space-y-1.5">
+												<p class="text-xs text-muted-foreground">
+													Paste your token from <code class="font-mono bg-muted px-1 rounded">claude setup-token</code>
+												</p>
+												<div class="flex gap-2">
+													<input
+														type="password"
+														bind:value={anthropicWizardToken}
+														placeholder="Bearer token or sk-ant-..."
+														class="flex-1 rounded-md border bg-background px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+													/>
+													<button
+														onclick={submitWizardAnthropicToken}
+														disabled={anthropicWizardSaving || !anthropicWizardToken.trim()}
+														class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50 cursor-pointer shrink-0"
+													>
+														{anthropicWizardSaving ? 'Saving...' : 'Save'}
+													</button>
+												</div>
+											</div>
+										{:else}
+											<button
+												onclick={() => startWizardAuth(provider.id)}
+												disabled={loading}
+												class="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 cursor-pointer"
+											>
+												{#if loading}
+													<RefreshCw class="h-3 w-3 animate-spin" />
+													Authorizing...
+												{:else}
+													<Wifi class="h-3 w-3" />
+													Authorize with {provider.label}
+												{/if}
+											</button>
+										{/if}
+									{/if}
 								</div>
 							{/each}
-							<div class="flex items-center gap-2">
-								<button
-									onclick={saveProviderKeys}
-									disabled={providerSaving || !Object.values(providerKeys).some(k => k?.trim())}
-									class="rounded-md border px-4 py-1.5 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50 cursor-pointer"
-								>
-									{providerSaving ? 'Saving...' : 'Save Keys'}
-								</button>
-								{#if providerSaved}
-									<span class="text-xs text-green-600 dark:text-green-400">Saved!</span>
-								{/if}
-							</div>
+							<!-- Save API keys button -->
+							{#if Object.values(providerModes).some(m => m === 'api') || !Object.keys(providerModes).length}
+								<div class="flex items-center gap-2">
+									<button
+										onclick={saveProviderKeys}
+										disabled={providerSaving || !Object.values(providerKeys).some(k => k?.trim())}
+										class="rounded-md border px-4 py-1.5 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50 cursor-pointer"
+									>
+										{providerSaving ? 'Saving...' : 'Save API Keys'}
+									</button>
+									{#if providerSaved}
+										<span class="text-xs text-green-600 dark:text-green-400">Saved!</span>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					{/if}
 				</div>
