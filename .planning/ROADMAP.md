@@ -204,7 +204,7 @@ Plans:
 
 ## Progress
 
-**Execution Order:** Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 18 → 19 → 20 → 21 → 22
+**Execution Order:** Phases execute in numeric order: 13 -> 14 -> 15 -> 16 -> 17 -> 18 -> 19 -> 20 -> 21 -> 22 -> 23
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -218,3 +218,26 @@ Plans:
 | 20. Approval Workflows | 5/5 | Complete    | 2026-03-13 | - |
 | 21. Gateway (Multi-Channel) | 6/6 | Complete    | 2026-03-13 | - |
 | 22. Command Center (Svelte) | 8/8 | Complete   | 2026-03-13 | - |
+| 23. LLM Subscription Proxy | 0/7 | Not started | - | - |
+
+### Phase 23: LLM Subscription Proxy
+
+**Goal:** Agents can use existing LLM subscriptions (Claude, ChatGPT, Gemini) via OAuth-based authentication instead of requiring separate API keys — reducing cost for users who already pay for subscriptions.
+**Requirements**: SUB-01 (OAuth auth flows), SUB-02 (token persistence), SUB-03 (adaptive rate limiting), SUB-04 (provider factory routing), SUB-05 (Command Center UI)
+**Depends on:** Phase 22
+**Success Criteria** (what must be TRUE):
+  1. User runs `agentix auth start openai` and authenticates via browser-based OAuth; token stored encrypted
+  2. An agent configured with `mode: subscription` transparently uses the OAuth token instead of an API key
+  3. Token refresh happens automatically with retry/backoff; expired tokens fail the run (no silent fallback)
+  4. Settings page shows segmented control per provider (API Key | Subscription) with OAuth flow
+  5. `agentix auth status` shows connection status for all three providers
+**Plans**: 7 plans in 5 waves
+
+Plans:
+- [ ] 23-01-PLAN.md — Auth core types, ProviderMode, encrypted profile store, OAuth common (agentix-core)
+- [ ] 23-02-PLAN.md — Per-provider OAuth flows (OpenAI, Gemini, Anthropic) + AuthService coordinator
+- [ ] 23-03-PLAN.md — Subscription provider adapters + ProviderFactory routing (agentix-llm)
+- [ ] 23-04-PLAN.md — Gateway OAuth API endpoints + AgentManager integration (agentix-runtime)
+- [ ] 23-05-PLAN.md — CLI `agentix auth start|status|disconnect` command
+- [ ] 23-06-PLAN.md — Command Center settings page subscription UI (segmented control + OAuth popup)
+- [ ] 23-07-PLAN.md — Documentation, quickstart config, CHANGELOG v2.0.0-alpha.11
