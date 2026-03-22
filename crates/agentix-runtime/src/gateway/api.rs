@@ -39,6 +39,11 @@
 //! | POST | /api/v1/approvals/:id/deny | Deny a pending request |
 //! | GET | /api/v1/providers | List configured LLM providers (keys masked) |
 //! | PUT | /api/v1/providers | Set a provider API key at runtime |
+//! | GET | /api/v1/auth/:provider/start | Start OAuth2 PKCE flow (UI popup path) |
+//! | GET | /api/v1/auth/:provider/callback | OAuth2 redirect callback (UI popup path) |
+//! | GET | /api/v1/auth/:provider/status | Get OAuth/token auth status for a provider |
+//! | DELETE | /api/v1/auth/:provider | Disconnect and remove stored tokens |
+//! | POST | /api/v1/auth/:provider/token | Store a static bearer token or API key |
 //! | GET | /ws | WebSocket endpoint for real-time event broadcasting |
 
 use std::convert::Infallible;
@@ -49,9 +54,13 @@ use axum::{
     extract::{Path as AxumPath, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response, sse::Event, sse::KeepAlive, Sse},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
-use agentix_core::TriggerSource;
+use agentix_core::{
+    TriggerSource,
+    auth::{openai_oauth, gemini_oauth},
+    generate_pkce_state, normalize_provider,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio_stream::wrappers::BroadcastStream;
@@ -109,6 +118,12 @@ pub fn create_router(manager: Arc<AgentManager>) -> GatewayRouter {
         .route("/webhooks/:trigger_id", post(receive_webhook))
         // Provider configuration (Phase 22)
         .route("/api/v1/providers", get(list_providers).put(update_provider))
+        // OAuth / Auth endpoints (Phase 23 — LLM Subscription Proxy)
+        .route("/api/v1/auth/:provider/start", get(auth_start))
+        .route("/api/v1/auth/:provider/callback", get(auth_callback))
+        .route("/api/v1/auth/:provider/status", get(auth_status))
+        .route("/api/v1/auth/:provider", delete(auth_disconnect))
+        .route("/api/v1/auth/:provider/token", post(auth_store_token))
         // Multi-channel gateway endpoints (Phase 21)
         .route("/api/v1/channels", get(list_channels))
         .route("/api/v1/notify", post(send_notification))
@@ -1442,4 +1457,391 @@ async fn update_provider(
         })),
     )
         .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// OAuth / Auth endpoints (Phase 23 — LLM Subscription Proxy)
+// ---------------------------------------------------------------------------
+//
+// Two separate code paths exist for OAuth:
+//
+//   1. **UI popup flow** (this file): Browser opens a popup to the OAuth provider,
+//      which redirects back to the gateway at `/api/v1/auth/:provider/callback`.
+//      PKCE state is stored in `AgentManager::pending_pkce`.
+//
+//   2. **CLI loopback flow** (plan 05): `agentix auth start <provider>` spawns a
+//      per-provider loopback listener (OpenAI → :1455, Gemini → :1456).
+//      The OAuth callback goes directly to the loopback, NOT through the gateway.
+//
+// Both paths store tokens via the same `AuthService`.
+
+/// Query params for `GET /api/v1/auth/:provider/callback`
+#[derive(Debug, Deserialize)]
+struct AuthCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+/// Body for `POST /api/v1/auth/:provider/token`
+#[derive(Debug, Deserialize)]
+struct AuthTokenBody {
+    /// Bearer token or API key to store for this provider.
+    token: String,
+}
+
+/// GET /api/v1/auth/:provider/start
+///
+/// Initiates an OAuth2 PKCE flow for the named provider.
+///
+/// - **OpenAI / Gemini**: Returns `{"auth_url": "https://...", "provider": "..."}`.
+///   The caller should open `auth_url` in a popup. The OAuth provider will redirect
+///   back to `/api/v1/auth/:provider/callback` once the user authorises.
+///
+/// - **Anthropic**: Returns `{"auth_url": null, "method": "token", "provider": "anthropic",
+///   "instructions": "Paste your Claude setup-token or API key"}`.
+///   The Command Center handles token input directly via POST /api/v1/auth/anthropic/token.
+async fn auth_start(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(provider_raw): AxumPath<String>,
+) -> Response {
+    let provider = match normalize_provider(&provider_raw) {
+        Ok(p) => p,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("Unknown provider: {}", e)),
+    };
+
+    match provider.as_str() {
+        "anthropic" => {
+            Json(serde_json::json!({
+                "provider": "anthropic",
+                "auth_url": null,
+                "method": "token",
+                "instructions": "Paste your Claude setup-token or API key using POST /api/v1/auth/anthropic/token"
+            }))
+            .into_response()
+        }
+        "openai" => {
+            let pkce = generate_pkce_state();
+            let auth_url = openai_oauth::build_authorize_url(&pkce);
+            let state_key = pkce.state.clone();
+
+            // Store PKCE state (keyed by state param, with creation time for expiry)
+            manager.pending_pkce.insert(
+                state_key,
+                (provider.clone(), pkce, std::time::Instant::now()),
+            );
+
+            Json(serde_json::json!({
+                "provider": "openai",
+                "auth_url": auth_url,
+                "method": "oauth"
+            }))
+            .into_response()
+        }
+        "gemini" => {
+            let pkce = generate_pkce_state();
+            match gemini_oauth::build_authorize_url(&pkce) {
+                Ok(auth_url) => {
+                    let state_key = pkce.state.clone();
+                    manager.pending_pkce.insert(
+                        state_key,
+                        (provider.clone(), pkce, std::time::Instant::now()),
+                    );
+                    Json(serde_json::json!({
+                        "provider": "gemini",
+                        "auth_url": auth_url,
+                        "method": "oauth"
+                    }))
+                    .into_response()
+                }
+                Err(e) => error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!(
+                        "Gemini OAuth is not configured. Set GEMINI_OAUTH_CLIENT_ID and GEMINI_OAUTH_CLIENT_SECRET. Error: {}",
+                        e
+                    ),
+                ),
+            }
+        }
+        other => error_response(
+            StatusCode::BAD_REQUEST,
+            format!("Provider '{}' does not support OAuth via this endpoint. Use token flow instead.", other),
+        ),
+    }
+}
+
+/// GET /api/v1/auth/:provider/callback
+///
+/// OAuth2 redirect destination for UI popup flows.
+///
+/// Receives `?code=...&state=...` from the OAuth provider, exchanges the code
+/// for tokens, stores them via AuthService, and returns an HTML snippet that
+/// closes the popup window.
+///
+/// On error, returns an HTML page that closes the popup with an error indicator
+/// so the Command Center can display a user-friendly message.
+async fn auth_callback(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(provider_raw): AxumPath<String>,
+    Query(params): Query<AuthCallbackQuery>,
+) -> Response {
+    // OAuth error from the provider side
+    if let Some(err) = params.error {
+        let html = format!(
+            "<html><body><script>\
+            window.opener && window.opener.postMessage({{type:'auth_error',error:'{}'}}, '*');\
+            window.close();\
+            </script><p>Authentication failed: {}. You can close this window.</p></body></html>",
+            err, err
+        );
+        return (
+            StatusCode::OK,
+            axum::response::Html(html),
+        )
+        .into_response();
+    }
+
+    let provider = match normalize_provider(&provider_raw) {
+        Ok(p) => p,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("Unknown provider: {}", e)),
+    };
+
+    let code = match params.code {
+        Some(c) if !c.is_empty() => c,
+        _ => return error_response(StatusCode::BAD_REQUEST, "Missing 'code' query parameter"),
+    };
+    let state_param = match params.state {
+        Some(s) if !s.is_empty() => s,
+        _ => return error_response(StatusCode::BAD_REQUEST, "Missing 'state' query parameter"),
+    };
+
+    // Look up the pending PKCE state
+    let (stored_provider, pkce, created_at) = match manager.pending_pkce.remove(&state_param) {
+        Some((_, (p, pkce, t))) => (p, pkce, t),
+        None => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "Unknown or expired OAuth state parameter. Please restart the authentication flow.",
+            )
+        }
+    };
+
+    // Reject if PKCE entry is older than 10 minutes
+    if created_at.elapsed() > std::time::Duration::from_secs(600) {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "OAuth state parameter has expired (>10 minutes). Please restart the authentication flow.",
+        );
+    }
+
+    if stored_provider != provider {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Provider mismatch: state was for '{}', callback received for '{}'",
+                stored_provider, provider
+            ),
+        );
+    }
+
+    // Exchange code for tokens
+    let client = reqwest::Client::new();
+    let store_result = match provider.as_str() {
+        "openai" => {
+            match openai_oauth::exchange_code_for_tokens(&client, &code, &pkce).await {
+                Ok(token_set) => {
+                    let account_id = agentix_core::auth::openai_oauth::extract_account_id_from_jwt(
+                        &token_set.access_token,
+                    );
+                    manager
+                        .auth_service
+                        .store_openai_tokens("default", token_set, account_id, true)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                }
+                Err(e) => Err(format!("Failed to exchange OpenAI authorization code: {}", e)),
+            }
+        }
+        "gemini" => {
+            match gemini_oauth::exchange_code_for_tokens(&client, &code, &pkce).await {
+                Ok(token_set) => {
+                    let account_id = token_set
+                        .id_token
+                        .as_deref()
+                        .and_then(gemini_oauth::extract_account_email_from_id_token)
+                        .map(|e| e.to_string());
+                    manager
+                        .auth_service
+                        .store_gemini_tokens("default", token_set, account_id, true)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                }
+                Err(e) => Err(format!("Failed to exchange Gemini authorization code: {}", e)),
+            }
+        }
+        _ => Err(format!("Provider '{}' does not support OAuth callback flow", provider)),
+    };
+
+    match store_result {
+        Ok(()) => {
+            let html = format!(
+                "<html><body><script>\
+                window.opener && window.opener.postMessage({{type:'auth_success',provider:'{}'}}, '*');\
+                window.close();\
+                </script><p>Authentication successful for {}. You can close this window.</p></body></html>",
+                provider, provider
+            );
+            (StatusCode::OK, axum::response::Html(html)).into_response()
+        }
+        Err(e) => {
+            let html = format!(
+                "<html><body><script>\
+                window.opener && window.opener.postMessage({{type:'auth_error',provider:'{}',error:'{}'}}, '*');\
+                window.close();\
+                </script><p>Authentication failed: {}. You can close this window.</p></body></html>",
+                provider, e, e
+            );
+            (StatusCode::OK, axum::response::Html(html)).into_response()
+        }
+    }
+}
+
+/// GET /api/v1/auth/:provider/status
+///
+/// Returns the current authentication status for the named provider.
+///
+/// Response:
+/// ```json
+/// {
+///   "provider": "openai",
+///   "authenticated": true,
+///   "mode": "oauth",
+///   "expires_at": "2026-03-22T10:00:00Z",
+///   "account_id": "user-abc123",
+///   "needs_reauth": false
+/// }
+/// ```
+async fn auth_status(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(provider_raw): AxumPath<String>,
+) -> Response {
+    let provider = match normalize_provider(&provider_raw) {
+        Ok(p) => p,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("Unknown provider: {}", e)),
+    };
+
+    match manager.auth_service.get_profile(&provider, None).await {
+        Ok(Some(profile)) => {
+            let (mode, expires_at, needs_reauth) = match &profile.kind {
+                agentix_core::AuthProfileKind::OAuth => {
+                    let (exp, needs_reauth) = match &profile.token_set {
+                        Some(ts) => {
+                            let exp_str = ts.expires_at.map(|e| e.to_rfc3339());
+                            let needs_reauth = ts.is_expiring_within(std::time::Duration::from_secs(0))
+                                && ts.refresh_token.is_none();
+                            (exp_str, needs_reauth)
+                        }
+                        None => (None, false),
+                    };
+                    ("oauth", exp, needs_reauth)
+                }
+                agentix_core::AuthProfileKind::Token => ("token", None, false),
+            };
+
+            Json(serde_json::json!({
+                "provider": provider,
+                "authenticated": true,
+                "mode": mode,
+                "expires_at": expires_at,
+                "account_id": profile.account_id,
+                "needs_reauth": needs_reauth,
+            }))
+            .into_response()
+        }
+        Ok(None) => Json(serde_json::json!({
+            "provider": provider,
+            "authenticated": false,
+            "mode": null,
+            "expires_at": null,
+            "account_id": null,
+            "needs_reauth": false,
+        }))
+        .into_response(),
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to load auth profile for '{}': {}", provider, e),
+        ),
+    }
+}
+
+/// DELETE /api/v1/auth/:provider
+///
+/// Disconnects and removes the active OAuth profile for the named provider.
+/// Returns 204 No Content on success, 404 if no profile was found.
+async fn auth_disconnect(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(provider_raw): AxumPath<String>,
+) -> Response {
+    let provider = match normalize_provider(&provider_raw) {
+        Ok(p) => p,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("Unknown provider: {}", e)),
+    };
+
+    match manager.auth_service.remove_profile(&provider, "default").await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => error_response(
+            StatusCode::NOT_FOUND,
+            format!("No active auth profile found for provider '{}'", provider),
+        ),
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to remove auth profile for '{}': {}", provider, e),
+        ),
+    }
+}
+
+/// POST /api/v1/auth/:provider/token
+///
+/// Stores a static bearer token or API key for the named provider.
+///
+/// For Anthropic: detects whether the token is a setup-token (Bearer) or API key.
+/// For OpenAI/Gemini: stores as a static API key (not OAuth).
+///
+/// Body: `{"token": "sk-ant-..."}`
+async fn auth_store_token(
+    State(manager): State<Arc<AgentManager>>,
+    AxumPath(provider_raw): AxumPath<String>,
+    Json(body): Json<AuthTokenBody>,
+) -> Response {
+    if body.token.is_empty() {
+        return error_response_with_field(StatusCode::BAD_REQUEST, "Token cannot be empty", "token");
+    }
+
+    let provider = match normalize_provider(&provider_raw) {
+        Ok(p) => p,
+        Err(e) => return error_response(StatusCode::BAD_REQUEST, format!("Unknown provider: {}", e)),
+    };
+
+    match manager
+        .auth_service
+        .store_provider_token(&provider, "default", &body.token, std::collections::HashMap::new(), true)
+        .await
+    {
+        Ok(profile) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "provider": provider,
+                "profile": profile.id,
+                "kind": "token",
+                "status": "stored"
+            })),
+        )
+        .into_response(),
+        Err(e) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to store token for '{}': {}", provider, e),
+        ),
+    }
 }

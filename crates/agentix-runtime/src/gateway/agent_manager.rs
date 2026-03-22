@@ -17,8 +17,8 @@ use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
 use agentix_core::{
-    AgentDefinition, AgentixError, AgentLoader, FlatYamlLoader, ModelConfig,
-    ModelProvider, TriggerEvent, TriggerRunRegistry, WorkspaceConfig,
+    AgentDefinition, AgentixError, AgentLoader, AuthService, FlatYamlLoader, ModelConfig,
+    ModelProvider, PkceState, ProviderMode, TriggerEvent, TriggerRunRegistry, WorkspaceConfig,
     coordination::{AgentInbox, CoordinatorProtocol, DelegationMessage, DelegationResult, DelegationStatus},
     TriggerSource,
 };
@@ -170,6 +170,16 @@ pub struct AgentManager {
     /// Runtime provider overrides set via the `/api/v1/providers` endpoint.
     /// Checked before `workspace_config.spec.providers` during model creation.
     provider_overrides: DashMap<String, agentix_core::ProviderConfig>,
+    /// AuthService for OAuth credential management (Phase 23 — LLM Subscription Proxy).
+    /// Stored as `Arc` so it can be shared with axum handler state without cloning the manager.
+    pub auth_service: Arc<AuthService>,
+    /// In-flight PKCE states for UI OAuth flows (gateway callback path).
+    ///
+    /// Keyed by the `state` parameter in the OAuth authorization URL.
+    /// Entries are inserted in `/api/v1/auth/:provider/start` and consumed in
+    /// `/api/v1/auth/:provider/callback`. Entries older than 10 minutes are
+    /// ignored as a safety measure.
+    pub pending_pkce: DashMap<String, (String, PkceState, std::time::Instant)>,
 }
 
 impl AgentManager {
@@ -253,6 +263,25 @@ impl AgentManager {
         self.channel_manager.as_ref()
     }
 
+    /// Build an `AuthService` using the data directory for profile storage.
+    ///
+    /// Creates `<data_dir>/.agentix-auth/` if it doesn't exist.
+    /// Falls back to a temp-directory-based store for in-memory/test configs.
+    fn build_auth_service(data_dir: Option<&std::path::Path>) -> Arc<AuthService> {
+        let state_dir = match data_dir {
+            Some(dir) => {
+                let auth_dir = dir.join(".agentix-auth");
+                let _ = std::fs::create_dir_all(&auth_dir);
+                auth_dir
+            }
+            None => {
+                // For tests / in-memory mode: use a temporary directory
+                std::env::temp_dir().join("agentix-auth-test")
+            }
+        };
+        Arc::new(AuthService::new(&state_dir, true))
+    }
+
     fn build_otel_exporter(workspace_config: &Option<WorkspaceConfig>) -> Option<OtelExporter> {
         workspace_config.as_ref().and_then(|wc| {
             wc.spec.telemetry.as_ref().and_then(|tc| {
@@ -297,6 +326,7 @@ impl AgentManager {
         let approval_store = Self::open_approval_store_at(":memory:");
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let channel_manager = Self::build_channel_manager(&workspace_config);
+        let auth_service = Self::build_auth_service(None);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -313,6 +343,8 @@ impl AgentManager {
             inboxes: DashMap::new(),
             channel_manager,
             provider_overrides: DashMap::new(),
+            auth_service,
+            pending_pkce: DashMap::new(),
         });
         // Spawn the trigger dispatcher background task
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
@@ -333,6 +365,7 @@ impl AgentManager {
         let approval_store = Self::open_approval_store_at(&approval_db_path);
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let channel_manager = Self::build_channel_manager(&workspace_config);
+        let auth_service = Self::build_auth_service(Some(data_dir));
         tracing::info!("Run store: {}", run_db_path);
         tracing::info!("Cost store: {}", cost_db_path);
         tracing::info!("Trace store: {}", trace_db_path);
@@ -354,6 +387,8 @@ impl AgentManager {
             inboxes: DashMap::new(),
             channel_manager,
             provider_overrides: DashMap::new(),
+            auth_service,
+            pending_pkce: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
         manager
@@ -369,6 +404,7 @@ impl AgentManager {
         let approval_store = Self::open_approval_store_at(":memory:");
         let otel_exporter = Self::build_otel_exporter(&workspace_config);
         let channel_manager = Self::build_channel_manager(&workspace_config);
+        let auth_service = Self::build_auth_service(None);
         let manager = Arc::new(Self {
             agents: DashMap::new(),
             runs: DashMap::new(),
@@ -385,6 +421,8 @@ impl AgentManager {
             inboxes: DashMap::new(),
             channel_manager,
             provider_overrides: DashMap::new(),
+            auth_service,
+            pending_pkce: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
         manager
@@ -939,7 +977,8 @@ impl AgentManager {
         cancel_rx: oneshot::Receiver<()>,
     ) -> Result<(RunResult, Option<TraceCollector>), AgentixError> {
         // Create the LLM model from the definition's model_preferred field
-        let model = create_provider_from_definition(definition, &self.workspace_config, &self.provider_overrides)?;
+        // Pass auth_service for subscription-mode token resolution (Phase 23)
+        let model = create_provider_from_definition(definition, &self.workspace_config, &self.provider_overrides, Some(&self.auth_service)).await?;
 
         let mut config = ReActConfig::from_definition(definition);
 
@@ -1652,10 +1691,14 @@ impl CoordinatorProtocol for AgentManager {
 ///
 /// Parses `model_preferred` (format: `provider/model`), looks up credentials
 /// in `workspace_config.spec.providers`, and creates the provider.
-fn create_provider_from_definition(
+///
+/// When the provider is configured in `ProviderMode::Subscription`, an OAuth
+/// access token is obtained from `auth_service` and used in place of an API key.
+async fn create_provider_from_definition(
     definition: &AgentDefinition,
     workspace_config: &Option<WorkspaceConfig>,
     provider_overrides: &DashMap<String, agentix_core::ProviderConfig>,
+    auth_service: Option<&AuthService>,
 ) -> Result<Arc<dyn agentix_core::Model + Send + Sync>, AgentixError> {
     let model_preferred = definition.model_preferred.as_deref().ok_or_else(|| {
         AgentixError::Config(format!(
@@ -1678,8 +1721,19 @@ fn create_provider_from_definition(
     // Parse provider enum
     let provider = parse_provider_name(provider_name)?;
 
+    // Check if this provider is configured in subscription mode
+    let provider_mode = provider_overrides
+        .get(provider_name)
+        .and_then(|cfg| cfg.mode)
+        .or_else(|| {
+            workspace_config
+                .as_ref()
+                .and_then(|wc| wc.spec.providers.get(provider_name))
+                .and_then(|pc| pc.mode)
+        });
+
     // Look up credentials: runtime overrides → workspace config → env vars
-    let (api_key, endpoint) = if let Some(override_cfg) = provider_overrides.get(provider_name) {
+    let (mut api_key, endpoint) = if let Some(override_cfg) = provider_overrides.get(provider_name) {
         (
             override_cfg.api_key.clone(),
             override_cfg.base_url.clone(),
@@ -1695,6 +1749,35 @@ fn create_provider_from_definition(
         (get_default_api_key_from_env(provider_name), None)
     };
 
+    // If subscription mode, resolve an OAuth access token via AuthService
+    let mut extra: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+    if matches!(provider_mode, Some(ProviderMode::Subscription)) {
+        if let Some(svc) = auth_service {
+            let token = match provider {
+                ModelProvider::OpenAI => svc.get_valid_openai_access_token(None).await
+                    .map_err(|e| AgentixError::Config(format!("Failed to get OpenAI subscription token: {}", e)))?,
+                ModelProvider::Google => svc.get_valid_gemini_access_token(None).await
+                    .map_err(|e| AgentixError::Config(format!("Failed to get Gemini subscription token: {}", e)))?,
+                ModelProvider::Anthropic => svc.get_provider_bearer_token("anthropic", None).await
+                    .map_err(|e| AgentixError::Config(format!("Failed to get Anthropic subscription token: {}", e)))?,
+                _ => None,
+            };
+            match token {
+                Some(t) => {
+                    api_key = Some(t);
+                    extra.insert("provider_mode".to_string(), serde_json::json!("subscription"));
+                }
+                None => {
+                    return Err(AgentixError::Config(format!(
+                        "Provider '{}' is configured for subscription mode but no OAuth token was found. \
+                        Run `agentix auth start {}` to authenticate.",
+                        provider_name, provider_name
+                    )));
+                }
+            }
+        }
+    }
+
     let config = ModelConfig {
         model: model_name.to_string(),
         provider,
@@ -1704,16 +1787,10 @@ fn create_provider_from_definition(
         max_tokens: None,
         timeout_secs: definition.timeout_secs,
         headers: std::collections::HashMap::new(),
-        extra: std::collections::HashMap::new(),
+        extra,
     };
 
-    // Use a blocking runtime call to invoke the async factory
-    // ProviderFactory::create is async but most providers are sync-under-the-hood
-    // Model: Send + Sync so we can safely upcast.
-    let model = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current()
-            .block_on(ProviderFactory::create(config))
-    })?;
+    let model = ProviderFactory::create(config).await?;
 
     // Model trait requires Send + Sync so Box<dyn Model> coerces to Box<dyn Model + Send + Sync>
     let model_boxed: Box<dyn agentix_core::Model + Send + Sync> = model;
