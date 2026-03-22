@@ -99,6 +99,7 @@ pub use auth::{
     generate_pkce_state, parse_query_params, profile_id, random_base64url, select_profile_id,
     url_decode, url_encode,
 };
+pub use auth::anthropic_token::{AnthropicAuthKind, detect_auth_kind};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

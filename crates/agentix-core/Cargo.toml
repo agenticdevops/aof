@@ -30,6 +30,7 @@ sha2 = { workspace = true }
 aes-gcm = { workspace = true }
 base64 = { workspace = true }
 tokio = { workspace = true, features = ["sync", "fs", "time"] }
+reqwest = { workspace = true }
 
 [dev-dependencies.tempfile]
 version = "3"

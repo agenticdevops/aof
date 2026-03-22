@@ -1,4 +1,4 @@
-//! OAuth auth profiles, encrypted token storage, and PKCE utilities.
+//! OAuth auth profiles, encrypted token storage, PKCE utilities, and per-provider flows.
 //!
 //! This module provides the foundation for LLM subscription proxy authentication:
 //!
@@ -7,6 +7,9 @@
 //! - [`PkceState`] — PKCE code verifier + challenge for OAuth2 authorization code flow
 //! - [`generate_pkce_state`] / [`url_encode`] / [`parse_query_params`] — OAuth2 utilities
 //! - [`profile_id`] / [`select_profile_id`] — profile selection with priority chain
+//! - [`openai_oauth`] — OpenAI OAuth2 flow (auth.openai.com, loopback on :1455)
+//! - [`gemini_oauth`] — Google/Gemini OAuth2 flow (loopback on :1456)
+//! - [`anthropic_token`] — Anthropic API key / Bearer token detection
 //!
 //! ## Profile Selection Priority
 //!
@@ -20,6 +23,10 @@
 //! Token values are encrypted at rest using AES-256-GCM with a random key stored
 //! in `<state_dir>/.secret_key`. Encrypted values are hex-encoded with an `enc2:` prefix.
 //! If encryption is disabled, values are stored as plaintext.
+
+pub mod anthropic_token;
+pub mod gemini_oauth;
+pub mod openai_oauth;
 
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
