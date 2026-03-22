@@ -142,6 +142,49 @@ pub struct WorkspaceDefaults {
     pub mode: Option<AgentMode>,
 }
 
+/// Authentication mode for a provider: API key or OAuth subscription.
+///
+/// When set to `Subscription`, the provider uses OAuth-based token storage
+/// instead of an API key. Defaults to `Api` when not specified.
+///
+/// ```yaml
+/// spec:
+///   providers:
+///     anthropic:
+///       mode: subscription
+///     openai:
+///       mode: api
+///       api_key: "${OPENAI_API_KEY}"
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderMode {
+    /// Use a static API key for authentication (default).
+    Api,
+    /// Use OAuth subscription tokens for authentication.
+    Subscription,
+}
+
+impl Default for ProviderMode {
+    fn default() -> Self {
+        Self::Api
+    }
+}
+
+/// OAuth client credentials for a provider (used when mode = subscription).
+///
+/// Client IDs and secrets are typically provider-specific constants; only
+/// supply these when using a custom OAuth application registration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OAuthConfig {
+    /// OAuth client ID (provider-specific default used if not set).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    /// OAuth client secret (provider-specific default used if not set).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+}
+
 /// Provider credential and endpoint configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderConfig {
@@ -151,6 +194,12 @@ pub struct ProviderConfig {
     /// Base URL override (optional, for compatible APIs).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+    /// Authentication mode: api (default) or subscription (OAuth).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<ProviderMode>,
+    /// OAuth client credentials (only used when mode = subscription).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuthConfig>,
 }
 
 /// Gateway server settings.
