@@ -2,27 +2,11 @@
 
 ## What This Is
 
-An open-source (Apache 2.0) enterprise agent automation platform built in Rust. Organizations define expert agents in YAML — composing skills, tools, and MCP servers — then run them on cron, on events, or on demand. Single binary deployment, built-in cost tracking, multi-channel delivery (Slack, Teams, Telegram, Discord, WhatsApp), and a Svelte command center for fleet management.
+An open-source (Apache 2.0) enterprise agent automation platform built in Rust. Organizations define expert agents in YAML — composing skills, tools, and MCP servers — then run them on cron, on events, or on demand. Single binary deployment, built-in cost tracking, multi-channel delivery (Slack, Telegram, Discord), and a Svelte command center for fleet management. Agents authenticate via API keys or existing LLM subscriptions (Claude, ChatGPT, Gemini) through OAuth.
 
 ## Core Value
 
 Let any technical organization automate operational tasks with AI agents — without writing Python, without managing infrastructure, without giving up control. Define in YAML, run as a binary, track costs, keep humans in the loop.
-
-## Current Milestone: v2.0 OpenAgentiX
-
-**Goal:** Transform AOF into an enterprise agent automation platform with YAML-first agent composition, skills + tools + MCP, scheduled/event-driven execution, cost tracking, and a Svelte command center.
-
-**Target features:**
-- Rebrand to OpenAgentiX with new agent YAML spec
-- Skills composition system (composable capability packs)
-- Cron/event-driven agent triggers (not just chat)
-- Per-agent cost tracking + budgets (inspired by ClawWork)
-- OTel telemetry + agent traces
-- WASM sandbox for untrusted tools (inspired by IronClaw)
-- Approval workflows / human-in-the-loop
-- Smart model routing (complexity scoring)
-- Multi-channel gateway (Slack, Teams, Telegram, Discord, WhatsApp)
-- Svelte command center (agent builder, run history, costs, scheduler)
 
 ## Requirements
 
@@ -41,80 +25,77 @@ Let any technical organization automate operational tasks with AI agents — wit
 - Session management with resume capability — v1.0
 - WebSocket control plane — v1.0
 - Production security (seccomp, capability dropping, credential audit) — v1.0
+- GitAgent-compatible agent directories with ReAct loop engine — v2.0
+- Skills composition with 8 built-in packs + WASM sandbox isolation — v2.0
+- Event-driven triggers (cron, webhook, GitHub, Jira, agent-to-agent) — v2.0
+- Multi-agent coordination with vector memory and semantic recall — v2.0
+- Per-call/run/agent cost tracking with budget enforcement — v2.0
+- OpenTelemetry traces/metrics with CLI trace viewer — v2.0
+- Security: SSRF protection, AES-256-GCM secrets, comprehensive audit trail — v2.0
+- Human-in-the-loop approval workflows (3 autonomy modes) — v2.0
+- Multi-channel gateway: Slack, Telegram, Discord bi-directional — v2.0
+- Svelte Command Center: dashboard, agent builder, cost charts, trace viewer, approval queue — v2.0
+- LLM subscription proxy: OAuth auth for Claude/ChatGPT/Gemini subscriptions — v2.0
+- kubectl-style `agentix` CLI with 15+ commands — v2.0
 
 ### Active
 
-(Defined in REQUIREMENTS.md for v2.0)
+(Defined in REQUIREMENTS.md for next milestone)
 
 ### Out of Scope
 
 - Agent personas / SOUL.md / personality system — pivoted away from "fun team" model
 - React Mission Control — replaced by Svelte command center
 - Squad Chat UI — not enterprise-relevant
-- Kanban / workflow builder UI — defer to v2.1+
-- Multi-tenancy / MSP isolation — v2.5 enterprise
-- SSO / SAML / LDAP — v2.5 enterprise
-- Mobile native app — web + messaging channels sufficient
-- Voice/talk mode — text-based for v2.0
+- Python SDK — Rust-native, no Python dependency is a differentiator
 - Public agent marketplace — security concerns, community registry first
 - A2A protocol — emerging standard, defer until stable
+- Voice/talk mode — text-based for enterprise automation
+- Mobile native app — web + messaging channels sufficient
 
 ## Context
 
-**Previous milestone:** v1.0 "Humanized Interfaces" shipped 2026-02-22 (12 phases, 55 plans, 164K LOC). Proved the Rust + multi-channel architecture works. The persona/personality direction is being pivoted away from.
+**v1.0** shipped 2026-02-22: 12 phases, 55 plans, 164K LOC. Proved Rust + multi-channel architecture.
+**v2.0** shipped 2026-03-23: 11 phases, 67 plans, 78K LOC (rewrite). Enterprise pivot — GitAgent agents, skills, triggers, cost tracking, telemetry, security, approvals, multi-channel gateway, Svelte dashboard, OAuth subscription proxy.
+
+**Total:** 23 phases, 122 plans across 2 milestones.
+
+**Tech stack:** Rust (agentix-core, agentix-llm, agentix-mcp, agentix-runtime, agentix-memory, agentix-triggers, agentix CLI), SvelteKit 5 (Command Center), SQLite (persistence).
 
 **Market landscape (researched 2026-03-12):**
 - Python-dominant (LangChain, LangGraph, CrewAI, Agno, AutoGen) — no Rust-native competitor
-- 45% of developers who try LangChain never use it in production (abstraction bloat)
+- 45% of developers who try LangChain never use it in production
 - 75% of enterprise leaders cite security/compliance as top AI priority
-- Enterprises need: cost tracking, audit trails, RBAC, event-driven triggers, deployment flexibility
-- MCP becoming standard (97M monthly SDK downloads). A2A emerging but nascent.
 - No framework does config-first + enterprise security + cost tracking + event-driven well
 
-**Competitive inspiration:**
-- ClawWork: per-call/task/day cost tracking, quality thresholds, ROI metrics
-- OpenFang: "Hands" (pre-built domain-complete agents), 16-layer security, workflow orchestration
-- IronClaw: WASM sandbox, shared agentic loop, smart model routing, routines engine, cost guard
-- ZeroClaw: trait-driven architecture, research phase, AgentBuilder pattern
+**Target users:** Platform engineering teams, SRE/DevOps (regulated industries), startup CTOs, enterprise architects, SI/MSP/GCC.
 
-**Target users:**
-- Platform engineering teams (Netflix, Dropbox, Adobe scale)
-- SRE/DevOps teams (regulated industries — Visa, Morgan Stanley)
-- Startup CTOs (5-person team, need automation fast)
-- Enterprise architects (standardize agents across 15+ teams)
-- SI/MSP/GCC (manage agents for multiple clients)
+## Key Decisions
 
-**Example agents enterprises want to build:**
-- DBA optimizer (analyze RDS config, recommend/apply optimizations)
-- Cost anomaly detector (daily AWS cost analysis, alert on spikes)
-- Compliance scanner (CIS benchmark checks, file Jira tickets)
-- Security scanner (vulnerability detection, remediation tickets)
-- Self-healing infrastructure (detect + remediate common failures)
-- Deployment agent (canary rollouts with approval gates)
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Rust single binary | No Python, no runtime deps, 180ms cold start, 40MB idle | ✓ Good |
+| YAML-first agent definition | Enterprises want declarative, version-controllable config | ✓ Good |
+| Svelte for command center | Lighter than React, better DX, user preference | ✓ Good |
+| Skills composition (not monolithic agents) | Build expert agents from capability packs | ✓ Good |
+| WASM sandbox for tools | Lightweight isolation without Docker overhead | ✓ Good |
+| OTel native telemetry | Standard, exportable to Grafana/Datadog/any backend | ✓ Good |
+| Smart model routing | Route simple->cheap, complex->expensive | ✓ Good |
+| Cost tracking built-in | Not an add-on. Per-call, per-task, per-agent | ✓ Good |
+| Pivot from personas to enterprise | Personality-driven agents don't solve enterprise problems | ✓ Good |
+| AES-256-GCM for secrets | Already in workspace, proven crypto | ✓ Good |
+| SQLite for all stores | Simple, embedded, zero-config persistence | ✓ Good |
+| OAuth subscription proxy | Reduce cost for users with existing LLM subscriptions | ✓ Good |
 
 ## Constraints
 
 - **Language**: Rust for core engine. Svelte for command center.
 - **License**: Apache 2.0 — open source core, enterprise features later
 - **Architecture**: Single binary, local-first. Server mode for teams.
-- **CLI style**: kubectl-style (`oax run agent`, `oax apply -f agent.yaml`)
+- **CLI style**: kubectl-style (`agentix run agent`, `agentix apply -f agent.yaml`)
 - **No Python dependency**: Users should never need pip/venv/conda
-- **Backward compatibility**: Existing AOF agent YAML configs should still work
+- **Backward compatibility**: Existing AOF agent YAML configs still work
 - **Cross-platform**: macOS, Linux, Windows
 
-## Key Decisions
-
-| Decision | Rationale | Outcome |
-|----------|-----------|---------|
-| Rust single binary | No Python, no runtime deps, 180ms cold start, 40MB idle | — Pending |
-| YAML-first agent definition | Enterprises want declarative, version-controllable config | — Pending |
-| Svelte for command center | Lighter than React, better DX, user preference | — Pending |
-| Skills composition (not monolithic agents) | Build expert agents from capability packs, not one agent with 100 tools | — Pending |
-| WASM sandbox for tools | Lightweight isolation without Docker overhead, capability-based | — Pending |
-| OTel native telemetry | Standard, exportable to Grafana/Datadog/any backend | — Pending |
-| Smart model routing | Route simple→cheap models, complex→expensive. Cost optimization. | — Pending |
-| Cost tracking built-in | Not an add-on. Per-call, per-task, per-agent. Enterprise requirement. | — Pending |
-| Pivot from personas to enterprise | Personality-driven agents don't solve enterprise problems | ✓ Good |
-
 ---
-*Last updated: 2026-03-12 after v2.0 milestone start*
+*Last updated: 2026-03-23 after v2.0 milestone*
