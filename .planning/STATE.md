@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
 status: in-progress
-last_updated: "2026-03-22T05:41:00Z"
+last_updated: "2026-03-23T00:00:00Z"
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 59
-  completed_plans: 52
+  completed_plans: 54
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
@@ -31,11 +31,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 23 of 23 (LLM Subscription Proxy) — IN PROGRESS
-Plan: 5 of 7 in current phase (23-01, 23-02, 23-03, 23-04, 23-05 complete)
-Status: 23-05 complete — CLI auth commands (agentix auth start/status/disconnect)
-Last activity: 2026-03-22 — 23-05 CLI auth: PKCE browser OAuth + device code + Anthropic token paste
+Plan: 6 of 7 in current phase (23-01, 23-02, 23-03, 23-04, 23-05, 23-06 complete)
+Status: 23-06 complete — Command Center auth UI (segmented toggle, OAuth popup, token paste)
+Last activity: 2026-03-22 — 23-06 Command Center: segmented API Key/Subscription toggle + OAuth popup + Anthropic token paste
 
-Progress: [██████████] 90% (53/59 plans)
+Progress: [██████████] 91% (54/59 plans)
 
 ---
 
@@ -105,6 +105,9 @@ Progress: [██████████] 90% (53/59 plans)
 - Browser open via subprocess (open/xdg-open/cmd) not a crate — minimal dependencies for CLI
 - agentix auth start anthropic reads token from stdin (not browser) — CLI path matches `claude setup-token` UX
 - find_active_profile() in status command mirrors active_profiles > default > first priority chain for single-pass table render
+- OAuth popup uses window.open() with named target 'agentix-auth' so second authorize click reuses same popup window
+- Anthropic subscription UI uses token paste (not popup) matching `agentix auth start anthropic` stdin UX — consistent cross-interface behavior
+- First-run wizard step 2 presents API Key and Subscription at equal level — no default mode forced per CONTEXT.md
 
 ### Roadmap Evolution
 
@@ -123,8 +126,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-22
-Stopped at: Completed 23-05-PLAN.md — CLI auth commands (agentix auth start/status/disconnect)
-Next: 23-06 — Command Center auth UI
+Stopped at: Completed 23-06-PLAN.md — Command Center auth UI (segmented toggle, OAuth popup, Anthropic token paste)
+Next: 23-07 — Docs, CHANGELOG, and phase wrap-up
 Resume file: None
 
 ---

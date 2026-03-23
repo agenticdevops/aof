@@ -218,7 +218,7 @@ Plans:
 | 20. Approval Workflows | 5/5 | Complete    | 2026-03-13 | - |
 | 21. Gateway (Multi-Channel) | 6/6 | Complete    | 2026-03-13 | - |
 | 22. Command Center (Svelte) | 8/8 | Complete   | 2026-03-13 | - |
-| 23. LLM Subscription Proxy | 5/7 | In Progress|  | - |
+| 23. LLM Subscription Proxy | 6/7 | In Progress|  | - |
 
 ### Phase 23: LLM Subscription Proxy
 
@@ -234,10 +234,10 @@ Plans:
 **Plans**: 7 plans in 5 waves
 
 Plans:
-- [ ] 23-01-PLAN.md — Auth core types, ProviderMode, encrypted profile store, OAuth common (agentix-core)
-- [ ] 23-02-PLAN.md — Per-provider OAuth flows (OpenAI, Gemini, Anthropic) + AuthService coordinator
-- [ ] 23-03-PLAN.md — Subscription provider adapters + ProviderFactory routing (agentix-llm)
+- [x] 23-01-PLAN.md — Auth core types, ProviderMode, encrypted profile store, OAuth common (agentix-core)
+- [x] 23-02-PLAN.md — Per-provider OAuth flows (OpenAI, Gemini, Anthropic) + AuthService coordinator
+- [x] 23-03-PLAN.md — Subscription provider adapters + ProviderFactory routing (agentix-llm)
 - [x] 23-04-PLAN.md — Gateway OAuth API endpoints + AgentManager integration (agentix-runtime)
-- [ ] 23-05-PLAN.md — CLI `agentix auth start|status|disconnect` command
-- [ ] 23-06-PLAN.md — Command Center settings page subscription UI (segmented control + OAuth popup)
+- [x] 23-05-PLAN.md — CLI `agentix auth start|status|disconnect` command
+- [x] 23-06-PLAN.md — Command Center settings page subscription UI (segmented control + OAuth popup)
 - [ ] 23-07-PLAN.md — Documentation, quickstart config, CHANGELOG v2.0.0-alpha.11
