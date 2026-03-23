@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
 status: completed
-stopped_at: Completed 20-03-PLAN.md — Approval gate in ReAct loop, TDD
-last_updated: "2026-03-23T05:20:43.623Z"
-last_activity: "2026-03-23 — 20-03 Approval gate: ReAct loop pause/poll/resume, 8 tests, ApprovalRequested/Resolved events"
+stopped_at: Completed 20-04-PLAN.md — AgentManager wiring + REST API approval endpoints
+last_updated: "2026-03-23T05:31:30.682Z"
+last_activity: "2026-03-23 — 20-03 Approval gate wired into ReAct loop: 3 modes, events, TDD"
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 67
-  completed_plans: 65
-  percent: 96
+  completed_plans: 66
+  percent: 99
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
@@ -34,11 +34,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 20 (Approval Workflows) — IN PROGRESS
-Plan: 3 complete — 20-03 approval gate in ReAct loop (TDD)
-Status: 20-03 complete — ApprovalRequested/ApprovalResolved events, pause-poll-resume, 8 tests, audit trail
-Last activity: 2026-03-23 — 20-03 Approval gate wired into ReAct loop: 3 modes, events, TDD
+Plan: 4 complete — 20-04 AgentManager wiring + REST API approval endpoints
+Status: 20-04 complete — RunStatus::WaitingForApproval, background expiry task, audit trail in approve/deny
+Last activity: 2026-03-23 — 20-04 AgentManager wiring: WaitingForApproval, 30s expiry task, audit trail
 
-Progress: [██████████] 97% (65/67 plans)
+Progress: [██████████] 99% (66/67 plans)
 
 ---
 
@@ -83,6 +83,9 @@ Progress: [██████████] 97% (65/67 plans)
 - ApprovalStore.approve/deny replaces update_status for simplicity — plan 20-01 API
 - ApprovalStore.expire_stale uses SQLite epoch arithmetic (strftime('%s')) to avoid RFC3339 nanosecond parsing issues
 - ApprovalRequested/ApprovalResolved replace ApprovalWaiting/ApprovalDecided — richer fields: run_id, agent_name, action_description in Requested; full ApprovalStatus enum (not bool) in Resolved — plan 20-03
+- RunStatus serde uses snake_case (not lowercase) — waiting_for_approval requires underscore-aware serialization — plan 20-04
+- Per-run approval watcher subscribes to broadcast channel (not polling) for immediate WaitingForApproval state transition — plan 20-04
+- Approval decision audit actor format is 'user:<approver>' to distinguish from system events in security audit — plan 20-04
 - Approval queue uses optimistic UI with rollback: status updates immediately in store, reverts if API fails
 - Approval deny flow uses inline text input (not modal) for minimal friction in high-urgency operational context
 - History section collapsed by default to keep pending requests prominent above the fold
@@ -136,8 +139,8 @@ None active.
 
 ## Session Continuity
 
-Last session: 2026-03-23T05:20:43.619Z
-Stopped at: Completed 20-03-PLAN.md — Approval gate in ReAct loop, TDD
+Last session: 2026-03-23T05:31:30.679Z
+Stopped at: Completed 20-04-PLAN.md — AgentManager wiring + REST API approval endpoints
 Next: Continue phase 20 — Plan 20-03 (background expiry task) and 20-04 (REST API integration)
 Resume file: None
 
