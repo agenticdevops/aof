@@ -1100,8 +1100,31 @@ async fn approve_request(
     AxumPath(id): AxumPath<String>,
     Json(body): Json<ApprovalDecisionBody>,
 ) -> Response {
+    use crate::audit_store::{AuditEntry, AuditEventType, AuditOutcome};
+
     match manager.approval_store.approve(&id, &body.approver, body.reason.as_deref()) {
         Ok(r) => {
+            // Log approval decision to audit trail (APPR-04)
+            {
+                let mut details = std::collections::HashMap::new();
+                details.insert("request_id".to_string(), serde_json::json!(r.id));
+                details.insert("action".to_string(), serde_json::json!("approve"));
+                let audit_entry = AuditEntry {
+                    id: None,
+                    timestamp: chrono::Utc::now(),
+                    event_type: AuditEventType::ApprovalDecision,
+                    agent_name: r.agent_name.clone(),
+                    run_id: Some(r.run_id.clone()),
+                    actor: format!("user:{}", body.approver),
+                    action: format!("Approved approval request {}", r.id),
+                    outcome: AuditOutcome::Success,
+                    details,
+                    trace_id: None,
+                };
+                if let Err(e) = manager.audit_store.log_event(audit_entry) {
+                    tracing::warn!("Failed to log approval decision audit: {}", e);
+                }
+            }
             // Broadcast ApprovalDecided event to all WebSocket clients
             if let Some(Extension(b)) = broadcaster {
                 b.send(GatewayEvent::ApprovalDecided {
@@ -1136,8 +1159,34 @@ async fn deny_request(
     AxumPath(id): AxumPath<String>,
     Json(body): Json<ApprovalDecisionBody>,
 ) -> Response {
+    use crate::audit_store::{AuditEntry, AuditEventType, AuditOutcome};
+
     match manager.approval_store.deny(&id, &body.approver, body.reason.as_deref()) {
         Ok(r) => {
+            // Log denial decision to audit trail (APPR-04)
+            {
+                let mut details = std::collections::HashMap::new();
+                details.insert("request_id".to_string(), serde_json::json!(r.id));
+                details.insert("action".to_string(), serde_json::json!("deny"));
+                if let Some(ref reason) = body.reason {
+                    details.insert("reason".to_string(), serde_json::json!(reason));
+                }
+                let audit_entry = AuditEntry {
+                    id: None,
+                    timestamp: chrono::Utc::now(),
+                    event_type: AuditEventType::ApprovalDecision,
+                    agent_name: r.agent_name.clone(),
+                    run_id: Some(r.run_id.clone()),
+                    actor: format!("user:{}", body.approver),
+                    action: format!("Denied approval request {}", r.id),
+                    outcome: AuditOutcome::Denied(body.reason.clone().unwrap_or_default()),
+                    details,
+                    trace_id: None,
+                };
+                if let Err(e) = manager.audit_store.log_event(audit_entry) {
+                    tracing::warn!("Failed to log denial decision audit: {}", e);
+                }
+            }
             // Broadcast ApprovalDecided event to all WebSocket clients
             if let Some(Extension(b)) = broadcaster {
                 b.send(GatewayEvent::ApprovalDecided {
