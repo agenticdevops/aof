@@ -1,109 +1,225 @@
 # Approval Workflows
 
-OpenAgentiX supports human-in-the-loop approval workflows that let operators control which agent actions proceed automatically and which require explicit approval.
+OpenAgentiX supports human-in-the-loop approval workflows, allowing organizations to maintain control over agent actions in production environments. Agents can operate in three autonomy modes, with configurable approval gates for specific tools or action patterns.
 
 ## Autonomy Modes
 
-Every agent operates in one of three modes:
+Every agent operates in one of three autonomy modes, controlled by the `mode` field in the agent configuration:
 
 | Mode | Behavior |
 |------|----------|
-| `autonomous` | All tool calls execute immediately. No approvals required. |
-| `semi_autonomous` | Tool calls matching configured patterns pause for approval. Unmatched calls proceed automatically. |
-| `manual` | Every tool call requires explicit approval before execution. |
+| `autonomous` | Agent executes all actions without human approval. **Default.** |
+| `semi-autonomous` | Agent pauses only for actions matching `flagged_tools` or `flagged_patterns`. Other actions proceed automatically. |
+| `manual` | Agent requests approval for **every** tool call. |
 
-The default mode is `autonomous` (backward-compatible).
-
-## How It Works
-
-1. Before each tool call in the ReAct loop, the **approval policy** is checked
-2. If the policy requires approval for the tool, an **approval request** is created
-3. The agent pauses and emits an `ApprovalWaiting` event (visible via SSE, CLI, and logs)
-4. An operator reviews the request and issues `agentix approve <id>` or `agentix deny <id>`
-5. On approval, the tool executes normally. On denial, the agent receives an error observation and continues reasoning
-
-## Configuration
-
-### Agent-Level Policy
-
-Add an `approval` block to `agent.yaml`:
+### Example: Configuring Autonomy Mode
 
 ```yaml
 # agents/dba-optimizer/agent.yaml
 name: dba-optimizer
 model:
   preferred: anthropic/claude-sonnet-4-6
+mode: semi-autonomous
 approval:
-  mode: semi_autonomous
-  require_approval_for:
-    - "kubectl.*delete"    # Any kubectl delete command
-    - "helm.*uninstall"    # Helm uninstall operations
-    - "psql.*DROP"         # Database DROP statements
-  expires_after_secs: 300  # 5-minute expiry (default)
+  flagged_tools:
+    - kubectl
+    - aws
+  flagged_patterns:
+    - delete
+    - drop
+    - terminate
+  approvers:
+    - "slack:U015ADMIN"
+    - "email:sre-lead@company.com"
+  timeout_seconds: 300
 ```
 
-### Pattern Matching
+## Approval Policy
 
-The `require_approval_for` field accepts regex patterns matched against both tool names and their input descriptions:
+The `approval` block in `agent.yaml` configures when the agent pauses for human review.
 
-- `"kubectl"` — matches any kubectl tool call
-- `"kubectl.*delete"` — matches kubectl delete operations
-- `".*"` — matches everything (equivalent to `manual` mode)
-- Empty list with `semi_autonomous` mode — nothing requires approval (equivalent to `autonomous`)
+### `flagged_tools`
 
-### Expiry
+A list of tool names that always require approval in `semi-autonomous` mode. The tool name must match exactly (case-sensitive).
 
-Unapproved requests expire after `expires_after_secs` (default: 300 seconds / 5 minutes). Expired requests are treated as denied, and the agent receives a timeout observation.
-
-## Approval Request Lifecycle
-
-```
-Created (Pending) ──┬── Approved ──> Tool executes
-                    ├── Denied   ──> Error observation returned to agent
-                    └── Expired  ──> Timeout observation returned to agent
+```yaml
+approval:
+  flagged_tools:
+    - kubectl        # Matches tool named exactly "kubectl"
+    - aws            # Matches tool named exactly "aws"
+    - psql           # Matches tool named exactly "psql"
 ```
 
-Every approval decision is logged in the audit trail as an `ApprovalDecision` event.
+### `flagged_patterns`
 
-## REST API
+Substrings (case-insensitive) matched against the serialized tool input JSON. Any match triggers an approval gate in `semi-autonomous` mode.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/approvals` | GET | List approval requests (filter by `?agent=`, `?status=`) |
-| `/api/v1/approvals/:id` | GET | Get a single approval request |
-| `/api/v1/approvals/:id/approve` | POST | Approve a pending request |
-| `/api/v1/approvals/:id/deny` | POST | Deny a pending request |
+```yaml
+approval:
+  flagged_patterns:
+    - delete         # Matches any input containing "delete" (e.g., "kubectl delete pod")
+    - drop           # Matches "DROP TABLE users" (case-insensitive)
+    - terminate      # Matches "terminate instances"
+    - --force        # Matches inputs with --force flag
+```
 
-### SSE Events
+### `approvers`
 
-When streaming agent output, two additional event types appear:
+A list of authorized approver identities. Supported formats:
 
-- `approval_waiting` — agent is paused, waiting for a decision
-- `approval_decided` — decision was made, agent resumes
+- `"slack:UXXXXXXXXX"` — Slack user ID (notifications via Slack integration)
+- `"email:user@company.com"` — Email address
+- `"slack:#channel-name"` — Post to a Slack channel
+
+```yaml
+approval:
+  approvers:
+    - "slack:U015ADMIN"
+    - "email:sre-lead@company.com"
+    - "slack:#ops-approvals"
+```
+
+### `timeout_seconds`
+
+How long (in seconds) before an unanswered approval request expires. Expired requests are treated as denied. Default: `300` (5 minutes).
+
+```yaml
+approval:
+  timeout_seconds: 300
+```
+
+### Full Configuration Example
+
+```yaml
+approval:
+  mode: semi-autonomous
+  flagged_tools:
+    - kubectl
+    - aws
+  flagged_patterns:
+    - delete
+    - drop
+    - terminate
+  approvers:
+    - "slack:U015ADMIN"
+    - "email:sre-lead@company.com"
+  timeout_seconds: 300
+```
+
+## Approval Flow
+
+The complete lifecycle of an approval request:
+
+1. **Encounter** — During the ReAct loop, the agent is about to call a flagged tool or one whose input matches a flagged pattern.
+2. **Pause** — The agent pauses execution and creates an `ApprovalRequest` in `Pending` state.
+3. **Notify** — Configured approvers are notified (via Slack, email, or CLI polling).
+4. **Review** — An approver reviews the action description and tool input.
+5. **Decide** — The approver runs `agentix approve <run-id>` or `agentix deny <run-id> --reason "..."`.
+6. **Resume** — On approval, the agent executes the tool and continues reasoning. On denial, the agent receives a denial observation and reasons about alternatives. On timeout, the request expires and the agent receives a timeout observation.
+7. **Audit** — All decisions are logged in the audit trail.
+
+### Status Transitions
+
+```
+Pending ──┬── Approved { approver, decided_at } ──> Tool executes
+           ├── Denied { approver, reason, decided_at } ──> Error observation
+           └── TimedOut { expired_at } ──> Timeout observation
+```
 
 ## CLI Commands
 
+The `agentix` CLI provides full approval workflow management:
+
 ```bash
-# List pending approvals
+# List all pending approval requests
 agentix approvals
 
-# List all approvals (including resolved)
-agentix approvals --all
-
-# Filter by agent
+# List pending approvals for a specific agent
 agentix approvals --agent dba-optimizer
 
-# Approve a request
+# Approve a pending request
 agentix approve <request-id>
-agentix approve <request-id> --reason "Reviewed and safe"
+agentix approve <request-id> --reason "Reviewed and approved"
 
-# Deny a request
+# Deny a pending request
 agentix deny <request-id>
 agentix deny <request-id> --reason "Too risky for production"
 ```
 
+## Audit Integration
+
+All approval decisions are logged in the audit trail as `ApprovalDecision` events. Each entry includes:
+
+| Field | Description |
+|-------|-------------|
+| `approver` | Identity of the approver (email, Slack ID, etc.) |
+| `decision` | `approved` or `denied` |
+| `reason` | Optional reason provided by the approver |
+| `decided_at` | Timestamp of the decision |
+| `action` | The tool call that was approved or denied |
+| `agent_name` | The agent that requested approval |
+| `run_id` | The agent run in which the request occurred |
+
+Audit logs can be queried via the REST API or forwarded to external systems (OpenTelemetry, S3, etc.).
+
+## Configuration Reference
+
+### Agent-Level (`agent.yaml`)
+
+```yaml
+name: my-agent
+model:
+  preferred: anthropic/claude-sonnet-4-6
+mode: semi-autonomous               # autonomous | semi-autonomous | manual
+
+approval:
+  flagged_tools:                    # Tool names requiring approval in semi-autonomous mode
+    - kubectl
+    - aws
+  flagged_patterns:                 # Input substrings requiring approval (case-insensitive)
+    - delete
+    - drop
+    - terminate
+  approvers:                        # Who receives approval requests
+    - "slack:U015ADMIN"
+    - "email:sre-lead@company.com"
+  timeout_seconds: 300              # Seconds before request expires (default: 300)
+```
+
+### Workspace-Level (`agentix.yaml`)
+
+Workspace defaults apply to all agents that do not specify their own approval config:
+
+```yaml
+spec:
+  defaults:
+    mode: semi-autonomous
+    approval:
+      timeout_seconds: 300
+      approvers:
+        - "email:platform-team@company.com"
+```
+
+### REST API Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/approvals` | GET | List pending approval requests (filter: `?agent=name`) |
+| `/api/v1/approvals/:id` | GET | Get a specific approval request |
+| `/api/v1/approvals/:id/approve` | POST | Approve a pending request |
+| `/api/v1/approvals/:id/deny` | POST | Deny a pending request |
+
+### WebSocket Events
+
+When streaming agent output via WebSocket, two events indicate approval activity:
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `approval_waiting` | `{ id, agent_name, action }` | Agent paused, awaiting decision |
+| `approval_decided` | `{ id, decision }` | Decision made, agent resuming |
+
 ## Related
 
 - [Security concepts](security.md) — audit trail and SSRF protection
-- [CLI reference: approvals](../reference/cli-approvals.md) — full command reference
-- [Quickstart: approval workflows](../../quickstart/agentix-approvals.yaml) — example workspace config
+- [CLI reference: approvals](../reference/cli-approvals.md) — full CLI command reference
+- [Telemetry](telemetry.md) — tracing approval decisions in distributed systems
