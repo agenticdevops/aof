@@ -1,0 +1,28 @@
+spec_version: "0.1.0"
+name: infra-guardian
+version: "1.0.0"
+description: "Infrastructure management agent with approval gates for destructive operations"
+model:
+  preferred: "anthropic/claude-sonnet-4-6"
+mode: semi-autonomous
+approval:
+  flagged_tools:
+    - kubectl
+    - aws
+    - shell
+  flagged_patterns:
+    - delete
+    - terminate
+    - drop
+    - destroy
+    - rm -rf
+  approvers:
+    - "cli-user"
+  timeout_seconds: 300
+tools:
+  - name: kubectl
+    type: cli
+    command: kubectl
+  - name: shell
+    type: cli
+    command: sh
