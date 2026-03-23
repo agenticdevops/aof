@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
-status: completed
-last_updated: "2026-03-23T03:47:00.200Z"
+status: in_progress
+last_updated: "2026-03-23T10:25:00.000Z"
 progress:
   total_phases: 11
   completed_phases: 10
@@ -30,10 +30,10 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 23 of 23 (LLM Subscription Proxy) — COMPLETE
-Plan: 7 of 7 in current phase (all complete)
-Status: 23-07 complete — Docs, CHANGELOG v2.0.0-alpha.11, quickstart subscription examples
-Last activity: 2026-03-23 — 23-07 Documentation: feature docs, CLI reference, tutorial, CHANGELOG, quickstart
+Phase: 20 (Approval Workflows) — IN PROGRESS
+Plan: 2 of N in current phase
+Status: 20-02 complete — ApprovalStore SQLite persistence + integration tests (TDD)
+Last activity: 2026-03-23 — 20-02 ApprovalStore: get_pending_by_run/agent, update_status, expire_timed_out
 
 Progress: [██████████] 100% (59/59 plans)
 
@@ -75,6 +75,8 @@ Progress: [██████████] 100% (59/59 plans)
 - chart.js used directly (no svelte-chartjs wrapper) — svelte-chartjs requires Svelte 4, incompatible with project's Svelte 5
 - Canvas binding in Svelte 5 requires $state() declaration: `let canvas = $state() as HTMLCanvasElement`
 - Chart.js gradient backgrounds use ScriptableContext<'line'> type; datasets typed as ChartDataset<'line'>[]
+- ApprovalStore.update_status uses unified method (not separate approve/deny) for REST API flexibility — plan 20-02
+- ApprovalStore.expire_timed_out returns u32, ApprovalStore.get_pending_by_agent filters to Pending only — plan 20-02
 - Approval queue uses optimistic UI with rollback: status updates immediately in store, reverts if API fails
 - Approval deny flow uses inline text input (not modal) for minimal friction in high-urgency operational context
 - History section collapsed by default to keep pending requests prominent above the fold
@@ -129,8 +131,8 @@ None active.
 ## Session Continuity
 
 Last session: 2026-03-23
-Stopped at: Completed 23-07-PLAN.md — Docs, CHANGELOG v2.0.0-alpha.11, quickstart subscription examples
-Next: v2.0 milestone complete. Consider tagging v2.0.0-alpha.11 release.
+Stopped at: Completed 20-02-PLAN.md — ApprovalStore SQLite persistence (TDD)
+Next: Continue phase 20 — Plan 20-03 (background expiry task) and 20-04 (REST API integration)
 Resume file: None
 
 ---

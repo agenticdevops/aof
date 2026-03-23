@@ -81,9 +81,9 @@
 ### Approval Workflows
 
 - [ ] **APPR-01**: User can mark specific actions as requiring approval in the agent spec
-- [ ] **APPR-02**: When approval is required, agent pauses and sends notification to configured approver
+- [x] **APPR-02**: When approval is required, agent pauses and sends notification to configured approver
 - [ ] **APPR-03**: Approver can approve/deny via CLI, messaging channel, or command center
-- [ ] **APPR-04**: Approval decisions are logged in the audit trail
+- [x] **APPR-04**: Approval decisions are logged in the audit trail
 - [ ] **APPR-05**: Agent supports three modes: `manual` (all actions need approval), `semi-autonomous` (only flagged actions), `autonomous` (no approval needed)
 
 ### Agent Coordination
@@ -259,9 +259,9 @@
 | SEC-04 | Phase 19 | Pending |
 | SEC-05 | Phase 19 | Pending |
 | APPR-01 | Phase 20 | Pending |
-| APPR-02 | Phase 20 | Pending |
+| APPR-02 | Phase 20 | Complete |
 | APPR-03 | Phase 20 | Pending |
-| APPR-04 | Phase 20 | Pending |
+| APPR-04 | Phase 20 | Complete |
 | APPR-05 | Phase 20 | Pending |
 | COORD-01 | Phase 16 | Pending |
 | COORD-02 | Phase 16 | Pending |
