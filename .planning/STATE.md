@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
 status: completed
-stopped_at: Completed 20-04-PLAN.md — AgentManager wiring + REST API approval endpoints
-last_updated: "2026-03-23T05:31:30.682Z"
-last_activity: "2026-03-23 — 20-03 Approval gate wired into ReAct loop: 3 modes, events, TDD"
+stopped_at: Completed 20-05-PLAN.md — CLI approve/deny/approvals + quickstart + docs + CHANGELOG v2.0.0-alpha.8
+last_updated: "2026-03-23T05:37:14.845Z"
+last_activity: "2026-03-23 — 20-04 AgentManager wiring: WaitingForApproval, 30s expiry task, audit trail"
 progress:
   total_phases: 11
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 67
-  completed_plans: 66
-  percent: 99
+  completed_plans: 67
+  percent: 100
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
@@ -33,12 +33,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 20 (Approval Workflows) — IN PROGRESS
-Plan: 4 complete — 20-04 AgentManager wiring + REST API approval endpoints
-Status: 20-04 complete — RunStatus::WaitingForApproval, background expiry task, audit trail in approve/deny
-Last activity: 2026-03-23 — 20-04 AgentManager wiring: WaitingForApproval, 30s expiry task, audit trail
+Phase: 20 (Approval Workflows) — COMPLETE
+Plan: 5/5 complete — 20-05 CLI approve/deny/approvals + quickstart + docs + CHANGELOG v2.0.0-alpha.8
+Status: Phase 20 fully complete — all 5 plans done, approval workflows end-to-end functional
+Last activity: 2026-03-23 — 20-05 CLI commands, quickstart example, docs finalized
 
-Progress: [██████████] 99% (66/67 plans)
+Progress: [██████████] 100% (67/67 plans)
 
 ---
 
@@ -122,6 +122,8 @@ Progress: [██████████] 99% (66/67 plans)
 - Subscription mode examples in quickstart/agentix.yaml are commented blocks — API key mode remains active default
 - Docs triangle: features/ (overview) + reference/ (CLI) + tutorials/ (step-by-step) — all cross-linked for subscription proxy
 - CHANGELOG v2.0.0-alpha.11 documents complete Phase 23 feature set (7 subsections)
+- All three approval CLI commands in commands/approvals.rs (not separate approve.rs) — simpler organization — plan 20-05
+- quickstart/semi-autonomous-agent/ uses kubectl/aws/shell flagged tools as realistic k8s scenario — plan 20-05
 
 ### Roadmap Evolution
 
@@ -139,9 +141,9 @@ None active.
 
 ## Session Continuity
 
-Last session: 2026-03-23T05:31:30.679Z
-Stopped at: Completed 20-04-PLAN.md — AgentManager wiring + REST API approval endpoints
-Next: Continue phase 20 — Plan 20-03 (background expiry task) and 20-04 (REST API integration)
+Last session: 2026-03-23T05:37:14.841Z
+Stopped at: Completed 20-05-PLAN.md — CLI approve/deny/approvals + quickstart + docs + CHANGELOG v2.0.0-alpha.8
+Next: Phase 20 complete — all 67/67 plans done. v2.0 milestone complete.
 Resume file: None
 
 ---
