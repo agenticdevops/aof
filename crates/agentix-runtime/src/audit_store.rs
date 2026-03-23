@@ -278,6 +278,15 @@ impl AuditStore {
         Ok(entries)
     }
 
+    /// List audit events for an agent — alias for `get_agent_audit` with a test-friendly name.
+    pub fn list_events(
+        &self,
+        agent_name: &str,
+        limit: u32,
+    ) -> Result<Vec<AuditEntry>, AgentixError> {
+        self.get_agent_audit(agent_name, limit)
+    }
+
     /// Retrieve security-relevant events (violations, denials, blocks).
     pub fn get_security_events(
         &self,

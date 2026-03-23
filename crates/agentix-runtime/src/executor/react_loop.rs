@@ -65,20 +65,24 @@ pub enum ReActEvent {
     /// Emitted when the loop encounters a fatal error.
     Error(String),
     /// Emitted when the agent is waiting for human approval (Phase 20).
-    ApprovalWaiting {
+    ApprovalRequested {
         /// Unique ID for this approval request.
         request_id: String,
-        /// Name of the tool that requires approval.
-        tool_name: String,
-        /// Human-readable description.
-        description: String,
+        /// Run ID where the approval was requested.
+        run_id: String,
+        /// Name of the agent requesting approval.
+        agent_name: String,
+        /// Human-readable description of the action requiring approval.
+        action_description: String,
+        /// Name of the tool being called (if tool-specific).
+        tool_name: Option<String>,
     },
     /// Emitted when an approval decision is received (Phase 20).
-    ApprovalDecided {
+    ApprovalResolved {
         /// Unique ID for this approval request.
         request_id: String,
-        /// Whether the action was approved.
-        approved: bool,
+        /// The resolved approval status (Approved, Denied, or TimedOut).
+        status: agentix_core::ApprovalStatus,
     },
 }
 
@@ -975,11 +979,13 @@ impl ReActEngine {
             }
         }
 
-        // Emit waiting event
-        self.emit(ReActEvent::ApprovalWaiting {
+        // Emit ApprovalRequested event
+        self.emit(ReActEvent::ApprovalRequested {
             request_id: request_id.clone(),
-            tool_name: tool_name.to_string(),
-            description: description.clone(),
+            run_id: run_id.unwrap_or("unknown").to_string(),
+            agent_name: self.config.agent_name.clone(),
+            action_description: description.clone(),
+            tool_name: Some(tool_name.to_string()),
         });
 
         tracing::info!(
@@ -1001,9 +1007,11 @@ impl ReActEngine {
                     let _ = store.expire_stale();
                 }
 
-                self.emit(ReActEvent::ApprovalDecided {
+                self.emit(ReActEvent::ApprovalResolved {
                     request_id: request_id.clone(),
-                    approved: false,
+                    status: agentix_core::ApprovalStatus::TimedOut {
+                        expired_at: chrono::Utc::now(),
+                    },
                 });
 
                 return Some(format!(
@@ -1016,10 +1024,13 @@ impl ReActEngine {
             if let Some(ref store) = self.config.approval_store {
                 match store.get_request(&request_id) {
                     Ok(Some(req)) => match &req.status {
-                        agentix_core::ApprovalStatus::Approved { approver, .. } => {
-                            self.emit(ReActEvent::ApprovalDecided {
+                        agentix_core::ApprovalStatus::Approved { approver, decided_at } => {
+                            self.emit(ReActEvent::ApprovalResolved {
                                 request_id: request_id.clone(),
-                                approved: true,
+                                status: agentix_core::ApprovalStatus::Approved {
+                                    approver: approver.clone(),
+                                    decided_at: *decided_at,
+                                },
                             });
 
                             // Log approval to audit store
@@ -1053,10 +1064,14 @@ impl ReActEngine {
                             );
                             return None; // Approved — proceed with execution
                         }
-                        agentix_core::ApprovalStatus::Denied { reason, .. } => {
-                            self.emit(ReActEvent::ApprovalDecided {
+                        agentix_core::ApprovalStatus::Denied { reason, approver, decided_at } => {
+                            self.emit(ReActEvent::ApprovalResolved {
                                 request_id: request_id.clone(),
-                                approved: false,
+                                status: agentix_core::ApprovalStatus::Denied {
+                                    approver: approver.clone(),
+                                    reason: reason.clone(),
+                                    decided_at: *decided_at,
+                                },
                             });
 
                             let reason_str = reason.clone()
@@ -1067,10 +1082,12 @@ impl ReActEngine {
                                 tool_name, reason_str
                             ));
                         }
-                        agentix_core::ApprovalStatus::TimedOut { .. } => {
-                            self.emit(ReActEvent::ApprovalDecided {
+                        agentix_core::ApprovalStatus::TimedOut { expired_at } => {
+                            self.emit(ReActEvent::ApprovalResolved {
                                 request_id: request_id.clone(),
-                                approved: false,
+                                status: agentix_core::ApprovalStatus::TimedOut {
+                                    expired_at: *expired_at,
+                                },
                             });
 
                             return Some(format!(

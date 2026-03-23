@@ -461,7 +461,7 @@ async fn denied_action_skips_tool_call() {
             tokio::time::sleep(Duration::from_millis(200)).await;
             let pending = store_clone.list_pending(10).unwrap();
             if !pending.is_empty() {
-                let _ = store_clone.deny(&pending[0].id, "security-lead", Some("Too risky".to_string()));
+                let _ = store_clone.deny(&pending[0].id, "security-lead", Some("Too risky"));
                 return;
             }
         }
@@ -693,7 +693,7 @@ async fn denial_logged_in_audit_trail() {
                 let _ = store_clone.deny(
                     &pending[0].id,
                     "security-lead",
-                    Some("Too dangerous".to_string()),
+                    Some("Too dangerous"),
                 );
                 return;
             }
