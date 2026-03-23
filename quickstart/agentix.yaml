@@ -13,6 +13,8 @@ spec:
     mode: autonomous
 
   providers:
+    # --- API Key mode (default) ---
+    # Use a standard API key from console.anthropic.com / platform.openai.com / aistudio.google.com
     anthropic:
       api_key: "${ANTHROPIC_API_KEY}"
     # openai:
@@ -21,6 +23,19 @@ spec:
     #   api_key: "${GOOGLE_API_KEY}"
     # ollama:
     #   base_url: "http://localhost:11434"
+
+    # --- Subscription mode ---
+    # Use your existing LLM subscription instead of a separate API key.
+    # First run: agentix auth start <provider>   (stores OAuth token at ~/.agentix/)
+    # anthropic:
+    #   mode: subscription   # Token paste from `claude setup-token`
+    # openai:
+    #   mode: subscription   # Browser OAuth via auth.openai.com (port 1455)
+    # google:
+    #   mode: subscription   # Browser OAuth via accounts.google.com (port 1456)
+    #   oauth:
+    #     client_id: "${GEMINI_OAUTH_CLIENT_ID}"
+    #     client_secret: "${GEMINI_OAUTH_CLIENT_SECRET}"
 
   gateway:
     host: "127.0.0.1"

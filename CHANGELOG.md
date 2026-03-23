@@ -5,6 +5,78 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha.11] — 2026-03-23
+
+### Phase 23: LLM Subscription Proxy
+
+#### New: Subscription Authentication
+- **Subscription mode**: Use existing LLM subscriptions (Claude Pro/Max, ChatGPT Plus, Gemini Advanced) via OAuth instead of separate API keys
+- **OAuth flows**: Browser-based PKCE flows for OpenAI and Google; token paste for Anthropic (`claude setup-token` compatible)
+- **ProviderMode configuration**: `mode: subscription` per provider in `agentix.yaml` — `mode: api` (default) is backward compatible
+- **OAuthConfig**: Optional `oauth.client_id` / `oauth.client_secret` fields on `ProviderConfig` for Gemini OAuth2 client credentials
+
+#### New: Encrypted Token Storage
+- **AES-256-GCM encrypted profiles**: OAuth tokens stored at `~/.agentix/auth-profiles.json` with `enc2:` hex-encoded prefix
+- **Secret key at `~/.agentix/.secret_key`**: 32-byte random key with 0600 permissions; auto-generated on first use
+- **Atomic writes**: Profile store written via temp file + rename for crash safety
+- **Debug redaction**: `TokenSet` and token fields excluded from debug output to prevent log leaks
+- **Auto-migration**: Plaintext values re-encrypted and persisted on load
+
+#### New: OAuth Provider Adapters
+- **AnthropicSubscriptionProvider**: Implements `Model` trait with `Authorization: Bearer` (instead of `x-api-key`)
+- **OpenAISubscriptionProvider**: Thin wrapper over standard OpenAI provider — same Bearer auth, adds clearer 401 error messages
+- **GoogleSubscriptionProvider**: Implements `Model` trait with `Authorization: Bearer` (instead of `?key=` URL parameter)
+- **ProviderFactory routing**: `extra["provider_mode"] = "subscription"` selects subscription adapter; all existing API key routing unchanged
+
+#### New: Token Refresh
+- **Automatic refresh**: Tokens refreshed 90 seconds before expiry
+- **Retry policy**: Up to 3 retries with 350ms × attempt exponential backoff
+- **Per-profile async locking**: Prevents concurrent refresh races
+- **Failure behavior**: Agent run fails with descriptive error if refresh exhausted — no silent fallback to API key
+
+#### New: `agentix auth` CLI Command
+- `agentix auth start <provider>` — Start OAuth flow (opens browser for OpenAI/Gemini; token paste for Anthropic)
+- `agentix auth start <provider> --device-code` — Headless device code flow for servers without a browser
+- `agentix auth status` — Table of all three providers with connection status, mode, account ID, and expiry
+- `agentix auth disconnect <provider>` — Remove stored credentials
+- Provider aliases: `claude`/`claude-code` → `anthropic`, `codex` → `openai`, `google`/`vertex` → `gemini`
+
+#### New: Gateway OAuth Endpoints
+- `GET /api/v1/auth/:provider/start` — Start OAuth flow, returns authorization URL + state
+- `GET /api/v1/auth/:provider/status` — Poll for OAuth completion status
+- `DELETE /api/v1/auth/:provider` — Remove stored credentials
+- `POST /api/v1/auth/:provider/token` — Submit token directly (Anthropic token paste path)
+- PKCE state stored in `AgentManager::pending_pkce` DashMap — no new state layer required
+
+#### New: Command Center Auth UI
+- **Segmented provider mode control**: Per-provider "API Key | Subscription" pill control in Settings
+- **OAuth popup flow**: `window.open()` with named target `agentix-auth`; polls status every 2s (5-minute timeout) for OpenAI/Gemini
+- **Anthropic token paste**: Inline input matching `agentix auth start anthropic` CLI UX
+- **Auth status badge**: Green dot + "Connected" with optional account ID and `expires in Xh Ym` display
+- **First-run wizard**: Step 2 presents API Key and Subscription at equal level — no default mode forced
+
+#### New: Documentation
+- `docs/features/subscription-proxy.md` — Feature overview, OAuth flow, token storage, configuration, security, limitations
+- `docs/reference/cli-auth.md` — Full `agentix auth` command reference with per-provider examples
+- `docs/tutorials/subscription-setup.md` — Step-by-step setup tutorial for all three providers (CLI and UI paths)
+
+### Supported Providers
+
+| Provider | Auth Method | Callback Port | Endpoint |
+|----------|-------------|---------------|----------|
+| OpenAI | OAuth2 PKCE via `auth.openai.com` | 1455 | Official Chat Completions API |
+| Google Gemini | OAuth2 PKCE via `accounts.google.com` | 1456 | Generative Language API |
+| Anthropic | Token paste (`claude setup-token` / API key) | N/A | Official Messages API |
+
+### Requirements Completed
+- SUB-01 (CLI auth command with start/status/disconnect)
+- SUB-02 (Encrypted OAuth token storage)
+- SUB-03 (Subscription provider adapters — Anthropic, OpenAI, Google)
+- SUB-04 (ProviderFactory routing for subscription mode)
+- SUB-05 (Command Center auth UI with segmented control and OAuth popup)
+
+---
+
 ## [2.0.0-alpha.10] — 2026-03-13
 
 ### Phase 22: Command Center (SvelteKit)
