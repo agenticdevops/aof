@@ -2,13 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
-status: in_progress
-last_updated: "2026-03-23T10:25:00.000Z"
+status: completed
+stopped_at: Completed 20-01-PLAN.md — Approval core types, TDD
+last_updated: "2026-03-23T05:08:47.524Z"
+last_activity: "2026-03-23 — 20-02 ApprovalStore: get_pending_by_run/agent, update_status, expire_timed_out"
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 67
-  completed_plans: 62
+  completed_plans: 64
+  percent: 100
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
@@ -31,11 +34,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 20 (Approval Workflows) — IN PROGRESS
-Plan: 2 of N in current phase
-Status: 20-02 complete — ApprovalStore SQLite persistence + integration tests (TDD)
-Last activity: 2026-03-23 — 20-02 ApprovalStore: get_pending_by_run/agent, update_status, expire_timed_out
+Plan: 1 complete — 20-01 approval core types (TDD)
+Status: 20-01 complete — ApprovalRequest, ApprovalStatus (tagged variants), ApprovalPolicy with AgentMode
+Last activity: 2026-03-23 — 20-01 Approval core types: TDD, 18 tests, docs
 
-Progress: [██████████] 100% (59/59 plans)
+Progress: [██████████] 96% (64/67 plans)
 
 ---
 
@@ -75,8 +78,10 @@ Progress: [██████████] 100% (59/59 plans)
 - chart.js used directly (no svelte-chartjs wrapper) — svelte-chartjs requires Svelte 4, incompatible with project's Svelte 5
 - Canvas binding in Svelte 5 requires $state() declaration: `let canvas = $state() as HTMLCanvasElement`
 - Chart.js gradient backgrounds use ScriptableContext<'line'> type; datasets typed as ChartDataset<'line'>[]
-- ApprovalStore.update_status uses unified method (not separate approve/deny) for REST API flexibility — plan 20-02
-- ApprovalStore.expire_timed_out returns u32, ApprovalStore.get_pending_by_agent filters to Pending only — plan 20-02
+- ApprovalStatus uses tagged enum variants (Approved/Denied carry approver+timestamp, TimedOut carries expired_at) — plan 20-01
+- ApprovalPolicy uses AgentMode (from agent.rs) not AutonomyMode — avoids duplicate enum, plan 20-01
+- ApprovalStore.approve/deny replaces update_status for simplicity — plan 20-01 API
+- ApprovalStore.expire_stale uses SQLite epoch arithmetic (strftime('%s')) to avoid RFC3339 nanosecond parsing issues
 - Approval queue uses optimistic UI with rollback: status updates immediately in store, reverts if API fails
 - Approval deny flow uses inline text input (not modal) for minimal friction in high-urgency operational context
 - History section collapsed by default to keep pending requests prominent above the fold
@@ -130,8 +135,8 @@ None active.
 
 ## Session Continuity
 
-Last session: 2026-03-23
-Stopped at: Completed 20-02-PLAN.md — ApprovalStore SQLite persistence (TDD)
+Last session: 2026-03-23T05:08:47.520Z
+Stopped at: Completed 20-01-PLAN.md — Approval core types, TDD
 Next: Continue phase 20 — Plan 20-03 (background expiry task) and 20-04 (REST API integration)
 Resume file: None
 
