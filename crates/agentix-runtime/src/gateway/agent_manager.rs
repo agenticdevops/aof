@@ -95,12 +95,14 @@ impl From<&AgentStatus> for AgentStatusSummary {
 
 /// Status of a single agent run.
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum RunStatus {
     Running,
     Completed,
     Failed(String),
     Cancelled,
+    /// Run is paused waiting for a human approval decision (Phase 20).
+    WaitingForApproval,
 }
 
 /// Complete state for a single agent run.
@@ -346,8 +348,9 @@ impl AgentManager {
             auth_service,
             pending_pkce: DashMap::new(),
         });
-        // Spawn the trigger dispatcher background task
+        // Spawn background tasks
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
+        manager.clone().spawn_approval_expiry_task();
         manager
     }
 
@@ -391,6 +394,7 @@ impl AgentManager {
             pending_pkce: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
+        manager.clone().spawn_approval_expiry_task();
         manager
     }
 
@@ -425,7 +429,31 @@ impl AgentManager {
             pending_pkce: DashMap::new(),
         });
         manager.clone().spawn_trigger_dispatcher(trigger_event_rx);
+        manager.clone().spawn_approval_expiry_task();
         manager
+    }
+
+    /// Spawn the background task that expires stale approval requests every 30 seconds.
+    ///
+    /// Runs as a detached tokio task for the lifetime of the manager.
+    fn spawn_approval_expiry_task(self: Arc<Self>) {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            // Skip the first (immediate) tick so we don't expire on startup
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                match self.approval_store.expire_stale() {
+                    Ok(count) if count > 0 => {
+                        tracing::info!("Expired {} stale approval request(s)", count);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to expire stale approvals: {}", e);
+                    }
+                    _ => {}
+                }
+            }
+        });
     }
 
     /// Spawn the background task that reads from the trigger event channel
@@ -835,6 +863,37 @@ impl AgentManager {
             if let Err(e) = self.audit_store.log_event(audit_entry) {
                 tracing::warn!("Failed to log audit AgentStart: {}", e);
             }
+        }
+
+        // Spawn a watcher that tracks approval state transitions in real-time.
+        // Subscribes to the event broadcast channel and updates RunState.status
+        // as ApprovalRequested / ApprovalResolved events arrive.
+        {
+            let mut status_rx = event_tx.subscribe();
+            let manager_for_status = self.clone();
+            let run_id_for_status = run_id.clone();
+            tokio::spawn(async move {
+                loop {
+                    match status_rx.recv().await {
+                        Ok(ReActEvent::ApprovalRequested { .. }) => {
+                            if let Some(mut run) = manager_for_status.runs.get_mut(&run_id_for_status) {
+                                run.status = RunStatus::WaitingForApproval;
+                            }
+                        }
+                        Ok(ReActEvent::ApprovalResolved { .. }) => {
+                            if let Some(mut run) = manager_for_status.runs.get_mut(&run_id_for_status) {
+                                // Only restore to Running if still in WaitingForApproval
+                                if matches!(run.status, RunStatus::WaitingForApproval) {
+                                    run.status = RunStatus::Running;
+                                }
+                            }
+                        }
+                        Ok(ReActEvent::Complete(_)) | Ok(ReActEvent::Error(_)) => break,
+                        Err(_) => break,
+                        _ => {}
+                    }
+                }
+            });
         }
 
         // Spawn the run task
