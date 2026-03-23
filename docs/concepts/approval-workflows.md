@@ -218,6 +218,30 @@ When streaming agent output via WebSocket, two events indicate approval activity
 | `approval_waiting` | `{ id, agent_name, action }` | Agent paused, awaiting decision |
 | `approval_decided` | `{ id, decision }` | Decision made, agent resuming |
 
+## Quickstart Example
+
+The `quickstart/semi-autonomous-agent/` directory contains a complete working example of a semi-autonomous infrastructure management agent:
+
+```
+quickstart/semi-autonomous-agent/
+├── agent.yaml   # infra-guardian with approval gates for kubectl, aws, shell
+└── SOUL.md      # Agent identity — explains destructive operation policy
+```
+
+To run the example:
+
+```bash
+# Start the gateway with the example agent
+agentix gateway start --config quickstart/agentix.yaml
+
+# In another terminal, run the agent
+agentix run infra-guardian --input "List all pods in the default namespace"
+
+# When the agent tries a flagged operation, approve or deny from a third terminal
+agentix approvals
+agentix approve <request-id>
+```
+
 ## Related
 
 - [Security concepts](security.md) — audit trail and SSRF protection
