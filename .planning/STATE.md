@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: OpenAgentiX
 status: completed
-stopped_at: Completed 20-01-PLAN.md — Approval core types, TDD
-last_updated: "2026-03-23T05:08:47.524Z"
-last_activity: "2026-03-23 — 20-02 ApprovalStore: get_pending_by_run/agent, update_status, expire_timed_out"
+stopped_at: Completed 20-03-PLAN.md — Approval gate in ReAct loop, TDD
+last_updated: "2026-03-23T05:20:43.623Z"
+last_activity: "2026-03-23 — 20-03 Approval gate: ReAct loop pause/poll/resume, 8 tests, ApprovalRequested/Resolved events"
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 67
-  completed_plans: 64
-  percent: 100
+  completed_plans: 65
+  percent: 96
 ---
 
 # Project State: OpenAgentiX — Enterprise Agent Automation Platform
@@ -34,11 +34,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 20 (Approval Workflows) — IN PROGRESS
-Plan: 1 complete — 20-01 approval core types (TDD)
-Status: 20-01 complete — ApprovalRequest, ApprovalStatus (tagged variants), ApprovalPolicy with AgentMode
-Last activity: 2026-03-23 — 20-01 Approval core types: TDD, 18 tests, docs
+Plan: 3 complete — 20-03 approval gate in ReAct loop (TDD)
+Status: 20-03 complete — ApprovalRequested/ApprovalResolved events, pause-poll-resume, 8 tests, audit trail
+Last activity: 2026-03-23 — 20-03 Approval gate wired into ReAct loop: 3 modes, events, TDD
 
-Progress: [██████████] 96% (64/67 plans)
+Progress: [██████████] 97% (65/67 plans)
 
 ---
 
@@ -82,6 +82,7 @@ Progress: [██████████] 96% (64/67 plans)
 - ApprovalPolicy uses AgentMode (from agent.rs) not AutonomyMode — avoids duplicate enum, plan 20-01
 - ApprovalStore.approve/deny replaces update_status for simplicity — plan 20-01 API
 - ApprovalStore.expire_stale uses SQLite epoch arithmetic (strftime('%s')) to avoid RFC3339 nanosecond parsing issues
+- ApprovalRequested/ApprovalResolved replace ApprovalWaiting/ApprovalDecided — richer fields: run_id, agent_name, action_description in Requested; full ApprovalStatus enum (not bool) in Resolved — plan 20-03
 - Approval queue uses optimistic UI with rollback: status updates immediately in store, reverts if API fails
 - Approval deny flow uses inline text input (not modal) for minimal friction in high-urgency operational context
 - History section collapsed by default to keep pending requests prominent above the fold
@@ -135,8 +136,8 @@ None active.
 
 ## Session Continuity
 
-Last session: 2026-03-23T05:08:47.520Z
-Stopped at: Completed 20-01-PLAN.md — Approval core types, TDD
+Last session: 2026-03-23T05:20:43.619Z
+Stopped at: Completed 20-03-PLAN.md — Approval gate in ReAct loop, TDD
 Next: Continue phase 20 — Plan 20-03 (background expiry task) and 20-04 (REST API integration)
 Resume file: None
 

@@ -215,7 +215,7 @@ Plans:
 | 17. Cost Tracking + Budgets | v2.0 | Complete    | 2026-03-13 | - |
 | 18. Telemetry + Observability | 5/5 | Complete    | 2026-03-13 | - |
 | 19. Security | 5/5 | Complete    | 2026-03-13 | - |
-| 20. Approval Workflows | 1/5 | 2/5 | In Progress|  |
+| 20. Approval Workflows | 1/5 | 3/5 | In Progress|  |
 | 21. Gateway (Multi-Channel) | 6/6 | Complete    | 2026-03-13 | - |
 | 22. Command Center (Svelte) | 8/8 | Complete   | 2026-03-13 | - |
 | 23. LLM Subscription Proxy | 7/7 | Complete    | 2026-03-23 | - |
