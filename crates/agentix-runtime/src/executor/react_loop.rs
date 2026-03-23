@@ -625,7 +625,7 @@ impl ReActEngine {
                             .find(|t| t.name == tool_call.name)
                             .map(|t| t.description.as_deref().unwrap_or(""))
                             .unwrap_or("");
-                        if policy.requires_approval(&tool_call.name, tool_desc) {
+                        if policy.requires_approval(&tool_call.name, &tool_call.arguments) {
                             let approval_observation = self.wait_for_approval(
                                 &tool_call.name,
                                 &tool_call.arguments,
@@ -952,16 +952,17 @@ impl ReActEngine {
             self.config.agent_name, tool_name, tool_desc
         );
 
-        // Create the approval request
-        let request = agentix_core::ApprovalRequest::new(
-            request_id.clone(),
-            self.config.agent_name.clone(),
+        // Create the approval request (new API: run_id, agent_name, action_description, tool_name, tool_input, timeout_secs)
+        let mut request = agentix_core::ApprovalRequest::new(
             run_id.unwrap_or("unknown").to_string(),
-            tool_name.to_string(),
-            tool_input.clone(),
+            self.config.agent_name.clone(),
             description.clone(),
-            policy.timeout_seconds,
+            Some(tool_name.to_string()),
+            Some(tool_input.clone()),
+            policy.default_timeout_secs,
         );
+        // Override the UUID with the pre-generated one for event correlation
+        request.id = request_id.clone();
 
         // Persist to store (non-critical — if store is unavailable, auto-deny)
         if let Some(ref store) = self.config.approval_store {
@@ -990,7 +991,7 @@ impl ReActEngine {
 
         // Poll the store for a decision
         let poll_interval = Duration::from_secs(1);
-        let timeout = Duration::from_secs(policy.timeout_seconds as u64);
+        let timeout = Duration::from_secs(policy.default_timeout_secs as u64);
         let deadline = tokio::time::Instant::now() + timeout;
 
         loop {
@@ -1007,15 +1008,15 @@ impl ReActEngine {
 
                 return Some(format!(
                     "Approval request '{}' for tool '{}' expired after {}s without a decision.",
-                    request_id, tool_name, policy.timeout_seconds
+                    request_id, tool_name, policy.default_timeout_secs
                 ));
             }
 
             // Check the store for a decision
             if let Some(ref store) = self.config.approval_store {
                 match store.get_request(&request_id) {
-                    Ok(Some(req)) => match req.status {
-                        agentix_core::ApprovalStatus::Approved => {
+                    Ok(Some(req)) => match &req.status {
+                        agentix_core::ApprovalStatus::Approved { approver, .. } => {
                             self.emit(ReActEvent::ApprovalDecided {
                                 request_id: request_id.clone(),
                                 approved: true,
@@ -1026,16 +1027,14 @@ impl ReActEngine {
                                 let mut details = HashMap::new();
                                 details.insert("tool_name".to_string(), serde_json::json!(tool_name));
                                 details.insert("request_id".to_string(), serde_json::json!(request_id));
-                                if let Some(ref decision) = req.decision {
-                                    details.insert("approver".to_string(), serde_json::json!(decision.approver));
-                                }
+                                details.insert("approver".to_string(), serde_json::json!(approver));
                                 let audit_entry = AuditEntry {
                                     id: None,
                                     timestamp: chrono::Utc::now(),
                                     event_type: AuditEventType::ApprovalDecision,
                                     agent_name: self.config.agent_name.clone(),
                                     run_id: run_id.map(|s| s.to_string()),
-                                    actor: req.decision.as_ref().map(|d| d.approver.clone()).unwrap_or_else(|| "unknown".to_string()),
+                                    actor: approver.clone(),
                                     action: format!("Approved tool call: {}", tool_name),
                                     outcome: AuditOutcome::Success,
                                     details,
@@ -1054,22 +1053,21 @@ impl ReActEngine {
                             );
                             return None; // Approved — proceed with execution
                         }
-                        agentix_core::ApprovalStatus::Denied => {
+                        agentix_core::ApprovalStatus::Denied { reason, .. } => {
                             self.emit(ReActEvent::ApprovalDecided {
                                 request_id: request_id.clone(),
                                 approved: false,
                             });
 
-                            let reason = req.decision.as_ref()
-                                .and_then(|d| d.reason.clone())
+                            let reason_str = reason.clone()
                                 .unwrap_or_else(|| "no reason given".to_string());
 
                             return Some(format!(
                                 "Approval denied for tool '{}': {}",
-                                tool_name, reason
+                                tool_name, reason_str
                             ));
                         }
-                        agentix_core::ApprovalStatus::Expired => {
+                        agentix_core::ApprovalStatus::TimedOut { .. } => {
                             self.emit(ReActEvent::ApprovalDecided {
                                 request_id: request_id.clone(),
                                 approved: false,

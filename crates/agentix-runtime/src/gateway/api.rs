@@ -1020,22 +1020,31 @@ async fn list_approvals(
     match result {
         Ok(requests) => {
             let json: Vec<serde_json::Value> = requests.into_iter().map(|r| {
+                let expires_at = r.requested_at + chrono::Duration::seconds(r.timeout_secs as i64);
                 serde_json::json!({
                     "id": r.id,
                     "agent_name": r.agent_name,
                     "run_id": r.run_id,
                     "tool_name": r.tool_name,
                     "tool_input": r.tool_input,
-                    "description": r.description,
+                    "description": r.action_description,
                     "status": r.status.to_string(),
-                    "created_at": r.created_at.to_rfc3339(),
-                    "expires_at": r.expires_at.to_rfc3339(),
-                    "decision": r.decision.as_ref().map(|d| serde_json::json!({
-                        "approver": d.approver,
-                        "action": d.action,
-                        "reason": d.reason,
-                        "decided_at": d.decided_at.to_rfc3339(),
-                    })),
+                    "created_at": r.requested_at.to_rfc3339(),
+                    "expires_at": expires_at.to_rfc3339(),
+                    "decision": match &r.status {
+                        agentix_core::ApprovalStatus::Approved { approver, decided_at } => Some(serde_json::json!({
+                            "approver": approver,
+                            "action": "approve",
+                            "decided_at": decided_at.to_rfc3339(),
+                        })),
+                        agentix_core::ApprovalStatus::Denied { approver, reason, decided_at } => Some(serde_json::json!({
+                            "approver": approver,
+                            "action": "deny",
+                            "reason": reason,
+                            "decided_at": decided_at.to_rfc3339(),
+                        })),
+                        _ => None,
+                    },
                 })
             }).collect();
             Json(json).into_response()
@@ -1051,22 +1060,31 @@ async fn get_approval(
 ) -> Response {
     match manager.approval_store.get_request(&id) {
         Ok(Some(r)) => {
+            let expires_at = r.requested_at + chrono::Duration::seconds(r.timeout_secs as i64);
             Json(serde_json::json!({
                 "id": r.id,
                 "agent_name": r.agent_name,
                 "run_id": r.run_id,
                 "tool_name": r.tool_name,
                 "tool_input": r.tool_input,
-                "description": r.description,
+                "description": r.action_description,
                 "status": r.status.to_string(),
-                "created_at": r.created_at.to_rfc3339(),
-                "expires_at": r.expires_at.to_rfc3339(),
-                "decision": r.decision.as_ref().map(|d| serde_json::json!({
-                    "approver": d.approver,
-                    "action": d.action,
-                    "reason": d.reason,
-                    "decided_at": d.decided_at.to_rfc3339(),
-                })),
+                "created_at": r.requested_at.to_rfc3339(),
+                "expires_at": expires_at.to_rfc3339(),
+                "decision": match &r.status {
+                    agentix_core::ApprovalStatus::Approved { approver, decided_at } => Some(serde_json::json!({
+                        "approver": approver,
+                        "action": "approve",
+                        "decided_at": decided_at.to_rfc3339(),
+                    })),
+                    agentix_core::ApprovalStatus::Denied { approver, reason, decided_at } => Some(serde_json::json!({
+                        "approver": approver,
+                        "action": "deny",
+                        "reason": reason,
+                        "decided_at": decided_at.to_rfc3339(),
+                    })),
+                    _ => None,
+                },
             }))
             .into_response()
         }

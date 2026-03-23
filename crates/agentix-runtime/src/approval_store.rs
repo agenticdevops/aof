@@ -4,17 +4,12 @@
 //! restarts. Uses `rusqlite` with `parking_lot::Mutex` for thread-safe access,
 //! following the same pattern as `AuditStore`, `CostStore`, and `TraceStore`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use agentix_core::{
-    AgentixError, ApprovalAction, ApprovalDecision, ApprovalRequest,
-    ApprovalStatus,
-};
+use agentix_core::{AgentixError, ApprovalRequest, ApprovalStatus};
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
-use serde_json;
 
 // ---------------------------------------------------------------------------
 // ApprovalStore
@@ -49,20 +44,19 @@ impl ApprovalStore {
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS approval_requests (
-                id           TEXT PRIMARY KEY,
-                agent_name   TEXT NOT NULL,
-                run_id       TEXT NOT NULL,
-                tool_name    TEXT NOT NULL,
-                tool_input   TEXT NOT NULL DEFAULT '{}',
-                description  TEXT NOT NULL,
-                status       TEXT NOT NULL DEFAULT 'pending',
-                created_at   TEXT NOT NULL,
-                expires_at   TEXT NOT NULL,
-                approver     TEXT,
-                action       TEXT,
-                reason       TEXT,
-                decided_at   TEXT,
-                metadata     TEXT NOT NULL DEFAULT '{}'
+                id                  TEXT PRIMARY KEY,
+                run_id              TEXT NOT NULL,
+                agent_name          TEXT NOT NULL,
+                action_description  TEXT NOT NULL,
+                tool_name           TEXT,
+                tool_input          TEXT,
+                requested_at        TEXT NOT NULL,
+                timeout_secs        INTEGER NOT NULL DEFAULT 300,
+                status              TEXT NOT NULL DEFAULT 'pending',
+                approver            TEXT,
+                reason              TEXT,
+                decided_at          TEXT,
+                expired_at          TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_approval_agent  ON approval_requests(agent_name);
             CREATE INDEX IF NOT EXISTS idx_approval_run    ON approval_requests(run_id);
@@ -81,26 +75,25 @@ impl ApprovalStore {
     /// Insert a new approval request into the store.
     pub fn create_request(&self, request: &ApprovalRequest) -> Result<(), AgentixError> {
         let conn = self.conn.lock();
-        let tool_input_json =
-            serde_json::to_string(&request.tool_input).unwrap_or_else(|_| "{}".to_string());
-        let metadata_json =
-            serde_json::to_string(&request.metadata).unwrap_or_else(|_| "{}".to_string());
+        let tool_input_json = request
+            .tool_input
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "null".to_string()));
 
         conn.execute(
             "INSERT INTO approval_requests
-             (id, agent_name, run_id, tool_name, tool_input, description, status, created_at, expires_at, metadata)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             (id, run_id, agent_name, action_description, tool_name, tool_input, requested_at, timeout_secs, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 request.id,
-                request.agent_name,
                 request.run_id,
+                request.agent_name,
+                request.action_description,
                 request.tool_name,
                 tool_input_json,
-                request.description,
-                request.status.to_string(),
-                request.created_at.to_rfc3339(),
-                request.expires_at.to_rfc3339(),
-                metadata_json,
+                request.requested_at.to_rfc3339(),
+                request.timeout_secs,
+                "pending",
             ],
         )
         .map_err(|e| AgentixError::runtime(format!("Failed to insert approval request: {e}")))?;
@@ -112,8 +105,8 @@ impl ApprovalStore {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT id, agent_name, run_id, tool_name, tool_input, description,
-                        status, created_at, expires_at, approver, action, reason, decided_at, metadata
+                "SELECT id, run_id, agent_name, action_description, tool_name, tool_input,
+                        requested_at, timeout_secs, status, approver, reason, decided_at, expired_at
                  FROM approval_requests
                  WHERE id = ?1",
             )
@@ -137,11 +130,11 @@ impl ApprovalStore {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT id, agent_name, run_id, tool_name, tool_input, description,
-                        status, created_at, expires_at, approver, action, reason, decided_at, metadata
+                "SELECT id, run_id, agent_name, action_description, tool_name, tool_input,
+                        requested_at, timeout_secs, status, approver, reason, decided_at, expired_at
                  FROM approval_requests
                  WHERE status = 'pending'
-                 ORDER BY created_at DESC
+                 ORDER BY requested_at DESC
                  LIMIT ?1",
             )
             .map_err(|e| {
@@ -173,11 +166,11 @@ impl ApprovalStore {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT id, agent_name, run_id, tool_name, tool_input, description,
-                        status, created_at, expires_at, approver, action, reason, decided_at, metadata
+                "SELECT id, run_id, agent_name, action_description, tool_name, tool_input,
+                        requested_at, timeout_secs, status, approver, reason, decided_at, expired_at
                  FROM approval_requests
                  WHERE agent_name = ?1
-                 ORDER BY created_at DESC
+                 ORDER BY requested_at DESC
                  LIMIT ?2",
             )
             .map_err(|e| {
@@ -202,234 +195,70 @@ impl ApprovalStore {
         Ok(requests)
     }
 
-    /// Return all Pending approval requests for a specific run.
-    pub fn get_pending_by_run(&self, run_id: &str) -> Result<Vec<ApprovalRequest>, AgentixError> {
-        let conn = self.conn.lock();
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, agent_name, run_id, tool_name, tool_input, description,
-                        status, created_at, expires_at, approver, action, reason, decided_at, metadata
-                 FROM approval_requests
-                 WHERE run_id = ?1 AND status = 'pending'
-                 ORDER BY created_at DESC",
-            )
-            .map_err(|e| {
-                AgentixError::runtime(format!("Failed to prepare get_pending_by_run query: {e}"))
-            })?;
-
-        let rows = stmt
-            .query_map(params![run_id], |row| Ok(Self::row_to_request(row)))
-            .map_err(|e| {
-                AgentixError::runtime(format!("Failed to query pending by run: {e}"))
-            })?;
-
-        let mut requests = Vec::new();
-        for row in rows {
-            let req = row.map_err(|e| {
-                AgentixError::runtime(format!("Failed to read pending by run row: {e}"))
-            })?;
-            requests.push(req);
-        }
-        Ok(requests)
-    }
-
-    /// Return all Pending approval requests for a specific agent.
-    pub fn get_pending_by_agent(&self, agent_name: &str) -> Result<Vec<ApprovalRequest>, AgentixError> {
-        let conn = self.conn.lock();
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, agent_name, run_id, tool_name, tool_input, description,
-                        status, created_at, expires_at, approver, action, reason, decided_at, metadata
-                 FROM approval_requests
-                 WHERE agent_name = ?1 AND status = 'pending'
-                 ORDER BY created_at DESC",
-            )
-            .map_err(|e| {
-                AgentixError::runtime(format!("Failed to prepare get_pending_by_agent query: {e}"))
-            })?;
-
-        let rows = stmt
-            .query_map(params![agent_name], |row| Ok(Self::row_to_request(row)))
-            .map_err(|e| {
-                AgentixError::runtime(format!("Failed to query pending by agent: {e}"))
-            })?;
-
-        let mut requests = Vec::new();
-        for row in rows {
-            let req = row.map_err(|e| {
-                AgentixError::runtime(format!("Failed to read pending by agent row: {e}"))
-            })?;
-            requests.push(req);
-        }
-        Ok(requests)
-    }
-
-    /// Update the status of an approval request.
-    ///
-    /// For Approved/Denied transitions, an `ApprovalDecision` must be provided.
-    /// For Expired transitions, no decision is needed.
-    pub fn update_status(
-        &self,
-        request_id: &str,
-        new_status: &ApprovalStatus,
-        decision: Option<ApprovalDecision>,
-    ) -> Result<(), AgentixError> {
-        let conn = self.conn.lock();
-        let status_str = match new_status {
-            ApprovalStatus::Pending => "pending",
-            ApprovalStatus::Approved => "approved",
-            ApprovalStatus::Denied => "denied",
-            ApprovalStatus::Expired => "expired",
-        };
-
-        match decision {
-            Some(dec) => {
-                let action_str = match dec.action {
-                    ApprovalAction::Approve => "approve",
-                    ApprovalAction::Deny => "deny",
-                };
-                conn.execute(
-                    "UPDATE approval_requests
-                     SET status = ?1, approver = ?2, action = ?3, reason = ?4, decided_at = ?5
-                     WHERE id = ?6",
-                    params![
-                        status_str,
-                        dec.approver,
-                        action_str,
-                        dec.reason,
-                        dec.decided_at.to_rfc3339(),
-                        request_id,
-                    ],
-                )
-                .map_err(|e| {
-                    AgentixError::runtime(format!("Failed to update approval status: {e}"))
-                })?;
-            }
-            None => {
-                conn.execute(
-                    "UPDATE approval_requests SET status = ?1 WHERE id = ?2",
-                    params![status_str, request_id],
-                )
-                .map_err(|e| {
-                    AgentixError::runtime(format!("Failed to update approval status: {e}"))
-                })?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Mark all expired pending requests as Expired.
-    ///
-    /// A pending request is expired when `expires_at < NOW()`.
-    /// Returns the number of requests that were marked expired.
-    pub fn expire_timed_out(&self) -> Result<u32, AgentixError> {
-        let conn = self.conn.lock();
-        let now = Utc::now().to_rfc3339();
-        let count = conn
-            .execute(
-                "UPDATE approval_requests
-                 SET status = 'expired'
-                 WHERE status = 'pending' AND expires_at < ?1",
-                params![now],
-            )
-            .map_err(|e| {
-                AgentixError::runtime(format!("Failed to expire timed-out approvals: {e}"))
-            })?;
-        Ok(count as u32)
-    }
-
-    /// Approve a pending request. Returns the updated request.
+    /// Approve a pending request by ID. Returns the updated request.
     pub fn approve(
         &self,
         id: &str,
         approver: &str,
-        reason: Option<&str>,
+        _reason: Option<&str>,
     ) -> Result<ApprovalRequest, AgentixError> {
-        self.decide(id, approver, ApprovalAction::Approve, reason)
-    }
+        self.assert_pending(id)?;
 
-    /// Deny a pending request. Returns the updated request.
-    pub fn deny(
-        &self,
-        id: &str,
-        approver: &str,
-        reason: Option<&str>,
-    ) -> Result<ApprovalRequest, AgentixError> {
-        self.decide(id, approver, ApprovalAction::Deny, reason)
-    }
-
-    /// Apply a decision to a pending request.
-    fn decide(
-        &self,
-        id: &str,
-        approver: &str,
-        action: ApprovalAction,
-        reason: Option<&str>,
-    ) -> Result<ApprovalRequest, AgentixError> {
+        let now = Utc::now().to_rfc3339();
         let conn = self.conn.lock();
-        let now = Utc::now();
-        let status = match action {
-            ApprovalAction::Approve => "approved",
-            ApprovalAction::Deny => "denied",
-        };
-        let action_str = match action {
-            ApprovalAction::Approve => "approve",
-            ApprovalAction::Deny => "deny",
-        };
-
-        // Verify the request exists and is pending
-        let current_status: String = conn
-            .query_row(
-                "SELECT status FROM approval_requests WHERE id = ?1",
-                params![id],
-                |row| row.get(0),
-            )
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    AgentixError::runtime(format!("Approval request '{}' not found", id))
-                }
-                _ => AgentixError::runtime(format!("Failed to query approval request: {e}")),
-            })?;
-
-        if current_status != "pending" {
-            return Err(AgentixError::runtime(format!(
-                "Approval request '{}' is not pending (current status: {})",
-                id, current_status
-            )));
-        }
-
         conn.execute(
             "UPDATE approval_requests
-             SET status = ?1, approver = ?2, action = ?3, reason = ?4, decided_at = ?5
-             WHERE id = ?6",
-            params![
-                status,
-                approver,
-                action_str,
-                reason,
-                now.to_rfc3339(),
-                id,
-            ],
+             SET status = 'approved', approver = ?1, decided_at = ?2
+             WHERE id = ?3",
+            params![approver, now, id],
         )
-        .map_err(|e| AgentixError::runtime(format!("Failed to update approval request: {e}")))?;
+        .map_err(|e| AgentixError::runtime(format!("Failed to approve request: {e}")))?;
 
         drop(conn);
         self.get_request(id)?
             .ok_or_else(|| AgentixError::runtime("Request disappeared after update".to_string()))
     }
 
-    /// Mark all expired pending requests as expired.
+    /// Deny a pending request by ID. Returns the updated request.
+    pub fn deny(
+        &self,
+        id: &str,
+        approver: &str,
+        reason: Option<&str>,
+    ) -> Result<ApprovalRequest, AgentixError> {
+        self.assert_pending(id)?;
+
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE approval_requests
+             SET status = 'denied', approver = ?1, reason = ?2, decided_at = ?3
+             WHERE id = ?4",
+            params![approver, reason, now, id],
+        )
+        .map_err(|e| AgentixError::runtime(format!("Failed to deny request: {e}")))?;
+
+        drop(conn);
+        self.get_request(id)?
+            .ok_or_else(|| AgentixError::runtime("Request disappeared after update".to_string()))
+    }
+
+    /// Mark all expired pending requests as timed_out.
     /// Returns the number of requests that were expired.
+    ///
+    /// Uses Unix epoch arithmetic (via `strftime('%s', ...)`) to avoid
+    /// SQLite datetime parsing issues with RFC3339 nanosecond-precision timestamps.
     pub fn expire_stale(&self) -> Result<usize, AgentixError> {
         let conn = self.conn.lock();
         let now = Utc::now().to_rfc3339();
         let count = conn
             .execute(
                 "UPDATE approval_requests
-                 SET status = 'expired'
-                 WHERE status = 'pending' AND expires_at < ?1",
-                params![now],
+                 SET status = 'timed_out', expired_at = ?1
+                 WHERE status = 'pending'
+                   AND (CAST(strftime('%s', requested_at) AS INTEGER) + timeout_secs)
+                       <= CAST(strftime('%s', ?2) AS INTEGER)",
+                params![now, now],
             )
             .map_err(|e| {
                 AgentixError::runtime(format!("Failed to expire stale approvals: {e}"))
@@ -437,75 +266,104 @@ impl ApprovalStore {
         Ok(count)
     }
 
-    /// Convert a SQLite row to an ApprovalRequest.
+    // -----------------------------------------------------------------------
+    // Internal helpers
+    // -----------------------------------------------------------------------
+
+    /// Assert that a request exists and is Pending. Returns error otherwise.
+    fn assert_pending(&self, id: &str) -> Result<(), AgentixError> {
+        let conn = self.conn.lock();
+        let status: Result<String, _> = conn.query_row(
+            "SELECT status FROM approval_requests WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        );
+        match status {
+            Err(rusqlite::Error::QueryReturnedNoRows) => Err(AgentixError::runtime(format!(
+                "Approval request '{}' not found",
+                id
+            ))),
+            Err(e) => Err(AgentixError::runtime(format!(
+                "Failed to query approval request: {e}"
+            ))),
+            Ok(s) if s != "pending" => Err(AgentixError::runtime(format!(
+                "Approval request '{}' is not pending (current status: {})",
+                id, s
+            ))),
+            Ok(_) => Ok(()),
+        }
+    }
+
+    /// Convert a SQLite row to an `ApprovalRequest`.
+    ///
+    /// Column order:
+    ///   0=id, 1=run_id, 2=agent_name, 3=action_description,
+    ///   4=tool_name, 5=tool_input, 6=requested_at, 7=timeout_secs,
+    ///   8=status, 9=approver, 10=reason, 11=decided_at, 12=expired_at
     fn row_to_request(row: &rusqlite::Row) -> ApprovalRequest {
         let id: String = row.get(0).unwrap_or_default();
-        let agent_name: String = row.get(1).unwrap_or_default();
-        let run_id: String = row.get(2).unwrap_or_default();
-        let tool_name: String = row.get(3).unwrap_or_default();
-        let tool_input_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
-        let description: String = row.get(5).unwrap_or_default();
-        let status_str: String = row.get(6).unwrap_or_else(|_| "pending".to_string());
-        let created_at_str: String = row.get(7).unwrap_or_default();
-        let expires_at_str: String = row.get(8).unwrap_or_default();
+        let run_id: String = row.get(1).unwrap_or_default();
+        let agent_name: String = row.get(2).unwrap_or_default();
+        let action_description: String = row.get(3).unwrap_or_default();
+        let tool_name: Option<String> = row.get(4).unwrap_or(None);
+        let tool_input_str: Option<String> = row.get(5).unwrap_or(None);
+        let requested_at_str: String = row.get(6).unwrap_or_default();
+        let timeout_secs: u32 = row.get::<_, i64>(7).unwrap_or(300) as u32;
+        let status_str: String = row.get(8).unwrap_or_else(|_| "pending".to_string());
         let approver: Option<String> = row.get(9).unwrap_or(None);
-        let action_str: Option<String> = row.get(10).unwrap_or(None);
-        let reason: Option<String> = row.get(11).unwrap_or(None);
-        let decided_at_str: Option<String> = row.get(12).unwrap_or(None);
-        let metadata_str: String = row.get(13).unwrap_or_else(|_| "{}".to_string());
+        let reason: Option<String> = row.get(10).unwrap_or(None);
+        let decided_at_str: Option<String> = row.get(11).unwrap_or(None);
+        let expired_at_str: Option<String> = row.get(12).unwrap_or(None);
 
-        let tool_input: serde_json::Value =
-            serde_json::from_str(&tool_input_str).unwrap_or(serde_json::Value::Null);
-        let metadata: HashMap<String, serde_json::Value> =
-            serde_json::from_str(&metadata_str).unwrap_or_default();
+        let tool_input: Option<serde_json::Value> = tool_input_str
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
 
-        let status = match status_str.as_str() {
-            "approved" => ApprovalStatus::Approved,
-            "denied" => ApprovalStatus::Denied,
-            "expired" => ApprovalStatus::Expired,
-            _ => ApprovalStatus::Pending,
+        let requested_at = DateTime::parse_from_rfc3339(&requested_at_str)
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(|_| Utc::now());
+
+        let parse_dt = |s: &str| {
+            DateTime::parse_from_rfc3339(s)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now())
         };
 
-        let created_at = DateTime::parse_from_rfc3339(&created_at_str)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now());
-
-        let expires_at = DateTime::parse_from_rfc3339(&expires_at_str)
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or_else(|_| Utc::now());
-
-        let decision = match (approver, action_str, decided_at_str) {
-            (Some(approver), Some(action), Some(decided_at)) => {
-                let action = match action.as_str() {
-                    "approve" => ApprovalAction::Approve,
-                    "deny" => ApprovalAction::Deny,
-                    _ => ApprovalAction::Deny,
-                };
-                let decided_at = DateTime::parse_from_rfc3339(&decided_at)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now());
-                Some(ApprovalDecision {
-                    approver,
-                    action,
-                    reason,
-                    decided_at,
-                })
-            }
-            _ => None,
+        let status = match status_str.as_str() {
+            "approved" => ApprovalStatus::Approved {
+                approver: approver.unwrap_or_default(),
+                decided_at: decided_at_str
+                    .as_deref()
+                    .map(parse_dt)
+                    .unwrap_or_else(Utc::now),
+            },
+            "denied" => ApprovalStatus::Denied {
+                approver: approver.unwrap_or_default(),
+                reason,
+                decided_at: decided_at_str
+                    .as_deref()
+                    .map(parse_dt)
+                    .unwrap_or_else(Utc::now),
+            },
+            "timed_out" => ApprovalStatus::TimedOut {
+                expired_at: expired_at_str
+                    .as_deref()
+                    .map(parse_dt)
+                    .unwrap_or_else(Utc::now),
+            },
+            _ => ApprovalStatus::Pending,
         };
 
         ApprovalRequest {
             id,
-            agent_name,
             run_id,
+            agent_name,
+            action_description,
             tool_name,
             tool_input,
-            description,
+            requested_at,
+            timeout_secs,
             status,
-            created_at,
-            expires_at,
-            decision,
-            metadata,
         }
     }
 }
@@ -523,15 +381,16 @@ mod tests {
     }
 
     fn test_request(id: &str) -> ApprovalRequest {
-        ApprovalRequest::new(
-            id.to_string(),
-            "test-agent".to_string(),
+        let mut req = ApprovalRequest::new(
             "run-001".to_string(),
-            "kubectl".to_string(),
-            serde_json::json!({"args": "delete pod nginx"}),
+            "test-agent".to_string(),
             "Delete pod nginx".to_string(),
+            Some("kubectl".to_string()),
+            Some(serde_json::json!({"args": "delete pod nginx"})),
             300,
-        )
+        );
+        req.id = id.to_string();
+        req
     }
 
     #[test]
@@ -547,9 +406,8 @@ mod tests {
         assert_eq!(retrieved.id, "req-001");
         assert_eq!(retrieved.agent_name, "test-agent");
         assert_eq!(retrieved.run_id, "run-001");
-        assert_eq!(retrieved.tool_name, "kubectl");
-        assert_eq!(retrieved.status, ApprovalStatus::Pending);
-        assert!(retrieved.decision.is_none());
+        assert_eq!(retrieved.tool_name, Some("kubectl".to_string()));
+        assert!(matches!(retrieved.status, ApprovalStatus::Pending));
     }
 
     #[test]
@@ -563,7 +421,6 @@ mod tests {
     fn test_list_pending() {
         let store = test_store();
 
-        // Create 3 requests
         store.create_request(&test_request("req-a")).unwrap();
         store.create_request(&test_request("req-b")).unwrap();
         store.create_request(&test_request("req-c")).unwrap();
@@ -571,9 +428,8 @@ mod tests {
         let pending = store.list_pending(10).unwrap();
         assert_eq!(pending.len(), 3);
 
-        // All should be pending
         for req in &pending {
-            assert_eq!(req.status, ApprovalStatus::Pending);
+            assert!(matches!(req.status, ApprovalStatus::Pending));
         }
     }
 
@@ -584,7 +440,6 @@ mod tests {
         store.create_request(&test_request("req-1")).unwrap();
         store.create_request(&test_request("req-2")).unwrap();
 
-        // Approve req-1
         store.approve("req-1", "admin", None).unwrap();
 
         let pending = store.list_pending(10).unwrap();
@@ -601,12 +456,12 @@ mod tests {
             .approve("req-approve", "admin@co.com", Some("LGTM"))
             .unwrap();
 
-        assert_eq!(updated.status, ApprovalStatus::Approved);
-        assert!(updated.decision.is_some());
-        let decision = updated.decision.unwrap();
-        assert_eq!(decision.approver, "admin@co.com");
-        assert_eq!(decision.action, ApprovalAction::Approve);
-        assert_eq!(decision.reason, Some("LGTM".to_string()));
+        match &updated.status {
+            ApprovalStatus::Approved { approver, .. } => {
+                assert_eq!(approver, "admin@co.com");
+            }
+            other => panic!("Expected Approved, got {:?}", other),
+        }
     }
 
     #[test]
@@ -618,12 +473,13 @@ mod tests {
             .deny("req-deny", "security-lead", Some("Too risky"))
             .unwrap();
 
-        assert_eq!(updated.status, ApprovalStatus::Denied);
-        assert!(updated.decision.is_some());
-        let decision = updated.decision.unwrap();
-        assert_eq!(decision.approver, "security-lead");
-        assert_eq!(decision.action, ApprovalAction::Deny);
-        assert_eq!(decision.reason, Some("Too risky".to_string()));
+        match &updated.status {
+            ApprovalStatus::Denied { approver, reason, .. } => {
+                assert_eq!(approver, "security-lead");
+                assert_eq!(reason.as_deref(), Some("Too risky"));
+            }
+            other => panic!("Expected Denied, got {:?}", other),
+        }
     }
 
     #[test]
@@ -631,10 +487,8 @@ mod tests {
         let store = test_store();
         store.create_request(&test_request("req-double")).unwrap();
 
-        // First approval succeeds
         store.approve("req-double", "admin", None).unwrap();
 
-        // Second approval fails
         let err = store.approve("req-double", "admin2", None).unwrap_err();
         assert!(err.to_string().contains("not pending"));
     }
@@ -684,16 +538,16 @@ mod tests {
         let store = test_store();
 
         // Create a request with 0 timeout (already expired)
-        let req = ApprovalRequest::new(
-            "req-expire".to_string(),
-            "agent".to_string(),
+        let mut req_zero = ApprovalRequest::new(
             "run".to_string(),
-            "tool".to_string(),
-            serde_json::Value::Null,
+            "agent".to_string(),
             "desc".to_string(),
+            None,
+            None,
             0, // expires immediately
         );
-        store.create_request(&req).unwrap();
+        req_zero.id = "req-expire".to_string();
+        store.create_request(&req_zero).unwrap();
 
         // Also create one that won't expire
         store.create_request(&test_request("req-keep")).unwrap();
@@ -703,11 +557,11 @@ mod tests {
 
         // Verify the expired one
         let expired = store.get_request("req-expire").unwrap().unwrap();
-        assert_eq!(expired.status, ApprovalStatus::Expired);
+        assert!(matches!(expired.status, ApprovalStatus::TimedOut { .. }));
 
         // Verify the kept one
         let kept = store.get_request("req-keep").unwrap().unwrap();
-        assert_eq!(kept.status, ApprovalStatus::Pending);
+        assert!(matches!(kept.status, ApprovalStatus::Pending));
     }
 
     #[test]
@@ -728,20 +582,18 @@ mod tests {
     fn test_tool_input_preserved() {
         let store = test_store();
         let mut req = test_request("req-input");
-        req.tool_input = serde_json::json!({
+        req.tool_input = Some(serde_json::json!({
             "command": "kubectl delete pod nginx",
             "namespace": "production",
             "force": true
-        });
+        }));
 
         store.create_request(&req).unwrap();
 
         let retrieved = store.get_request("req-input").unwrap().unwrap();
-        assert_eq!(
-            retrieved.tool_input["command"],
-            "kubectl delete pod nginx"
-        );
-        assert_eq!(retrieved.tool_input["namespace"], "production");
-        assert_eq!(retrieved.tool_input["force"], true);
+        let input = retrieved.tool_input.unwrap();
+        assert_eq!(input["command"], "kubectl delete pod nginx");
+        assert_eq!(input["namespace"], "production");
+        assert_eq!(input["force"], true);
     }
 }

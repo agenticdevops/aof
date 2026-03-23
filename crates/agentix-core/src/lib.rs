@@ -86,10 +86,7 @@ pub use telemetry::{
 };
 pub use secret_store::{EncryptedSecret, SecretError, SecretRedactor, SecretStore};
 pub use security::{CapabilityPolicy, SecurityConfig, SsrfGuard, SsrfViolation};
-pub use approval::{
-    ApprovalAction, ApprovalDecision, ApprovalPolicy, ApprovalRequest, ApprovalStatus,
-    AutonomyMode,
-};
+pub use approval::{ApprovalDecision, ApprovalPolicy, ApprovalRequest, ApprovalStatus};
 pub use channel::{
     ChannelConfig, ChannelCredentials, ChannelDirection, ChannelGateway, ChannelMessage,
     ChannelPlatformType, ChannelRoute, NotificationPayload, NotificationSeverity,
