@@ -155,4 +155,5 @@ OAuth tokens are refreshed automatically before expiry (90-second skew window) w
 ## Related Commands
 
 - `agentix gateway start` — Start the gateway server (uses stored auth credentials for subscription mode)
-- See [LLM Subscription Proxy](../guides/llm-subscription.md) for agent configuration
+- See [LLM Subscription Proxy](../features/subscription-proxy.md) for feature overview and agent configuration
+- See [Subscription Setup Tutorial](../tutorials/subscription-setup.md) for step-by-step setup instructions
